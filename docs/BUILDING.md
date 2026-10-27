@@ -128,7 +128,7 @@ The visible version remains **0.0.1** until the user authorizes a change. Intern
 
 ## GitHub CI
 
-Checking runs on pushes across branches and PRs, with portable strict type/lint/format/contract checks, Android compilation/lint/unit/render checks and native Swift format/compile/tests. The goalset explicitly permits these CI compilation/typecheck steps. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, and uploads CI APK/app ZIP artifacts. It does not publish a stable GitHub Release or access Production signing secrets. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
+Checking runs on pushes across branches and PRs, with portable strict type/lint/format/contract checks, Android compilation/lint/unit/render checks and native Swift format/compile/tests. The goalset explicitly permits these CI compilation/typecheck steps. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, and uploads CI APK/app ZIP artifacts. It does not publish a stable GitHub Release. It signs the CI APK with the release keystore secrets. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
 
 CI workflows have not executed until an actual repository is configured and pushed after local gates pass. Runner SDK/toolchain availability remains a CI validation item; it is not proof of successful native compilation here.
 

@@ -8,7 +8,7 @@ These are implementation changes, not measured CPU/battery savings. Windows JVM/
 
 ## Target measurement procedure
 
-Use a non-debug, optimized **CI-profile** APK (`:app:assembleRelease -Pcadenza.profile=ci`) so self-updates cannot affect results. Use an optimized Host development/CI app. Keep screen brightness, Wi-Fi signal, volume, Music content and charger state fixed. Record OS/build ID, installed size and sample duration. Run each state for five minutes after a one-minute warmup:
+Use a non-debug, optimized **CI-profile** APK (`:app:assembleRelease -Pcadenza.profile=ci`, with the release signing variables from [BUILDING.md](BUILDING.md) set) so self-updates cannot affect results. Use an optimized Host development/CI app. Keep screen brightness, Wi-Fi signal, volume, Music content and charger state fixed. Record OS/build ID, installed size and sample duration. Run each state for five minutes after a one-minute warmup:
 
 1. Host idle with Music paused and no Remotes; Remote app backgrounded.
 2. Connected Remote foreground, paused, no input.

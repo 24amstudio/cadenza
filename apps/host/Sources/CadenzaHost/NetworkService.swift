@@ -125,18 +125,19 @@ final class NetworkService {
             return
         }
         let peer = Peer(connection)
-        peers[peer.id] = peer
+        let peerID = peer.id
+        peers[peerID] = peer
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    self.receive(peer.id)
+                    self.receive(peerID)
                     Task { @MainActor [weak self] in
                         try? await Task.sleep(for: .seconds(5))
-                        if self?.peers[peer.id]?.authenticated == false { self?.disconnect(peer.id) }
+                        if self?.peers[peerID]?.authenticated == false { self?.disconnect(peerID) }
                     }
-                case .failed, .cancelled: self.disconnect(peer.id)
+                case .failed, .cancelled: self.disconnect(peerID)
                 default: break
                 }
             }

@@ -21,6 +21,7 @@ Thumbs.db
 .env.*
 !.env.example
 /secrets/
+/secret/
 *.jks
 *.keystore
 *.p8

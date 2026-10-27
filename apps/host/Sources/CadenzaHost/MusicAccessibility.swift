@@ -110,7 +110,9 @@ final class MusicAccessibility {
     private func links(_ element: AXUIElement, descendants: [AXUIElement], id: String) -> Bool {
         (descendants + [element]).contains { node in
             if string(node, kAXIdentifierAttribute) == id { return true }
-            guard let url = attribute(node, kAXURLAttribute) as? URL, url.host == "music.apple.com" else { return false }
+            guard let url = attribute(node, kAXURLAttribute) as? URL,
+                url.host == "music.apple.com"
+            else { return false }
             let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
             return parts?.queryItems?.contains { $0.name == "i" && $0.value == id } == true
                 || url.path.hasSuffix("/\(id)")
@@ -235,7 +237,8 @@ final class MusicAccessibility {
         var candidates: [AXUIElement] = []
         for row in rows {
             let nodes = walk(row)
-            let values = nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
+            let values =
+                nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
                 .map { string($0, kAXValueAttribute) }
                 + [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].map { string(row, $0) }
             let exactTitle = values.contains { normalized($0) == normalized(song.title) }

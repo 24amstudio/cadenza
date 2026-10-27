@@ -87,7 +87,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Renders production Compose screens with synthetic local data, without a Mac or device. */
+/** Renders production Compose screens with synthetic local data, without a Host or device. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31], qualifiers = "w1000dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -115,12 +115,15 @@ class RemoteUiTest {
         compose.setContent {
             MaterialExpressiveTheme {
                 ConnectionStatus(
-                    RemoteState(connecting = true, profile = HostProfile(hostId, "Test Mac", "10.0.0.5", 43127, "fingerprint", remoteId)),
+                    RemoteState(
+                        connecting = true,
+                        profile = HostProfile(hostId, "Test Cadenza Host", "10.0.0.5", 43127, "fingerprint", remoteId),
+                    ),
                 )
             }
         }
-        compose.onNodeWithContentDescription("Reconnecting to Test Mac").assertIsDisplayed()
-        compose.onNodeWithText("Connecting to Test Mac").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Reconnecting to Test Cadenza Host").assertIsDisplayed()
+        compose.onNodeWithText("Connecting to Test Cadenza Host").assertDoesNotExist()
         capture("connection-reconnecting")
     }
 
@@ -404,7 +407,7 @@ class RemoteUiTest {
     fun pairingReflowsWithDoubleSizeText() {
         openApp(fontScale = 2f)
         capture("pairing-phone-large-text")
-        compose.onNodeWithText("Pair with your Mac").assertIsDisplayed()
+        compose.onNodeWithText("Pair with Cadenza Host").assertIsDisplayed()
         compose
             .onNodeWithText("Pair", substring = false)
             .performScrollTo()
@@ -595,7 +598,16 @@ class RemoteUiTest {
     }
 
     private fun seedProfile(emptyQueue: Boolean = false) {
-        val profile = HostProfile(hostId, "Test Mac", "10.0.0.5", 43127, TestCertificate.fingerprint, remoteId, TestCertificate.encoded)
+        val profile =
+            HostProfile(
+                hostId,
+                "Test Cadenza Host",
+                "10.0.0.5",
+                43127,
+                TestCertificate.fingerprint,
+                remoteId,
+                TestCertificate.encoded,
+            )
         app.database.saveProfile(profile)
         app.database.saveState(hostId, snapshot(emptyQueue))
         app.settings.write("active_host" to hostId)

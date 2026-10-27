@@ -120,7 +120,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         (application as CadenzaApplication).installationHandler = null
-        model.setForeground(false)
+        if (isChangingConfigurations) {
+            // The ViewModel and connection survive rotation. Clear transient feedback,
+            // but do not tear down the control session that the new instance will reuse.
+            model.dismissPrompt()
+        } else {
+            model.setForeground(false)
+        }
         super.onStop()
     }
 }

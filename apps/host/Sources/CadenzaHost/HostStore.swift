@@ -111,7 +111,7 @@ final class HostStore {
     }
 
     func remoteName(_ id: String?) throws -> String {
-        guard let id else { return "Mac" }
+        guard let id else { return "Cadenza Host" }
         return try database.query("SELECT display_name FROM paired_remotes WHERE remote_id=?", [.text(id)])
             .first?["display_name"]?.string ?? "Unpaired Remote"
     }

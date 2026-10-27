@@ -33,7 +33,7 @@ class PlaybackControlsTest {
                 issue = null,
                 observationGap = false,
             )
-        val profile = HostProfile("host", "Mac", "127.0.0.1", 1, "fingerprint", "remote-a")
+        val profile = HostProfile("host", "Cadenza Host", "127.0.0.1", 1, "fingerprint", "remote-a")
         val state = RemoteState(profile = profile, connected = true, snapshot = snapshot)
 
         assertFalse(mayInterruptPlayback(state))

@@ -466,7 +466,7 @@ class RemoteModel(
         } catch (
             error: Exception,
         ) {
-            showError("Check the update source", error.message ?: "Verify the release key on the Mac.")
+            showError("Check the update source", error.message ?: "Verify the release key in Cadenza Host.")
         }
         mutable.update {
             it.copy(

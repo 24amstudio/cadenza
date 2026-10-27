@@ -45,7 +45,7 @@ object RemoteUpdater {
         require(ReleaseVerifier.repositoryValid(value.repository)) { "Host provided an invalid GitHub repository." }
         val previous = configuration(context)
         require(previous.publicKeySpkiBase64.isBlank() || previous == value) {
-            "The release verification identity changed. Verify it on the Mac before reconfiguring updates."
+            "The release verification identity changed. Verify it in Cadenza Host before reconfiguring updates."
         }
         preferences(context).write("repository" to value.repository, "key" to value.publicKeySpkiBase64)
         UpdateJob.schedule(context)

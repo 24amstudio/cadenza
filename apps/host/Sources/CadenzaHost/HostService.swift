@@ -160,7 +160,7 @@ final class HostService {
         guard let identity else { throw CadenzaError.failure("network", "Host is still starting.") }
         let address =
             configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
-        guard let address else { throw CadenzaError.failure("network", "Connect the Mac to your local network first.") }
+        guard let address else { throw CadenzaError.failure("network", "Connect Cadenza Host to your local network first.") }
         let invitation = PairingInvitation(
             host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
             certificateDerBase64: identity.certificateDerBase64,

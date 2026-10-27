@@ -31,7 +31,7 @@ Commands contain a unique command ID, Host epoch, expiry, expected revision, and
 
 Enqueue appends a distinct request. Play Now also requires an explicit current-occurrence guard, including `null` when nothing plays, and cannot jump protected requests. Remove and move identify queue entries; `before_entry_id: null` means the pending queue's end. Transport and seek identify the current occurrence.
 
-The native coordinator serializes mutations, reads current Music state, evaluates [authorization SQL](../../apps/host/storage/authorize-command.sql), journals the intent, and rechecks authorization before dispatch. Mac-originated queue rows remain Host-controlled. The cross-Remote policy defaults off and protects the currently playing request too.
+The native coordinator serializes mutations, reads current Music state, evaluates [authorization SQL](../../apps/host/storage/authorize-command.sql), journals the intent, and rechecks authorization before dispatch. Cadenza Host-originated queue rows remain Host-controlled. The cross-Remote policy defaults off and protects the currently playing request too.
 
 A repeated command ID is matched to its validated payload fingerprint. A changed payload produces `command_conflict`. Remote reconnects use the read-only `command.status` request; they never resend a mutation automatically.
 

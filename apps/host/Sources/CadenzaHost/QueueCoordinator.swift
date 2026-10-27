@@ -325,7 +325,7 @@ final class QueueCoordinator {
                 throw CadenzaError.failure("stale_occurrence", "The current song changed.")
             }
             guard current == nil || current?.requestedBy != nil else {
-                throw CadenzaError.failure("forbidden", "Mac-originated playback stays under Host control.")
+                throw CadenzaError.failure("forbidden", "Cadenza Host playback stays under Host control.")
             }
             for native in nativeRows {
                 let owner = try bindings[native.token].flatMap { try store.entry($0)?["requested_by"]?.string }

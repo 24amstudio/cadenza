@@ -55,7 +55,15 @@ jobs:
       - name: Build CI APK
         if: matrix.platform == 'remote'
         working-directory: apps/remote
-        run: bash ./gradlew :app:assembleRelease -Pcadenza.profile=ci --no-daemon
+        env:
+          CADENZA_ANDROID_KEYSTORE_BASE64: ${{ secrets.CADENZA_ANDROID_KEYSTORE_BASE64 }}
+          CADENZA_KEYSTORE_PASSWORD: ${{ secrets.CADENZA_ANDROID_KEYSTORE_PASSWORD }}
+          CADENZA_KEY_ALIAS: ${{ secrets.CADENZA_ANDROID_KEY_ALIAS }}
+          CADENZA_KEY_PASSWORD: ${{ secrets.CADENZA_ANDROID_KEY_PASSWORD }}
+        run: |
+          keystore="$RUNNER_TEMP/cadenza-ci.keystore"
+          printf '%s' "$CADENZA_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          CADENZA_KEYSTORE_PATH="$keystore" bash ./gradlew :app:assembleRelease -Pcadenza.profile=ci --no-daemon
       - name: Build CI app bundle and ZIP
         if: matrix.platform == 'host'
         run: bash apps/host/Scripts/build.sh

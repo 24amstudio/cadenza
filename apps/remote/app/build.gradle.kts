@@ -88,7 +88,6 @@ android {
             if (buildProfile == "ci") {
                 applicationIdSuffix = ".ci"
                 versionNameSuffix = "-ci"
-                signingConfig = signingConfigs.getByName("debug")
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -206,7 +205,7 @@ androidComponents.onVariants { variant ->
 }
 tasks.matching { it.name == "packageRelease" }.configureEach {
     doFirst {
-        check(buildProfile == "ci" || releaseSigningAvailable) {
+        check(releaseSigningAvailable) {
             "Set CADENZA_KEYSTORE_PATH, CADENZA_KEYSTORE_PASSWORD, CADENZA_KEY_ALIAS, and CADENZA_KEY_PASSWORD for a signed release."
         }
     }

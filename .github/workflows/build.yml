@@ -49,7 +49,7 @@ jobs:
         if: matrix.platform == 'remote'
         with:
           distribution: temurin
-          java-version: '17.0.20+1'
+          java-version: '17.0.21+9'
       - if: matrix.platform == 'remote'
         run: bash tools/ci/android-sdk.sh
       - name: Build CI APK

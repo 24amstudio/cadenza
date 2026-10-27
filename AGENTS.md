@@ -76,9 +76,44 @@ Apps embed a version and immutable build ID. Packaged users need no Git checkout
 
 Checking CI runs on pushes across branches and PRs. It intentionally includes compilation/typechecks and existing automated tests per the user's explicit exception to lightweight CI. Build CI accepts only a successful Checking **push on main in the same repository**, checks out its exact SHA and publishes CI APK/native app ZIP artifacts. It uses no Production signing secrets. The ZIP already distributes `.app`; a DMG is not required. CI does not replace local validation or target-device/accessibility tests.
 
-## Guidance to consult selectively
+## Android and Compose guidance to consult selectively
 
-Before relevant platform changes consult [Android agent skills](https://developer.android.com/tools/agents/android-skills), especially adaptive state preservation, lifecycle/performance and permission guidance, and the [Swift agent skills directory](https://github.com/twostraws/swift-agent-skills). Read the exact skill and relevant reference files before adopting guidance. Verify authors, current APIs, licenses, deployment targets and scope. Do not blindly install skills or migrate architecture merely because a skill recommends a framework. The current home uses the documented Material adaptive navigable list-detail scaffold without a wholesale Navigation 3 migration; it remains a native official adaptive component. SwiftUI Pro's applicable data-flow, lifecycle and performance guidance supplements project conventions without raising the existing deployment target.
+Before an Android UI, Compose, media-layout, navigation, or performance change, read the relevant current upstream guidance and the exact skill references that govern the proposed edit:
+
+- [Jetpack Compose performance](https://developer.android.com/develop/ui/compose/performance)
+- [Compose API guidelines](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/compose/docs/compose-api-guidelines.md)
+- [Media discovery and exploration](https://developer.android.com/design/ui/gallery/media/discovery)
+- [Media detail and playback](https://developer.android.com/design/ui/gallery/media/detail)
+- [Android skills repository](https://github.com/android/skills)
+- [Jetpack Compose performance skill](https://github.com/android/skills/tree/main/jetpack-compose/jetpack-compose-performance)
+- [Edge-to-edge skill](https://github.com/android/skills/tree/main/system/edge-to-edge)
+- [Navigation 3 skill](https://github.com/android/skills/tree/main/navigation/navigation-3)
+
+Use only the skill that owns the problem. Read a performance skill's matching `references/*.md` file before reporting or fixing a finding, and follow its scope guards. Verify the upstream author, current API/version, license, deployment target and applicability before adopting a recommendation. Do not install every skill, add a dependency, or migrate architecture solely because a skill exists. The current Remote uses the official Material adaptive navigable list-detail scaffold; keep it unless a requested change explicitly selects Navigation 3. The [Swift agent skills directory](https://github.com/twostraws/swift-agent-skills) remains the reference for Host-specific Swift work.
+
+### Compose API and state rules
+
+- Follow Kotlin conventions and the Compose API guidelines for app code. Unit-returning `@Composable` elements use PascalCase nouns; value-returning composables use normal Kotlin function naming; remembered mutable factories use a `remember` prefix.
+- Element composables accept one `modifier: Modifier = Modifier` as the first optional parameter and pass it to the emitted root node, appending internal modifiers after the caller's chain. Layout APIs use `content` for their primary slot.
+- A composable emits content or returns a value, rather than doing both. Hoist state and events to the caller; use explicit state objects when related policy must stay consistent. Do not use `null` as a sentinel for internally remembered state. Name `CompositionLocal` values descriptively and use a `Local` prefix only when it is useful.
+
+### Compose performance rules
+
+- Profile and benchmark optimized release builds with R8; use app-specific Baseline Profiles for critical journeys such as cold start and scrolling. Debug or Robolectric results do not establish target-device performance.
+- Reason about composition, layout and draw phases. Defer rapidly changing reads with lambda modifiers, avoid backwards writes, use `remember` only for expensive work or required identity with complete keys, and use `computedStateOf` for simple derived checks on Compose 1.13+ (or `derivedStateOf` where its heavier caching is justified).
+- Lazy layouts provide primitive stable `key` and `contentType` values. Do not add `@Stable`, `@Immutable`, or `ImmutableList` to collection-bearing models as a blanket optimization; leave existing annotations alone unless the skill's large lazy-dataset scope applies.
+- Keep side effects out of composable bodies, use lifecycle-aware collection for active Android flows, move blocking I/O and database work to `Dispatchers.IO`, and avoid impression effects inside lazy items. Preserve the project rule that progress animation does not create a timer, SQLite write, or network message for every frame.
+
+### Edge-to-edge and IME rules
+
+- Every Android `Activity` must call `enableEdgeToEdge()` before `setContent`. Activities with text input must declare `android:windowSoftInputMode="adjustResize"` and keep focused fields visible.
+- Choose one inset strategy per hierarchy. Prefer `Scaffold` `PaddingValues` passed to the scrollable content's `contentPadding` and consumed there; otherwise use `safeDrawingPadding`, `windowInsetsPadding`, or `fitInside` at the appropriate child. Never double-apply `imePadding`, and do not put `safeDrawingPadding` on an adaptive scaffold parent when its inner screens need to draw edge-to-edge.
+- Check light/dark system-bar icon legibility, navigation-bar contrast when a bottom bar is present, list first/last item reachability, FAB placement, full-screen dialogs, and keyboard behavior at narrow widths and large text sizes.
+
+### Adaptive media and navigation rules
+
+- Use the media discovery guidance to make meaningful use of expanded windows: richer feeds, supporting content, and related titles may share the space while the primary task remains clear. Use the media detail guidance for contextual detail, browse-while-listening layouts, supporting panes, and list-detail relationships; preserve Cadenza's queue, now-playing and lyric priorities.
+- If a future change explicitly adopts Navigation 3, use type-safe destination keys, a controlled back stack, `NavDisplay`, saveable navigation state, and scene strategies for dialogs, bottom sheets, list-detail, two-pane, supporting-pane, multiple-backstack, deep-link, and conditional flows as applicable. Preserve selection, input, scroll and media state through configuration changes and process recreation. Do not perform a wholesale Navigation 2-to-3 migration as incidental cleanup.
 
 ## Known validation boundaries
 

@@ -120,7 +120,7 @@ apps\remote\build.cmd Release production
 
 The signed APK is `apps/remote/app/build/outputs/apk/release/app-release.apk`. Copy it to `dist/Cadenza-Remote-VERSION.apk` before signing release metadata.
 
-For Host Production packaging use `CADENZA_BUILD_PROFILE=production bash apps/host/Scripts/build.sh`; its canonical release ZIP has no profile suffix. `ci` and `development` archives include the profile in their filename and have updates disabled. Build CI produces a release-optimized `ci` APK with a separate `.ci` installed ID and a disposable debug signer. It never uses Production keys. Plain `Release` defaults to development and does not enable updates merely because it is optimized.
+For Host Production packaging use `CADENZA_BUILD_PROFILE=production bash apps/host/Scripts/build.sh`; its canonical release ZIP has no profile suffix. `ci` and `development` archives include the profile in their filename and have updates disabled. The `Build` workflow uses Production signing and publishes the canonical APK/Host ZIP to GitHub Releases after successful `main` checks. Plain `Release` defaults to development and does not enable updates merely because it is optimized.
 
 The apps embed version, profile and immutable source identity. A clean Git checkout embeds its commit SHA; an uncommitted tree or source archive embeds a SHA-256 over maintained source files. The APK also includes `assets/build-identity.txt`. Release signing checks both artifacts' embedded identities against the current source and requires a Production Host profile. Do not edit source between building the two artifacts and signing their release metadata.
 
@@ -128,7 +128,7 @@ The visible version remains **0.0.1** until the user authorizes a change. Intern
 
 ## GitHub CI
 
-Checking runs on pushes across branches and PRs, with portable strict type/lint/format/contract checks, Android compilation/lint/unit/render checks and native Swift format/compile/tests. The goalset explicitly permits these CI compilation/typecheck steps. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, and uploads CI APK/app ZIP artifacts. It does not publish a stable GitHub Release. It signs the CI APK with the release keystore secrets. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
+Checking runs on pushes across branches and PRs, with portable strict type/lint/format/contract checks, Android compilation/lint/unit/render checks and native Swift format/compile/tests. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, builds Production artifacts with repository Actions secrets, signs the release metadata, and creates or updates the stable GitHub Release. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
 
 CI workflows have not executed until an actual repository is configured and pushed after local gates pass. Runner SDK/toolchain availability remains a CI validation item; it is not proof of successful native compilation here.
 

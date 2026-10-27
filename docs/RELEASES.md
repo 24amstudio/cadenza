@@ -21,6 +21,47 @@ The utility creates a new private key with mode 600 and prints only the public S
 
 Back up the private update key and APK keystore securely before publishing a baseline. Keep them out of commits, app bundles, logs, and release assets.
 
+## Configure automatic Build CI publishing
+
+The `Build` workflow runs after a successful `Checking` push to `main`. It builds both apps with the `production` profile, signs the release metadata, and creates or updates the stable `vVERSION` release. It does not require a manually created tag. Because the visible version remains `0.0.1`, each later published build updates the existing `v0.0.1` assets; increase `VERSION_CODE` for every build that must be accepted as newer by installed apps.
+
+Generate the Android release keystore on a trusted machine with JDK `keytool`; never use the disposable debug keystore:
+
+```bash
+mkdir -p secrets
+keytool -genkeypair -v -keystore secrets/cadenza-release.jks -storetype JKS \
+  -alias cadenza-release -keyalg RSA -keysize 4096 -validity 10000
+base64 -i secrets/cadenza-release.jks | tr -d '\n' > secrets/cadenza-release.jks.base64
+```
+
+On PowerShell, encode it with:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('secrets/cadenza-release.jks')) |
+  Set-Content -NoNewline secrets/cadenza-release.jks.base64
+```
+
+Generate the P-256 update key with the native release utility on macOS:
+
+```bash
+cd apps/host
+swift build -c release --arch arm64 -Xswiftc -warnings-as-errors
+binary_root="$(swift build -c release --arch arm64 --show-bin-path)"
+"$binary_root/CadenzaRelease" keygen ../../secrets/update-private.pem
+```
+
+The command prints the public SPKI key as base64. Put that public value in `shared/release-config.json` together with `24amstudio/cadenza`, then add these repository Actions secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret                              | Value                                                              |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| `CADENZA_ANDROID_KEYSTORE_BASE64`   | Contents of `cadenza-release.jks.base64`                           |
+| `CADENZA_ANDROID_KEYSTORE_PASSWORD` | Keystore password entered for `keytool`                            |
+| `CADENZA_ANDROID_KEY_ALIAS`         | `cadenza-release` (or the alias you chose)                         |
+| `CADENZA_ANDROID_KEY_PASSWORD`      | Private-key password entered for `keytool`                         |
+| `CADENZA_UPDATE_PRIVATE_PEM`        | Complete `update-private.pem`, including its PEM header and footer |
+
+Do not upload a `.env`, keystore, private PEM, or base64 export to the repository. The workflow writes the secrets only to temporary runner files and removes them with the runner. `GITHUB_TOKEN` is provided by Actions; no separate token secret is needed.
+
 ## Configure the apps
 
 Edit `shared/release-config.json`:
@@ -57,15 +98,7 @@ The manifest binds repository, tag, app build, immutable source ID, maintained c
 
 ## Publish after validation
 
-Use a GitHub stable release tagged `vVERSION` and upload all four files. The tag must match the signed manifest. Draft and prerelease builds are excluded from automatic installation.
-
-Creating a draft for review can be done with GitHub CLI after the final checks and the repository choice are complete:
-
-```bash
-gh release create vVERSION --repo OWNER/REPOSITORY --draft --title "Cadenza VERSION" --notes-file release-notes.md dist/Cadenza-Host-VERSION-arm64.zip dist/Cadenza-Remote-VERSION.apk dist/cadenza-release.json dist/cadenza-release.sig
-```
-
-Publishing is a separate action. The implementation scripts do not upload anything automatically.
+After the repository configuration and Actions secrets are present, the `Build` workflow publishes the four signed files to the stable `vVERSION` release automatically. It creates the release on the first successful Production build and replaces its assets on later builds. Draft and prerelease builds are excluded from automatic installation.
 
 ## Verify updates
 
@@ -73,4 +106,4 @@ Test a real upgrade from the previous signed installation on both targets. Exerc
 
 Ad-hoc macOS updates may require privacy-permission reauthorization. Huawei may require an install confirmation. Neither platform is promised permanently silent installation.
 
-Run the complete local gates before publishing. The implementation goalset explicitly authorizes compilation/typechecks and build CI: Checking runs on branches/PRs, and Build follows only successful same-repository `main` push checks for the exact SHA. Its artifacts are CI profiles with automatic updates disabled; the CI APK is signed with the release keystore secrets. Real device, accessibility, security and resource verification remain local acceptance requirements. No DMG is required because the updater distributes a verified ZIP containing the native `.app`.
+Run the complete local gates before publishing. Checking runs on branches/PRs, and Build follows only successful same-repository `main` push checks for the exact SHA. Build uses Production signing secrets and publishes the signed APK, Host ZIP, release manifest, and detached signature. Real device, accessibility, security and resource verification remain local acceptance requirements. No DMG is required because the updater distributes a verified ZIP containing the native `.app`.

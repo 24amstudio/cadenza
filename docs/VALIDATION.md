@@ -32,7 +32,7 @@ The development Host endpoint still is not reachable from this Windows workspace
 
 No target Android device is attached to ADB. APK installation, vendor notification behavior, actual IPv4 discovery/failover, camera scanning, independent multi-Remote latency/lyrics timing and OS package-install confirmation remain unverified. No Android Studio or emulator was installed. Hardware idle/connected/control/disconnected CPU, memory, wakeup, network and battery measurements remain pending; [RESOURCES.md](RESOURCES.md) defines the procedure, with no invented budgets or savings.
 
-Checking and Build CI are configured and locally linted, but have not run on GitHub. There is no configured repository URL, public verification key, stable signing identity or published baseline. Build checks exact successful Checking/main/push/same-repository SHA and produces CI profiles with updates disabled. No source publication or Production secrets are used by these workflows.
+Checking and Build are configured and locally linted, but have not run on GitHub. A Production run requires the repository URL/public verification key in `shared/release-config.json`, the stable Android keystore, and the P-256 update key as repository Actions secrets. Build checks the exact successful Checking/main/push/same-repository SHA, produces Production profiles, signs the release metadata, and publishes or updates the stable `vVERSION` release. No target-device, accessibility, or complete production-release validation has been performed here.
 
 ## Required gates
 

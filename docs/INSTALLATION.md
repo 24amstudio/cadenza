@@ -27,7 +27,7 @@ The Host must be running for Remote control. Music.app itself can continue playi
 
 1. On the Android device, download `Cadenza-Remote-VERSION.apk` from the same GitHub release.
 2. Open the APK in Files or your browser.
-3. Approve installation from that source if HarmonyOS asks.
+3. Approve installation from that source if Android asks.
 4. Open **Cadenza Remote**.
 
 The app uses native Android APIs, Compose, Camera2, and Android Keystore. Core operation has no Google Play services dependency. Camera permission is optional: pairing details can be pasted instead.

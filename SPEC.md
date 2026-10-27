@@ -116,7 +116,7 @@ The successful-control target remains below one second. A deployment cannot be c
 
 ## Lean operation and size
 
-- **S01:** Prefer OS frameworks and small maintained libraries. Host must not bundle a second media player or stream audio to Remotes. Remote must not include a web runtime or translation language packs by default. Keep the initial Host build arm64 for the stated M4 target; broader architectures are outside the initial scope.
+- **S01:** Prefer OS frameworks and small maintained libraries. Host must not bundle a second media player or stream audio to Remotes. Remote must not include a web runtime or translation language packs by default. Keep the initial Host build arm64; broader architectures are outside the initial scope.
 - **S02:** Use pushed state and local interpolation for progress and lyrics. Adapt state observation to active UI needs, batch SQLite writes, avoid persistent polling while disconnected, and stop lyric animations when hidden. No database write or network message is required for every animation frame.
 - **S03:** Measure compressed release size, installed size, idle CPU, memory, active sing-along CPU, and network traffic on the targets. Record a numeric footprint budget after the native feasibility slice and before feature implementation. Every later dependency or unexplained regression must be assessed against that baseline. These measurements have not been made; no smallest-possible-size claim is warranted yet.
 

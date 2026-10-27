@@ -82,8 +82,8 @@ class LibraryRecoveryTest {
 
     @Test
     fun androidDeviceNameDoesNotRequireGoogleOrBluetooth() {
-        Settings.Global.putString(app.contentResolver, Settings.Global.DEVICE_NAME, "My MatePad Mini")
-        assertEquals("My MatePad Mini", deviceName(app))
+        Settings.Global.putString(app.contentResolver, Settings.Global.DEVICE_NAME, "Test Android Device")
+        assertEquals("Test Android Device", deviceName(app))
     }
 
     @Test

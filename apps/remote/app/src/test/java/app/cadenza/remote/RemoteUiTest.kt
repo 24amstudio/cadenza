@@ -604,7 +604,7 @@ class RemoteUiTest {
     private fun snapshot(emptyQueue: Boolean): JSONObject {
         val queue = JSONArray()
         if (!emptyQueue) {
-            queue.put(entry(4, remoteId, "MatePad Mini", "A long requested song title with several words", 210_000, 150_000))
+            queue.put(entry(4, remoteId, "Android Remote", "A long requested song title with several words", 210_000, 150_000))
             queue.put(entry(5, UUID(0, 3).toString(), "Living room", "Second request", 90_000, 360_000))
         }
         return JSONObject()

@@ -178,7 +178,9 @@ final class MusicAccessibility {
         let root = try root()
         let matches = walk(root).filter { element in
             let role = string(element, kAXRoleAttribute)
-            guard [kAXButtonRole, kAXCheckBoxRole].contains(role) else { return false }
+            guard [kAXButtonRole, kAXCheckBoxRole].contains(role),
+                attribute(element, "AXHidden") as? Bool != true
+            else { return false }
             let values = [
                 string(element, kAXDescriptionAttribute),
                 string(element, kAXTitleAttribute),
@@ -189,7 +191,9 @@ final class MusicAccessibility {
                 values.contains { value in value == name || value.contains(name) }
             }
         }
-        guard matches.count == 1, let button = matches.first else {
+        guard
+            let button = matches.first(where: { (attribute($0, kAXValueAttribute) as? Bool) == true }) ?? matches.first
+        else {
             throw CadenzaError.failure(
                 "native_queue_unavailable", "The required Music sidebar button is not accessible.")
         }

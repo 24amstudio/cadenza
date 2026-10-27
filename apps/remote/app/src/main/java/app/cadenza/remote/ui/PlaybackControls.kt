@@ -30,8 +30,9 @@ import org.json.JSONObject
 
 internal fun mayInterruptPlayback(state: RemoteState): Boolean {
     val snapshot = state.snapshot ?: return false
-    val requester = snapshot.current?.requestedBy ?: return false
-    return state.connected && (requester == state.profile?.remoteId || snapshot.allowCrossRemoteEdits)
+    if (!state.connected) return false
+    val requester = snapshot.current?.requestedBy
+    return requester == null || requester == state.profile?.remoteId || snapshot.allowCrossRemoteEdits
 }
 
 @Composable

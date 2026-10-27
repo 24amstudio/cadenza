@@ -40,7 +40,7 @@ class PlaybackControlsTest {
         assertTrue(mayInterruptPlayback(state.copy(snapshot = snapshot.copy(allowCrossRemoteEdits = true))))
         assertTrue(mayInterruptPlayback(state.copy(snapshot = snapshot.copy(current = current.copy(requestedBy = "remote-a")))))
         assertFalse(mayInterruptPlayback(state.copy(connected = false)))
-        val unknownRequester = snapshot.copy(allowCrossRemoteEdits = true, current = current.copy(requestedBy = null))
-        assertFalse(mayInterruptPlayback(state.copy(snapshot = unknownRequester)))
+        val externalPlayback = snapshot.copy(current = current.copy(requestedBy = null))
+        assertTrue(mayInterruptPlayback(state.copy(snapshot = externalPlayback)))
     }
 }

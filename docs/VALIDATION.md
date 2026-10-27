@@ -28,7 +28,7 @@ An earlier Windows external-boundary probe mirrored Catalog.swift's discovery/to
 
 ## External validation still needed
 
-The Mac SSH endpoint `10.10.10.24:22` still times out from this Windows workspace. Swift compilation, strict Swift formatting, native database/protocol/TTML/release/archive tests, MusicKit storefront detection, onboarding/background/menu behavior, Automation/Accessibility/Local Network grants, actual Music queue/cache/translation, AutoMix/quality and the ad-hoc updater have not run. The source and packaging scripts are prepared; a reachable Mac remains necessary. The complete root gate correctly refuses to pass on Windows.
+The Mac SSH endpoint `10.10.10.24:22` still times out from this Windows workspace. Swift compilation, strict Swift formatting, native database/protocol/TTML/release/archive tests, MusicKit storefront detection, onboarding/background/menu behavior, Automation/Accessibility/Local Network grants, actual Music queue/cache/translation, AutoMix/quality and the ad-hoc updater have not run. The source and packaging scripts are prepared; a reachable Mac remains necessary. The platform-aware root gate can validate Windows portable and Remote checks while reporting Host as deferred; CI still requires the separate Host job.
 
 No MatePad is attached to ADB. APK installation, Huawei permission/notification behavior, actual IPv4 discovery/failover, camera scanning, independent multi-Remote latency/lyrics timing and OS package-install confirmation remain unverified. No Android Studio or emulator was installed. Hardware idle/connected/control/disconnected CPU, memory, wakeup, network and battery measurements remain pending; [RESOURCES.md](RESOURCES.md) defines the procedure, with no invented budgets or savings.
 

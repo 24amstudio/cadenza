@@ -44,7 +44,7 @@ node tools/check.mjs
 
 The portable command runs strict TypeScript analysis of maintained JavaScript/JXA, Oxlint with warnings denied and the generic anti-slop rules, formatting, physical file caps, shell syntax, PowerShell static parsing on Windows, and real SQL/JXA/protocol behavior tests.
 
-The complete command also requires Mac Swift format/compile/tests and Android Kotlin compile, ktlint, lint, and unit tests. It fails when those tools or environments are unavailable. `.githooks/pre-commit` and `pre-push` call this complete gate. The portable command is useful during the deferred native stage and cannot substitute for the commit gate.
+The complete command adds the native checks available on the current platform. macOS runs Swift Host checks and Android Remote checks; Windows and Linux run the Remote checks and report Host as deferred. It fails when the native toolchain for the current platform is unavailable. `.githooks/pre-commit` and `pre-push` call this platform-aware gate. CI runs the separate Host and Remote jobs, so a deferred local platform never becomes a reported pass.
 
 Run dependency and scoped secret scans locally. Device, integration, security, accessibility, performance, and update-installation evidence is tracked in [VALIDATION.md](VALIDATION.md). The user's implementation goalset explicitly authorizes compilation/typechecks, existing tests and build CI in addition to lint/formatting. Checking and Build workflows implement that exception. Local commit/push gates remain mandatory.
 

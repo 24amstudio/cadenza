@@ -50,7 +50,7 @@ With the already available development dependencies, run from the repository roo
 node tools/check.mjs --portable
 ```
 
-Portable checks include strict development-script analysis, lint with warnings treated as failures, formatting, line limits, shell syntax, and protocol/SQLite/JXA behavior tests. The complete `node tools/check.mjs` gate additionally requires native compilation, lint, formatting, and tests on a Mac with the Android command-line toolchain. Commit and push hooks use the complete gate. Missing native tools do not count as a pass.
+Portable checks include strict development-script analysis, lint with warnings treated as failures, formatting, line limits, shell syntax, and protocol/SQLite/JXA behavior tests. The complete `node tools/check.mjs` gate adds the native checks available on the current platform: macOS runs Host and Remote checks, while Windows and Linux run Remote checks and report Host as deferred. Commit and push hooks use this platform-aware gate; CI still runs both native suites. Missing checks remain explicitly unverified.
 
 The next platform check, after source review, is the [Mac Music probe](apps/host/README.md#read-only-mac-probe). It uses built-in macOS tools and installs nothing. Native queue control, catalog playback, cache access, update installation, and actual UI screenshots still require target-device evidence.
 

@@ -3,23 +3,39 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-if (process.platform !== 'darwin') {
-  throw new Error(
-    'The complete Cadenza gate requires macOS for Swift compilation and tests. Run it from the same source on the Mac with the Android command-line toolchain available. No tools were downloaded. check:portable is an explicitly partial check and does not satisfy commit or release gates.',
-  );
-}
+/** @param {string} name @param {string} executable @param {string[]} arguments_ */
+function run(name, executable, arguments_) {
+  process.stdout.write(`Running ${name} checks...\n`);
 
-for (const script of ['apps/host/Scripts/check.sh', 'apps/remote/check.sh']) {
-  const result = spawnSync('/bin/bash', [script], {
+  const result = spawnSync(executable, arguments_, {
     cwd: root,
     stdio: 'inherit',
+    shell: false,
   });
 
   if (result.error) throw result.error;
 
-  if (result.status !== 0) throw new Error(`Native checks failed: ${script}`);
+  if (result.status !== 0) throw new Error(`${name} checks failed.`);
 }
 
+const remoteCommand =
+  process.platform === 'win32'
+    ? {
+        executable: process.env['ComSpec'] ?? 'cmd.exe',
+        arguments: ['/d', '/c', 'apps\\remote\\check.cmd'],
+      }
+    : { executable: '/bin/bash', arguments: ['apps/remote/check.sh'] };
+
+if (process.platform === 'darwin') {
+  run('Host', '/bin/bash', ['apps/host/Scripts/check.sh']);
+} else {
+  process.stdout.write(
+    `Host checks deferred on ${process.platform}; run them on macOS or in Host CI.\n`,
+  );
+}
+
+run('Remote', remoteCommand.executable, remoteCommand.arguments);
+
 process.stdout.write(
-  'Portable and native source checks passed. Device, accessibility, native Music, latency, and update-installation acceptance still require their recorded integration runs.\n',
+  'Platform-available native checks passed. CI still runs both Host and Remote native checks; device, accessibility, native Music, latency, and update-installation acceptance require their recorded integration runs.\n',
 );

@@ -55,8 +55,14 @@ fun PlayingScreen(
             onLyricsFocusRestored()
         }
     }
+    val contentModifier =
+        if (wide) {
+            Modifier.fillMaxSize().padding(24.dp)
+        } else {
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)
+        }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        contentModifier,
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         ScreenHeader("Now playing", state)
@@ -70,7 +76,7 @@ fun PlayingScreen(
         val current = state.snapshot?.current
         if (current == null) {
             Text("Nothing is playing", style = MaterialTheme.typography.headlineSmall)
-            Text("Search for a song and add it to Music’s queue.")
+            Text("Search for a song and add it to Cadenza Host queue.")
             return@Column
         }
         if (wide) {
@@ -129,23 +135,27 @@ private fun PlayerDetails(
                 "lossless" -> "Lossless"
                 "hi_res_lossless" -> "Hi-Res Lossless"
                 "dolby_atmos" -> "Dolby Atmos"
-                else -> "Quality unavailable"
+                "unknown" -> "Quality waiting for Cadenza Host"
+                else -> "Quality not reported by Cadenza Host"
             },
             style = MaterialTheme.typography.bodyMedium,
         )
         if (mixing == true && snapshot.incoming != null) {
             Text("AutoMix → " + snapshot.incoming.title, style = MaterialTheme.typography.titleMedium)
         } else if (mixing == true) {
-            Text("AutoMix transition · Incoming song unavailable", style = MaterialTheme.typography.bodyMedium)
+            Text("AutoMix transition �· Incoming song not reported", style = MaterialTheme.typography.bodyMedium)
         } else if (mixing == null) {
             Text(
-                "AutoMix status unavailable",
+                if (observationsCurrent) "AutoMix not reported by Cadenza Host" else "AutoMix status waiting for Cadenza Host",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         PlaybackTimeline(model, state, currentPosition)
-        PlaybackTransport(model, state)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            PlaybackTransport(model, state, Modifier.weight(1f))
+            FavoriteIconButton(model, state, current.song)
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Music volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
             Box(Modifier.size(24.dp)) {
@@ -167,7 +177,6 @@ private fun PlayerDetails(
             },
             enabled = state.connected && "playback.volume" !in state.pending,
         )
-        FavoriteButton(model, state, current.song)
         ActionButton(if (state.monitoringSong) "Unpin song status" else "Pin song status", enabled = state.connected) {
             if (state.monitoringSong) model.endSessionStatus() else model.monitorSong()
         }

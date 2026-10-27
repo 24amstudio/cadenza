@@ -32,7 +32,10 @@ class MainActivity : ComponentActivity() {
                 model.installing(false)
             }
         }
-    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val notifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            SessionNotification(application).update(SessionStatus.from(model.state.value))
+        }
     private val localNetwork =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -67,7 +70,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (Build.VERSION.SDK_INT < 37) requestNotifications()
     }
 
     private fun requestNotifications() {
@@ -112,6 +114,7 @@ class MainActivity : ComponentActivity() {
             localNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
         } else {
             model.setForeground(true)
+            requestNotifications()
         }
     }
 

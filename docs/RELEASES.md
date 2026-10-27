@@ -8,7 +8,7 @@ Keep the Android APK signing identity stable. A new unrelated key cannot update 
 
 Cadenza also signs release metadata with a P-256 key. This authenticates both the Host archive and APK independently of GitHub checksums. It does not require paid Apple Developer membership.
 
-On the Mac, build the release utility:
+On macOS, build the release utility:
 
 ```bash
 cd apps/host

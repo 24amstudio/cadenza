@@ -4,7 +4,7 @@ Read the global `C:/Users/aftah/.codex/SPEC.md` applicability and relevant secti
 
 ## Product and architecture
 
-Cadenza Remote is a native Kotlin/Jetpack Compose Material 3 Expressive Android controller. Cadenza Host is a native Swift 6.2+/SwiftUI/AppKit Mac companion. The existing Music.app plays all audio. No Android audio player, cloud relay, Google Play services, paid Apple Developer account, or web runtime is required.
+Cadenza Remote is a native Kotlin/Jetpack Compose Material 3 Expressive Android controller. Cadenza Host is a native Swift 6.2+/SwiftUI/AppKit macOS companion. The existing Music.app plays all audio. No Android audio player, cloud relay, Google Play services, paid Apple Developer account, or web runtime is required.
 
 One Host accepts multiple paired Remotes over certificate-pinned local TLS WebSockets. Bonjour/Android NSD discovers IPv4 addresses. A one-use, five-minute pairing invitation carries a public certificate and random pairing secret. It never carries a private key. Each Remote authenticates independently. Host owns queue revisions, native row bindings, authorization and command receipts. Remotes interpolate progress from a sampled monotonic timeline and share the Host's timed lyric document and English translation revision.
 
@@ -29,11 +29,11 @@ Host protects other Remotes' pending and current requests when cross-Remote edit
 
 ## Compatibility and naming
 
-Use Cadenza, Cadenza Host and Cadenza Remote in new source, UI and artifacts. Do not globally replace compatibility literals. Android's installed ID remains `app.cadence.remote` (`.debug` for development and `.ci` for CI); Kotlin namespace is `app.cadenza.remote`. Host bundle ID and Keychain service remain `app.cadence.host`; its existing Application Support directory remains `Cadence Host`. Both SQLite filenames remain `cadence.sqlite`. The vault alias derives from the installed package name. Bonjour `_cadence._tcp` and schema URNs `urn:cadence:*` remain stable wire identities. Preserve app signing keys and increasing version codes. Ad-hoc Mac signatures can require privacy approval again.
+Use Cadenza, Cadenza Host and Cadenza Remote in new source, UI and artifacts. Do not globally replace compatibility literals. Android's installed ID remains `app.cadence.remote` (`.debug` for development and `.ci` for CI); Kotlin namespace is `app.cadenza.remote`. Host bundle ID and Keychain service remain `app.cadence.host`; its existing Application Support directory remains `Cadence Host`. Both SQLite filenames remain `cadence.sqlite`. The vault alias derives from the installed package name. Bonjour `_cadence._tcp` and schema URNs `urn:cadence:*` remain stable wire identities. Preserve app signing keys and increasing version codes. Ad-hoc macOS signatures can require privacy approval again.
 
 ## Native implementation conventions
 
-- Prefer OS APIs and existing small dependencies. Keep audio, translation models and Apple account access on the Mac. Catalog search currently uses Apple's public web client token and is an undocumented, potentially changeable integration.
+- Prefer OS APIs and existing small dependencies. Keep audio, translation models and Apple account access on Cadenza Host. Catalog search currently uses Apple's public web client token and is an undocumented, potentially changeable integration.
 - Host UI/state is `@MainActor`; use actors/async boundaries for network and other independent work. Do not block the main actor with a long subprocess. Keep native readback and authorization immediately before external effects.
 - Remote uses `StateFlow`, lifecycle-aware UI collection and ViewModel coroutines. Move blocking SQLite, file and network operations to IO. Persist preferences/favorites before publishing success. Use saveable navigation, input, selection and scroll state; never suppress Activity recreation to hide state loss.
 - Keep migrations additive when practical. Never fall back to deleting/recreating a damaged database. A disposable malformed snapshot may be ignored; a damaged Favorite is skipped and reported while its original row is preserved. Credentials/analytics/Favorites must survive maintenance and updates.
@@ -82,4 +82,4 @@ Before relevant platform changes consult [Android agent skills](https://develope
 
 ## Known validation boundaries
 
-Read the current validation record before reporting completion. Mac compilation, real Music queue/cache/translation adapters, ad-hoc update installation, actual MatePad notification behavior, independent multi-Remote latency/lyric sync, VoiceOver/TalkBack and hardware resource measurements need target evidence. Catalog/AX/cache adapters are conditional integrations, not documented Apple session-control APIs. No repository URL, release key, signing identity or published baseline may be invented. No subagents are requested for this implementation: continue solo unless the user changes that instruction.
+Read the current validation record before reporting completion. macOS compilation, real Music queue/cache/translation adapters, ad-hoc update installation, target-device notification behavior, independent multi-Remote latency/lyric sync, VoiceOver/TalkBack and hardware resource measurements need target evidence. Catalog/AX/cache adapters are conditional integrations, not documented Apple session-control APIs. No repository URL, release key, signing identity or published baseline may be invented. No subagents are requested for this implementation: continue solo unless the user changes that instruction.

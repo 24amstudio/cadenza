@@ -2,19 +2,19 @@
 
 ## Home, Favorites and preferences
 
-The Playing destination is the adaptive home. On a wide tablet, the queue/Favorites list and selected song details appear together. On a narrow window, **Queue and Favorites** opens the list; selecting an item opens its detail pane. Back navigation and switching destinations retain the selection and entered search state.
+The Playing destination is the adaptive home. On an expanded window, the queue/Favorites list and selected song details appear together. On a compact window, **Queue and Favorites** opens the list; selecting an item opens its detail pane. Back navigation and switching destinations retain the selection and entered search state.
 
 Choose **Save to Favorites** from Search song details or Now playing. **Favorites** belongs to this Remote's private SQLite library, with no Host synchronization. Select a saved song, prepare it in Music, then choose **Play now**, **Add to queue**, or **Play next**. Playback actions require a connected Host and verified native queue; Play next requires a capable Host. Unavailable tracks show an actionable failure without removing the Favorite. Local save/remove works offline. Current-song protection still applies to Play now.
 
 Settings lets you edit the default Android device name and choose **Follow system**, **Light**, or **Dark**, then **Save preferences**. A name change reconnects to send the new name to a capable Host. The preferences persist after app restarts.
 
-An active control action starts an ongoing session notification if notifications are allowed. **Pin song status** explicitly requests monitoring of the current song. Eligible Android versions may promote it to a Live Update/status chip; HarmonyOS 4.3 uses the standard notification fallback. The OS and channel settings control visibility and promotion. **Unpin** or leaving the foreground control session ends it. No notification plays audio on the tablet.
+An active control action starts an ongoing session notification if notifications are allowed. **Pin song status** explicitly requests monitoring of the current song. Eligible Android versions may promote it to a Live Update/status chip; devices that do not support promotion use the standard notification fallback. The OS and channel settings control visibility and promotion. **Unpin** or ending the monitoring session stops it. No notification plays audio on the Remote.
 
 ## Search and request a song
 
-On Remote, open Search and choose Apple Music or Mac library. Enter a query and choose Search.
+On Remote, open Search and choose Apple Music or Host library. Enter a query and choose Search.
 
-Select a result to prepare its exact song in Music on the Mac. Once preparation finishes:
+Select a result to prepare its exact song in Music on the Host. Once preparation finishes:
 
 - **Add to queue** appends a distinct request.
 - **Play now** starts it immediately when request protection and queue order allow.
@@ -23,7 +23,7 @@ Two requests for the same song remain separate queue occurrences. Retries use th
 
 Catalog search needs internet access and uses an isolated, undocumented public web-token integration. If Apple changes it, library search and local controls remain independent. Cadenza does not replace failed catalog search with incomplete store results.
 
-Your search text and Apple Music/Mac library selection remain when you visit another screen and return.
+Your search text and Apple Music/Host library selection remain when you visit another screen and return.
 
 ## Control playback
 
@@ -31,7 +31,7 @@ Playing shows the foreground song, requester, progress, available playback-quali
 
 Pause/resume and volume are shared. Skip, previous, seek, stop, and replacement of a protected request require ownership or Host permission. A lock explains why interruption controls are unavailable.
 
-Audio always comes from Music.app on the Mac. Remote includes no Android playback engine.
+Audio always comes from Music.app on the Host. Remote includes no Android playback engine.
 
 Buttons show pending state immediately. After one second, a request that lacks confirmation is shown as **unconfirmed**, rather than being called successful or canceled. Choose **Check status** to query its original outcome. This status request cannot replay the mutation.
 
@@ -49,7 +49,7 @@ When paused, the queue remains visible with paused status. External changes in M
 
 Open **Playing**, then select **Lyrics** on A and B. Both receive the same lyric document, occurrence, translation revision, and Host timeline. Select **Lyrics** again or use Android Back to return to the player.
 
-Each tablet renders highlighting locally. Pause, seek, replay, and song changes use the authoritative occurrence and position. Reconnecting midway requests the current document again. Stale synchronization is marked explicitly.
+Each Remote renders highlighting locally. Pause, seek, replay, and song changes use the authoritative occurrence and position. Reconnecting midway requests the current document again. Stale synchronization is marked explicitly.
 
 Scroll lyrics manually to stop automatic following. Select **Follow current line** to resume it. Playback controls remain available in Lyrics mode, subject to the Host's request protections.
 
@@ -87,7 +87,7 @@ Settings shows the version, build profile and immutable Git/source identity. **C
 
 On Host, open Settings → Reconcile native queue.
 
-Match each native row to the saved request it represents. Leave genuine Mac-originated items unassigned. A saved request cannot be assigned twice or assigned to a different song.
+Match each native row to the saved request it represents. Leave genuine Host-originated items unassigned. A saved request cannot be assigned twice or assigned to a different song.
 
 If a saved request is no longer present, explicitly select the option to cancel missing saved requests. Cadenza does not silently invent ownership after an ambiguous native change or restart.
 

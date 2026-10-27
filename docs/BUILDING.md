@@ -4,7 +4,7 @@ Android debug/release source checks and debug APK packaging pass on Windows. Hos
 
 ## Toolchain requirements
 
-Host needs an Apple silicon Mac, macOS 26+, Swift 6.2+, and the macOS SDK supplied by compatible Apple command-line tools or Xcode. No paid Apple Developer membership is required.
+Host needs a supported Apple silicon Mac, macOS 26+, Swift 6.2+, and the macOS SDK supplied by compatible Apple command-line tools or Xcode. No paid Apple Developer membership is required.
 
 Remote needs JDK 17, Android SDK platform `android-37.0`, build-tools 36.0.0, and Gradle 9.8.2 with Android Gradle Plugin 9.5.0-rc01. The checked-in wrapper pins and verifies Gradle's distribution. `compileSdk` and `targetSdk` are 37; the installation floor remains Android 8 / API 26. Android Studio and an emulator are not required.
 
@@ -49,9 +49,9 @@ That command downloads the selected SDK components and asks you to accept their 
 
 ## Build and check Host
 
-Source transfer archives are listed in [VALIDATION.md](VALIDATION.md) when available. They must include both apps, shared SQL/version/changelog files and the Gradle wrapper, and exclude toolchains, caches, build output, Git metadata and signing material. Extract an archive into a new, empty Mac directory. Without Git history the build tool uses a source SHA-256 identity. Node 22+ is needed for build identification and development checks; it is not shipped with the app.
+Source transfer archives are listed in [VALIDATION.md](VALIDATION.md) when available. They must include both apps, shared SQL/version/changelog files and the Gradle wrapper, and exclude toolchains, caches, build output, Git metadata and signing material. Extract an archive into a new, empty macOS directory. Without Git history the build tool uses a source SHA-256 identity. Node 22+ is needed for build identification and development checks; it is not shipped with the app.
 
-On the Mac, from the monorepo root:
+On macOS, from the monorepo root:
 
 ```bash
 bash apps/host/Scripts/check.sh

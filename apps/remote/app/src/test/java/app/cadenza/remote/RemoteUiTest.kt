@@ -244,7 +244,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithContentDescription("Back to player").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Resume on Mac").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resume in Cadenza Host").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("Queue").assertCountEquals(0)
         capture("integrated-lyrics-phone")
         compose.onNodeWithText("Lyrics").performClick()
@@ -275,7 +275,7 @@ class RemoteUiTest {
         compose.onNodeWithContentDescription("Back to player").assertIsDisplayed()
         compose.onNodeWithText("Requested by Living room").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Resume on Mac").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resume in Cadenza Host").assertIsDisplayed()
         capture("integrated-lyrics-large-text")
     }
 
@@ -303,7 +303,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Play next").assertIsNotEnabled()
         compose.onNodeWithText("Play now").assertIsNotEnabled()
         capture("favorites-tablet")
-        compose.onNodeWithText("Remove from Favorites").performClick()
+        compose.onNodeWithContentDescription("Remove from Favorites").performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("This song is no longer in the queue or Favorites.").fetchSemanticsNodes().size == 1
         }
@@ -328,10 +328,10 @@ class RemoteUiTest {
         compose.onNodeWithText("Queue and Favorites").performClick()
         compose.onNodeWithText("Favorites · 1").performClick()
         compose.onNodeWithText("Offline favorite").performClick()
-        compose.onNodeWithText("Remove from Favorites").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove from Favorites").assertIsDisplayed()
         navigate("Settings")
         navigate("Playing")
-        compose.onNodeWithText("Remove from Favorites").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove from Favorites").assertIsDisplayed()
         capture("favorites-phone")
     }
 
@@ -393,10 +393,10 @@ class RemoteUiTest {
                 .put("incoming", song("Cached incoming song", 180_000)),
         )
         openApp()
-        compose.onNodeWithText("Quality unavailable").assertIsDisplayed()
-        compose.onNodeWithText("AutoMix status unavailable").assertIsDisplayed()
+        compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
+        compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("Lossless").assertDoesNotExist()
-        compose.onNodeWithText("AutoMix → Cached incoming song").assertDoesNotExist()
+        compose.onNodeWithText("AutoMix â†’ Cached incoming song").assertDoesNotExist()
     }
 
     @Test
@@ -465,7 +465,7 @@ class RemoteUiTest {
                 UUID(0, 20).toString(),
                 "machine",
                 listOf(
-                    LyricLine("first", "La nuit s’éveille", 0, 25_000, "The night awakens"),
+                    LyricLine("first", "La nuit sâ€™Ã©veille", 0, 25_000, "The night awakens"),
                     LyricLine("second", "Je chante avec toi", 30_000, 35_000, "I sing with you"),
                 ),
                 null,

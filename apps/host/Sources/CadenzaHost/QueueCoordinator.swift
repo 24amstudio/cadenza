@@ -192,6 +192,7 @@ final class QueueCoordinator {
             guard let id = entry["entry_id"]?.string else { return true }
             return !observed.contains { bindings[$0.token] == id }
         }
+        let externalRows = observed.contains { bindings[$0.token] == nil }
         if observed.map(\.token) != nativeRows.map(\.token) {
             try store.reorder(observed.compactMap { bindings[$0.token] })
             try store.bump()
@@ -200,6 +201,11 @@ final class QueueCoordinator {
         if case .failure(let error) = nativeRead {
             synchronized = false
             issue = error.localizedDescription
+        } else if externalRows {
+            synchronized = false
+            issue =
+                "Music's Playing Next queue changed outside Cadenza Host. "
+                + "Review the queue before requesting another action."
         } else {
             synchronized = !unresolved
             issue = unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil

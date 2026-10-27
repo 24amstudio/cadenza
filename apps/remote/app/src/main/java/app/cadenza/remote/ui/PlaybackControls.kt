@@ -111,7 +111,7 @@ internal fun PlaybackTransport(
             } else {
                 Icon(
                     cadenzaVector(if (snapshot.playing) CadenzaIcon.PAUSE else CadenzaIcon.PLAY),
-                    if (snapshot.playing) "Pause on Mac" else "Resume on Mac",
+                    if (snapshot.playing) "Pause in Cadenza Host" else "Resume in Cadenza Host",
                     Modifier.size(if (compact) 28.dp else 36.dp),
                 )
             }

@@ -178,8 +178,16 @@ final class MusicAccessibility {
         let root = try root()
         let matches = walk(root).filter { element in
             let role = string(element, kAXRoleAttribute)
-            return [kAXButtonRole, kAXCheckBoxRole].contains(role)
-                && names.contains(string(element, kAXDescriptionAttribute).lowercased())
+            guard [kAXButtonRole, kAXCheckBoxRole].contains(role) else { return false }
+            let values = [
+                string(element, kAXDescriptionAttribute),
+                string(element, kAXTitleAttribute),
+                string(element, kAXIdentifierAttribute),
+                label(element),
+            ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            return names.contains { name in
+                values.contains { value in value == name || value.contains(name) }
+            }
         }
         guard matches.count == 1, let button = matches.first else {
             throw CadenzaError.failure(

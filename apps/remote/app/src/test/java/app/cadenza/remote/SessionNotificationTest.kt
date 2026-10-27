@@ -17,7 +17,7 @@ class SessionNotificationTest {
     fun olderAndroidGetsAnOngoingSessionAndEndingItRemovesTheNotification() {
         val app = ApplicationProvider.getApplicationContext<CadenzaApplication>()
         val manager = app.getSystemService(NotificationManager::class.java)
-        val status = SessionStatus(true, true, "Synthetic Mac", "Test song", "Artist", true, true)
+        val status = SessionStatus(true, true, "Synthetic Cadenza Host", "Test song", "Artist", true, true)
         val notifications = SessionNotification(app)
         notifications.update(status)
         val notification = manager.activeNotifications.single { it.id == SessionNotification.ID }.notification
@@ -27,15 +27,34 @@ class SessionNotificationTest {
             notification.extras
                 .getString(Notification.EXTRA_TEXT)
                 .orEmpty()
-                .contains("Synthetic Mac"),
+                .contains("Synthetic Cadenza Host"),
         )
         notifications.update(status.copy(connected = false))
         assertEquals(
-            "Reconnecting to Synthetic Mac",
+            "Reconnecting to Synthetic Cadenza Host",
             manager.activeNotifications
                 .single()
                 .notification.extras
                 .getString(Notification.EXTRA_TEXT),
+        )
+        assertEquals(
+            "Unpin",
+            manager.activeNotifications
+                .single()
+                .notification
+                .actions
+                .single()
+                .title,
+        )
+        notifications.update(status.copy(playing = false))
+        assertEquals(
+            "Unpin",
+            manager.activeNotifications
+                .single()
+                .notification
+                .actions
+                .single()
+                .title,
         )
         notifications.update(status.copy(active = false))
         assertTrue(manager.activeNotifications.isEmpty())

@@ -1,6 +1,7 @@
 package app.cadenza.remote.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -39,10 +40,16 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
@@ -57,6 +64,42 @@ internal fun activeLyricIndex(
 ): Int {
     if (!synchronized || occurrence == null || document?.occurrenceId != occurrence) return -1
     return document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs && positionMs < it.endMs }
+}
+
+private fun activeWordIndex(
+    line: app.cadenza.remote.data.LyricLine,
+    positionMs: Long,
+): Int = line.words.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs && positionMs < it.endMs }
+
+@Composable
+private fun LyricText(
+    line: app.cadenza.remote.data.LyricLine,
+    currentPosition: Long,
+    activeLine: Boolean,
+) {
+    val activeWord = if (activeLine) activeWordIndex(line, currentPosition) else -1
+    val text: AnnotatedString =
+        if (line.words.isEmpty()) {
+            AnnotatedString(line.text)
+        } else {
+            buildAnnotatedString {
+                line.words.forEachIndexed { index, word ->
+                    if (index > 0) append(" ")
+                    withStyle(
+                        SpanStyle(
+                            color = if (index == activeWord) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
+                        ),
+                    ) { append(word.text) }
+                }
+            }
+        }
+    Text(
+        text,
+        style = MaterialTheme.typography.headlineMedium,
+        fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
+        color = if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+    )
 }
 
 @Composable
@@ -200,7 +243,7 @@ private fun LyricsContent(
                         state.lyricsIssue ?: document?.issue ?: if (occurrence == null) {
                             "Play a song to see its lyrics."
                         } else {
-                            "Lyrics are unavailable. Open Music’s lyrics pane on the Mac and retry."
+                            "Lyrics are unavailable. Open the lyrics pane in Cadenza Host and retry."
                         },
                     )
                     ActionButton("Retry lyrics", pending = state.lyricsLoading, enabled = state.connected && occurrence != null) {
@@ -225,18 +268,32 @@ private fun LyricsContent(
                         verticalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
                         itemsIndexed(document.lines, key = { _, line -> line.id }) { index, line ->
+                            val canSeek =
+                                state.connected && !stale && mayInterruptPlayback(state) &&
+                                    line.endMs > line.startMs && "playback.seek" !in state.pending
                             Column(
-                                Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics(mergeDescendants = true) {
-                                    selected = index == active
-                                },
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable(
+                                        enabled = canSeek,
+                                        role = Role.Button,
+                                    ) {
+                                        model.command(
+                                            org.json
+                                                .JSONObject()
+                                                .put("kind", "playback.seek")
+                                                .put("occurrence_id", occurrence)
+                                                .put("position_ms", line.startMs),
+                                            "playback.seek",
+                                        )
+                                    }.padding(vertical = 6.dp)
+                                    .semantics(mergeDescendants = true) {
+                                        selected = index == active
+                                        if (canSeek) contentDescription = "Seek to ${line.text}"
+                                    },
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(
-                                    line.text,
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = if (index == active) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (index == active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                )
+                                LyricText(line, currentPosition, index == active)
                                 line.translation?.let {
                                     Text(
                                         it,

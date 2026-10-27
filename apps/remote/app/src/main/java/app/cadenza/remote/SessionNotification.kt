@@ -70,7 +70,7 @@ class SessionNotification(
             when {
                 !status.connected -> "Reconnecting to " + status.host
                 status.title.isEmpty() -> "Connected to " + status.host
-                else -> (if (status.playing) "Playing" else "Paused") + " on " + status.host + " · " + status.artist
+                else -> (if (status.playing) "Playing" else "Paused") + " on " + status.host + " �· " + status.artist
             }
         val builder =
             NotificationCompat
@@ -84,12 +84,7 @@ class SessionNotification(
                 .setSilent(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
-        // An explicitly pinned, currently playing song is monitoring; a generic connection is not a Live Update.
-        if (Build.VERSION.SDK_INT >= 36 && status.monitoring && status.connected && status.playing &&
-            manager.canPostPromotedNotifications()
-        ) {
-            builder.setRequestPromotedOngoing(true)
-            builder.setShortCriticalText("Music")
+        if (status.monitoring) {
             val unpin =
                 PendingIntent.getBroadcast(
                     context,
@@ -98,6 +93,13 @@ class SessionNotification(
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 )
             builder.addAction(0, "Unpin", unpin)
+        }
+        // An explicitly pinned, currently playing song is monitoring; a generic connection is not a Live Update.
+        if (Build.VERSION.SDK_INT >= 36 && status.monitoring && status.connected && status.playing &&
+            manager.canPostPromotedNotifications()
+        ) {
+            builder.setRequestPromotedOngoing(true)
+            builder.setShortCriticalText("Music")
         }
         val notification: Notification = builder.build()
         manager.notify(ID, notification)

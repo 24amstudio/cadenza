@@ -87,6 +87,13 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
     private var translationTarget: String?
     private var translationText = ""
     private var translations: [String: String] = [:]
+    private struct WordCapture {
+        var depth: Int
+        var startMs: Int64
+        var endMs: Int64
+        var text: String
+    }
+    private var wordCaptures: [WordCapture] = []
     private var metadataDepth = 0
     private var paragraph: LyricLine?
     private var paragraphDepth = 0
@@ -183,12 +190,24 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
             )
             paragraphDepth = depth
         }
+        if name == "span", paragraph != nil,
+            let start = Self.milliseconds(attributes["begin"]),
+            let end = Self.milliseconds(attributes["end"]), end >= start
+        {
+            guard wordCaptures.count < 1_000 else {
+                failure = "A lyric line contains too many timed words."
+                parser.abortParsing()
+                return
+            }
+            wordCaptures.append(WordCapture(depth: depth, startMs: start, endMs: end, text: ""))
+        }
         if name == "br", paragraph != nil { paragraph?.text += "\n" }
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         if translationTarget != nil { translationText += string }
         if paragraph != nil { paragraph?.text += string }
+        if !wordCaptures.isEmpty { wordCaptures[wordCaptures.count - 1].text += string }
         if (paragraph?.text.utf8.count ?? 0) > 20_000 || translationText.utf8.count > 20_000 {
             failure = "A lyric line is too large."
             parser.abortParsing()
@@ -199,6 +218,13 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?
     ) {
         let name = elementName.split(separator: ":").last.map(String.init) ?? elementName
+        if name == "span", let capture = wordCaptures.last, capture.depth == depth {
+            wordCaptures.removeLast()
+            let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                paragraph?.words.append(LyricWord(text: text, startMs: capture.startMs, endMs: capture.endMs))
+            }
+        }
         if name == "p", paragraphDepth == depth, var line = paragraph {
             line.text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !line.text.isEmpty { lines.append(line) }

@@ -2,13 +2,13 @@
 
 ## First run
 
-Host opens a sequential setup window. Choose **Get started**, then **Detect Apple Music storefront**. The supported MusicKit lookup uses the signed-in music account and can ask for Apple Music access. If authorization, account information or entitlement support is unavailable in the no-fee build, or detection times out, choose your subscription's country/region manually. Cadenza does not treat the Mac locale or App Store region as proof of an Apple Music storefront.
+Host opens a sequential setup window. Choose **Get started**, then **Detect Apple Music storefront**. The supported MusicKit lookup uses the signed-in music account and can ask for Apple Music access. If authorization, account information or entitlement support is unavailable in the no-fee build, or detection times out, choose your subscription's country/region manually. Cadenza does not treat the Host computer's locale or App Store region as proof of an Apple Music storefront.
 
 Continue to the permission explanation, approve and verify Music Automation and Accessibility, then continue to pairing. Local Network permission can appear as the listener starts. Scan the invitation in Remote and keep it connected; **Finish setup** is enabled only after Host sees an authenticated connection. Setup completion persists and the window closes while Host keeps running.
 
 Reopen **Cadenza Host** from Spotlight or choose **Settings…** from its menu-bar menu to configure it. Closing Settings leaves Host running. **Show menu bar icon** can hide the icon; Spotlight still opens Settings and its **Quit Cadenza Host** action. **Run setup again** provides setup recovery. Permissions revoked later must be reapproved in macOS Settings.
 
-## Prepare Music on the Mac
+## Prepare Music on the Host
 
 Open Cadenza Host → Settings.
 
@@ -26,7 +26,7 @@ In Settings → Network:
 - **Host name** is shown to Remotes and must fit Bonjour's 63-byte service-name limit.
 - **Port** defaults to `43127`.
 - **Catalog storefront** is the two-letter Apple Music region, such as `id`, `us`, `gb`, or `jp`. Use your Apple Music account's region.
-- **Address shown in pairing** must be reachable from the tablet. Select the correct local interface when Automatic chooses a VPN, disconnected, or otherwise unreachable address.
+- **Address shown in pairing** must be reachable from the Remote. Select the correct local interface when Automatic chooses a VPN, disconnected, or otherwise unreachable address.
 
 Choose **Save settings**. Connected Remotes reconnect after a network-setting change.
 
@@ -35,15 +35,15 @@ Wi-Fi client isolation, guest networks, firewalls, separate router subnets, and 
 ## Pair a Remote
 
 1. On Host, open Remotes and choose **Pair a Remote**.
-2. On the tablet, enter a name that will appear beside your requests.
+2. On the Remote, enter a name that will appear beside your requests.
 3. Scan the QR code. Alternatively, choose **Copy pairing details** on Host, transfer that text privately, and paste it into Remote.
 4. Choose **Pair**.
 
-Each invitation expires after five minutes and can pair one Remote. Generate another invitation to pair Remote B; Remote A keeps its connection and identity. Device credentials are distinct and stored in the Mac's Keychain and Android Keystore-backed storage.
+Each invitation expires after five minutes and can pair one Remote. Generate another invitation to pair Remote B; Remote A keeps its connection and identity. Device credentials are distinct and stored in Cadenza Host's Keychain and Android Keystore-backed storage.
 
 Discovery helps locate Host; the QR supplies its public certificate and fingerprint to establish trust. A changed Host identity requires verification and pairing again. No private certificate key is transferred.
 
-On Android 17 or later, allow Cadenza's local-network permission when prompted. If denied, enable it under Android Settings → Apps → Cadenza Remote → Permissions and reopen Cadenza. Earlier Android and HarmonyOS versions may use different permission controls; verify the actual tablet during installation.
+On Android versions that expose a local-network permission, allow it when prompted. If denied, enable it under Android Settings → Apps → Cadenza Remote → Permissions and reopen Cadenza. Vendor Android versions may use different permission controls; verify the target device during installation.
 
 ## Set request permissions
 
@@ -56,7 +56,7 @@ With the switch off:
 - Skip, previous, seek-to-end, stop, and Play Now cannot bypass that protection.
 - Pause/resume and volume are shared.
 
-The switch defaults off and persists in SQLite. Local Host controls retain authority. Mac-originated items are labeled Mac and are not assigned to a Remote by guessing.
+The switch defaults off and persists in SQLite. Local Host controls retain authority. Host-originated items are labeled Cadenza Host and are not assigned to a Remote by guessing.
 
 ## Prepare lyrics and English translation
 
@@ -70,7 +70,7 @@ For machine translation, open Host → Settings → English translation:
 2. Choose **Prepare English translation**.
 3. Approve the OS language-model download if needed.
 
-Apple-supplied English text is preferred. When a model is installed, fallback translation runs on the Mac and the same result is sent to every Remote. No Android language pack or paid translation service is needed. Missing or unsupported language pairs are shown explicitly.
+Apple-supplied English text is preferred. When a model is installed, fallback translation runs on Cadenza Host and the same result is sent to every Remote. No Android language pack or paid translation service is needed. Missing or unsupported language pairs are shown explicitly.
 
 ## Configure update releases
 

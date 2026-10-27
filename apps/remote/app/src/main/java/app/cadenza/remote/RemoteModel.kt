@@ -90,6 +90,7 @@ class RemoteModel(
         }
     private var lastCachedAt = 0L
     private val pending = mutableMapOf<String, PendingCommand>()
+    private val statusChecks = mutableSetOf<String>()
     private val events = Channel<Pair<Int, JSONObject>>(64)
     private val metadata = mutableSetOf<String>()
 
@@ -178,6 +179,11 @@ class RemoteModel(
             endSessionStatus()
             discovery?.close()
             discovery = null
+            // Prompts are transient interaction feedback. Do not replay a stale
+            // command dialog when the Activity is recreated or returns from the
+            // background; the durable request remains available for an explicit
+            // status check after reconnecting.
+            mutable.update { it.copy(prompt = null) }
             disconnect()
         }
     }
@@ -522,7 +528,7 @@ class RemoteModel(
     }
 
     private suspend fun applyState(value: JSONObject) {
-        val snapshot = Wire.snapshot(value)
+        val snapshot = enrichArtwork(Wire.snapshot(value))
         require(snapshot.hostId == mutable.value.profile?.hostId) { "Host identity did not match this pairing." }
         val previous = mutable.value.snapshot
         if (previous?.hostEpoch == snapshot.hostEpoch && snapshot.sequence <= previous.sequence) return
@@ -544,6 +550,31 @@ class RemoteModel(
         val songs = snapshot.queue.map { it.song } + listOfNotNull(snapshot.current?.song)
         val new = songs.filter { metadata.add(it.source + ":" + it.id) }
         if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }
+    }
+
+    private fun enrichArtwork(snapshot: HostSnapshot): HostSnapshot {
+        val known =
+            (
+                mutable.value.favorites + mutable.value.results +
+                    listOfNotNull(
+                        mutable.value.snapshot
+                            ?.current
+                            ?.song,
+                    ) +
+                    mutable.value.snapshot
+                        ?.queue
+                        .orEmpty()
+                        .map { it.song }
+            ).filter { it.artworkUrl != null }
+                .associateBy { it.source + ":" + it.id }
+
+        fun song(value: Song): Song = value.artworkUrl?.let { value } ?: known[value.source + ":" + value.id] ?: value
+
+        return snapshot.copy(
+            current = snapshot.current?.copy(song = song(snapshot.current.song)),
+            queue = snapshot.queue.map { it.copy(song = song(it.song)) },
+            incoming = snapshot.incoming?.let(::song),
+        )
     }
 
     private suspend fun applyCredit(frame: JSONObject) {
@@ -690,7 +721,7 @@ class RemoteModel(
             val timer =
                 viewModelScope.launch {
                     delay(1_000)
-                    if (pending.containsKey(commandId)) {
+                    if (session == generation && foreground && pending.containsKey(commandId)) {
                         mutable.update {
                             it.copy(
                                 prompt =
@@ -735,12 +766,14 @@ class RemoteModel(
         original.timer.cancel()
         when (frame.getString("outcome")) {
             "applied" -> {
+                statusChecks.remove(commandId)
                 val profile = mutable.value.profile
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
                 pending.remove(commandId)
                 mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
             }
             "unconfirmed" -> {
+                val showPrompt = statusChecks.remove(commandId)
                 val resolved = frame.optBoolean("resolved", false)
                 if (resolved) {
                     val profile = mutable.value.profile
@@ -749,17 +782,22 @@ class RemoteModel(
                     mutable.update { it.copy(pending = it.pending - original.key) }
                 }
                 mutable.update {
-                    it.copy(
-                        prompt =
-                            Prompt(
-                                "Request unconfirmed",
-                                frame.optString("message", "Check this request after Host reconciles Music."),
-                                if (resolved) null else commandId,
-                            ),
-                    )
+                    if (showPrompt) {
+                        it.copy(
+                            prompt =
+                                Prompt(
+                                    "Request unconfirmed",
+                                    frame.optString("message", "Check this request after Host reconciles Music."),
+                                    if (resolved) null else commandId,
+                                ),
+                        )
+                    } else {
+                        it.copy(notice = Notice("Request still needs confirmation"))
+                    }
                 }
             }
             else -> {
+                statusChecks.remove(commandId)
                 val profile = mutable.value.profile
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
                 pending.remove(commandId)
@@ -770,6 +808,7 @@ class RemoteModel(
     }
 
     fun checkRequest(commandId: String) {
+        statusChecks.add(commandId)
         queryRequest(commandId)
         dismissPrompt()
         mutable.update { it.copy(notice = Notice("Checking request status")) }
@@ -888,6 +927,7 @@ class RemoteModel(
         discovery = null
         for (item in pending.values) item.timer.cancel()
         pending.clear()
+        statusChecks.clear()
         invitation = null
         mutable.update { it.copy(profile = null, snapshot = null, lyrics = null, results = emptyList(), pending = emptySet()) }
     }

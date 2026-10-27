@@ -66,6 +66,13 @@ data class LyricLine(
     val startMs: Long,
     val endMs: Long,
     val translation: String?,
+    val words: List<LyricWord> = emptyList(),
+)
+
+data class LyricWord(
+    val text: String,
+    val startMs: Long,
+    val endMs: Long,
 )
 
 data class LyricDocument(
@@ -210,12 +217,23 @@ object Wire {
     fun lyrics(value: JSONObject): LyricDocument {
         val lines =
             value.getJSONArray("lines").objects().map {
+                val words =
+                    it
+                        .optJSONArray("words")
+                        ?.objects()
+                        ?.map { word ->
+                            LyricWord(word.getString("text"), word.counter("start_ms"), word.counter("end_ms"))
+                        }.orEmpty()
+                require(words.size <= 1_000 && words.all { word -> word.text.length <= 1_000 && word.endMs >= word.startMs }) {
+                    "Invalid lyric word timings or text."
+                }
                 LyricLine(
                     it.getString("id"),
                     it.getString("text"),
                     it.counter("start_ms"),
                     it.counter("end_ms"),
                     it.nullableString("translation"),
+                    words,
                 )
             }
         require(

@@ -7,8 +7,8 @@ Cadenza is a native monorepo. Host owns Music.app control and the authoritative 
 | Area                                                            | Location                                             |
 | --------------------------------------------------------------- | ---------------------------------------------------- |
 | Host native app, Music adapters, queue coordinator, lyrics, TLS | `apps/host/Sources/CadenzaHost`                      |
-| Shared Mac release verification and archive inspection          | `apps/host/Sources/CadenzaSecurity`                  |
-| Mac update helper and release signer                            | `apps/host/Sources/CadenzaUpdater`, `CadenzaRelease` |
+| Shared Host release verification and archive inspection         | `apps/host/Sources/CadenzaSecurity`                  |
+| Host update helper and release signer                           | `apps/host/Sources/CadenzaUpdater`, `CadenzaRelease` |
 | Remote native UI, networking, storage, updater                  | `apps/remote/app/src/main`                           |
 | Native unit tests                                               | `apps/host/Tests`, `apps/remote/app/src/test`        |
 | Wire contracts                                                  | `shared/protocol/v1`                                 |
@@ -62,6 +62,6 @@ Host emits contiguous per-pairing credit sequences and retains unacknowledged cr
 
 Music's queue and playback badges use bounded Accessibility reads, while transport and library metadata use a fixed JXA script with data-only arguments. Public web catalog tokens and Music's lyric cache are undocumented adapters. Their failure is explicit and must not fabricate queue ownership, lyrics, quality, or AutoMix state.
 
-Translation uses Apple's native Translation framework on the Mac. Remotes receive one lyric document and translation revision. No Android language model or paid developer API is required by this source design.
+Translation uses Apple's native Translation framework on Cadenza Host. Remotes receive one lyric document and translation revision. No Android language model or paid developer API is required by this source design.
 
-The Windows tests cannot prove these Mac integrations. Mac access was deferred during implementation; source and documentation now exist, and Host validation needs a reachable Mac. [BUILDING.md](BUILDING.md) and [VALIDATION.md](VALIDATION.md) record the remaining checks.
+The Windows tests cannot prove these macOS integrations. macOS access was deferred during implementation; source and documentation now exist, and Host validation needs a reachable supported system. [BUILDING.md](BUILDING.md) and [VALIDATION.md](VALIDATION.md) record the remaining checks.

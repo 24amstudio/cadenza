@@ -176,7 +176,6 @@ class RemoteModel(
         if (visible) startDiscovery()
         if (visible && mutable.value.loaded && mutable.value.profile != null && !mutable.value.connected) connect()
         if (!visible) {
-            endSessionStatus()
             discovery?.close()
             discovery = null
             // Prompts are transient interaction feedback. Do not replay a stale
@@ -184,7 +183,10 @@ class RemoteModel(
             // background; the durable request remains available for an explicit
             // status check after reconnecting.
             mutable.update { it.copy(prompt = null) }
-            disconnect()
+            if (!mutable.value.monitoringSong) {
+                endSessionStatus()
+                disconnect()
+            }
         }
     }
 
@@ -331,7 +333,7 @@ class RemoteModel(
             showError("Could not pair", message)
             return
         }
-        if (foreground && mutable.value.profile != null) {
+        if ((foreground || mutable.value.monitoringSong) && mutable.value.profile != null) {
             reconnect?.cancel()
             reconnect =
                 viewModelScope.launch {
@@ -947,12 +949,18 @@ class RemoteModel(
             it.copy(
                 sessionActive = true,
                 monitoringSong = true,
-                notice = Notice("Song status pinned for this control session"),
+                notice = Notice("Song status monitoring is on until you unpin it"),
             )
         }
     }
 
     fun endSessionStatus() {
         mutable.update { it.copy(sessionActive = false, monitoringSong = false) }
+        if (!foreground) {
+            networkMonitor.close()
+            discovery?.close()
+            discovery = null
+            disconnect()
+        }
     }
 }

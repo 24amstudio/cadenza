@@ -8,7 +8,7 @@ Choose **Save to Favorites** from Search song details or Now playing. **Favorite
 
 Settings lets you edit the default Android device name and choose **Follow system**, **Light**, or **Dark**, then **Save preferences**. A name change reconnects to send the new name to a capable Host. The preferences persist after app restarts.
 
-An active control action starts an ongoing session notification if notifications are allowed. **Pin song status** explicitly requests monitoring of the current song. Eligible Android versions may promote it to a Live Update/status chip; devices that do not support promotion use the standard notification fallback. The OS and channel settings control visibility and promotion. **Unpin** or ending the monitoring session stops it. No notification plays audio on the Remote.
+An active control action starts an ongoing session notification if notifications are allowed. **Pin song status** explicitly requests monitoring of the current song and keeps that notification connected while Cadenza Remote is backgrounded. Eligible Android versions may promote it to a Live Update/status chip; devices that do not support promotion use the standard notification fallback. The OS may stop background work if it terminates Cadenza Remote. **Unpin** or ending the monitoring session stops it. No notification plays audio on the Remote.
 
 ## Search and request a song
 

@@ -563,6 +563,21 @@ class RemoteUiTest {
         assertEquals("Paused playback must not keep ticking", stoppedPlayback, updates.get())
     }
 
+    @Test
+    fun pinnedSongStatusSurvivesTheActivityBackgroundTransition() {
+        createModel()
+        compose.waitUntil(5_000) { model.state.value.loaded }
+        compose.runOnUiThread {
+            model.monitorSong()
+            model.setForeground(false)
+        }
+        assertTrue(model.state.value.sessionActive)
+        assertTrue(model.state.value.monitoringSong)
+        compose.runOnUiThread { model.endSessionStatus() }
+        assertTrue(!model.state.value.sessionActive)
+        assertTrue(!model.state.value.monitoringSong)
+    }
+
     private class PageLifecycle : LifecycleOwner {
         override val lifecycle = LifecycleRegistry(this)
     }

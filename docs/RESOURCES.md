@@ -1,6 +1,6 @@
 # Resource measurement
 
-The current source uses no Android audio player, web runtime, persistent foreground service, wake lock, or translation pack. Foreground controls, discovery and recovery stop with the Activity. Session notifications compare title/artist/playing/connection/monitoring state and ignore progress ticks. Lyric/progress timers stop while paused/disconnected and when their visible screen lifecycle stops.
+The current source uses no Android audio player, web runtime, persistent foreground service, wake lock, or translation pack. Foreground controls and discovery stop with the Activity; an explicitly pinned song-status session keeps its authenticated socket and bounded recovery alive for the ongoing notification. Session notifications compare title/artist/playing/connection/monitoring state and ignore progress ticks. Lyric/progress timers stop while paused/disconnected and when their visible screen lifecycle stops.
 
 Host observes Music's distributed player event as an undocumented hint, backed by native readback. While playing it samples at roughly one second to preserve analytics/seek detection; paused with Remotes it checks at two seconds; paused without Remotes at ten seconds. Native commands perform their own readback. A paused unchanged snapshot uses a small authenticated heartbeat for capable Remotes; legacy Remotes still receive full snapshots. Broadcast JSON is encoded once per frame, rather than once per Remote. A notification hint does not prove a Music state change.
 

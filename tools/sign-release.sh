@@ -8,6 +8,7 @@ key="$2"
 version="$(awk -F= '$1 == "VERSION_NAME" {print $2}' "$project_root/shared/version.properties" | tr -d '\r')"
 build="$(awk -F= '$1 == "VERSION_CODE" {print $2}' "$project_root/shared/version.properties" | tr -d '\r')"
 cd "$project_root/apps/host"
+/usr/bin/swift build -c release --arch arm64 --product CadenzaRelease -Xswiftc -warnings-as-errors
 binary_root="$(/usr/bin/swift build -c release --arch arm64 --show-bin-path)"
 host="$project_root/dist/Cadenza-Host-$version-arm64.zip"
 remote="$project_root/dist/Cadenza-Remote-$version.apk"

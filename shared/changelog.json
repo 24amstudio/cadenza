@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "releases": [
+    {
+      "version": "0.0.1",
+      "build": 3,
+      "changes": [
+        "Renames Cadence to Cadenza while preserving installed app and storage identities.",
+        "Adds Host setup for storefront detection, permissions and verified pairing.",
+        "Adds local Remote Favorites, editable device names and theme preferences.",
+        "Adds adaptive list-detail navigation, Play next and control-session status notifications.",
+        "Adds bounded local address failover and Production-only update controls.",
+        "Shows the version, build profile, source identity and build timestamp on Android startup."
+      ]
+    }
+  ]
+}

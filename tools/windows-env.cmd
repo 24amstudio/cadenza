@@ -1,0 +1,12 @@
+@echo off
+set "CADENZA_ROOT=%~dp0.."
+set "TEMP=%CADENZA_ROOT%\.cache\tmp"
+set "TMP=%TEMP%"
+set "BUN_INSTALL_CACHE_DIR=%CADENZA_ROOT%\.cache\bun"
+set "GRADLE_USER_HOME=%CADENZA_ROOT%\.cache\gradle"
+set "ANDROID_USER_HOME=%CADENZA_ROOT%\.cache\android-user"
+set "ANDROID_HOME=%CADENZA_ROOT%\.tools\android-sdk"
+set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
+if exist "%CADENZA_ROOT%\.tools\jdk-17\bin\java.exe" set "JAVA_HOME=%CADENZA_ROOT%\.tools\jdk-17"
+if defined JAVA_HOME set "PATH=%JAVA_HOME%\bin;%PATH%"
+if not exist "%TEMP%" mkdir "%TEMP%"

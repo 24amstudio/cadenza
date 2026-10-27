@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:result",
+  "type": "object",
+  "required": [
+    "version",
+    "type",
+    "command_id",
+    "host_epoch",
+    "outcome",
+    "revision"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "type": { "const": "command.result" },
+    "command_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+    "host_epoch": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+    "outcome": { "enum": ["applied", "rejected", "expired", "unconfirmed"] },
+    "revision": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
+    "message": { "type": "string", "maxLength": 4000 },
+    "resolved": { "const": true },
+    "error_code": {
+      "enum": [
+        "forbidden",
+        "revoked",
+        "stale_revision",
+        "stale_occurrence",
+        "expired",
+        "invalid_command",
+        "invalid_deadline",
+        "missing_request",
+        "invalid_state",
+        "invalid_anchor",
+        "command_conflict",
+        "music_unavailable",
+        "outcome_unknown",
+        "busy",
+        "song_not_ready",
+        "queue_full",
+        "native_queue_unavailable",
+        "music_permission",
+        "storage",
+        "secure_storage",
+        "unavailable",
+        "catalog_unavailable"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "applied" } } },
+      "then": { "properties": { "error_code": false } },
+      "else": { "required": ["error_code"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "expired" } } },
+      "then": { "properties": { "error_code": { "const": "expired" } } }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "unconfirmed" } } },
+      "then": {
+        "properties": { "error_code": { "const": "outcome_unknown" } }
+      },
+      "else": { "properties": { "resolved": false } }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "rejected" } } },
+      "then": {
+        "properties": {
+          "error_code": { "not": { "enum": ["expired", "outcome_unknown"] } }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

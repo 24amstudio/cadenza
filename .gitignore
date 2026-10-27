@@ -1,0 +1,32 @@
+# Native build output and local tooling
+node_modules/
+.cache/
+.tools/
+dist/
+**/.build/
+**/.swiftpm/
+**/.gradle/
+**/.kotlin/
+**/build/
+**/DerivedData/
+**/xcuserdata/
+.idea/
+*.xcuserstate
+local.properties
+.DS_Store
+Thumbs.db
+hs_err_pid*.log
+replay_pid*.log
+
+# Local credentials and private signing material
+.env
+.env.*
+!.env.example
+/secrets/
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pem
+*.key
+*.pfx

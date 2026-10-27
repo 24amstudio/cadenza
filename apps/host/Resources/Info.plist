@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>app.cadence.host</string>
+    <key>CFBundleName</key><string>Cadenza Host</string>
+    <key>CFBundleDisplayName</key><string>Cadenza Host</string>
+    <key>CFBundleExecutable</key><string>CadenzaHost</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.0.1</string>
+    <key>CFBundleVersion</key><string>3</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
+    <key>LSUIElement</key><true/>
+    <key>LSMultipleInstancesProhibited</key><true/>
+    <key>NSAppleMusicUsageDescription</key><string>Cadenza detects the storefront for your Apple Music account during setup.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Cadenza controls Music on this Mac when you use a paired Remote.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Cadenza connects to your paired Remotes on this network.</string>
+    <key>NSBonjourServices</key><array><string>_cadence._tcp</string></array>
+</dict>
+</plist>

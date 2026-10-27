@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:credit",
+  "type": "object",
+  "required": [
+    "version",
+    "type",
+    "event_id",
+    "sequence",
+    "occurrence_id",
+    "song",
+    "play_count_delta",
+    "played_ms_delta"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "type": { "const": "analytics.credit" },
+    "event_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "occurrence_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+    "song": { "$ref": "urn:cadence:protocol:v1:common#/$defs/song" },
+    "song_metadata": { "$ref": "urn:cadence:protocol:v1:state#/$defs/song" },
+    "play_count_delta": { "type": "integer", "minimum": 0, "maximum": 1 },
+    "played_ms_delta": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "play_count_delta": { "const": 1 } } },
+      "then": {
+        "properties": { "played_ms_delta": { "type": "integer", "minimum": 1 } }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

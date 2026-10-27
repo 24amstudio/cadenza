@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:command",
+  "type": "object",
+  "required": [
+    "version",
+    "type",
+    "command_id",
+    "host_epoch",
+    "expires_at_host_ms",
+    "expected_revision",
+    "action"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "type": { "const": "command" },
+    "command_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+    "host_epoch": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+    "expires_at_host_ms": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+    },
+    "expected_revision": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+    },
+    "action": {
+      "oneOf": [
+        { "$ref": "#/$defs/enqueue" },
+        { "$ref": "#/$defs/playNow" },
+        { "$ref": "#/$defs/remove" },
+        { "$ref": "#/$defs/move" },
+        { "$ref": "#/$defs/transport" },
+        { "$ref": "#/$defs/seek" },
+        { "$ref": "#/$defs/volume" }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "playNow": {
+      "type": "object",
+      "required": ["kind", "song", "occurrence_id"],
+      "properties": {
+        "kind": { "const": "queue.play_now" },
+        "song": { "$ref": "urn:cadence:protocol:v1:common#/$defs/song" },
+        "occurrence_id": {
+          "anyOf": [
+            { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "enqueue": {
+      "type": "object",
+      "required": ["kind", "song"],
+      "properties": {
+        "kind": { "enum": ["queue.enqueue", "queue.play_next"] },
+        "song": { "$ref": "urn:cadence:protocol:v1:common#/$defs/song" }
+      },
+      "additionalProperties": false
+    },
+    "remove": {
+      "type": "object",
+      "required": ["kind", "entry_id"],
+      "properties": {
+        "kind": { "const": "queue.remove" },
+        "entry_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" }
+      },
+      "additionalProperties": false
+    },
+    "move": {
+      "type": "object",
+      "required": ["kind", "entry_id", "before_entry_id"],
+      "properties": {
+        "kind": { "const": "queue.move" },
+        "entry_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "before_entry_id": {
+          "anyOf": [
+            { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "transport": {
+      "type": "object",
+      "required": ["kind", "occurrence_id"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "playback.pause",
+            "playback.resume",
+            "playback.skip",
+            "playback.previous",
+            "playback.stop"
+          ]
+        },
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        }
+      },
+      "additionalProperties": false
+    },
+    "seek": {
+      "type": "object",
+      "required": ["kind", "occurrence_id", "position_ms"],
+      "properties": {
+        "kind": { "const": "playback.seek" },
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "position_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "volume": {
+      "type": "object",
+      "required": ["kind", "percent"],
+      "properties": {
+        "kind": { "const": "playback.volume" },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

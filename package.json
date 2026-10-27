@@ -1,0 +1,25 @@
+{
+  "name": "cadenza-development",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "check": "node tools/check.mjs",
+    "check:portable": "node tools/check.mjs --portable",
+    "test": "node tools/test.mjs"
+  },
+  "overrides": {
+    "fast-uri": "3.1.9"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.88.0",
+    "@types/node": "26.6.5",
+    "ajv": "8.20.0",
+    "oxlint": "1.88.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3"
+  }
+}

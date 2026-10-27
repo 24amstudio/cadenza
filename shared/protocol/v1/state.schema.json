@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:state",
+  "$defs": {
+    "song": {
+      "type": "object",
+      "required": ["source", "id", "title", "artist", "album"],
+      "properties": {
+        "source": { "enum": ["catalog", "library", "unknown"] },
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 500 },
+        "artist": { "type": "string", "maxLength": 500 },
+        "album": { "type": "string", "maxLength": 500 },
+        "duration_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "artwork_url": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^https://"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^https://music\\.apple\\.com/"
+        }
+      },
+      "additionalProperties": false
+    },
+    "current": {
+      "type": "object",
+      "required": [
+        "occurrence_id",
+        "requester_name",
+        "song",
+        "position_ms",
+        "sampled_at_host_ms"
+      ],
+      "properties": {
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "entry_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "requested_by": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "requester_name": { "type": "string", "maxLength": 80 },
+        "song": { "$ref": "#/$defs/song" },
+        "position_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "sampled_at_host_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "required": ["id", "requester_name", "song"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "requested_by": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "requester_name": { "type": "string", "maxLength": 80 },
+        "song": { "$ref": "#/$defs/song" },
+        "estimated_wait_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "required": [
+        "host_id",
+        "host_epoch",
+        "revision",
+        "sequence",
+        "host_time_ms",
+        "allow_cross_remote_edits",
+        "playing",
+        "volume",
+        "queue",
+        "quality",
+        "synchronized",
+        "observation_gap"
+      ],
+      "properties": {
+        "host_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "host_epoch": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "revision": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
+        "sequence": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
+        "host_time_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "allow_cross_remote_edits": { "type": "boolean" },
+        "playing": { "type": "boolean" },
+        "volume": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "current": { "$ref": "#/$defs/current" },
+        "queue": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/entry" }
+        },
+        "total_remaining_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "quality": {
+          "enum": ["unknown", "lossless", "hi_res_lossless", "dolby_atmos"]
+        },
+        "incoming": { "$ref": "#/$defs/song" },
+        "mixing": { "type": "boolean" },
+        "synchronized": { "type": "boolean" },
+        "issue": { "type": "string", "maxLength": 4000 },
+        "observation_gap": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "line": {
+      "type": "object",
+      "required": ["id", "text", "start_ms", "end_ms", "words"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "text": { "type": "string", "maxLength": 20000 },
+        "start_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
+        "end_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
+        "translation": { "type": "string", "maxLength": 20000 },
+        "words": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "required": ["text", "start_ms", "end_ms"],
+            "properties": {
+              "text": { "type": "string", "maxLength": 1000 },
+              "start_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "end_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "lyrics": {
+      "type": "object",
+      "required": ["occurrence_id", "revision", "translation_source", "lines"],
+      "properties": {
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "revision": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "language": { "type": "string", "maxLength": 80 },
+        "translation_source": {
+          "enum": ["none", "original", "apple", "machine", "apple_and_machine"]
+        },
+        "lines": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "$ref": "#/$defs/line" }
+        },
+        "issue": { "type": "string", "maxLength": 4000 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

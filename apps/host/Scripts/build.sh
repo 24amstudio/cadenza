@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euo pipefail
+
+script_directory="$(cd -- "$(dirname -- "$0")" && pwd)"
+host_root="$(cd -- "$script_directory/.." && pwd)"
+project_root="$(cd -- "$host_root/../.." && pwd)"
+profile="${CADENZA_BUILD_PROFILE:-development}"
+case "$profile" in development|ci|production) ;; *) printf '%s\n' 'Unknown build profile.' >&2; exit 2 ;; esac
+[[ "$profile" != production || "${CI:-false}" != true ]] || { printf '%s\n' 'CI must not enable Production updates.' >&2; exit 2; }
+build_identity="$(node "$project_root/tools/build-info.mjs")"
+[[ "$build_identity" =~ ^([0-9a-f]{40}|source-[0-9a-f]{64})$ ]] || { printf '%s\n' 'Invalid immutable build ID.' >&2; exit 2; }
+
+if [[ "$(uname -s)" != Darwin ]]; then
+  printf '%s\n' 'Build Cadenza Host on macOS with an existing Swift 6.2+ toolchain.' >&2
+  exit 2
+fi
+
+version="$(/usr/bin/awk -F= '$1 == "VERSION_NAME" {print $2}' "$project_root/shared/version.properties" | tr -d '\r')"
+build="$(/usr/bin/awk -F= '$1 == "VERSION_CODE" {print $2}' "$project_root/shared/version.properties" | tr -d '\r')"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$build" =~ ^[0-9]+$ ]] || { printf '%s\n' 'Invalid version.properties.' >&2; exit 2; }
+
+export CLANG_MODULE_CACHE_PATH="$host_root/.build/module-cache"
+export SWIFTPM_MODULECACHE_OVERRIDE="$host_root/.build/module-cache"
+mkdir -p "$project_root/dist" "$host_root/.build/staging"
+
+cd "$host_root"
+/usr/bin/swift build -c release --arch arm64 -Xswiftc -warnings-as-errors
+binary_root="$(/usr/bin/swift build -c release --arch arm64 --show-bin-path)"
+stage="$(mktemp -d "$host_root/.build/staging/package.XXXXXX")"
+application="$stage/Cadenza Host.app"
+mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"
+
+cp "$binary_root/CadenzaHost" "$application/Contents/MacOS/CadenzaHost"
+cp "$binary_root/CadenzaUpdater" "$application/Contents/MacOS/CadenzaUpdater"
+cp "$host_root/Resources/Info.plist" "$application/Contents/Info.plist"
+cp -R "$binary_root/CadenzaHost_CadenzaHost.bundle" "$application/Contents/Resources/"
+cp "$project_root/shared/release-config.json" "$application/Contents/Resources/release-config.json"
+cp "$project_root/shared/changelog.json" "$application/Contents/Resources/changelog.json"
+/usr/bin/plutil -replace CFBundleShortVersionString -string "$version" "$application/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleVersion -string "$build" "$application/Contents/Info.plist"
+/usr/bin/plutil -insert CadenzaBuildProfile -string "$profile" "$application/Contents/Info.plist"
+/usr/bin/plutil -insert CadenzaBuildID -string "$build_identity" "$application/Contents/Info.plist"
+
+/usr/bin/codesign --force --sign - --timestamp=none "$application/Contents/MacOS/CadenzaUpdater"
+/usr/bin/codesign --force --sign - --timestamp=none --entitlements "$host_root/Resources/entitlements.plist" "$application"
+/usr/bin/codesign --verify --deep --strict "$application"
+
+archive="$project_root/dist/Cadenza-Host-$version-arm64.zip"
+if [[ "$profile" != production ]]; then archive="$project_root/dist/Cadenza-Host-$version-$profile-arm64.zip"; fi
+[[ ! -e "$archive" ]] || { printf '%s\n' "Archive already exists: $archive" >&2; exit 2; }
+COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --norsrc --keepParent "$application" "$archive"
+printf '%s\n' "$application" "$archive"

@@ -1,0 +1,317 @@
+# Cadenza — Implementation Goalset
+
+UI revision 1 — 26 October 2026.
+
+This revision is for developers of Cadenza Host and Cadenza Remote. It clarifies the Remote's visual design, artwork, and integration of sing-along functionality into Now Playing. The supplied screenshots are visual references, not an instruction to copy an Apple interface or introduce another platform. All other original product requirements remain in force.
+
+In the added requirements, **must** means required, **should** means recommended, and **may** means optional. Implementation acceptance requires the original Definition of Done plus the UI evidence specified in Section 5. A proposal or mockup alone does not establish implementation completion.
+
+## 1. Objective
+
+Refactor and improve the existing application into **Cadenza**, a reliable, lightweight, native cross-device application for controlling Apple Music from Android.
+
+The two applications are:
+
+- **Cadenza Host:** Native macOS application, implemented using Swift and appropriate native Apple frameworks.
+- **Cadenza Remote:** Native Android application, implemented using Kotlin and Jetpack Compose.
+
+This is an evolution of the existing project, not a greenfield rewrite. Preserve existing working functionality unless a change is necessary and justified. Follow native platform conventions and best practices.
+
+## 2. Working Rules and Initial Audit
+
+- All local project work, source changes, temporary files, and generated artifacts must reside on the `F:\` drive. Verify the working directory before making changes. Do not create the project or working copies on `C:\`.
+- First inspect the existing Git repository, working-tree status, architecture, project structure, build systems, dependencies, connection protocols, permissions, tests, and release/update mechanisms.
+- Identify existing user changes and preserve them. Never discard work, perform destructive Git operations, or rewrite Git history.
+- Create or update an implementation plan after the initial audit, then execute the work. Do not stop after producing a plan.
+- Prefer the smallest reliable solution. Avoid unnecessary dependencies, duplicated logic, excessive abstractions, background polling, and speculative rewrites.
+- If a requirement conflicts with platform limitations or the current architecture, investigate alternatives, implement the best viable solution, and document the trade-off rather than silently ignoring the requirement.
+
+## 3. Project Rename
+
+Rename the project consistently to **Cadenza**, with application names **Cadenza Host** and **Cadenza Remote**.
+
+Update all relevant project files, folder/module names, source references, application display names, code identifiers, configuration, build scripts, documentation, and CI workflows.
+
+Audit bundle identifiers, Android application IDs, signing configuration, persisted data locations, permission grants, deep links, and update mechanisms before changing identifiers that could break existing installations. Preserve compatibility or provide an appropriate migration where necessary.
+
+Verify that both applications still build and their existing functionality remains intact after renaming.
+
+## 4. Cadenza Host — macOS
+
+### First-run onboarding
+
+Implement a clean, minimal, sequential onboarding flow:
+
+1. Welcome the user to Cadenza Host.
+2. Detect the user's Apple Music catalog storefront automatically using supported APIs and available account information.
+3. Ask the user to select a storefront only when automatic detection fails or produces an ambiguous result.
+4. Explain and request each necessary macOS permission, including appropriate Apple Music access. Handle denied, restricted, or revoked permissions gracefully.
+5. Complete the existing Host–Remote pairing process and verify that the connection works.
+
+Persist onboarding completion so returning users do not repeat the flow unnecessarily. Make setup and recovery accessible from Settings.
+
+Never assume permissions can be granted programmatically when macOS requires user approval.
+
+### Background operation and settings
+
+After successful onboarding, close the onboarding window and keep Cadenza Host running in the background.
+
+- Expose a lightweight menu-bar interface appropriate for macOS.
+- Provide a Settings option to **Show in Tray** or **Hide Tray Icon**, using the appropriate native macOS terminology and behavior.
+- When the user opens Cadenza Host again through Spotlight or another application-launch mechanism while it is already running, bring its Settings window to the foreground rather than launching a duplicate instance.
+- Closing the Settings window must not terminate the background service.
+- Provide a clear, discoverable way to quit the application completely.
+
+### Resource efficiency
+
+Minimize memory consumption and CPU usage, especially while idle. Profile the existing implementation, remove unnecessary work, and use efficient native APIs and event-driven updates wherever practical. Report measured resource behavior rather than making unsupported optimization claims.
+
+## 5. Cadenza Remote — Android
+
+### Client identity
+
+During onboarding, automatically obtain the Android device's name and use it as the default client name.
+
+Allow users to change their client name in Settings. Persist the custom name across application restarts.
+
+### Favorites
+
+Implement locally stored favorites on Cadenza Remote.
+
+Users must be able to favorite a song easily and perform these actions from the Favorites interface:
+
+- Play immediately.
+- Add to queue.
+- Play next.
+
+Favorites must persist across application restarts and remain client-side data. Do not require favorites to be stored or synchronized by Cadenza Host. Handle unavailable tracks and corrupted local data gracefully.
+
+### Visual direction, theming, and adaptive UI
+
+The Remote must feel like a music player: album artwork, track-derived color, confident typography, and responsive playback interactions must lead the design. Replace the plain placeholder-led player and oversized, mostly empty queue cards shown in the supplied screenshots. Keep the implementation native Kotlin and Jetpack Compose.
+
+The visual references establish a direction: large cover art, an immersive background influenced by the current album, and a cohesive transition from playback to lyrics. They do not require a pixel-for-pixel clone, a foldable-only layout, glass effects, or new playback features.
+
+#### UI-01 — Artwork is primary content
+
+- Now Playing must display the current song's actual cover artwork prominently whenever artwork is available. Search results, Favorites, and Queue entries must show matching cover thumbnails when available. A permanent music-note square is not an acceptable completed design for tracks whose artwork can be obtained.
+- Audit the complete artwork path: Host metadata, protocol fields, accessible image sources or existing image delivery, Remote loading, and caching. Repair missing delivery where necessary; styling an empty placeholder does not meet this requirement. Artwork must match the exact song or album version being displayed.
+- Preserve artwork proportions and avoid stretching. Decorative background crops may fill the scene; the principal cover must remain legible and recognizable. Use resolution appropriate to the rendered size, bounded image decoding, and a bounded cache.
+- Reserve the artwork's space while it loads so controls do not jump. Reuse a valid cached cover when appropriate. For genuinely unavailable or failed artwork, use a deliberate themed fallback and keep playback controls usable. Do not retain the previous track's cover after a track change or show unrelated imagery.
+- Artwork failures and retries must remain independent of playback. Reject stale image responses after a track change, use bounded retries, and avoid re-downloading artwork on every state update or mode switch.
+
+#### UI-02 — Color, hierarchy, and motion
+
+Support three persisted theme preferences:
+
+- Follow system theme.
+- Light mode.
+- Dark mode.
+
+Respect Android's system theming and native UI conventions. Within Now Playing and Lyrics, derive a coordinated background palette from the current artwork: softened gradients or a blurred artwork treatment with stable scrims behind text and controls. Surrounding navigation and utility screens must remain consistent with the selected theme. If artwork is missing or its colors do not produce a readable result, use a theme-consistent fallback palette.
+
+Keep the cover, title, artist, progress, and transport controls in a clear visual order. Use considered spacing and shape rather than a stack of large identical cards. Do not add eyebrow labels, decorative introductory text, filler subtitles, or invented quality and AutoMix indicators. Existing ownership, connection, quality, and playback statuses must remain accurate and understandable.
+
+Use short, purposeful transitions for cover resizing, palette changes, button feedback, and entering or leaving Lyrics. Preserve playback continuity and avoid abrupt jumps or flashes. Continuous decorative animation is not required. Respect reduced-motion settings and stop hidden animations; visual liveliness must not depend on persistent GPU work, polling, or extra network traffic.
+
+#### UI-03 — Now Playing and Lyrics are two modes of one player
+
+- Remove **Sing along** as a separate primary navigation destination. **Now Playing** must contain a visible, accessible **Lyrics** toggle with a clear active state. Existing entry points to sing-along functionality, if present, must open this same player in Lyrics mode.
+- Activating Lyrics must transform the entire available player presentation into an immersive Lyrics view. A small lyrics card, dialog, bottom sheet, or extra navigation page does not satisfy this interaction. De-emphasize or temporarily collapse the surrounding app navigation while keeping a discoverable exit.
+- On compact portrait windows, reduce the large cover to a compact track identity area and let lyrics occupy the main content area. Keep progress and essential transport controls reachable without scrolling through the lyrics.
+- On expanded or landscape windows, use a balanced composition with artwork and playback controls beside a larger lyrics area. Lyrics must remain the primary reading focus. This is a special presentation of the existing player, while the normal browsing/home experience retains its adaptive list-detail behavior.
+- The toggle and Android Back action must return to the normal player composition before navigating away. Restore focus to the initiating control where appropriate. Switching modes must not restart playback, enqueue a song, reset progress, change volume, or discard the queue or surrounding navigation state.
+- Preserve the selected mode across resizing, rotation, and ordinary state restoration. When the track changes during Lyrics mode, remain in that mode, update the track identity and palette, and discard lyrics belonging to the previous playback occurrence.
+- Retain existing playback controls, translation behavior, synchronization rules, requester attribution, and Host-enforced request protections. A new presentation must not create another source of playback state or bypass protected seek, skip, reorder, or removal actions.
+
+#### UI-04 — Lyrics behavior and honest states
+
+- Reuse the existing Host-provided lyrics and authoritative playback timeline. Highlight the current line, show useful surrounding lines, and follow playback smoothly when synchronized timings exist. Word-level effects may be shown only when genuine word timing is supplied; do not invent timing from line length or fabricate lyrics.
+- Preserve existing original-language text and available translations, including their source labels and unavailable-language behavior. Do not add another lyrics provider, translation service, subscription, or audio engine for this visual revision.
+- Allow manual lyric scrolling without repeatedly pulling the reader back. Provide a clear way to resume following the current line. Keep essential controls and exit behavior accessible while the lyric area is scrolled.
+- Define loading, available timed lyrics, available untimed lyrics, unavailable lyrics, fetch failure, and disconnected/stale synchronization states. Untimed lyrics may be read without a fabricated active-line indication. An instrumental or lyric-less track must show an honest unavailable state.
+- A loading Lyrics action must acknowledge the click immediately and prevent duplicate requests. Loading and persistent content states belong within the Lyrics presentation; routine action outcomes use a stable accessible toast/snackbar. Blocked actions or errors requiring an immediate decision use an accessible modal with focus entry and restoration. Do not insert transient action feedback into normal page flow.
+- Missing lyrics must not disable the normal player or trap the user in Lyrics mode. Provide return-to-player access and retry when meaningful. On disconnection, identify cached content and stale synchronization; stop presenting extrapolated lyric highlighting or progress as confirmed live state. Reconnection must reconcile with the Host's current playback occurrence.
+
+#### UI-05 — Artwork in browsing and Queue
+
+Use compact, aligned song rows with cover thumbnails, title, artist, and relevant metadata. In Queue, preserve requester attribution, duration, wait estimates, permission-aware actions, current-item treatment, and total remaining time. Long titles and device names must wrap or truncate deliberately without obscuring controls. Do not solve visual density by hiding ownership or queue protections.
+
+Use the official Android adaptive list-detail pattern for the Remote home screen, with Jetpack Compose and the appropriate Material 3 adaptive components. On expanded windows, display list and detail panes together; on compact windows, adapt navigation to the available space while preserving selection and navigation state. Adapt to available window space and orientation rather than assuming a particular phone, tablet, or foldable model.
+
+The new presentation must remain compatible with existing Host capabilities. Missing optional artwork or lyric timing metadata must produce the documented fallback, not a crash or a false capability claim. This UI revision introduces no independent protocol extension system.
+
+Use the following references:
+
+- Android adaptive list-detail layouts: https://developer.android.com/develop/ui/compose/layouts/adaptive/canonical-layouts?authuser=445#list-detail
+- Media detail and playback design: https://developer.android.com/design/ui/gallery/media/detail?hl=en&authuser=445
+- Material Design foundations: https://m3.material.io/foundations
+
+Follow the current official guidance, adapt it to Cadenza's actual user flows, and retain accessibility, responsive layouts, and clear interaction states.
+
+#### UI-06 — Required verification and visual evidence
+
+The visual revision is complete only when the following are demonstrated in the working native Remote:
+
+1. **Artwork:** Known tracks with different covers show the correct principal artwork and matching list thumbnails. Test slow loading, missing/failed artwork, cached artwork, and rapid track changes; no previous-song cover flashes and no controls shift or become blocked.
+2. **Visual direction:** Capture representative songs with different artwork palettes in light and dark themes. The result must visibly use the artwork and its palette, with readable text and controls throughout; it must not resemble the placeholder-only screenshots.
+3. **One player:** From Now Playing, enter and leave Lyrics using the toggle and Android Back. Verify that playback time continues, the queue remains unchanged, and the former separate Sing along navigation destination is absent. Resize or rotate in each mode and verify restored state.
+4. **Lyrics:** Exercise pause/resume, seek, song changes including repeated occurrences of the same song, manual scroll/resume-follow, missing and untimed lyrics, loading/failure, and disconnect/reconnect. Show only lyrics and timing belonging to the current occurrence, with existing translations and protections preserved.
+5. **Adaptive accessibility:** Inspect narrow phone, tablet portrait, and expanded landscape windows. Verify long titles, multilingual and right-to-left text where applicable, large system font sizes, TalkBack, keyboard/focus, reduced motion, and applicable WCAG 2.2 AA text/non-text contrast and target requirements. Palette extraction must not reduce contrast for bright, dark, or low-contrast covers.
+6. **Action feedback:** Verify pending, success, and failure feedback at scrolled positions and narrow widths. Toasts must remain visible and announced; blocking dialogs must manage focus and preserve entered state. No transient result may shift the underlying action layout.
+7. **Evidence and checks:** Provide clean screenshots of the actual player, Lyrics mode, and artwork-bearing Queue, including phone/tablet and relevant theme/state variants. Distinguish proposals from working software. Run the affected local strict native checks, lint, formatting, meaningful behavior tests, and accessibility checks; report exact unverified target-device or platform behavior. Profile the artwork/lyrics changes against the original battery and resource requirements.
+
+### Android Live Updates
+
+When a user actively begins controlling a media device, provide an appropriate ongoing Android notification and implement the current Live Updates APIs where the use case, Android version, and system eligibility requirements permit.
+
+The notification should communicate the current control-session state and update only when meaningful state changes occur. Stop or appropriately transition the notification when the session ends.
+
+Respect notification permissions, user preferences, and platform restrictions. Fall back gracefully to a standard ongoing notification when Live Update promotion is unavailable or unsupported. Never promise promotion that Android or the device manufacturer does not guarantee. 
+
+I prefer if you can have "Status chips" working here "https://developer.android.com/develop/ui/compose/notifications/live-update#status-chips".
+
+Reference: https://developer.android.com/develop/ui/compose/notifications/live-update
+
+## 6. Connection, State, and Crash Resilience
+
+Reliability is a core requirement for both applications.
+
+Inspect the existing communication architecture and implement appropriate connection discovery, recovery, and failover mechanisms. Support multiple viable connection paths between Host and Remote where the existing architecture and platform capabilities permit.
+
+Requirements:
+
+- Automatically reconnect after temporary network interruptions, process restarts, or recoverable system termination.
+- Detect broken or stale connections and recover without requiring unnecessary user intervention.
+- Fail over to another viable connection path when the active path becomes unavailable.
+- Preserve important application state and user settings across crashes and restarts.
+- Handle malformed messages, interrupted writes, stale state, duplicate events, missing data, and partially completed operations safely.
+- Prevent reconnection from causing duplicated playback commands or inconsistent queue state.
+- Use bounded retries, appropriate backoff, timeouts, and sensible resource cleanup.
+- Keep error handling quiet and unobtrusive during normal recovery, but provide actionable feedback when user intervention is necessary.
+
+Do not assume that either application can prevent the operating system from terminating it. Design for safe recovery instead.
+
+Test the failure and recovery paths. Document any transport limitations and the fallback behavior implemented.
+
+## 7. Battery and Resource Efficiency
+
+**Android battery efficiency is mandatory.** Host efficiency remains a high priority.
+
+- Prefer event-driven updates over continuous polling.
+- Avoid unnecessary network requests, CPU wakeups, timers, and repeated state serialization.
+- Suspend or reduce nonessential work when disconnected or when application lifecycle constraints permit.
+- Use adaptive retry intervals and efficient state synchronization.
+- Stop background work when it is no longer required.
+- Avoid UI redraws and network synchronization when the underlying state has not changed.
+
+Profile representative idle, connected, active-control, and disconnected states. Correct inefficient behavior rather than optimizing solely for theoretical benchmarks.
+
+## 8. Version Awareness and Changelog
+
+Each build must embed its application version and Git commit SHA, or equivalent immutable build identifier.
+
+Implement a changelog mechanism that compares the installed build against a defined newer release or commit and presents the relevant changes to the user.
+
+First inspect the existing repository remote, release workflow, and update infrastructure to determine the appropriate source of newer release metadata. Do not invent repository URLs or assume that production users have access to the local Git repository.
+
+If no suitable release metadata source exists, implement a documented, maintainable mechanism appropriate to the project's existing infrastructure.
+
+Handle offline access, missing release metadata, and unavailable Git history gracefully. Never display fabricated changes or claim that newer commits were checked when no reliable comparison was possible.
+
+## 9. Automatic Updates and Build Configurations
+
+Any automatic update checking, downloading, or installation functionality must be enabled **only for Production builds**.
+
+Development, test, and CI builds must not unexpectedly download or install updates. Use explicit build-configuration or feature-flag controls, with sensible defaults and tests to prevent accidental activation.
+
+Keep update-related behavior isolated enough that it can be tested without installing a real update.
+
+## 10. Crash Handling and Data Integrity
+
+Implement robust error handling across both applications.
+
+- Validate persisted data and incoming messages before using them.
+- Use safe persistence strategies that prevent partially written data from destroying valid existing state.
+- Recover from malformed or missing local state where possible.
+- Preserve user settings and Android favorites during ordinary crashes and upgrades.
+- Avoid infinite recovery loops and repeated crash cycles.
+- Log enough information for debugging without exposing credentials, sensitive user data, or unnecessary personal information.
+
+Add or update tests for significant recovery paths.
+
+## 11. CI/CD
+
+Implement two clearly separated CI pipelines.
+
+### Checking CI
+
+Runs on every relevant commit/push and pull request, across branches.
+
+It must run the checks applicable to each project:
+
+- Unit and other existing automated tests.
+- Compilation and type checking.
+- Linting and static analysis.
+- Code formatting checks.
+- Any additional repository-specific quality gates identified during the audit.
+
+Use the project's supported tools and add missing configuration where necessary. Document the commands so developers can run the same checks locally.
+
+### Build CI
+
+Build CI may execute only on the `main` branch, and only after Checking CI has completed successfully for the relevant revision.
+
+It must:
+
+- Build the Android APK.
+- Build the native macOS `.app` bundle.
+- Produce a `.dmg` installer artifact when required by the project's distribution approach.
+- Publish the resulting artifacts as CI workflow artifacts.
+- Use appropriate platform runners, including a macOS runner for native macOS builds.
+- Keep signing credentials and secrets outside the source repository.
+
+Failed checks must block the build pipeline. Clearly distinguish test artifacts from production release artifacts, and do not expose signing credentials in logs or build outputs.
+
+## 12. AGENTS.md and Documentation
+
+Create or update the root `AGENTS.md` so future coding agents understand and consistently follow the project's architecture and conventions.
+
+Include:
+
+- Product overview and Host/Remote responsibilities.
+- Repository structure and important files.
+- Language, framework, and implementation conventions.
+- Architecture, communication protocol, state management, and persistence.
+- Setup, build, run, test, lint, formatting, and CI commands.
+- Naming conventions and platform-specific constraints.
+- Permission handling, crash recovery, battery, and resource-efficiency principles.
+- Release, build-version, changelog, and automatic-update behavior.
+- A concise list of known limitations and architectural decisions.
+
+Include these references and instruct future agents to consult the relevant guidance before making changes:
+
+- Android development agent skills: https://developer.android.com/tools/agents/android-skills
+- Swift agent skills directory: https://github.com/twostraws/swift-agent-skills
+
+Review and use relevant guidance selectively. Do not blindly install or trust arbitrary third-party skills.
+
+Update the README and all affected documentation so the Cadenza names, architecture, onboarding, permissions, pairing, builds, and release processes are consistent with the implementation.
+
+## 13. Definition of Done
+
+The work is complete when:
+
+1. Both applications and the project structure consistently use the Cadenza naming.
+2. Existing working functionality remains intact, and both applications build successfully in their supported environments.
+3. Host onboarding, storefront detection, permissions, pairing, background operation, and Settings behavior work as specified.
+4. Remote client naming, local favorites, theme preferences, adaptive layouts, ongoing control notifications, and the artwork-led player with integrated Lyrics mode work as specified. Section 5 UI-01 through UI-06 have implementation and visual evidence, subject to explicitly documented platform limitations.
+5. Connection interruptions and recoverable crashes do not permanently corrupt application state; viable reconnection and failover paths are tested.
+6. Idle and active resource usage has been reviewed, with avoidable polling and unnecessary background work eliminated.
+7. Version identification and changelog comparison use a reliable source and fail gracefully when that source is unavailable.
+8. Automatic-update behavior is disabled in non-production builds.
+9. Checking CI and Build CI enforce their required triggers, dependencies, and platform-specific build outputs.
+10. `AGENTS.md` and all affected documentation accurately describe the finished implementation.
+
+At completion, provide a concise report covering the changes made, architectural decisions, tests and builds executed, artifact locations, and any remaining limitations. Clearly distinguish verified results from functionality that could not be tested in the available environment.
+

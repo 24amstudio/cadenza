@@ -1,0 +1,627 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:session",
+  "type": "object",
+  "required": ["version", "type"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "type": {
+      "enum": [
+        "pair",
+        "hello",
+        "welcome",
+        "clock",
+        "search",
+        "search.result",
+        "song.prepare",
+        "song.ready",
+        "operation.started",
+        "operation.cancel",
+        "state.get",
+        "state",
+        "lyrics.get",
+        "lyrics",
+        "lyrics.unavailable",
+        "analytics.ack",
+        "command.status",
+        "error",
+        "heartbeat",
+        "remote.configure",
+        "remote.configured"
+      ]
+    },
+    "request_id": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+    },
+    "command_id": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+    },
+    "pair": {
+      "type": "object",
+      "required": ["secret", "name"],
+      "properties": {
+        "secret": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "heartbeat": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "type": "object",
+      "required": ["remote_id", "token", "last_credit_sequence"],
+      "properties": {
+        "remote_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "last_credit_sequence": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "heartbeat": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "additionalProperties": false
+    },
+    "welcome": {
+      "type": "object",
+      "required": [
+        "host_id",
+        "host_name",
+        "host_epoch",
+        "remote_id",
+        "host_time_ms",
+        "protocol_major",
+        "protocol_minor",
+        "updates",
+        "capabilities"
+      ],
+      "properties": {
+        "host_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "host_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "host_epoch": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "remote_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "host_time_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "protocol_major": {
+          "const": 1
+        },
+        "protocol_minor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updates": {
+          "type": "object",
+          "required": ["repository", "public_key_spki_base64"],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "maxLength": 150
+            },
+            "public_key_spki_base64": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "additionalProperties": false
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "clock": {
+      "type": "object",
+      "required": ["sent_at_remote_ms"],
+      "properties": {
+        "sent_at_remote_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "received_at_host_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "sent_at_host_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "scope": {
+      "enum": ["catalog", "library"]
+    },
+    "songs": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
+      }
+    },
+    "song": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
+    },
+    "snapshot": {
+      "$ref": "urn:cadence:protocol:v1:state#/$defs/snapshot"
+    },
+    "lyrics": {
+      "$ref": "urn:cadence:protocol:v1:state#/$defs/lyrics"
+    },
+    "occurrence_id": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+    },
+    "sequence": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+    },
+    "error_code": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "host_epoch": {
+      "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "heartbeat": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "pair"
+          }
+        }
+      },
+      "then": {
+        "required": ["pair"],
+        "properties": {
+          "pair": {
+            "type": "object",
+            "required": ["secret", "name"],
+            "properties": {
+              "secret": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "heartbeat": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "hello"
+          }
+        }
+      },
+      "then": {
+        "required": ["auth"],
+        "properties": {
+          "auth": {
+            "type": "object",
+            "required": ["remote_id", "token", "last_credit_sequence"],
+            "properties": {
+              "remote_id": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+              },
+              "token": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 128
+              },
+              "last_credit_sequence": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "heartbeat": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "welcome"
+          }
+        }
+      },
+      "then": {
+        "required": ["welcome"],
+        "properties": {
+          "welcome": {
+            "type": "object",
+            "required": [
+              "host_id",
+              "host_name",
+              "host_epoch",
+              "remote_id",
+              "host_time_ms",
+              "protocol_major",
+              "protocol_minor",
+              "updates",
+              "capabilities"
+            ],
+            "properties": {
+              "host_id": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+              },
+              "host_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "host_epoch": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+              },
+              "remote_id": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+              },
+              "host_time_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "token": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 128
+              },
+              "protocol_major": {
+                "const": 1
+              },
+              "protocol_minor": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "updates": {
+                "type": "object",
+                "required": ["repository", "public_key_spki_base64"],
+                "properties": {
+                  "repository": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "public_key_spki_base64": {
+                    "type": "string",
+                    "maxLength": 512
+                  }
+                },
+                "additionalProperties": false
+              },
+              "capabilities": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "maxLength": 80
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "clock"
+          }
+        }
+      },
+      "then": {
+        "required": ["clock"],
+        "properties": {
+          "clock": {
+            "type": "object",
+            "required": ["sent_at_remote_ms"],
+            "properties": {
+              "sent_at_remote_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "received_at_host_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "sent_at_host_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "search"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "query", "scope"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "scope": {
+            "enum": ["catalog", "library"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "search.result"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "songs"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "songs": {
+            "type": "array",
+            "maxItems": 40,
+            "items": {
+              "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": ["song.prepare", "song.ready"]
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "song"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "song": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "state"
+          }
+        }
+      },
+      "then": {
+        "required": ["snapshot"],
+        "properties": {
+          "snapshot": {
+            "$ref": "urn:cadence:protocol:v1:state#/$defs/snapshot"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "lyrics"
+          }
+        }
+      },
+      "then": {
+        "required": ["lyrics"],
+        "properties": {
+          "lyrics": {
+            "$ref": "urn:cadence:protocol:v1:state#/$defs/lyrics"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "lyrics.unavailable"
+          }
+        }
+      },
+      "then": {
+        "required": ["occurrence_id", "message"],
+        "properties": {
+          "occurrence_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "analytics.ack"
+          }
+        }
+      },
+      "then": {
+        "required": ["sequence"],
+        "properties": {
+          "sequence": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "command.status"
+          }
+        }
+      },
+      "then": {
+        "required": ["command_id"],
+        "properties": {
+          "command_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "heartbeat"
+          }
+        }
+      },
+      "then": {
+        "required": ["host_epoch"],
+        "properties": {
+          "host_epoch": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "remote.configure"
+          }
+        }
+      },
+      "then": {
+        "required": ["name", "heartbeat", "request_id"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "heartbeat": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "remote.configured"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

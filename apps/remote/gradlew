@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_HOME=$(CDPATH= cd -- "$APP_HOME/../.." && pwd)
+GRADLE_USER_HOME="$PROJECT_HOME/.cache/gradle"
+TMPDIR="$PROJECT_HOME/.cache/tmp"
+export GRADLE_USER_HOME TMPDIR
+mkdir -p "$TMPDIR"
+JAVA_COMMAND=java
+if [ -n "$(printenv JAVA_HOME || true)" ]; then JAVA_COMMAND="$JAVA_HOME/bin/java"; fi
+exec "$JAVA_COMMAND" -classpath "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"

@@ -5,7 +5,7 @@ The repository contains source and a locally built Android development APK. No s
 ## Requirements
 
 - A supported Apple silicon Mac running macOS 26 or newer is required for Cadenza Host.
-- A supported Android device running Android API 26 or newer is required for Cadenza Remote. Vendor compatibility remains a device check.
+- A supported Android device running Android 12 / API 31 or newer is required for Cadenza Remote. Vendor compatibility remains a device check.
 - Both devices must be able to reach each other on the local network. Merely sharing an internet connection does not establish LAN connectivity.
 - Music.app must be installed and signed in for Apple Music streaming. Your existing Apple Music subscription is used. Cadenza does not require paid Apple Developer membership.
 

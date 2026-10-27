@@ -6,9 +6,9 @@ Android debug/release source checks and debug APK packaging pass on Windows. Hos
 
 Host needs a supported Apple silicon Mac, macOS 26+, Swift 6.2+, and the macOS SDK supplied by compatible Apple command-line tools or Xcode. No paid Apple Developer membership is required.
 
-Remote needs JDK 17, Android SDK platform `android-37.0`, build-tools 36.0.0, and Gradle 9.8.2 with Android Gradle Plugin 9.5.0-rc01. The checked-in wrapper pins and verifies Gradle's distribution. `compileSdk` and `targetSdk` are 37; the installation floor remains Android 8 / API 26. Android Studio and an emulator are not required.
+Remote needs JDK 17, Android SDK platform `android-37.0`, build-tools 36.0.0, and Gradle 9.8.2 with Android Gradle Plugin 9.5.0-rc01. The checked-in wrapper pins and verifies Gradle's distribution. `compileSdk` is 37, `targetSdk` is 36, and the installation floor is Android 12 / API 31. Android Studio and an emulator are not required.
 
-The Android plugin is a release candidate. Plugin 9.4.1 calls a deprecated Gradle API that fails the strict build on Gradle 9.8.2; older Gradle versions fail the current Android lint update check. The release candidate removes those deprecated calls. Warnings remain errors; no lint baseline or suppression is used for this conflict.
+The Android plugin is a release candidate. Plugin 9.4.1 calls a deprecated Gradle API that fails the strict build on Gradle 9.8.2; older Gradle versions fail the current Android lint update check. The release candidate removes those deprecated calls. Warnings remain errors. The only disabled lint advisory is `OldTargetApi`, because current dependencies require compileSdk 37 while the requested runtime target remains 36; no lint baseline or other warning suppression is used.
 
 The user approved command-line tool downloads onto F:. Temurin JDK 17, Android command-line tools, SDK components, Gradle, and build dependencies are installed there. The JDK and command-line-tools archives were checksum-verified before extraction. No Swift toolchain, Android Studio, or emulator was installed. Release users install the app packages without these build tools.
 

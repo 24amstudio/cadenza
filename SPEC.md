@@ -6,7 +6,7 @@ Version 0.4, 26 October 2026. Intended implementers are the developers of Cadenz
 
 **Cadenza** is the overall project. **Cadenza Host** is the macOS companion controlling the existing Music.app. **Cadenza Remote** is the native Android interface. One Host serves multiple simultaneously paired Remotes on a local network. Audio remains in Music.app on the Host computer.
 
-The Host runs on a supported Apple silicon Mac with macOS 26 or newer. The Remote runs on a supported Android device with API 26 or newer. English is the initial translation target. Personal use without paid Apple Developer membership is a mandatory constraint.
+The Host runs on a supported Apple silicon Mac with macOS 26 or newer. The Remote runs on a supported Android device with Android 12 / API 31 or newer. English is the initial translation target. Personal use without paid Apple Developer membership is a mandatory constraint.
 
 A **request** is one occurrence of a song in the shared queue, with its own identity and requesting Remote. Two requests for the same song remain separate occurrences. **Playback time** in personal analytics means observed time playing a Remote's own requests, not proof that a person heard the audio.
 

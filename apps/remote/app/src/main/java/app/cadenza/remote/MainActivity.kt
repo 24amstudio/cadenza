@@ -34,19 +34,7 @@ class MainActivity : ComponentActivity() {
         }
     private val notifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            SessionNotification(application).update(SessionStatus.from(model.state.value))
-        }
-    private val localNetwork =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                model.setForeground(true)
-                requestNotifications()
-            } else {
-                model.showError(
-                    "Allow local network access",
-                    "Open Android Settings → Apps → Cadenza Remote → Permissions and allow local network access, then reopen Cadenza.",
-                )
-            }
+            SessionNotification(application).update(SessionStatus.from(model.state.value), model.mediaToken)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,14 +96,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         model.installationResult()
-        if (Build.VERSION.SDK_INT >= 37 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
-        ) {
-            localNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-        } else {
-            model.setForeground(true)
-            requestNotifications()
-        }
+        model.setForeground(true)
+        requestNotifications()
     }
 
     override fun onStop() {

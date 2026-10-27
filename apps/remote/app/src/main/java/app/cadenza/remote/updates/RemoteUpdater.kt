@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
-import android.os.Build
 import android.util.AtomicFile
 import androidx.core.content.pm.PackageInfoCompat
 import app.cadenza.remote.BuildConfig
@@ -126,17 +125,13 @@ object RemoteUpdater {
         context: Context,
         archive: File?,
     ): PackageInfo {
-        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else legacySignatureFlag()
+        val flags = PackageManager.GET_SIGNING_CERTIFICATES
         return if (archive != null) {
             requireNotNull(context.packageManager.getPackageArchiveInfo(archive.absolutePath, flags)) { "The APK could not be read." }
         } else {
             context.packageManager.getPackageInfo(context.packageName, flags)
         }
     }
-
-    // API 26–27 have no GET_SIGNING_CERTIFICATES replacement.
-    @Suppress("DEPRECATION")
-    private fun legacySignatureFlag(): Int = PackageManager.GET_SIGNATURES
 
     private fun verifyPackage(
         context: Context,
@@ -157,13 +152,9 @@ object RemoteUpdater {
         info: PackageInfo,
         history: Boolean,
     ): Set<String> {
+        val signing = requireNotNull(info.signingInfo) { "The APK has no signing identity." }
         val certificates =
-            if (Build.VERSION.SDK_INT >= 28) {
-                val signing = requireNotNull(info.signingInfo) { "The APK has no signing identity." }
-                if (history && !signing.hasMultipleSigners()) signing.signingCertificateHistory else signing.apkContentsSigners
-            } else {
-                legacySignatures(info)
-            }
+            if (history && !signing.hasMultipleSigners()) signing.signingCertificateHistory else signing.apkContentsSigners
         return certificates
             .map { certificate ->
                 MessageDigest
@@ -173,10 +164,6 @@ object RemoteUpdater {
                     .joinToString("") { "%02x".format(it.toInt() and 255) }
             }.toSet()
     }
-
-    // API 26–27 expose signing certificates through the legacy field only.
-    @Suppress("DEPRECATION")
-    private fun legacySignatures(info: PackageInfo) = info.signatures.orEmpty()
 
     @Synchronized
     fun install(
@@ -209,7 +196,7 @@ object RemoteUpdater {
             PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
                 setAppPackageName(context.packageName)
                 setSize(file.length())
-                if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             }
         val sessionId = installer.createSession(parameters)
         try {
@@ -222,7 +209,7 @@ object RemoteUpdater {
                     }
                 }
                 val intent = Intent(context, InstallResultReceiver::class.java).setAction("app.cadenza.INSTALL_RESULT")
-                val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 val callback = PendingIntent.getBroadcast(context, sessionId, intent, flags)
                 session.commit(callback.intentSender)
             }

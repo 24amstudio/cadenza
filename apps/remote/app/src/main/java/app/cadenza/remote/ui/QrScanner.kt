@@ -9,10 +9,10 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -36,6 +36,7 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
+import java.nio.ByteBuffer
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -75,9 +76,16 @@ private class CameraScanner(
     private var images: ImageReader? = null
     private var preview: Surface? = null
     private var lastAnalysis = 0L
+    private var afMode = CaptureRequest.CONTROL_AF_MODE_AUTO
     private val decoder =
         MultiFormatReader().apply {
-            setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
+            setHints(
+                mapOf(
+                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                    DecodeHintType.TRY_HARDER to true,
+                    DecodeHintType.ALSO_INVERTED to true,
+                ),
+            )
         }
 
     fun attach(view: TextureView) {
@@ -117,11 +125,26 @@ private class CameraScanner(
                     manager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
                 } ?: manager.cameraIdList.firstOrNull() ?: error("This device has no camera.")
             val map = manager.getCameraCharacteristics(id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            // A larger analysis frame reads smaller codes from farther away; the bulk
+            // luminance copy below keeps decoding cheap enough for this size.
             val size =
                 map
                     ?.getOutputSizes(ImageFormat.YUV_420_888)
-                    ?.filter { it.width <= 1_280 && it.height <= 960 }
-                    ?.minByOrNull { kotlin.math.abs(it.width * it.height - 640 * 480) } ?: error("QR capture is unavailable.")
+                    ?.filter { it.width <= 1_920 && it.height <= 1_440 }
+                    ?.maxByOrNull { it.width * it.height } ?: error("QR capture is unavailable.")
+            afMode =
+                manager
+                    .getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+                    ?.let { modes ->
+                        when {
+                            modes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) ->
+                                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                            modes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO) ->
+                                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
+                            else -> CaptureRequest.CONTROL_AF_MODE_AUTO
+                        }
+                    } ?: CaptureRequest.CONTROL_AF_MODE_AUTO
             texture.setDefaultBufferSize(size.width, size.height)
             preview = Surface(texture)
             images =
@@ -174,8 +197,8 @@ private class CameraScanner(
                         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                         surfaces.forEach(request::addTarget)
                         request.set(
-                            android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
-                            android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE,
+                            CaptureRequest.CONTROL_AF_MODE,
+                            afMode,
                         )
                         configured.setRepeatingRequest(request.build(), null, handler)
                     } catch (error: Exception) {
@@ -187,28 +210,14 @@ private class CameraScanner(
                     fail("Camera preview could not start. Paste pairing details instead.")
                 }
             }
-        if (Build.VERSION.SDK_INT >= 28) {
-            camera.createCaptureSession(
-                SessionConfiguration(
-                    SessionConfiguration.SESSION_REGULAR,
-                    surfaces.map(::OutputConfiguration),
-                    Executor { handler.post(it) },
-                    callback,
-                ),
-            )
-        } else {
-            createLegacySession(camera, surfaces, callback)
-        }
-    }
-
-    // API 26–27 have only this session API. Newer systems use SessionConfiguration.
-    @Suppress("DEPRECATION")
-    private fun createLegacySession(
-        camera: CameraDevice,
-        surfaces: List<Surface>,
-        callback: CameraCaptureSession.StateCallback,
-    ) {
-        camera.createCaptureSession(surfaces, callback, handler)
+        camera.createCaptureSession(
+            SessionConfiguration(
+                SessionConfiguration.SESSION_REGULAR,
+                surfaces.map(::OutputConfiguration),
+                Executor { handler.post(it) },
+                callback,
+            ),
+        )
     }
 
     private fun analyze(reader: ImageReader) {
@@ -225,13 +234,7 @@ private class CameraScanner(
             val plane = image.planes[0]
             val data = ByteArray(image.width * image.height)
             val buffer = plane.buffer
-            for (y in 0 until image.height) {
-                for (x in 0 until image.width) {
-                    val index = y * plane.rowStride + x * plane.pixelStride
-                    if (index >= buffer.limit()) return
-                    data[y * image.width + x] = buffer.get(index)
-                }
-            }
+            extractLuminance(plane.rowStride, plane.pixelStride, image.width, image.height, buffer, data)
             val source = PlanarYUVLuminanceSource(data, image.width, image.height, 0, 0, image.width, image.height, false)
             try {
                 val result = decoder.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
@@ -240,6 +243,39 @@ private class CameraScanner(
                 // No readable QR in this frame; the next frame is independent.
             } finally {
                 decoder.reset()
+            }
+        }
+    }
+
+    // Copy only the luminance plane, row by row, instead of per pixel; TRY_HARDER and the
+    // inverted retry need every frame's full resolution to read codes at a distance.
+    private fun extractLuminance(
+        rowStride: Int,
+        pixelStride: Int,
+        width: Int,
+        height: Int,
+        buffer: ByteBuffer,
+        data: ByteArray,
+    ) {
+        buffer.rewind()
+        if (pixelStride == 1) {
+            if (rowStride == width) {
+                buffer.get(data, 0, minOf(data.size, buffer.remaining()))
+                return
+            }
+            for (y in 0 until height) {
+                val start = y * rowStride
+                if (start + width > buffer.limit()) break
+                buffer.position(start)
+                buffer.get(data, y * width, width)
+            }
+            return
+        }
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val index = y * rowStride + x * pixelStride
+                if (index >= buffer.limit()) break
+                data[y * width + x] = buffer.get(index)
             }
         }
     }

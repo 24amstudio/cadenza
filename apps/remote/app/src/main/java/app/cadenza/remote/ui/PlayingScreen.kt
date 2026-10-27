@@ -47,6 +47,9 @@ fun PlayingScreen(
     onLyricsFocusRestored: () -> Unit,
     onOpenLyrics: () -> Unit,
 ) {
+    // Hold the window keep-awake flag only while this screen is composed; leaving the
+    // Now Playing view disposes this effect and backgrounding the Activity turns it off.
+    KeepScreenAwake(state.snapshot?.playing == true && state.snapshot.current != null)
     val lyricsFocusRequester = remember { FocusRequester() }
     LaunchedEffect(restoreLyricsFocus) {
         if (restoreLyricsFocus) {
@@ -143,7 +146,7 @@ private fun PlayerDetails(
         if (mixing == true && snapshot.incoming != null) {
             Text("AutoMix → " + snapshot.incoming.title, style = MaterialTheme.typography.titleMedium)
         } else if (mixing == true) {
-            Text("AutoMix transition �· Incoming song not reported", style = MaterialTheme.typography.bodyMedium)
+            Text("AutoMix transition - Incoming song not reported", style = MaterialTheme.typography.bodyMedium)
         } else if (mixing == null) {
             Text(
                 if (observationsCurrent) "AutoMix not reported by Cadenza Host" else "AutoMix status waiting for Cadenza Host",

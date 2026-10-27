@@ -1,6 +1,6 @@
 # Cadenza Remote
 
-The native Android app uses Kotlin, Jetpack Compose Material 3 Expressive, Android NSD, Camera2, Keystore, SQLiteOpenHelper, and PackageInstaller. It targets supported Android devices and does not require an Android audio engine or Google Play services.
+The native Android app uses Kotlin, Jetpack Compose Material 3 Expressive, Android NSD, Camera2, Keystore, SQLiteOpenHelper, PackageInstaller, and the framework MediaSession API. It targets Android 12 / API 31 and newer devices and does not require an Android audio engine or Google Play services.
 
 The Cadenza evolution adds editable device identity, local Favorites, theme preferences, an official adaptive list-detail home, ongoing session notifications and bounded address failover. Current strict compile/lint/test and packaging evidence is recorded in [validation](../../docs/VALIDATION.md); real device installation and Host integration remain unverified. See [building](../../docs/BUILDING.md) and [setup](../../docs/SETUP.md).
 

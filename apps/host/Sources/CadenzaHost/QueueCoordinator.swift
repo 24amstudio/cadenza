@@ -8,6 +8,7 @@ final class QueueCoordinator {
     let journal: CommandJournal
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onCredits: (() -> Void)?
+    var onIssue: ((String) -> Void)?
     private(set) var nativeRows: [NativeQueueRow] = []
     private var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
@@ -16,6 +17,7 @@ final class QueueCoordinator {
     private var sequence: Int64 = 0
     private(set) var synchronized = false
     private(set) var issue: String?
+    private var publishIssueReported = false
     private var locked = false
     private var draining = false
     private var waiting: [QueuedCommand] = []
@@ -261,7 +263,16 @@ final class QueueCoordinator {
 
     func publish() {
         sequence += 1
-        do { onSnapshot?(try snapshot()) } catch { issue = error.localizedDescription }
+        do {
+            onSnapshot?(try snapshot())
+            publishIssueReported = false
+        } catch {
+            issue = error.localizedDescription
+            if !publishIssueReported {
+                publishIssueReported = true
+                onIssue?("Cadenza Host could not publish the current playback state: " + error.localizedDescription)
+            }
+        }
     }
 
     func execute(_ command: Frame, actor: String) async throws -> Frame {

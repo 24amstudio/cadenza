@@ -11,21 +11,27 @@ final class HostUpdater {
 
     init(directory: URL) { self.directory = directory.appendingPathComponent("Updates", isDirectory: true) }
 
-    var currentBuild: Int64 { Int64(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1") ?? 1 }
+    var currentBuild: Int64 {
+        Int64(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1") ?? 1
+    }
 
     func check(configuration: UpdateConfiguration) async throws -> String {
-        guard HostBuild.updatesEnabled else { throw CadenzaError.failure("update", "Updates are disabled in this build.") }
+        guard HostBuild.updatesEnabled else {
+            throw CadenzaError.failure("update", "Updates are disabled in this build.")
+        }
         guard ReleaseValidation.validRepository(configuration.repository),
-              let key = Data(base64Encoded: configuration.publicKeySpkiBase64) else {
+            let key = Data(base64Encoded: configuration.publicKeySpkiBase64)
+        else {
             throw CadenzaError.failure("update", "Set a GitHub repository and public release key in Host settings.")
         }
         let metadata = try await http.bytes(
             "https://api.github.com/repos/\(configuration.repository)/releases/latest", maximum: 65_536
         )
         guard let release = try JSONSerialization.jsonObject(with: metadata) as? [String: Any],
-              release["draft"] as? Bool == false, release["prerelease"] as? Bool == false,
-              let tag = release["tag_name"] as? String,
-              tag.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil else {
+            release["draft"] as? Bool == false, release["prerelease"] as? Bool == false,
+            let tag = release["tag_name"] as? String,
+            tag.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil
+        else {
             throw CadenzaError.failure("update", "The repository has no compatible stable release.")
         }
         let base = "https://github.com/\(configuration.repository)/releases/download/\(tag)/"
@@ -52,22 +58,30 @@ final class HostUpdater {
             }
             try ReleaseValidation.verifyFile(partial, asset: asset)
             try FileManager.default.moveItem(at: partial, to: archive)
-        } else { try ReleaseValidation.verifyFile(archive, asset: asset) }
+        } else {
+            try ReleaseValidation.verifyFile(archive, asset: asset)
+        }
         try data.write(to: directory.appendingPathComponent("cadenza-release.json"), options: .atomic)
         try signature.write(to: directory.appendingPathComponent("cadenza-release.sig"), options: .atomic)
         staged = (archive, manifest)
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        for file in files where file.pathExtension == "zip" && file != archive { try FileManager.default.removeItem(at: file) }
+        for file in files where file.pathExtension == "zip" && file != archive {
+            try FileManager.default.removeItem(at: file)
+        }
         return "Cadenza \(manifest.version) is ready to install."
     }
 
     func install(configuration: UpdateConfiguration, store: HostStore) throws {
-        guard HostBuild.updatesEnabled else { throw CadenzaError.failure("update", "Updates are disabled in this build.") }
+        guard HostBuild.updatesEnabled else {
+            throw CadenzaError.failure("update", "Updates are disabled in this build.")
+        }
         guard let (archive, _) = staged, Bundle.main.bundleURL.pathExtension == "app",
-              let executable = Bundle.main.executableURL else {
+            let executable = Bundle.main.executableURL
+        else {
             throw CadenzaError.failure("update", "Install the bundled Cadenza Host.app before using self-updates.")
         }
-        guard try store.database.query("SELECT command_id FROM command_intents WHERE phase!='complete' LIMIT 1").isEmpty else {
+        guard try store.database.query("SELECT command_id FROM command_intents WHERE phase!='complete' LIMIT 1").isEmpty
+        else {
             throw CadenzaError.failure("update", "Resolve unconfirmed Music actions before restarting Host.")
         }
         try store.database.backup(to: directory.appendingPathComponent("before-update.sqlite"))

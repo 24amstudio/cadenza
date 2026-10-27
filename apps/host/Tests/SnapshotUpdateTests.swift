@@ -1,4 +1,5 @@
 import Testing
+
 @testable import CadenzaHost
 
 struct SnapshotUpdateTests {
@@ -20,7 +21,11 @@ struct SnapshotUpdateTests {
         next.playing = true
         #expect(!next.permitsHeartbeat(comparedTo: previous))
         next = previous
-        next.queue = [QueueEntry(id: "entry", requesterName: "Tablet", song: Song(source: "catalog", id: "123", title: "Song", artist: "Artist"))]
+        next.queue = [
+            QueueEntry(
+                id: "entry", requesterName: "Tablet",
+                song: Song(source: "catalog", id: "123", title: "Song", artist: "Artist"))
+        ]
         #expect(!next.permitsHeartbeat(comparedTo: previous))
     }
 

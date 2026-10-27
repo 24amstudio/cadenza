@@ -7,24 +7,26 @@ enum SecureStore {
 
     static func read(_ account: String) throws -> Data? {
         var result: CFTypeRef?
-        let status = SecItemCopyMatching([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ] as CFDictionary, &result)
+        let status = SecItemCopyMatching(
+            [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccount: account,
+                kSecReturnData: true,
+                kSecMatchLimit: kSecMatchLimitOne,
+            ] as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else { throw error(status) }
         return data
     }
 
     static func write(_ account: String, _ value: Data) throws {
-        let query = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-        ] as [CFString: Any]
+        let query =
+            [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccount: account,
+            ] as [CFString: Any]
         let status = SecItemUpdate(query as CFDictionary, [kSecValueData: value] as CFDictionary)
         if status == errSecItemNotFound {
             var item = query
@@ -32,15 +34,18 @@ enum SecureStore {
             guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
                 throw CadenzaError.failure("secure_storage", "Cannot save Cadenza credentials in Keychain.")
             }
-        } else if status != errSecSuccess { throw error(status) }
+        } else if status != errSecSuccess {
+            throw error(status)
+        }
     }
 
     static func delete(_ account: String) throws {
-        let status = SecItemDelete([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-        ] as CFDictionary)
+        let status = SecItemDelete(
+            [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccount: account,
+            ] as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw error(status) }
     }
 
@@ -80,9 +85,11 @@ struct TLSIdentity {
         var imported: CFArray?
         let options = [kSecImportExportPassphrase: record.password] as CFDictionary
         guard SecPKCS12Import(record.pkcs12 as CFData, options, &imported) == errSecSuccess,
-              let items = imported as? [[String: Any]],
-              let value = items.first?[kSecImportItemIdentity as String] else {
-            throw CadenzaError.failure("secure_storage", "Cannot load Host's TLS identity. Restore Keychain access and retry.")
+            let items = imported as? [[String: Any]],
+            let value = items.first?[kSecImportItemIdentity as String]
+        else {
+            throw CadenzaError.failure(
+                "secure_storage", "Cannot load Host's TLS identity. Restore Keychain access and retry.")
         }
         // SecPKCS12Import guarantees kSecImportItemIdentity has SecIdentity's CF type.
         let identity = value as! SecIdentity
@@ -112,17 +119,21 @@ struct TLSIdentity {
         let key = directory.appendingPathComponent("key.pem").path
         let certificate = directory.appendingPathComponent("certificate.pem").path
         let archive = directory.appendingPathComponent("identity.p12").path
-        _ = try await Subprocess.run("/usr/bin/openssl", [
-            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
-            "-keyout", key, "-out", certificate, "-subj", "/CN=Cadenza-\(hostId)",
-        ], timeout: 15)
+        _ = try await Subprocess.run(
+            "/usr/bin/openssl",
+            [
+                "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
+                "-keyout", key, "-out", certificate, "-subj", "/CN=Cadenza-\(hostId)",
+            ], timeout: 15)
         let password = try SecureStore.randomToken()
         var environment = ProcessInfo.processInfo.environment
         environment["CADENZA_IDENTITY_PASSWORD"] = password
-        _ = try await Subprocess.run("/usr/bin/openssl", [
-            "pkcs12", "-export", "-inkey", key, "-in", certificate, "-out", archive,
-            "-passout", "env:CADENZA_IDENTITY_PASSWORD",
-        ], timeout: 5, environment: environment)
+        _ = try await Subprocess.run(
+            "/usr/bin/openssl",
+            [
+                "pkcs12", "-export", "-inkey", key, "-in", certificate, "-out", archive,
+                "-passout", "env:CADENZA_IDENTITY_PASSWORD",
+            ], timeout: 5, environment: environment)
         return IdentityRecord(pkcs12: try Data(contentsOf: URL(fileURLWithPath: archive)), password: password)
     }
 }

@@ -1,5 +1,5 @@
-import AppKit
 import Accessibility
+import AppKit
 import Foundation
 import Observation
 
@@ -77,18 +77,20 @@ final class HostModel {
     func refreshDevices() {
         let ids = Set(service?.network.peers.values.compactMap(\.remoteId) ?? [])
         do {
-            remotes = try service?.store.remotes().compactMap { row in
-                guard let id = row["remote_id"]?.string, let name = row["display_name"]?.string else { return nil }
-                return PairedRemote(id: id, name: name, revoked: row["revoked_at_ms"]?.integer != nil)
-            } ?? []
+            remotes =
+                try service?.store.remotes().compactMap { row in
+                    guard let id = row["remote_id"]?.string, let name = row["display_name"]?.string else { return nil }
+                    return PairedRemote(id: id, name: name, revoked: row["revoked_at_ms"]?.integer != nil)
+                } ?? []
             connectedRemotes = remotes.filter { ids.contains($0.id) && !$0.revoked }
             if service?.invitation == nil { invitation = nil }
         } catch { showError("Could not read pairings", error.localizedDescription) }
     }
 
     func pair() {
-        do { invitation = try service?.createInvitation() }
-        catch { showError("Could not create pairing", error.localizedDescription) }
+        do { invitation = try service?.createInvitation() } catch {
+            showError("Could not create pairing", error.localizedDescription)
+        }
     }
 
     func revoke(_ remote: PairedRemote) {
@@ -117,7 +119,10 @@ final class HostModel {
                 running = service?.network.ready ?? false
                 scheduleUpdates()
                 notify("Settings saved.")
-            } catch { running = service?.network.ready ?? false; showError("Could not save settings", error.localizedDescription) }
+            } catch {
+                running = service?.network.ready ?? false
+                showError("Could not save settings", error.localizedDescription)
+            }
         }
     }
 
@@ -143,8 +148,7 @@ final class HostModel {
             do {
                 let message = try await updater.check(configuration: configuration.updates)
                 stagedVersion = updater.staged?.1.version
-                if automatic, stagedVersion != nil { installUpdate() }
-                else { notify(message) }
+                if automatic, stagedVersion != nil { installUpdate() } else { notify(message) }
             } catch {
                 if !automatic { showError("Update could not be prepared", error.localizedDescription) }
             }
@@ -155,7 +159,9 @@ final class HostModel {
         guard HostBuild.updatesEnabled else { return }
         do {
             guard let service else { return }
-            guard !service.queue.busy else { throw CadenzaError.failure("busy", "Wait for Music's current request to finish before updating.") }
+            guard !service.queue.busy else {
+                throw CadenzaError.failure("busy", "Wait for Music's current request to finish before updating.")
+            }
             try service.queue.flushCredits()
             try updater?.install(configuration: configuration.updates, store: service.store)
         } catch { showError("Update could not be installed", error.localizedDescription) }
@@ -163,7 +169,9 @@ final class HostModel {
 
     private func scheduleUpdates() {
         updateScheduler?.invalidate()
-        guard HostBuild.updatesEnabled, configuration.automaticUpdates, !configuration.updates.repository.isEmpty else { return }
+        guard HostBuild.updatesEnabled, configuration.automaticUpdates, !configuration.updates.repository.isEmpty else {
+            return
+        }
         let scheduler = NSBackgroundActivityScheduler(identifier: "app.cadence.host.updates")
         scheduler.interval = 86_400
         scheduler.tolerance = 3_600
@@ -184,9 +192,15 @@ final class HostModel {
         guard let directory = updater?.directory else { return }
         let url = directory.appendingPathComponent("install-result.json")
         guard let data = try? Data(contentsOf: url),
-              let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        if result["success"] as? Bool == true { notify("Cadenza Host updated.") }
-        else { showError("Host update did not finish", result["message"] as? String ?? "The previous installation was preserved.") }
+            let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+        if result["success"] as? Bool == true {
+            notify("Cadenza Host updated.")
+        } else {
+            showError(
+                "Host update did not finish", result["message"] as? String ?? "The previous installation was preserved."
+            )
+        }
         try? FileManager.default.removeItem(at: url)
     }
 

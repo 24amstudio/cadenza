@@ -46,7 +46,9 @@ public struct ReleaseNote: Codable, Sendable {
 public enum ReleaseFailure: LocalizedError {
     case invalid(String)
     public var errorDescription: String? {
-        switch self { case let .invalid(message): return message }
+        switch self {
+        case .invalid(let message): return message
+        }
     }
 }
 
@@ -56,7 +58,8 @@ public enum ReleaseValidation {
         repository: String, currentBuild: Int64, platform: String
     ) throws -> (ReleaseManifest, ReleaseAsset) {
         guard data.count <= 65_536, signature.count <= 128,
-              validRepository(repository) else { throw ReleaseFailure.invalid("Invalid release configuration.") }
+            validRepository(repository)
+        else { throw ReleaseFailure.invalid("Invalid release configuration.") }
         let key = try P256.Signing.PublicKey(derRepresentation: publicKeySPKI)
         let signature = try P256.Signing.ECDSASignature(derRepresentation: signature)
         guard key.isValidSignature(signature, for: data) else {
@@ -65,31 +68,36 @@ public enum ReleaseValidation {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let manifest = try decoder.decode(ReleaseManifest.self, from: data)
-        if let identity = manifest.buildId, identity.range(of: #"^([0-9a-f]{40}|source-[0-9a-f]{64})$"#, options: .regularExpression) == nil {
+        if let identity = manifest.buildId,
+            identity.range(of: #"^([0-9a-f]{40}|source-[0-9a-f]{64})$"#, options: .regularExpression) == nil
+        {
             throw ReleaseFailure.invalid("Invalid release build identity.")
         }
         if let history = manifest.changelog {
             guard history.count <= 100, Set(history.map(\.build)).count == history.count,
-                  history.allSatisfy({ entry in
+                history.allSatisfy({ entry in
                     entry.build > 0 && entry.build <= manifest.build && entry.changes.count <= 100
                         && entry.version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil
                         && entry.changes.allSatisfy { !$0.isEmpty && $0.count <= 1000 }
-                  }) else { throw ReleaseFailure.invalid("Invalid signed changelog.") }
+                })
+            else { throw ReleaseFailure.invalid("Invalid signed changelog.") }
         }
         guard manifest.schema == 1, manifest.protocolMajor == 1,
-              manifest.repository == repository,
-              manifest.version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil,
-              manifest.tag == "v" + manifest.version,
-              manifest.build > currentBuild,
-              manifest.build <= 9_007_199_254_740_991,
-              manifest.assets.filter({ $0.platform == platform }).count == 1,
-              let asset = manifest.assets.first(where: { $0.platform == platform }),
-              asset.minimumOs >= 26,
-              asset.sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
-              asset.size > 0, asset.size <= 134_217_728 else {
+            manifest.repository == repository,
+            manifest.version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil,
+            manifest.tag == "v" + manifest.version,
+            manifest.build > currentBuild,
+            manifest.build <= 9_007_199_254_740_991,
+            manifest.assets.filter({ $0.platform == platform }).count == 1,
+            let asset = manifest.assets.first(where: { $0.platform == platform }),
+            asset.minimumOs >= 26,
+            asset.sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+            asset.size > 0, asset.size <= 134_217_728
+        else {
             throw ReleaseFailure.invalid("The update is incompatible, invalid, or not newer than this installation.")
         }
-        let expected = platform == "macos-arm64"
+        let expected =
+            platform == "macos-arm64"
             ? "Cadenza-Host-\(manifest.version)-arm64.zip"
             : "Cadenza-Remote-\(manifest.version).apk"
         guard asset.filename == expected else { throw ReleaseFailure.invalid("Unexpected release filename.") }
@@ -97,7 +105,9 @@ public enum ReleaseValidation {
     }
 
     public static func validRepository(_ value: String) -> Bool {
-        value.range(of: #"^[A-Za-z0-9][A-Za-z0-9_\-]{0,38}/[A-Za-z0-9][A-Za-z0-9_.\-]{0,99}$"#, options: .regularExpression) != nil
+        value.range(
+            of: #"^[A-Za-z0-9][A-Za-z0-9_\-]{0,38}/[A-Za-z0-9][A-Za-z0-9_.\-]{0,99}$"#, options: .regularExpression)
+            != nil
             && !value.contains("..")
     }
 
@@ -111,7 +121,9 @@ public enum ReleaseValidation {
         var digest = SHA256()
         while let chunk = try handle.read(upToCount: 262_144), !chunk.isEmpty { digest.update(data: chunk) }
         let actual = digest.finalize().map { String(format: "%02x", $0) }.joined()
-        guard actual == asset.sha256 else { throw ReleaseFailure.invalid("The update checksum does not match its signed manifest.") }
+        guard actual == asset.sha256 else {
+            throw ReleaseFailure.invalid("The update checksum does not match its signed manifest.")
+        }
     }
 
     public static func encode(_ manifest: ReleaseManifest) throws -> Data {

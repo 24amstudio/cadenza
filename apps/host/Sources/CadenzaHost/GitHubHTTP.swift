@@ -14,7 +14,9 @@ final class GitHubHTTP: NSObject, URLSessionTaskDelegate, Sendable {
     }
 
     private func request(_ address: String) throws -> URLRequest {
-        guard let url = URL(string: address), valid(url) else { throw CadenzaError.failure("update", "Invalid GitHub address.") }
+        guard let url = URL(string: address), valid(url) else {
+            throw CadenzaError.failure("update", "Invalid GitHub address.")
+        }
         var request = URLRequest(url: url)
         request.setValue("Cadenza-Host", forHTTPHeaderField: "User-Agent")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -31,7 +33,8 @@ final class GitHubHTTP: NSObject, URLSessionTaskDelegate, Sendable {
         defer { session.invalidateAndCancel() }
         let (bytes, response) = try await session.bytes(for: request(address))
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-            throw CadenzaError.failure("update", "GitHub could not provide this release. Check the repository and try again.")
+            throw CadenzaError.failure(
+                "update", "GitHub could not provide this release. Check the repository and try again.")
         }
         var data = Data()
         for try await byte in bytes {
@@ -51,7 +54,10 @@ final class GitHubHTTP: NSObject, URLSessionTaskDelegate, Sendable {
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
             throw CadenzaError.failure("update", "The update package could not be downloaded.")
         }
-        guard FileManager.default.createFile(atPath: destination.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+        guard
+            FileManager.default.createFile(
+                atPath: destination.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        else {
             throw CadenzaError.failure("update", "Cannot create the staged download.")
         }
         let handle = try FileHandle(forWritingTo: destination)
@@ -61,7 +67,9 @@ final class GitHubHTTP: NSObject, URLSessionTaskDelegate, Sendable {
         for try await byte in bytes {
             buffer.append(byte)
             count += 1
-            guard count <= expectedSize else { throw CadenzaError.failure("update", "The update exceeded its signed size.") }
+            guard count <= expectedSize else {
+                throw CadenzaError.failure("update", "The update exceeded its signed size.")
+            }
             if buffer.count >= 262_144 {
                 try handle.write(contentsOf: buffer)
                 buffer.removeAll(keepingCapacity: true)

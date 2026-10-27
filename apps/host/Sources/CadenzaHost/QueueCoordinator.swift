@@ -62,13 +62,15 @@ final class QueueCoordinator {
         guard !locked else { return }
         locked = true
         defer { locked = false }
-        do { try await readState() }
-        catch {
+        do { try await readState() } catch {
             synchronized = false
             issue = error.localizedDescription
             if current?.requestedBy != nil {
-                do { try store.recordObservationGap() }
-                catch { issue = (issue ?? "Music could not be read.") + " The observation gap could not be saved: " + error.localizedDescription }
+                do { try store.recordObservationGap() } catch {
+                    issue =
+                        (issue ?? "Music could not be read.") + " The observation gap could not be saved: "
+                        + error.localizedDescription
+                }
             }
             lastObservation = nil
         }
@@ -80,28 +82,35 @@ final class QueueCoordinator {
         let now = monotonicMs()
         if primingLyrics && status.song?.identity != lastStatus?.song?.identity { primingLyrics = false }
         if !primingLyrics { try? music.accessibility.showQueue(deadline: now + 250) }
-        let nativeRead = primingLyrics ? .success(nativeRows) : Result { try music.accessibility.rows(deadline: deadline) }
+        let nativeRead =
+            primingLyrics ? .success(nativeRows) : Result { try music.accessibility.rows(deadline: deadline) }
         let observed = (try? nativeRead.get()) ?? nativeRows
         guard observed.count <= 256, Set(observed.map(\.token)).count == observed.count else {
-            throw CadenzaError.failure("native_queue_unavailable", "The native queue is too large or has ambiguous row identities.")
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "The native queue is too large or has ambiguous row identities.")
         }
         let pending = try store.pending()
         if bindings.isEmpty {
             for row in pending {
                 if let token = row["native_token"]?.string,
-                   let native = observed.first(where: { $0.token == token }),
-                   native.title == row["title"]?.string, native.artist == row["artist"]?.string,
-                   let id = row["entry_id"]?.string { bindings[token] = id }
+                    let native = observed.first(where: { $0.token == token }),
+                    native.title == row["title"]?.string, native.artist == row["artist"]?.string,
+                    let id = row["entry_id"]?.string
+                {
+                    bindings[token] = id
+                }
             }
         }
         let missing = nativeRows.filter { old in !observed.contains { $0.token == old.token } }
         for native in observed {
             if let id = bindings[native.token], let entry = try store.entry(id),
-               native.title != entry["title"]?.string || native.artist != entry["artist"]?.string {
+                native.title != entry["title"]?.string || native.artist != entry["artist"]?.string
+            {
                 bindings.removeValue(forKey: native.token)
             }
         }
-        let songChanged = status.song?.identity != lastStatus?.song?.identity
+        let songChanged =
+            status.song?.identity != lastStatus?.song?.identity
             || status.song?.title != lastStatus?.song?.title
             || status.song?.artist != lastStatus?.song?.artist
             || (status.positionMs + 1_500 < (lastStatus?.positionMs ?? 0) && !missing.isEmpty)
@@ -116,11 +125,13 @@ final class QueueCoordinator {
         if current == nil, lastStatus == nil, let song = status.song {
             let state = try store.database.query("SELECT current_occurrence_id,current_native_id FROM host_state").first
             if state?["current_native_id"]?.string == song.id,
-               let occurrence = state?["current_occurrence_id"]?.string,
-               let row = try store.database.query("SELECT * FROM queue_entries WHERE state='current'").first,
-               row["title"]?.string == song.title, row["artist"]?.string == song.artist {
+                let occurrence = state?["current_occurrence_id"]?.string,
+                let row = try store.database.query("SELECT * FROM queue_entries WHERE state='current'").first,
+                row["title"]?.string == song.title, row["artist"]?.string == song.artist
+            {
                 current = CurrentPlayback(
-                    occurrenceId: occurrence, entryId: row["entry_id"]?.string, requestedBy: row["requested_by"]?.string,
+                    occurrenceId: occurrence, entryId: row["entry_id"]?.string,
+                    requestedBy: row["requested_by"]?.string,
                     requesterName: try store.remoteName(row["requested_by"]?.string), song: store.song(row),
                     positionMs: status.positionMs, sampledAtHostMs: now
                 )
@@ -129,8 +140,11 @@ final class QueueCoordinator {
         if let song = status.song, status.state != "stopped", current == nil || songChanged {
             var entry: String?
             if missing.count == 1, let removed = missing.first,
-               removed.token == nativeRows.first?.token, removed.title == song.title,
-               removed.artist == song.artist { entry = bindings[removed.token] }
+                removed.token == nativeRows.first?.token, removed.title == song.title,
+                removed.artist == song.artist
+            {
+                entry = bindings[removed.token]
+            }
             let stored = try entry.flatMap { try store.entry($0) }
             let actual = stored.map(store.song) ?? song
             let occurrence = try store.beginOccurrence(entryId: entry, song: actual)
@@ -155,7 +169,8 @@ final class QueueCoordinator {
             lastObservation = nil
         }
         if let occurrence = current?.occurrenceId, let last = lastObservation, let previous = lastStatus,
-           status.playing, previous.playing, !songChanged {
+            status.playing, previous.playing, !songChanged
+        {
             let elapsed = now - last
             let progress = status.positionMs - previous.positionMs
             if elapsed > 2_000 { try store.recordObservationGap() }
@@ -163,9 +178,10 @@ final class QueueCoordinator {
                 if pendingPlaybackOccurrence != occurrence { try flushCredits() }
                 pendingPlaybackOccurrence = occurrence
                 pendingPlaybackMs += min(elapsed, progress)
-                let counted = try store.database.query(
-                    "SELECT counted FROM playback_sessions WHERE occurrence_id=?", [.text(occurrence)]
-                ).first?["counted"]?.integer == 1
+                let counted =
+                    try store.database.query(
+                        "SELECT counted FROM playback_sessions WHERE occurrence_id=?", [.text(occurrence)]
+                    ).first?["counted"]?.integer == 1
                 if !counted || pendingPlaybackMs >= 5_000 { try flushCredits() }
             }
         }
@@ -181,7 +197,7 @@ final class QueueCoordinator {
             try store.bump()
         }
         nativeRows = observed
-        if case let .failure(error) = nativeRead {
+        if case .failure(let error) = nativeRead {
             synchronized = false
             issue = error.localizedDescription
         } else {
@@ -207,15 +223,20 @@ final class QueueCoordinator {
         if current == nil { remaining = 0 }
         for row in nativeRows {
             let entry = try bindings[row.token].flatMap { try store.entry($0) }
-            let song = entry.map(store.song) ?? Song(source: "unknown", id: row.token, title: row.title, artist: row.artist)
-            queue.append(QueueEntry(
-                id: entry?["entry_id"]?.string ?? "mac-\(row.token)",
-                requestedBy: entry?["requested_by"]?.string,
-                requesterName: try store.remoteName(entry?["requested_by"]?.string), song: song, estimatedWaitMs: remaining
-            ))
+            let song =
+                entry.map(store.song) ?? Song(source: "unknown", id: row.token, title: row.title, artist: row.artist)
+            queue.append(
+                QueueEntry(
+                    id: entry?["entry_id"]?.string ?? "mac-\(row.token)",
+                    requestedBy: entry?["requested_by"]?.string,
+                    requesterName: try store.remoteName(entry?["requested_by"]?.string), song: song,
+                    estimatedWaitMs: remaining
+                ))
             if let value = remaining, let duration = song.durationMs, duration <= Wire.maximumCounter - value {
                 remaining = value + duration
-            } else { remaining = nil }
+            } else {
+                remaining = nil
+            }
         }
         let incomingMatches = queue.filter { $0.song.title == observedIncomingTitle }
         let incoming = lastMixing == true && incomingMatches.count == 1 ? incomingMatches.first?.song : nil
@@ -227,20 +248,21 @@ final class QueueCoordinator {
             quality: lastQuality,
             incoming: incoming, mixing: lastMixing,
             synchronized: synchronized, issue: issue,
-            observationGap: try store.database.query("SELECT observation_gap FROM host_state").first?["observation_gap"]?.integer == 1
+            observationGap: try store.database.query("SELECT observation_gap FROM host_state").first?[
+                "observation_gap"]?.integer == 1
         )
     }
 
     func publish() {
         sequence += 1
-        do { onSnapshot?(try snapshot()) }
-        catch { issue = error.localizedDescription }
+        do { onSnapshot?(try snapshot()) } catch { issue = error.localizedDescription }
     }
 
     func execute(_ command: Frame, actor: String) async throws -> Frame {
         try await withCheckedThrowingContinuation { continuation in
             guard waiting.count < 16 else {
-                continuation.resume(throwing: CadenzaError.failure("busy", "The command queue is full. Retry with current state."))
+                continuation.resume(
+                    throwing: CadenzaError.failure("busy", "The command queue is full. Retry with current state."))
                 return
             }
             waiting.append(QueuedCommand(frame: command, actor: actor, continuation: continuation))
@@ -259,8 +281,9 @@ final class QueueCoordinator {
             while locked && monotonicMs() < (next.frame.expiresAtHostMs ?? 0) {
                 try? await Task.sleep(for: .milliseconds(5))
             }
-            do { next.continuation.resume(returning: try await perform(next.frame, actor: next.actor)) }
-            catch { next.continuation.resume(throwing: error) }
+            do { next.continuation.resume(returning: try await perform(next.frame, actor: next.actor)) } catch {
+                next.continuation.resume(throwing: error)
+            }
             activeCommand = nil
         }
     }
@@ -270,12 +293,17 @@ final class QueueCoordinator {
         guard monotonicMs() < (command.expiresAtHostMs ?? 0) else {
             throw CadenzaError.failure("expired", "The command expired while waiting for dispatch.")
         }
-        guard !locked else { throw CadenzaError.failure("busy", "Music is processing another action. Retry using the latest queue.") }
+        guard !locked else {
+            throw CadenzaError.failure("busy", "Music is processing another action. Retry using the latest queue.")
+        }
         guard let action = command.action, let deadline = command.expiresAtHostMs else {
             throw CadenzaError.failure("invalid_command", "Invalid control action.")
         }
         locked = true
-        defer { locked = false; publish() }
+        defer {
+            locked = false
+            publish()
+        }
         primingLyrics = false
         preparationToken = nil
         try await readState(deadline: deadline)
@@ -295,7 +323,7 @@ final class QueueCoordinator {
             }
             for native in nativeRows {
                 let owner = try bindings[native.token].flatMap { try store.entry($0)?["requested_by"]?.string }
-                if owner == nil || (owner != actor && !(try store.crossEdits)) {
+                if try owner == nil || (owner != actor && !store.crossEdits) {
                     throw CadenzaError.failure("forbidden", "Play Now would jump ahead of another person's request.")
                 }
             }
@@ -316,7 +344,9 @@ final class QueueCoordinator {
                 try journal.prepare(command, actor: actor, plan: plan)
             }
             plannedEntry = id
-        } else { try journal.prepare(command, actor: actor, plan: nil) }
+        } else {
+            try journal.prepare(command, actor: actor, plan: nil)
+        }
         var dispatched = false
         let beforeEffect: @MainActor () throws -> Void = {
             guard !dispatched else { return }
@@ -327,12 +357,14 @@ final class QueueCoordinator {
         do {
             if let identity = action.song, let song = knownSongs[identity] {
                 guard music.accessibility.isPrepared(song) else {
-                    throw CadenzaError.failure("song_not_ready", "Prepare this exact song again before requesting playback.")
+                    throw CadenzaError.failure(
+                        "song_not_ready", "Prepare this exact song again before requesting playback.")
                 }
             }
             try store.authorize(actor: actor, command: command, entryId: target)
             if action.kind.hasPrefix("queue.") {
-                try await editQueue(action, actor: actor, deadline: deadline, plannedEntry: plannedEntry, beforeEffect: beforeEffect)
+                try await editQueue(
+                    action, actor: actor, deadline: deadline, plannedEntry: plannedEntry, beforeEffect: beforeEffect)
             } else {
                 try flushCredits()
                 lastObservation = nil
@@ -350,16 +382,23 @@ final class QueueCoordinator {
             if !dispatched, let plannedEntry { try store.remove(plannedEntry) }
             let result = try journal.result(
                 command, outcome: failure.outcome, code: failure.code,
-                message: dispatched ? "Music may have accepted this action. Check its original outcome before retrying. " + error.localizedDescription : error.localizedDescription
+                message: dispatched
+                    ? "Music may have accepted this action. Check its original outcome before retrying. "
+                        + error.localizedDescription : error.localizedDescription
             )
             try journal.finish(command, actor: actor, result: result)
-            if dispatched { synchronized = false; issue = "A native action is unconfirmed. Reconcile the queue before retrying." }
+            if dispatched {
+                synchronized = false
+                issue = "A native action is unconfirmed. Reconcile the queue before retrying."
+            }
             return result
         }
     }
 
     private func verifyPlayback(_ action: CommandAction, expectedEntry: String?) throws {
-        guard let status = lastStatus else { throw CadenzaError.failure("outcome_unknown", "Music state could not be confirmed.") }
+        guard let status = lastStatus else {
+            throw CadenzaError.failure("outcome_unknown", "Music state could not be confirmed.")
+        }
         let confirmed: Bool
         switch action.kind {
         case "queue.play_now": confirmed = current?.entryId == expectedEntry && status.playing
@@ -371,7 +410,9 @@ final class QueueCoordinator {
         case "playback.skip", "playback.previous": confirmed = current?.occurrenceId != action.occurrenceId
         default: confirmed = true
         }
-        guard confirmed else { throw CadenzaError.failure("outcome_unknown", "Music has not confirmed the requested playback state.") }
+        guard confirmed else {
+            throw CadenzaError.failure("outcome_unknown", "Music has not confirmed the requested playback state.")
+        }
     }
 
     private func editQueue(
@@ -398,10 +439,16 @@ final class QueueCoordinator {
                     && remainder.map(\.token) == before.map(\.token)
                     && added?.title == song.title && added?.artist == song.artist
             }
-            guard let added = insertNext ? after.first : after.last else { throw CadenzaError.failure("outcome_unknown", "Music did not expose the added request.") }
-            guard let id = plannedEntry else { throw CadenzaError.failure("storage", "The durable request intent is missing.") }
+            guard let added = insertNext ? after.first : after.last else {
+                throw CadenzaError.failure("outcome_unknown", "Music did not expose the added request.")
+            }
+            guard let id = plannedEntry else {
+                throw CadenzaError.failure("storage", "The durable request intent is missing.")
+            }
             try store.database.transaction {
-                try store.database.run("UPDATE queue_entries SET native_token=?,native_confirmed=1 WHERE entry_id=?", [.text(added.token), .text(id)])
+                try store.database.run(
+                    "UPDATE queue_entries SET native_token=?,native_confirmed=1 WHERE entry_id=?",
+                    [.text(added.token), .text(id)])
                 try store.bump()
             }
             bindings[added.token] = id
@@ -418,7 +465,9 @@ final class QueueCoordinator {
             }
             try beforeEffect()
             try music.accessibility.remove(row, deadline: deadline)
-            _ = try await waitForQueue(deadline: deadline) { $0.map(\.token) == before.filter { $0.token != row.token }.map(\.token) }
+            _ = try await waitForQueue(deadline: deadline) {
+                $0.map(\.token) == before.filter { $0.token != row.token }.map(\.token)
+            }
             try store.remove(entry)
             bindings.removeValue(forKey: row.token)
             try store.bump()
@@ -442,7 +491,7 @@ final class QueueCoordinator {
         let original = rows.firstIndex { $0.token == row.token } ?? index
         for crossed in rows[min(original, index)...max(original, index)] where crossed.token != row.token {
             let owner = try bindings[crossed.token].flatMap { try store.entry($0)?["requested_by"]?.string }
-            if owner == nil || (owner != actor && !(try store.crossEdits)) {
+            if try owner == nil || (owner != actor && !store.crossEdits) {
                 throw CadenzaError.failure("forbidden", "This move would cross a protected request.")
             }
         }
@@ -467,13 +516,20 @@ final class QueueCoordinator {
     }
 
     func prepare(_ identity: SongIdentity) async throws {
-        guard activeCommand == nil, waiting.isEmpty else { throw CadenzaError.failure("busy", "Music is processing a control action. Prepare the song again in a moment.") }
+        guard activeCommand == nil, waiting.isEmpty else {
+            throw CadenzaError.failure(
+                "busy", "Music is processing a control action. Prepare the song again in a moment.")
+        }
         let token = identifier()
         preparationToken = token
         let song: Song
-        if let known = knownSongs[identity] { song = known }
-        else if identity.source == "catalog" { song = try await catalog.resolve(identity) }
-        else { song = try await music.resolve(identity) }
+        if let known = knownSongs[identity] {
+            song = known
+        } else if identity.source == "catalog" {
+            song = try await catalog.resolve(identity)
+        } else {
+            song = try await music.resolve(identity)
+        }
         remember([song])
         guard preparationToken == token, activeCommand == nil, waiting.isEmpty else {
             throw CadenzaError.failure("busy", "Another Music action took priority. Prepare this song again.")
@@ -512,18 +568,25 @@ final class QueueCoordinator {
             throw CadenzaError.failure("invalid_state", "Each saved request can be assigned only once.")
         }
         try store.database.transaction {
-            let missing = try store.pending().compactMap { $0["entry_id"]?.string }.filter { !assignments.values.contains($0) }
+            let missing = try store.pending().compactMap { $0["entry_id"]?.string }.filter {
+                !assignments.values.contains($0)
+            }
             guard discardMissing || missing.isEmpty else {
-                throw CadenzaError.failure("invalid_state", "Assign every saved request or explicitly cancel missing requests.")
+                throw CadenzaError.failure(
+                    "invalid_state", "Assign every saved request or explicitly cancel missing requests.")
             }
             for id in missing { try store.remove(id) }
             for (token, id) in assignments {
                 guard let row = rows.first(where: { $0.token == token }),
-                      let saved = try store.entry(id), saved["state"]?.string == "pending",
-                      row.title == saved["title"]?.string, row.artist == saved["artist"]?.string else {
-                    throw CadenzaError.failure("invalid_state", "The selected native row does not match the saved song.")
+                    let saved = try store.entry(id), saved["state"]?.string == "pending",
+                    row.title == saved["title"]?.string, row.artist == saved["artist"]?.string
+                else {
+                    throw CadenzaError.failure(
+                        "invalid_state", "The selected native row does not match the saved song.")
                 }
-                try store.database.run("UPDATE queue_entries SET native_token=?,native_confirmed=1 WHERE entry_id=?", [.text(token), .text(id)])
+                try store.database.run(
+                    "UPDATE queue_entries SET native_token=?,native_confirmed=1 WHERE entry_id=?",
+                    [.text(token), .text(id)])
             }
             try store.bump()
         }
@@ -541,7 +604,10 @@ final class QueueCoordinator {
         locked = true
         preparationToken = nil
         primingLyrics = false
-        defer { locked = false; publish() }
+        defer {
+            locked = false
+            publish()
+        }
         try flushCredits()
         lastObservation = nil
         try await music.control(CommandAction(kind: kind), deadline: monotonicMs() + 1_000)

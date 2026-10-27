@@ -19,8 +19,9 @@ actor Lyrics {
         ).prefix(2_048)
         let files = candidates.compactMap { url -> (URL, Int, Date)? in
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true, values.isSymbolicLink != true,
-                  let size = values.fileSize, size <= 4_194_304 else { return nil }
+                values.isRegularFile == true, values.isSymbolicLink != true,
+                let size = values.fileSize, size <= 4_194_304
+            else { return nil }
             return (url, size, values.contentModificationDate ?? .distantPast)
         }.sorted { $0.2 > $1.2 }
         var bytes = 0
@@ -30,15 +31,17 @@ actor Lyrics {
             guard var data = try? Data(contentsOf: url) else { continue }
             while data.last == 0 { data.removeLast() }
             guard data.range(of: Data("ttmlLocalizations".utf8)) != nil,
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let items = root["data"] as? [[String: Any]] else { continue }
+                let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let items = root["data"] as? [[String: Any]]
+            else { continue }
             for item in items where matches(item, song: song) {
                 guard let relationships = item["relationships"] as? [String: Any] else { continue }
                 for kind in ["syllable-lyrics", "lyrics"] {
                     guard let relationship = relationships[kind] as? [String: Any],
-                          let records = relationship["data"] as? [[String: Any]],
-                          let attributes = records.first?["attributes"] as? [String: Any],
-                          let ttml = attributes["ttmlLocalizations"] as? String else { continue }
+                        let records = relationship["data"] as? [[String: Any]],
+                        let attributes = records.first?["attributes"] as? [String: Any],
+                        let ttml = attributes["ttmlLocalizations"] as? String
+                    else { continue }
                     let document = try TTMLDocument.parse(Data(ttml.utf8), occurrence: occurrence)
                     if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
                     cache[key] = document
@@ -54,7 +57,8 @@ actor Lyrics {
 
     func english(_ document: LyricDocument, song: Song) async -> LyricDocument {
         guard document.language?.hasPrefix("en") != true,
-              document.lines.contains(where: { $0.translation == nil }) else { return document }
+            document.lines.contains(where: { $0.translation == nil })
+        else { return document }
         let translated = await EnglishTranslation.translate(document)
         if !Task.isCancelled { cache[song.source + ":" + song.id] = translated }
         return translated
@@ -65,11 +69,12 @@ actor Lyrics {
         // A library persistent ID is not a catalog ID. Require an unambiguous metadata
         // match including duration, rather than treating one identifier as the other.
         guard let attributes = item["attributes"] as? [String: Any],
-              attributes["name"] as? String == song.title,
-              attributes["artistName"] as? String == song.artist,
-              attributes["albumName"] as? String == song.album,
-              let duration = (attributes["durationInMillis"] as? NSNumber)?.int64Value,
-              let expected = song.durationMs, abs(duration - expected) < 1_000 else { return false }
+            attributes["name"] as? String == song.title,
+            attributes["artistName"] as? String == song.artist,
+            attributes["albumName"] as? String == song.album,
+            let duration = (attributes["durationInMillis"] as? NSNumber)?.int64Value,
+            let expected = song.durationMs, abs(duration - expected) < 1_000
+        else { return false }
         return true
     }
 }
@@ -88,10 +93,13 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
     private var failure: String?
 
     static func parse(_ data: Data, occurrence: String) throws -> LyricDocument {
-        guard data.count <= 1_048_576 else { throw CadenzaError.failure("lyrics_unavailable", "The lyric document is too large.") }
+        guard data.count <= 1_048_576 else {
+            throw CadenzaError.failure("lyrics_unavailable", "The lyric document is too large.")
+        }
         let text = String(decoding: data, as: UTF8.self)
         guard !text.localizedCaseInsensitiveContains("<!DOCTYPE"),
-              !text.localizedCaseInsensitiveContains("<!ENTITY") else {
+            !text.localizedCaseInsensitiveContains("<!ENTITY")
+        else {
             throw CadenzaError.failure("lyrics_unavailable", "Unsafe XML declarations are not allowed in lyrics.")
         }
         let handler = TTMLDocument()
@@ -101,12 +109,16 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         parser.externalEntityResolvingPolicy = .never
         parser.delegate = handler
         guard parser.parse(), handler.failure == nil else {
-            throw CadenzaError.failure("lyrics_unavailable", handler.failure ?? "Music's lyric format could not be read.")
+            throw CadenzaError.failure(
+                "lyrics_unavailable", handler.failure ?? "Music's lyric format could not be read.")
         }
         var lines = handler.lines.sorted { $0.startMs < $1.startMs }
         guard Set(lines.map(\.id)).count == lines.count,
-              lines.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 128 }) else {
-            throw CadenzaError.failure("lyrics_unavailable", "Music's lyric document contains missing, repeated, or oversized line identities.")
+            lines.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 128 })
+        else {
+            throw CadenzaError.failure(
+                "lyrics_unavailable", "Music's lyric document contains missing, repeated, or oversized line identities."
+            )
         }
         for index in lines.indices {
             lines[index].translation = handler.translations[lines[index].id]
@@ -114,7 +126,9 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 lines[index].endMs = index + 1 < lines.count ? lines[index + 1].startMs : lines[index].startMs + 10_000
             }
         }
-        guard !lines.isEmpty else { throw CadenzaError.failure("lyrics_unavailable", "No supported line timings were found.") }
+        guard !lines.isEmpty else {
+            throw CadenzaError.failure("lyrics_unavailable", "No supported line timings were found.")
+        }
         let supplied = lines.contains { $0.translation != nil }
         return LyricDocument(
             occurrenceId: occurrence, revision: identifier(), language: handler.language,
@@ -133,8 +147,9 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         let fields = text.split(separator: ":", omittingEmptySubsequences: false)
         let parts = fields.compactMap { Double($0) }
         guard (2...3).contains(parts.count), fields.count == parts.count,
-              parts.allSatisfy({ $0.isFinite && $0 >= 0 }),
-              (parts.last ?? 60) < 60, parts.count != 3 || parts[1] < 60 else { return nil }
+            parts.allSatisfy({ $0.isFinite && $0 >= 0 }),
+            (parts.last ?? 60) < 60, parts.count != 3 || parts[1] < 60
+        else { return nil }
         let seconds = parts.reversed().enumerated().reduce(0.0) { $0 + $1.element * pow(60, Double($1.offset)) }
         guard seconds < 86_400 else { return nil }
         return Int64((seconds * 1_000).rounded())
@@ -145,11 +160,17 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         qualifiedName qName: String?, attributes: [String: String]
     ) {
         depth += 1
-        if depth > 64 || lines.count >= 2_000 { failure = "The lyric document exceeds its structural limit."; parser.abortParsing(); return }
+        if depth > 64 || lines.count >= 2_000 {
+            failure = "The lyric document exceeds its structural limit."
+            parser.abortParsing()
+            return
+        }
         let name = elementName.split(separator: ":").last.map(String.init) ?? elementName
         if name == "tt" { language = attributes["xml:lang"] }
         if name == "metadata" { metadataDepth = depth }
-        if name == "translation" { translationLanguage = attributes["type"] == "subtitle" ? attributes["xml:lang"] : nil }
+        if name == "translation" {
+            translationLanguage = attributes["type"] == "subtitle" ? attributes["xml:lang"] : nil
+        }
         if name == "text", translationLanguage?.hasPrefix("en") == true {
             translationTarget = attributes["for"]
             translationText = ""
@@ -219,7 +240,8 @@ enum EnglishTranslation {
                 changed = true
             }
         } catch {
-            document.issue = "English translation needs an installed language pair. Prepare it in Cadenza Host settings."
+            document.issue =
+                "English translation needs an installed language pair. Prepare it in Cadenza Host settings."
         }
         if changed { document.translationSource = supplied ? "apple_and_machine" : "machine" }
         document.revision = identifier()

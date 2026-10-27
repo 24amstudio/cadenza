@@ -20,11 +20,13 @@ func install(_ request: InstallRequest) throws {
     let manager = FileManager.default
     let application = URL(fileURLWithPath: request.applicationPath).standardizedFileURL
     let archive = URL(fileURLWithPath: request.archivePath).standardizedFileURL
-    guard application.pathExtension == "app", ["Cadenza Host.app", "Cadence Host.app"].contains(application.lastPathComponent),
-          application.path != "/", request.parentPid > 1,
-          try application.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true,
-          Bundle(url: application)?.bundleIdentifier == "app.cadence.host",
-          let key = Data(base64Encoded: request.publicKeySpkiBase64) else {
+    guard application.pathExtension == "app",
+        ["Cadenza Host.app", "Cadence Host.app"].contains(application.lastPathComponent),
+        application.path != "/", request.parentPid > 1,
+        try application.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true,
+        Bundle(url: application)?.bundleIdentifier == "app.cadence.host",
+        let key = Data(base64Encoded: request.publicKeySpkiBase64)
+    else {
         throw ReleaseFailure.invalid("Invalid update target or verification identity.")
     }
     let data = try Data(contentsOf: URL(fileURLWithPath: request.manifestPath))
@@ -47,7 +49,8 @@ func install(_ request: InstallRequest) throws {
         }
     }
     guard let bundle = Bundle(url: replacement), bundle.bundleIdentifier == "app.cadence.host",
-          Int64(bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") == manifest.build else {
+        Int64(bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") == manifest.build
+    else {
         throw ReleaseFailure.invalid("The app identity or build differs from the signed manifest.")
     }
     _ = try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", replacement.path])
@@ -63,7 +66,8 @@ func install(_ request: InstallRequest) throws {
     let backup = ".Cadenza-Host-previous-\(UUID().uuidString).app"
     let backupURL = application.deletingLastPathComponent().appendingPathComponent(backup)
     do {
-        _ = try manager.replaceItemAt(application, withItemAt: replacement, backupItemName: backup, options: .withoutDeletingBackupItem)
+        _ = try manager.replaceItemAt(
+            application, withItemAt: replacement, backupItemName: backup, options: .withoutDeletingBackupItem)
         try Data(#"{"success":true}"#.utf8).write(to: URL(fileURLWithPath: request.resultPath), options: .atomic)
         _ = try run("/usr/bin/open", [application.path])
         try? manager.removeItem(at: backupURL)
@@ -88,7 +92,9 @@ do {
     do {
         try install(request)
     } catch {
-        let result = try JSONSerialization.data(withJSONObject: ["success": false, "message": error.localizedDescription])
+        let result = try JSONSerialization.data(withJSONObject: [
+            "success": false, "message": error.localizedDescription,
+        ])
         try? result.write(to: URL(fileURLWithPath: request.resultPath), options: .atomic)
         _ = try? run("/usr/bin/open", [request.applicationPath])
         throw error

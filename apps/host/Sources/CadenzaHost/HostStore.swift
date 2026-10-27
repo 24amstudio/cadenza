@@ -16,17 +16,25 @@ final class HostStore {
             hostId = identifier()
             defaults.set(hostId, forKey: "hostId")
         }
-        guard let policy = HostResources.bundle.url(forResource: "authorize-command", withExtension: "sql", subdirectory: "storage") else {
+        guard
+            let policy = HostResources.bundle.url(
+                forResource: "authorize-command", withExtension: "sql", subdirectory: "storage")
+        else {
             throw CadenzaError.failure("storage", "The command policy is missing.")
         }
         authorization = try String(contentsOf: policy, encoding: .utf8)
         let prior = try database.query("SELECT occurrence_id FROM playback_sessions LIMIT 1").isEmpty ? 0 : 1
-        try database.run("UPDATE host_state SET runtime_epoch=?, observation_gap=max(observation_gap,?)", [.text(epoch), .integer(Int64(prior))])
+        try database.run(
+            "UPDATE host_state SET runtime_epoch=?, observation_gap=max(observation_gap,?)",
+            [.text(epoch), .integer(Int64(prior))])
         let prepared = try database.query("SELECT plan_json FROM command_intents WHERE phase='prepared'")
         for row in prepared {
             if let text = row["plan_json"]?.string,
-               let plan = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String],
-               let id = plan["entry_id"] { try remove(id) }
+                let plan = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String],
+                let id = plan["entry_id"]
+            {
+                try remove(id)
+            }
         }
         try database.run("UPDATE command_intents SET phase='complete' WHERE phase='prepared'")
     }
@@ -41,11 +49,16 @@ final class HostStore {
     }
 
     var revision: Int64 {
-        get throws { try database.query("SELECT queue_revision FROM host_state").first?["queue_revision"]?.integer ?? 0 }
+        get throws {
+            try database.query("SELECT queue_revision FROM host_state").first?["queue_revision"]?.integer ?? 0
+        }
     }
 
     var crossEdits: Bool {
-        get throws { try database.query("SELECT allow_cross_remote_edits FROM host_state").first?["allow_cross_remote_edits"]?.integer == 1 }
+        get throws {
+            try database.query("SELECT allow_cross_remote_edits FROM host_state").first?["allow_cross_remote_edits"]?
+                .integer == 1
+        }
     }
 
     func bump() throws {
@@ -68,23 +81,28 @@ final class HostStore {
         let token = try SecureStore.randomToken()
         try SecureStore.write(reference, Data(token.utf8))
         do {
-            try database.run("""
+            try database.run(
+                """
                 INSERT INTO paired_remotes(remote_id,display_name,credential_reference,paired_at_ms)
                 VALUES(?,?,?,?)
                 """, [.text(id), .text(name), .text(reference), .integer(wallMs())])
-        } catch { try? SecureStore.delete(reference); throw error }
+        } catch {
+            try? SecureStore.delete(reference)
+            throw error
+        }
         return (id, token)
     }
 
     func authenticate(_ auth: DeviceAuth) throws -> Bool {
         guard Wire.isIdentifier(auth.remoteId), auth.token.utf8.count <= 128,
-              let row = try database.query(
+            let row = try database.query(
                 "SELECT credential_reference FROM paired_remotes WHERE remote_id=? AND revoked_at_ms IS NULL",
                 [.text(auth.remoteId)]
-              ).first,
-              let reference = row["credential_reference"]?.string,
-              let data = try SecureStore.read(reference),
-              let token = String(data: data, encoding: .utf8) else { return false }
+            ).first,
+            let reference = row["credential_reference"]?.string,
+            let data = try SecureStore.read(reference),
+            let token = String(data: data, encoding: .utf8)
+        else { return false }
         return SecureStore.equal(token, auth.token)
     }
 
@@ -102,21 +120,27 @@ final class HostStore {
         let reference = try database.query(
             "SELECT credential_reference FROM paired_remotes WHERE remote_id=?", [.text(id)]
         ).first?["credential_reference"]?.string
-        try database.run("UPDATE paired_remotes SET revoked_at_ms=? WHERE remote_id=?", [.integer(wallMs()), .text(id)])
+        try database.run(
+            "UPDATE paired_remotes SET revoked_at_ms=? WHERE remote_id=?", [.integer(wallMs()), .text(id)])
         if let reference { try SecureStore.delete(reference) }
     }
 
     func authorize(actor: String, command: Frame, entryId: String?) throws {
         guard let action = command.action, let expiry = command.expiresAtHostMs,
-              let expected = command.expectedRevision, let epoch = command.hostEpoch else {
+            let expected = command.expectedRevision, let epoch = command.hostEpoch
+        else {
             throw CadenzaError.failure("invalid_command", "Invalid command envelope.")
         }
-        let decision = try database.query(authorization, named: [
-            "actor_id": .text(actor), "host_epoch": .text(epoch), "now_host_ms": .integer(monotonicMs()),
-            "expires_at_host_ms": .integer(expiry), "expected_revision": .integer(expected),
-            "kind": .text(action.kind), "entry_id": entryId.map(SQLValue.text) ?? .null,
-            "before_entry_id": action.beforeEntryId.map(SQLValue.text) ?? .null,
-        ]).first?["decision"]?.string ?? "invalid_command"
+        let decision =
+            try database.query(
+                authorization,
+                named: [
+                    "actor_id": .text(actor), "host_epoch": .text(epoch), "now_host_ms": .integer(monotonicMs()),
+                    "expires_at_host_ms": .integer(expiry), "expected_revision": .integer(expected),
+                    "kind": .text(action.kind), "entry_id": entryId.map(SQLValue.text) ?? .null,
+                    "before_entry_id": action.beforeEntryId.map(SQLValue.text) ?? .null,
+                ]
+            ).first?["decision"]?.string ?? "invalid_command"
         guard decision == "allowed" else {
             throw CadenzaError.failure(decision, explanation(decision))
         }
@@ -151,17 +175,27 @@ final class HostStore {
 
     func insert(_ song: Song, owner: String, id: String, confirmed: Bool = true) throws {
         guard Wire.validate(song.identity), !song.title.isEmpty, song.title.count <= 500,
-              song.artist.count <= 500, song.album.count <= 500 else {
+            song.artist.count <= 500, song.album.count <= 500
+        else {
             throw CadenzaError.failure("invalid_command", "This song's metadata exceeds the supported limits.")
         }
-        let count = try database.query("SELECT count(*) AS total FROM queue_entries WHERE state IN ('pending','current')").first?["total"]?.integer ?? 0
-        guard count < 256 else { throw CadenzaError.failure("queue_full", "The queue limit is 256 requests. Remove a request and retry.") }
-        let order = try database.query("SELECT coalesce(max(sort_key),0)+1024 AS next FROM queue_entries WHERE state IN ('pending','current')").first?["next"]?.integer ?? 1024
-        try database.run("""
+        let count =
+            try database.query("SELECT count(*) AS total FROM queue_entries WHERE state IN ('pending','current')")
+            .first?["total"]?.integer ?? 0
+        guard count < 256 else {
+            throw CadenzaError.failure("queue_full", "The queue limit is 256 requests. Remove a request and retry.")
+        }
+        let order =
+            try database.query(
+                "SELECT coalesce(max(sort_key),0)+1024 AS next FROM queue_entries WHERE state IN ('pending','current')"
+            ).first?["next"]?.integer ?? 1024
+        try database.run(
+            """
             INSERT INTO queue_entries(
               entry_id,requested_by,source,song_id,title,artist,duration_ms,sort_key,created_at_ms,album,artwork_url,song_url,native_confirmed
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, [
+            """,
+            [
                 .text(id), .text(owner), .text(song.source), .text(song.id), .text(song.title), .text(song.artist),
                 song.durationMs.map(SQLValue.integer) ?? .null, .integer(order), .integer(wallMs()), .text(song.album),
                 song.artworkUrl.map(SQLValue.text) ?? .null, song.url.map(SQLValue.text) ?? .null,
@@ -177,10 +211,13 @@ final class HostStore {
         try database.transaction {
             let pendingIds = try pending().compactMap { $0["entry_id"]?.string }
             guard Set(ids).count == ids.count, Set(ids).isSubset(of: Set(pendingIds)) else {
-                throw CadenzaError.failure("invalid_state", "The saved queue order contains missing or repeated requests.")
+                throw CadenzaError.failure(
+                    "invalid_state", "The saved queue order contains missing or repeated requests.")
             }
             let complete = ids + pendingIds.filter { !ids.contains($0) }
-            let limits = try database.query("SELECT coalesce(min(sort_key),0) AS low,coalesce(max(sort_key),0) AS high FROM queue_entries WHERE state='pending'").first
+            let limits = try database.query(
+                "SELECT coalesce(min(sort_key),0) AS low,coalesce(max(sort_key),0) AS high FROM queue_entries WHERE state='pending'"
+            ).first
             let low = limits?["low"]?.integer ?? 0
             let high = limits?["high"]?.integer ?? 0
             guard low >= -Wire.maximumCounter, high <= Wire.maximumCounter else {
@@ -189,9 +226,11 @@ final class HostStore {
             let shift = max(high, 0) - min(low, 0) + 1
             try database.run("UPDATE queue_entries SET sort_key=sort_key-? WHERE state='pending'", [.integer(shift)])
             for (index, id) in complete.enumerated() {
-                try database.run("UPDATE queue_entries SET sort_key=? WHERE entry_id=? AND state='pending'", [
-                    .integer(Int64(index + 1) * 1024), .text(id),
-                ])
+                try database.run(
+                    "UPDATE queue_entries SET sort_key=? WHERE entry_id=? AND state='pending'",
+                    [
+                        .integer(Int64(index + 1) * 1024), .text(id),
+                    ])
             }
         }
     }
@@ -201,15 +240,18 @@ final class HostStore {
         try database.transaction {
             try database.run("UPDATE queue_entries SET state='completed' WHERE state='current'")
             if let entryId {
-                try database.run("UPDATE queue_entries SET state='current', sort_key=0 WHERE entry_id=?", [.text(entryId)])
+                try database.run(
+                    "UPDATE queue_entries SET state='current', sort_key=0 WHERE entry_id=?", [.text(entryId)])
             }
             try database.run("UPDATE host_state SET current_occurrence_id=?", [.text(occurrence)])
             let owner = try entryId.flatMap { try entry($0)?["requested_by"]?.string }
             if Wire.validate(song.identity) {
-                try database.run("""
+                try database.run(
+                    """
                     INSERT INTO playback_sessions(occurrence_id,entry_id,requested_by,source,song_id)
                     VALUES(?,?,?,?,?)
-                    """, [
+                    """,
+                    [
                         .text(occurrence), entryId.map(SQLValue.text) ?? .null, owner.map(SQLValue.text) ?? .null,
                         .text(song.source), .text(song.id),
                     ])
@@ -222,53 +264,66 @@ final class HostStore {
     func observe(occurrence: String, milliseconds: Int64) throws {
         guard milliseconds > 0, milliseconds <= 60_000 else { return }
         try database.transaction {
-            guard let session = try database.query(
-                "SELECT * FROM playback_sessions WHERE occurrence_id=?", [.text(occurrence)]
-            ).first, let owner = session["requested_by"]?.string,
-                let source = session["source"]?.string, let song = session["song_id"]?.string else { return }
-            guard let remote = try database.query(
-                "SELECT next_credit_sequence FROM paired_remotes WHERE remote_id=?", [.text(owner)]
-            ).first, let sequence = remote["next_credit_sequence"]?.integer, sequence < Wire.maximumCounter else {
+            guard
+                let session = try database.query(
+                    "SELECT * FROM playback_sessions WHERE occurrence_id=?", [.text(occurrence)]
+                ).first, let owner = session["requested_by"]?.string,
+                let source = session["source"]?.string, let song = session["song_id"]?.string
+            else { return }
+            guard
+                let remote = try database.query(
+                    "SELECT next_credit_sequence FROM paired_remotes WHERE remote_id=?", [.text(owner)]
+                ).first, let sequence = remote["next_credit_sequence"]?.integer, sequence < Wire.maximumCounter
+            else {
                 throw CadenzaError.failure("storage", "Playback credits need storage maintenance.")
             }
             let count: Int64 = session["counted"]?.integer == 1 ? 0 : 1
-            try database.run("""
+            try database.run(
+                """
                 INSERT INTO playback_credit_outbox(
                   remote_id,sequence,event_id,occurrence_id,source,song_id,play_count_delta,played_ms_delta
                 ) VALUES(?,?,?,?,?,?,?,?)
-                """, [
+                """,
+                [
                     .text(owner), .integer(sequence), .text(identifier()), .text(occurrence), .text(source),
                     .text(song), .integer(count), .integer(milliseconds),
                 ])
             try database.run("UPDATE playback_sessions SET counted=1 WHERE occurrence_id=?", [.text(occurrence)])
-            try database.run("UPDATE paired_remotes SET next_credit_sequence=next_credit_sequence+1 WHERE remote_id=?", [.text(owner)])
+            try database.run(
+                "UPDATE paired_remotes SET next_credit_sequence=next_credit_sequence+1 WHERE remote_id=?",
+                [.text(owner)])
         }
     }
 
     func credits(_ remoteId: String, after sequence: Int64) throws -> [Frame] {
-        try database.query("""
+        try database.query(
+            """
             SELECT o.*,q.title,q.artist,q.album,q.duration_ms,q.artwork_url,q.song_url
             FROM playback_credit_outbox o
             LEFT JOIN playback_sessions s ON s.occurrence_id=o.occurrence_id
             LEFT JOIN queue_entries q ON q.entry_id=s.entry_id
             WHERE o.remote_id=? AND o.sequence>? AND o.acknowledged=0 ORDER BY o.sequence LIMIT 8
-            """, [.text(remoteId), .integer(sequence)]).map { row in
-                Frame(
-                    type: "analytics.credit", eventId: row["event_id"]?.string,
-                    sequence: row["sequence"]?.integer, occurrenceId: row["occurrence_id"]?.string,
-                    song: SongIdentity(source: row["source"]?.string ?? "", id: row["song_id"]?.string ?? ""),
-                    songMetadata: row["title"]?.string == nil ? nil : self.song(row),
-                    playCountDelta: row["play_count_delta"]?.integer.map(Int.init),
-                    playedMsDelta: row["played_ms_delta"]?.integer
-                )
-            }
+            """, [.text(remoteId), .integer(sequence)]
+        ).map { row in
+            Frame(
+                type: "analytics.credit", eventId: row["event_id"]?.string,
+                sequence: row["sequence"]?.integer, occurrenceId: row["occurrence_id"]?.string,
+                song: SongIdentity(source: row["source"]?.string ?? "", id: row["song_id"]?.string ?? ""),
+                songMetadata: row["title"]?.string == nil ? nil : self.song(row),
+                playCountDelta: row["play_count_delta"]?.integer.map(Int.init),
+                playedMsDelta: row["played_ms_delta"]?.integer
+            )
+        }
     }
 
     func acknowledge(_ remote: String, through sequence: Int64) throws {
-        let next = try database.query(
-            "SELECT next_credit_sequence FROM paired_remotes WHERE remote_id=?", [.text(remote)]
-        ).first?["next_credit_sequence"]?.integer ?? 1
-        guard sequence >= 0 && sequence < next else { throw CadenzaError.failure("invalid_command", "Invalid analytics acknowledgment.") }
+        let next =
+            try database.query(
+                "SELECT next_credit_sequence FROM paired_remotes WHERE remote_id=?", [.text(remote)]
+            ).first?["next_credit_sequence"]?.integer ?? 1
+        guard sequence >= 0 && sequence < next else {
+            throw CadenzaError.failure("invalid_command", "Invalid analytics acknowledgment.")
+        }
         try database.run(
             "UPDATE playback_credit_outbox SET acknowledged=1 WHERE remote_id=? AND sequence<=?",
             [.text(remote), .integer(sequence)]

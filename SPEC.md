@@ -4,9 +4,9 @@ Version 0.4, 26 October 2026. Intended implementers are the developers of Cadenz
 
 ## Scope and terminology
 
-**Cadenza** is the overall project. **Cadenza Host** is the Mac companion controlling the existing Music.app. **Cadenza Remote** is the native Android interface. One Host serves multiple simultaneously paired Remotes on a local network. Audio remains in Music.app on the Mac.
+**Cadenza** is the overall project. **Cadenza Host** is the macOS companion controlling the existing Music.app. **Cadenza Remote** is the native Android interface. One Host serves multiple simultaneously paired Remotes on a local network. Audio remains in Music.app on the Host computer.
 
-The initial Host is a MacBook Air M4 running macOS 27 Golden Gate. The initial Remote is a Huawei MatePad Mini running HarmonyOS 4.3. English is the initial translation target. Personal use without paid Apple Developer membership is a mandatory constraint.
+The Host runs on a supported Apple silicon Mac with macOS 26 or newer. The Remote runs on a supported Android device with Android 12 / API 31 or newer. English is the initial translation target. Personal use without paid Apple Developer membership is a mandatory constraint.
 
 A **request** is one occurrence of a song in the shared queue, with its own identity and requesting Remote. Two requests for the same song remain separate occurrences. **Playback time** in personal analytics means observed time playing a Remote's own requests, not proof that a person heard the audio.
 
@@ -20,16 +20,16 @@ An implementation conforms to this baseline only when every applicable mandatory
 - **N02:** Host must own authoritative pairing, policy, queue revision, request attribution, and playback observations. Remotes render replicated state and submit commands. Individual Remotes must not independently advance the shared queue.
 - **N03:** Use a persistent authenticated TLS connection with WebSocket messages for commands and pushed state. Bonjour/mDNS and Android NSD are the preferred discovery path; a QR/manual-address fallback may be provided. These are implementation recommendations, not a requirement to introduce a separate HTTP server runtime.
 - **N04:** Playback control must stay on the LAN without a cloud relay. Apple Music streaming, uncached catalog data, initial language models, and GitHub updates may require internet access. These dependencies must not be described as fully offline operation.
-- **N05:** Remote core operation must work without Google Play services. HarmonyOS 4.3 APK behavior, discovery, background restrictions, and installation must be verified on the actual MatePad Mini. A separate HarmonyOS NEXT application is outside the initial scope.
+- **N05:** Remote core operation must work without Google Play services. Vendor Android APK behavior, discovery, background restrictions, and installation must be verified on representative target devices. Platform-specific forks remain outside the initial scope.
 - **N06:** Cadenza must be maintained as one Git monorepo. Cadenza Host belongs in `apps/host`, Cadenza Remote in `apps/remote`, and shared LAN protocol contracts and fixtures in `shared/protocol`. The Windows project root is `F:\Development\cadenza`; each application retains its native build tooling.
 
-Android's native design library is [Compose Material 3](https://developer.android.com/jetpack/androidx/releases/compose-material3). Select compatible pinned versions at implementation time; Material 3 Expressive does not by itself imply an Android 16 installation minimum. Huawei documents APK installation on [HarmonyOS 4.3](https://consumer.huawei.com/ph/support/content/en-us00448892/). These documents do not replace testing on the tablet.
+Android's native design library is [Compose Material 3](https://developer.android.com/jetpack/androidx/releases/compose-material3). Select compatible pinned versions at implementation time; Material 3 Expressive does not by itself imply an Android 16 installation minimum. Vendor installation guidance may vary by device and firmware. These documents do not replace testing on representative target devices.
 
 ## Search and playback
 
-- **B01:** Remote must search for songs in the Apple Music catalog and the Mac's library through Host, show identifying metadata, and submit a selected result for immediate playback or queuing subject to request protection. Full-catalog searching and playback of a song absent from the library require an explicit no-fee native Music.app proof.
+- **B01:** Remote must search for songs in the Apple Music catalog and the Host library through Host, show identifying metadata, and submit a selected result for immediate playback or queuing subject to request protection. Full-catalog searching and playback of a song absent from the library require an explicit no-fee native Music.app proof.
 - **B02:** Provide play/pause, next/previous, seek, and Music.app volume controls, with the ownership checks below applied to every operation that interrupts or changes a protected request. Search, playback selection, and the shared queue must refer to the same song version and occurrence.
-- **B03:** Treat Mac sleep, a logged-out session, unavailable Music.app, missing Automation/Accessibility permission, and failed state reads as explicit unavailable or unconfirmed states. Preserve accepted requests and entered search text. Do not report playback success solely because an Apple Event returned without an error.
+- **B03:** Treat Host sleep, a logged-out session, unavailable Music.app, missing Automation/Accessibility permission, and failed state reads as explicit unavailable or unconfirmed states. Preserve accepted requests and entered search text. Do not report playback success solely because an Apple Event returned without an error.
 
 [Native Music.app search automation](https://github.com/epheterson/applemusic-mcp) is a no-fee candidate. Apple's older [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/) may assist metadata lookup, but its store results must not be represented as complete Apple Music catalog coverage.
 
@@ -57,7 +57,7 @@ Host must expose **Allow Remotes to change others' requests**. The proposed defa
 | Change Host policy or device permissions                                         | Host only                | Host only  |
 
 - **P05:** Protecting the currently playing request is a confirmed requirement. Alternative commands such as seek-to-end, play-now, previous-track, or queue replacement must not bypass the skip restriction. Host's local controls always retain authority.
-- **P06:** Request ownership must remain immutable when another Remote edits an allowed request. Keep the editor separate from the requester. Unrecognized items started directly on the Mac must be labeled as Mac-originated and must not be attributed to a Remote by guessing.
+- **P06:** Request ownership must remain immutable when another Remote edits an allowed request. Keep the editor separate from the requester. Unrecognized items started directly through Music must be labeled as Host-originated and must not be attributed to a Remote by guessing.
 - **P07:** Permission rejection must preserve the queue and immediately explain the blocked action in an accessible dialog. The permission must be enforced even if a modified client bypasses the UI.
 
 The adjacent-own-request rule and shared pause/resume behavior are proposed defaults. They preserve the confirmed protection against skipping another Remote's request while avoiding queue jumping when cross-Remote edits are disabled.
@@ -116,7 +116,7 @@ The successful-control target remains below one second. A deployment cannot be c
 
 ## Lean operation and size
 
-- **S01:** Prefer OS frameworks and small maintained libraries. Host must not bundle a second media player or stream audio to Remotes. Remote must not include a web runtime or translation language packs by default. Keep the initial Host build arm64 for the stated M4 target; broader architectures are outside the initial scope.
+- **S01:** Prefer OS frameworks and small maintained libraries. Host must not bundle a second media player or stream audio to Remotes. Remote must not include a web runtime or translation language packs by default. Keep the initial Host build arm64; broader architectures are outside the initial scope.
 - **S02:** Use pushed state and local interpolation for progress and lyrics. Adapt state observation to active UI needs, batch SQLite writes, avoid persistent polling while disconnected, and stop lyric animations when hidden. No database write or network message is required for every animation frame.
 - **S03:** Measure compressed release size, installed size, idle CPU, memory, active sing-along CPU, and network traffic on the targets. Record a numeric footprint budget after the native feasibility slice and before feature implementation. Every later dependency or unexplained regression must be assessed against that baseline. These measurements have not been made; no smallest-possible-size claim is warranted yet.
 
@@ -146,7 +146,7 @@ Release keys must be backed up securely and excluded from source control and app
 - **I01:** Remote must provide the shared queue, now-playing controls, synchronized sing along, and its local analytics in a tablet-adaptive Material 3 Expressive interface. Host must provide a native menu-bar presence and settings for pairings, cross-Remote policy, permissions, and updates. Do not add unrequested services, accounts, or cloud analytics.
 - **I02:** Follow WCAG 2.2 AA requirements applicable to native interfaces and the stronger platform accessibility conventions. Verify semantics, TalkBack/VoiceOver, keyboard/focus, contrast, large text, orientation, reduced motion, and alternatives to dragging queue rows. Use no eyebrow labels or filler subtitles.
 - **I03:** Acknowledge actions at their triggers immediately and prevent duplicate submissions. Blocking permissions/errors require accessible dialogs with focus entry/restoration; routine outcomes use stable, accessible native toast/snackbar or equivalent notification surfaces. Do not insert transient outcome messages into normal layout flow. Long lyric content and scrolled queue views must not hide action feedback.
-- **I04:** Capture actual working Host and Remote screenshots and exercise real workflows at representative Mac, tablet portrait/landscape, and narrow Android widths when UI is implemented. Mockups must be labeled as proposals and cannot stand in for target-device verification.
+- **I04:** Capture actual working Host and Remote screenshots and exercise real workflows at representative macOS, Android portrait/landscape, expanded, compact, and narrow widths when UI is implemented. Mockups must be labeled as proposals and cannot stand in for target-device verification.
 
 ## Protocol and compatibility
 

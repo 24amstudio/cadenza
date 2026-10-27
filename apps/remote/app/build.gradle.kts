@@ -47,8 +47,8 @@ android {
 
     defaultConfig {
         applicationId = "app.cadence.remote"
-        minSdk = 26
-        targetSdk = 37
+        minSdk = 31
+        targetSdk = 36
         versionCode = cadenzaVersion.getProperty("VERSION_CODE").toInt()
         versionName = cadenzaVersion.getProperty("VERSION_NAME")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -128,6 +128,9 @@ android {
         abortOnError = true
         warningsAsErrors = true
         checkDependencies = true
+        // The requested Android 16 target is intentionally below compileSdk 37;
+        // the latest-target advisory would otherwise block the explicit target choice.
+        disable += "OldTargetApi"
     }
 }
 

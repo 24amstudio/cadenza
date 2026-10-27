@@ -1,5 +1,6 @@
 package app.cadenza.remote.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -29,6 +31,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +42,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.data.ThemePreference
@@ -76,16 +81,25 @@ fun CadenzaApp(
         lyricsMode = false
         restoreLyricsFocus = true
     }
+    val darkTheme =
+        state.theme == ThemePreference.DARK ||
+            (state.theme == ThemePreference.SYSTEM && isSystemInDarkTheme())
     MaterialExpressiveTheme(
         colorScheme =
-            if (state.theme == ThemePreference.DARK ||
-                (state.theme == ThemePreference.SYSTEM && isSystemInDarkTheme())
-            ) {
+            if (darkTheme) {
                 darkColorScheme()
             } else {
                 expressiveLightColorScheme()
             },
     ) {
+        val view = LocalView.current
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
         if (!state.loaded) {
             StartupScreen()
             return@MaterialExpressiveTheme

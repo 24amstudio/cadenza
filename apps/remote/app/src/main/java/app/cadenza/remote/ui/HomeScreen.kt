@@ -189,7 +189,7 @@ private fun LibraryHeading(state: RemoteState) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("Library", style = MaterialTheme.typography.headlineLarge)
             Text(
-                if (remaining == null) "$count requests on this Mac" else "$count requests · $remaining total",
+                if (remaining == null) "$count requests from Cadenza Host" else "$count requests Â· $remaining total",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -244,7 +244,7 @@ private fun NowPlayingCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    current?.song?.artist ?: "Start a song in Music on your Mac",
+                    current?.song?.artist ?: "Start a song in Music from Cadenza Host",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )

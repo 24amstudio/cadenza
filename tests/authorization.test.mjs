@@ -178,11 +178,11 @@ test('expired, previous-boot, stale, revoked, and unknown commands are rejected'
   assert.equal(query.get(base)?.['decision'], 'revoked');
 });
 
-test('Mac-originated requests retain Host authority even when cross-Remote editing is allowed', (t) => {
+test('Cadenza Host-originated requests retain Host authority even when cross-Remote editing is allowed', (t) => {
   const database = openDatabase('host');
   t.after(() => database.close());
   pairRemotes(database);
-  queueEntry(database, 'mac-current', null, 0, 'current');
+  queueEntry(database, 'host-current', null, 0, 'current');
   database.exec('UPDATE host_state SET allow_cross_remote_edits = 1');
   assert.equal(
     database.prepare(authorizeSql).get({
@@ -192,9 +192,37 @@ test('Mac-originated requests retain Host authority even when cross-Remote editi
       expires_at_host_ms: 1500,
       expected_revision: 0,
       before_entry_id: null,
-      entry_id: 'mac-current',
+      entry_id: 'host-current',
       kind: 'playback.skip',
     })?.['decision'],
     'forbidden',
   );
+});
+
+test('unbound native playback allows transport controls without bypassing request ownership', (t) => {
+  const database = openDatabase('host');
+  t.after(() => database.close());
+
+  pairRemotes(database);
+
+  const query = database.prepare(authorizeSql);
+
+  const base = {
+    actor_id: 'remote-a',
+    host_epoch: 'boot-one',
+    now_host_ms: 1000,
+    expires_at_host_ms: 1500,
+    expected_revision: 0,
+    before_entry_id: null,
+    entry_id: null,
+  };
+
+  for (const kind of [
+    'playback.skip',
+    'playback.previous',
+    'playback.stop',
+    'playback.seek',
+  ]) {
+    assert.equal(query.get({ ...base, kind })?.['decision'], 'allowed', kind);
+  }
 });

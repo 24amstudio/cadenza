@@ -46,7 +46,7 @@ class ClockSyncTest {
                 .put("fingerprint", TestCertificate.fingerprint)
                 .put("certificate_der_base64", TestCertificate.encoded)
                 .put("secret", "s".repeat(44))
-                .put("host_name", "Example Mac")
+                .put("host_name", "Example Cadenza Host")
         assertEquals(43127, Wire.invitation(invite.toString()).port)
         assertThrows(IllegalArgumentException::class.java) { Wire.invitation(invite.put("host", "https://example.com/").toString()) }
         invite.put("host", "192.168.1.20").put("fingerprint", "accept-any-certificate")

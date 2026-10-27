@@ -24,6 +24,7 @@ final class NetworkService {
     var onFrame: ((Peer, Frame) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onIssue: ((String) -> Void)?
     private let queue = DispatchQueue(label: "app.cadenza.network", qos: .userInitiated)
 
     func start(identity: TLSIdentity, port: UInt16, name: String, hostId: String) async throws {
@@ -71,6 +72,15 @@ final class NetworkService {
                     self.startResult = nil
                 case .failed(let error):
                     self.ready = false
+                    if let result = self.startResult {
+                        self.startResult = nil
+                        result.resume(throwing: error)
+                    } else {
+                        self.onFailure?(error.localizedDescription)
+                    }
+                case .cancelled:
+                    self.ready = false
+                    let error = CadenzaError.failure("network", "The local listener stopped unexpectedly.")
                     if let result = self.startResult {
                         self.startResult = nil
                         result.resume(throwing: error)
@@ -188,11 +198,21 @@ final class NetworkService {
     func send(_ frame: Frame, to peer: Peer) {
         do {
             send(try Wire.encode(frame), to: peer)
-        } catch { disconnect(peer.id) }
+        } catch {
+            disconnect(peer.id)
+            onIssue?("The Host could not encode a message for a Remote: " + error.localizedDescription)
+        }
     }
 
     func broadcast(_ frame: Frame) {
-        guard let data = try? Wire.encode(frame) else { return }
+        let data: Data
+        do {
+            data = try Wire.encode(frame)
+        } catch {
+            // A silent drop here would leave every Remote without a state update.
+            onIssue?("The Host could not encode a state update: " + error.localizedDescription)
+            return
+        }
         for peer in peers.values where peer.authenticated && (frame.type != "heartbeat" || peer.supportsHeartbeat) {
             send(data, to: peer)
         }
@@ -202,6 +222,7 @@ final class NetworkService {
         guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes, peer.pendingBytes + data.count <= 4_194_304
         else {
             disconnect(peer.id)
+            onIssue?("The Host closed a Remote connection after its outbound message buffer exceeded the safety limit.")
             return
         }
         peer.pendingBytes += data.count

@@ -73,7 +73,7 @@ class HostDiscovery(
         }
     }
 
-    // HarmonyOS 4.3 needs the resolver available before Android API 34.
+    // Some vendor builds need the resolver available before Android API 34.
     @Suppress("DEPRECATION")
     private fun resolveNext() {
         if (resolving || pending.isEmpty() || !running) return

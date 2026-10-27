@@ -48,7 +48,8 @@ enum LANAddresses {
             var value = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
             var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
             guard inet_ntop(AF_INET, &value, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
-            let ip = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+            let ip = String(decoding: bytes, as: UTF8.self)
             if !ip.hasPrefix("169.254.") { addresses.append(ip) }
         }
         return Array(Set(addresses)).sorted()

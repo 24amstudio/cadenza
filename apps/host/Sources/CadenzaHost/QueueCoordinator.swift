@@ -8,6 +8,7 @@ final class QueueCoordinator {
     let journal: CommandJournal
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onCredits: (() -> Void)?
+    var onIssue: ((String) -> Void)?
     private(set) var nativeRows: [NativeQueueRow] = []
     private var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
@@ -16,6 +17,7 @@ final class QueueCoordinator {
     private var sequence: Int64 = 0
     private(set) var synchronized = false
     private(set) var issue: String?
+    private var publishIssueReported = false
     private var locked = false
     private var draining = false
     private var waiting: [QueuedCommand] = []
@@ -192,6 +194,7 @@ final class QueueCoordinator {
             guard let id = entry["entry_id"]?.string else { return true }
             return !observed.contains { bindings[$0.token] == id }
         }
+        let externalRows = observed.contains { bindings[$0.token] == nil }
         if observed.map(\.token) != nativeRows.map(\.token) {
             try store.reorder(observed.compactMap { bindings[$0.token] })
             try store.bump()
@@ -200,6 +203,11 @@ final class QueueCoordinator {
         if case .failure(let error) = nativeRead {
             synchronized = false
             issue = error.localizedDescription
+        } else if externalRows {
+            synchronized = false
+            issue =
+                "Music's Playing Next queue changed outside Cadenza Host. "
+                + "Review the queue before requesting another action."
         } else {
             synchronized = !unresolved
             issue = unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil
@@ -255,7 +263,16 @@ final class QueueCoordinator {
 
     func publish() {
         sequence += 1
-        do { onSnapshot?(try snapshot()) } catch { issue = error.localizedDescription }
+        do {
+            onSnapshot?(try snapshot())
+            publishIssueReported = false
+        } catch {
+            issue = error.localizedDescription
+            if !publishIssueReported {
+                publishIssueReported = true
+                onIssue?("Cadenza Host could not publish the current playback state: " + error.localizedDescription)
+            }
+        }
     }
 
     func execute(_ command: Frame, actor: String) async throws -> Frame {
@@ -319,7 +336,7 @@ final class QueueCoordinator {
                 throw CadenzaError.failure("stale_occurrence", "The current song changed.")
             }
             guard current == nil || current?.requestedBy != nil else {
-                throw CadenzaError.failure("forbidden", "Mac-originated playback stays under Host control.")
+                throw CadenzaError.failure("forbidden", "Cadenza Host playback stays under Host control.")
             }
             for native in nativeRows {
                 let owner = try bindings[native.token].flatMap { try store.entry($0)?["requested_by"]?.string }

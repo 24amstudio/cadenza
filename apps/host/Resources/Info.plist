@@ -13,7 +13,7 @@
     <key>LSUIElement</key><true/>
     <key>LSMultipleInstancesProhibited</key><true/>
     <key>NSAppleMusicUsageDescription</key><string>Cadenza detects the storefront for your Apple Music account during setup.</string>
-    <key>NSAppleEventsUsageDescription</key><string>Cadenza controls Music on this Mac when you use a paired Remote.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Cadenza Host controls Music when you use a paired Cadenza Remote.</string>
     <key>NSLocalNetworkUsageDescription</key><string>Cadenza connects to your paired Remotes on this network.</string>
     <key>NSBonjourServices</key><array><string>_cadence._tcp</string></array>
 </dict>

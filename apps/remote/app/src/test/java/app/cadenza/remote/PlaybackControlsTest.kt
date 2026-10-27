@@ -33,14 +33,14 @@ class PlaybackControlsTest {
                 issue = null,
                 observationGap = false,
             )
-        val profile = HostProfile("host", "Mac", "127.0.0.1", 1, "fingerprint", "remote-a")
+        val profile = HostProfile("host", "Cadenza Host", "127.0.0.1", 1, "fingerprint", "remote-a")
         val state = RemoteState(profile = profile, connected = true, snapshot = snapshot)
 
         assertFalse(mayInterruptPlayback(state))
         assertTrue(mayInterruptPlayback(state.copy(snapshot = snapshot.copy(allowCrossRemoteEdits = true))))
         assertTrue(mayInterruptPlayback(state.copy(snapshot = snapshot.copy(current = current.copy(requestedBy = "remote-a")))))
         assertFalse(mayInterruptPlayback(state.copy(connected = false)))
-        val unknownRequester = snapshot.copy(allowCrossRemoteEdits = true, current = current.copy(requestedBy = null))
-        assertFalse(mayInterruptPlayback(state.copy(snapshot = unknownRequester)))
+        val externalPlayback = snapshot.copy(current = current.copy(requestedBy = null))
+        assertTrue(mayInterruptPlayback(state.copy(snapshot = externalPlayback)))
     }
 }

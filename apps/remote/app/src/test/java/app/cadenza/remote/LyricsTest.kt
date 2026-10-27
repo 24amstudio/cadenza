@@ -54,4 +54,43 @@ class LyricsTest {
         document.put("lines", JSONArray().put(line("L1", 0)).put(line("L1", 1_000)))
         assertThrows(IllegalArgumentException::class.java) { Wire.lyrics(document) }
     }
+
+    @Test
+    fun timedWordsAreParsedForPerWordHighlighting() {
+        val word =
+            JSONObject()
+                .put("text", "Hello")
+                .put("start_ms", 0)
+                .put("end_ms", 400)
+        val line =
+            JSONObject()
+                .put("id", "L1")
+                .put("text", "Hello world")
+                .put("start_ms", 0)
+                .put("end_ms", 1_000)
+                .put("words", JSONArray().put(word))
+        val document =
+            JSONObject()
+                .put("occurrence_id", "00000000-0000-4000-8000-000000000001")
+                .put("revision", "00000000-0000-4000-8000-000000000002")
+                .put("translation_source", "original")
+                .put("lines", JSONArray().put(line))
+        val parsed = Wire.lyrics(document)
+        assertEquals(
+            "Hello",
+            parsed.lines
+                .single()
+                .words
+                .single()
+                .text,
+        )
+        assertEquals(
+            400,
+            parsed.lines
+                .single()
+                .words
+                .single()
+                .endMs,
+        )
+    }
 }

@@ -51,6 +51,12 @@ SELECT CASE
   WHEN :kind IN ('queue.enqueue', 'queue.play_next', 'playback.volume') THEN 'allowed'
   WHEN :kind = 'queue.play_now' AND :entry_id IS NULL THEN 'allowed'
   WHEN :kind IN ('playback.pause', 'playback.resume') AND :entry_id IS NULL THEN 'allowed'
+  -- A current Music track without a Cadenza Host queue binding is external
+  -- playback. It has no Remote owner to protect, so basic transport controls
+  -- may operate on it. A bound current request always reaches the ownership
+  -- checks below through :entry_id.
+  WHEN :kind IN ('playback.skip', 'playback.previous', 'playback.stop', 'playback.seek')
+    AND :entry_id IS NULL THEN 'allowed'
   WHEN NOT EXISTS (SELECT 1 FROM target) THEN 'missing_request'
   WHEN :kind IN ('queue.remove', 'queue.move')
     AND (SELECT state FROM target) != 'pending' THEN 'invalid_state'

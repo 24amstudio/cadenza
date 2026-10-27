@@ -87,7 +87,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Renders production Compose screens with synthetic local data, without a Mac or device. */
+/** Renders production Compose screens with synthetic local data, without a Host or device. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31], qualifiers = "w1000dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -115,12 +115,15 @@ class RemoteUiTest {
         compose.setContent {
             MaterialExpressiveTheme {
                 ConnectionStatus(
-                    RemoteState(connecting = true, profile = HostProfile(hostId, "Test Mac", "10.0.0.5", 43127, "fingerprint", remoteId)),
+                    RemoteState(
+                        connecting = true,
+                        profile = HostProfile(hostId, "Test Cadenza Host", "10.0.0.5", 43127, "fingerprint", remoteId),
+                    ),
                 )
             }
         }
-        compose.onNodeWithContentDescription("Reconnecting to Test Mac").assertIsDisplayed()
-        compose.onNodeWithText("Connecting to Test Mac").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Reconnecting to Test Cadenza Host").assertIsDisplayed()
+        compose.onNodeWithText("Connecting to Test Cadenza Host").assertDoesNotExist()
         capture("connection-reconnecting")
     }
 
@@ -244,7 +247,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithContentDescription("Back to player").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Resume on Mac").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resume in Cadenza Host").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("Queue").assertCountEquals(0)
         capture("integrated-lyrics-phone")
         compose.onNodeWithText("Lyrics").performClick()
@@ -275,7 +278,7 @@ class RemoteUiTest {
         compose.onNodeWithContentDescription("Back to player").assertIsDisplayed()
         compose.onNodeWithText("Requested by Living room").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Resume on Mac").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resume in Cadenza Host").assertIsDisplayed()
         capture("integrated-lyrics-large-text")
     }
 
@@ -303,7 +306,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Play next").assertIsNotEnabled()
         compose.onNodeWithText("Play now").assertIsNotEnabled()
         capture("favorites-tablet")
-        compose.onNodeWithText("Remove from Favorites").performClick()
+        compose.onNodeWithContentDescription("Remove from Favorites").performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("This song is no longer in the queue or Favorites.").fetchSemanticsNodes().size == 1
         }
@@ -328,10 +331,10 @@ class RemoteUiTest {
         compose.onNodeWithText("Queue and Favorites").performClick()
         compose.onNodeWithText("Favorites · 1").performClick()
         compose.onNodeWithText("Offline favorite").performClick()
-        compose.onNodeWithText("Remove from Favorites").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove from Favorites").assertIsDisplayed()
         navigate("Settings")
         navigate("Playing")
-        compose.onNodeWithText("Remove from Favorites").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove from Favorites").assertIsDisplayed()
         capture("favorites-phone")
     }
 
@@ -393,10 +396,10 @@ class RemoteUiTest {
                 .put("incoming", song("Cached incoming song", 180_000)),
         )
         openApp()
-        compose.onNodeWithText("Quality unavailable").assertIsDisplayed()
-        compose.onNodeWithText("AutoMix status unavailable").assertIsDisplayed()
+        compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
+        compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("Lossless").assertDoesNotExist()
-        compose.onNodeWithText("AutoMix → Cached incoming song").assertDoesNotExist()
+        compose.onNodeWithText("AutoMix â†’ Cached incoming song").assertDoesNotExist()
     }
 
     @Test
@@ -404,7 +407,7 @@ class RemoteUiTest {
     fun pairingReflowsWithDoubleSizeText() {
         openApp(fontScale = 2f)
         capture("pairing-phone-large-text")
-        compose.onNodeWithText("Pair with your Mac").assertIsDisplayed()
+        compose.onNodeWithText("Pair with Cadenza Host").assertIsDisplayed()
         compose
             .onNodeWithText("Pair", substring = false)
             .performScrollTo()
@@ -419,12 +422,12 @@ class RemoteUiTest {
         openApp()
         navigate("Search")
         compose.onNodeWithText("Song, artist, or album").performTextInput("A saved search")
-        compose.onNodeWithText("Mac library").performClick()
+        compose.onNodeWithText("Host library").performClick()
         navigate("Settings")
-        compose.onNodeWithText("Change this setting on Cadenza Host.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Change this setting in Cadenza Host.").performScrollTo().assertIsDisplayed()
         navigate("Search")
         compose.onNodeWithText("A saved search").assertIsDisplayed()
-        compose.onNodeWithText("Mac library").assertIsSelected()
+        compose.onNodeWithText("Host library").assertIsSelected()
         capture("search-tablet")
     }
 
@@ -465,7 +468,7 @@ class RemoteUiTest {
                 UUID(0, 20).toString(),
                 "machine",
                 listOf(
-                    LyricLine("first", "La nuit s’éveille", 0, 25_000, "The night awakens"),
+                    LyricLine("first", "La nuit sâ€™Ã©veille", 0, 25_000, "The night awakens"),
                     LyricLine("second", "Je chante avec toi", 30_000, 35_000, "I sing with you"),
                 ),
                 null,
@@ -560,6 +563,21 @@ class RemoteUiTest {
         assertEquals("Paused playback must not keep ticking", stoppedPlayback, updates.get())
     }
 
+    @Test
+    fun pinnedSongStatusSurvivesTheActivityBackgroundTransition() {
+        createModel()
+        compose.waitUntil(5_000) { model.state.value.loaded }
+        compose.runOnUiThread {
+            model.monitorSong()
+            model.setForeground(false)
+        }
+        assertTrue(model.state.value.sessionActive)
+        assertTrue(model.state.value.monitoringSong)
+        compose.runOnUiThread { model.endSessionStatus() }
+        assertTrue(!model.state.value.sessionActive)
+        assertTrue(!model.state.value.monitoringSong)
+    }
+
     private class PageLifecycle : LifecycleOwner {
         override val lifecycle = LifecycleRegistry(this)
     }
@@ -595,7 +613,16 @@ class RemoteUiTest {
     }
 
     private fun seedProfile(emptyQueue: Boolean = false) {
-        val profile = HostProfile(hostId, "Test Mac", "10.0.0.5", 43127, TestCertificate.fingerprint, remoteId, TestCertificate.encoded)
+        val profile =
+            HostProfile(
+                hostId,
+                "Test Cadenza Host",
+                "10.0.0.5",
+                43127,
+                TestCertificate.fingerprint,
+                remoteId,
+                TestCertificate.encoded,
+            )
         app.database.saveProfile(profile)
         app.database.saveState(hostId, snapshot(emptyQueue))
         app.settings.write("active_host" to hostId)
@@ -604,7 +631,7 @@ class RemoteUiTest {
     private fun snapshot(emptyQueue: Boolean): JSONObject {
         val queue = JSONArray()
         if (!emptyQueue) {
-            queue.put(entry(4, remoteId, "MatePad Mini", "A long requested song title with several words", 210_000, 150_000))
+            queue.put(entry(4, remoteId, "Android Remote", "A long requested song title with several words", 210_000, 150_000))
             queue.put(entry(5, UUID(0, 3).toString(), "Living room", "Second request", 90_000, 360_000))
         }
         return JSONObject()

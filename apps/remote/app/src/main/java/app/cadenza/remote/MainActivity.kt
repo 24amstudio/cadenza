@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -32,22 +33,14 @@ class MainActivity : ComponentActivity() {
                 model.installing(false)
             }
         }
-    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    private val localNetwork =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                model.setForeground(true)
-                requestNotifications()
-            } else {
-                model.showError(
-                    "Allow local network access",
-                    "Open Android Settings → Apps → Cadenza Remote → Permissions and allow local network access, then reopen Cadenza.",
-                )
-            }
+    private val notifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            SessionNotification(application).update(SessionStatus.from(model.state.value), model.mediaToken)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         model = ViewModelProvider(this)[RemoteModel::class.java]
         setContent {
             CadenzaApp(model) { path ->
@@ -67,7 +60,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (Build.VERSION.SDK_INT < 37) requestNotifications()
     }
 
     private fun requestNotifications() {
@@ -106,18 +98,19 @@ class MainActivity : ComponentActivity() {
             }
         }
         model.installationResult()
-        if (Build.VERSION.SDK_INT >= 37 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
-        ) {
-            localNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-        } else {
-            model.setForeground(true)
-        }
+        model.setForeground(true)
+        requestNotifications()
     }
 
     override fun onStop() {
         (application as CadenzaApplication).installationHandler = null
-        model.setForeground(false)
+        if (isChangingConfigurations) {
+            // The ViewModel and connection survive rotation. Clear transient feedback,
+            // but do not tear down the control session that the new instance will reuse.
+            model.dismissPrompt()
+        } else {
+            model.setForeground(false)
+        }
         super.onStop()
     }
 }

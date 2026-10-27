@@ -49,8 +49,8 @@ fun PairingScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        ScreenHeader("Pair with your Mac", state)
-        Text("Open Cadenza Host on the Mac and choose Pair a Remote. Both devices need access to the same local network.")
+        ScreenHeader("Pair with Cadenza Host", state)
+        Text("Open Cadenza Host and choose Pair a Remote. Both devices need access to the same local network.")
         OutlinedTextField(name, { name = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("This Remote’s name") })
         ActionButton("Scan pairing QR", enabled = !state.connecting) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {

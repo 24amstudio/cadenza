@@ -1,11 +1,7 @@
 package app.cadenza.remote
 
-import android.Manifest
 import android.app.Application
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.SystemClock
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.data.ClockSync
@@ -54,6 +50,9 @@ class RemoteModel(
 
     private val app = application as CadenzaApplication
     private val preferences = app.settings
+    private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
+    private val mediaSession = RemoteMediaSession(app, mediaActions::handle)
+    val mediaToken get() = mediaSession.token
     private val mutable = MutableStateFlow(RemoteState())
     val state = mutable.asStateFlow()
     private val clock = ClockSync()
@@ -90,6 +89,7 @@ class RemoteModel(
         }
     private var lastCachedAt = 0L
     private val pending = mutableMapOf<String, PendingCommand>()
+    private val statusChecks = mutableSetOf<String>()
     private val events = Channel<Pair<Int, JSONObject>>(64)
     private val metadata = mutableSetOf<String>()
 
@@ -101,8 +101,12 @@ class RemoteModel(
 
     init {
         app.unpinSession = ::endSessionStatus
+        app.mediaAction = mediaActions::handle
         viewModelScope.launch {
-            state.map(SessionStatus::from).distinctUntilChanged().collect { SessionNotification(app).update(it) }
+            state.map(SessionStatus::from).distinctUntilChanged().collect { SessionNotification(app).update(it, mediaToken) }
+        }
+        viewModelScope.launch {
+            state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
         }
         viewModelScope.launch {
             for ((version, frame) in events) {
@@ -175,16 +179,22 @@ class RemoteModel(
         if (visible) startDiscovery()
         if (visible && mutable.value.loaded && mutable.value.profile != null && !mutable.value.connected) connect()
         if (!visible) {
-            endSessionStatus()
             discovery?.close()
             discovery = null
-            disconnect()
+            // Prompts are transient interaction feedback. Do not replay a stale
+            // command dialog when the Activity is recreated or returns from the
+            // background; the durable request remains available for an explicit
+            // status check after reconnecting.
+            mutable.update { it.copy(prompt = null) }
+            if (!maintainBackgroundSession()) {
+                endSessionStatus()
+                disconnect()
+            }
         }
     }
 
     private fun startDiscovery() {
         if (!foreground || !mutable.value.loaded || discovery != null) return
-        if (!localNetworkAllowed()) return
         discovery =
             HostDiscovery(app) { host ->
                 val profile = mutable.value.profile ?: return@HostDiscovery
@@ -233,7 +243,6 @@ class RemoteModel(
     }
 
     private fun openConnection() {
-        check(localNetworkAllowed()) { "Allow local network access in Android Settings → Apps → Cadenza Remote → Permissions." }
         disconnect()
         val invite = invitation
         val profile = mutable.value.profile
@@ -325,7 +334,7 @@ class RemoteModel(
             showError("Could not pair", message)
             return
         }
-        if (foreground && mutable.value.profile != null) {
+        if (maintainBackgroundSession() && mutable.value.profile != null) {
             reconnect?.cancel()
             reconnect =
                 viewModelScope.launch {
@@ -347,10 +356,6 @@ class RemoteModel(
         lyricUserInitiated = false
         mutable.update { it.copy(connected = false, connecting = false, lyricsLoading = false) }
     }
-
-    private fun localNetworkAllowed(): Boolean =
-        Build.VERSION.SDK_INT < 37 ||
-            ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
 
     private suspend fun receive(frame: JSONObject) {
         lastReceivedAt = SystemClock.elapsedRealtime()
@@ -460,7 +465,7 @@ class RemoteModel(
         } catch (
             error: Exception,
         ) {
-            showError("Check the update source", error.message ?: "Verify the release key on the Mac.")
+            showError("Check the update source", error.message ?: "Verify the release key in Cadenza Host.")
         }
         mutable.update {
             it.copy(
@@ -522,7 +527,7 @@ class RemoteModel(
     }
 
     private suspend fun applyState(value: JSONObject) {
-        val snapshot = Wire.snapshot(value)
+        val snapshot = enrichArtwork(Wire.snapshot(value))
         require(snapshot.hostId == mutable.value.profile?.hostId) { "Host identity did not match this pairing." }
         val previous = mutable.value.snapshot
         if (previous?.hostEpoch == snapshot.hostEpoch && snapshot.sequence <= previous.sequence) return
@@ -541,9 +546,37 @@ class RemoteModel(
                 lyricsLoading = if (changedSong) false else it.lyricsLoading,
             )
         }
+        if (!foreground && !mutable.value.monitoringSong && !snapshot.playing) {
+            endSessionStatus()
+        }
         val songs = snapshot.queue.map { it.song } + listOfNotNull(snapshot.current?.song)
         val new = songs.filter { metadata.add(it.source + ":" + it.id) }
         if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }
+    }
+
+    private fun enrichArtwork(snapshot: HostSnapshot): HostSnapshot {
+        val known =
+            (
+                mutable.value.favorites + mutable.value.results +
+                    listOfNotNull(
+                        mutable.value.snapshot
+                            ?.current
+                            ?.song,
+                    ) +
+                    mutable.value.snapshot
+                        ?.queue
+                        .orEmpty()
+                        .map { it.song }
+            ).filter { it.artworkUrl != null }
+                .associateBy { it.source + ":" + it.id }
+
+        fun song(value: Song): Song = value.artworkUrl?.let { value } ?: known[value.source + ":" + value.id] ?: value
+
+        return snapshot.copy(
+            current = snapshot.current?.copy(song = song(snapshot.current.song)),
+            queue = snapshot.queue.map { it.copy(song = song(it.song)) },
+            incoming = snapshot.incoming?.let(::song),
+        )
     }
 
     private suspend fun applyCredit(frame: JSONObject) {
@@ -690,7 +723,7 @@ class RemoteModel(
             val timer =
                 viewModelScope.launch {
                     delay(1_000)
-                    if (pending.containsKey(commandId)) {
+                    if (session == generation && foreground && pending.containsKey(commandId)) {
                         mutable.update {
                             it.copy(
                                 prompt =
@@ -706,8 +739,8 @@ class RemoteModel(
             pending[commandId] = PendingCommand(command, key, timer)
             withContext(ioDispatcher) { app.database.savePending(profile, command, key) }
             check(
-                session == generation && transport === connection && mutable.value.profile == profile && foreground &&
-                    mutable.value.connected,
+                session == generation && transport === connection && mutable.value.profile == profile &&
+                    (foreground || key.startsWith("playback.")) && mutable.value.connected,
             ) {
                 "The connection changed while saving this request. Review the current queue before retrying."
             }
@@ -735,12 +768,14 @@ class RemoteModel(
         original.timer.cancel()
         when (frame.getString("outcome")) {
             "applied" -> {
+                statusChecks.remove(commandId)
                 val profile = mutable.value.profile
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
                 pending.remove(commandId)
                 mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
             }
             "unconfirmed" -> {
+                val showPrompt = statusChecks.remove(commandId)
                 val resolved = frame.optBoolean("resolved", false)
                 if (resolved) {
                     val profile = mutable.value.profile
@@ -749,17 +784,22 @@ class RemoteModel(
                     mutable.update { it.copy(pending = it.pending - original.key) }
                 }
                 mutable.update {
-                    it.copy(
-                        prompt =
-                            Prompt(
-                                "Request unconfirmed",
-                                frame.optString("message", "Check this request after Host reconciles Music."),
-                                if (resolved) null else commandId,
-                            ),
-                    )
+                    if (showPrompt) {
+                        it.copy(
+                            prompt =
+                                Prompt(
+                                    "Request unconfirmed",
+                                    frame.optString("message", "Check this request after Host reconciles Music."),
+                                    if (resolved) null else commandId,
+                                ),
+                        )
+                    } else {
+                        it.copy(notice = Notice("Request still needs confirmation"))
+                    }
                 }
             }
             else -> {
+                statusChecks.remove(commandId)
                 val profile = mutable.value.profile
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
                 pending.remove(commandId)
@@ -770,6 +810,7 @@ class RemoteModel(
     }
 
     fun checkRequest(commandId: String) {
+        statusChecks.add(commandId)
         queryRequest(commandId)
         dismissPrompt()
         mutable.update { it.copy(notice = Notice("Checking request status")) }
@@ -888,6 +929,7 @@ class RemoteModel(
         discovery = null
         for (item in pending.values) item.timer.cancel()
         pending.clear()
+        statusChecks.clear()
         invitation = null
         mutable.update { it.copy(profile = null, snapshot = null, lyrics = null, results = emptyList(), pending = emptySet()) }
     }
@@ -895,6 +937,8 @@ class RemoteModel(
     override fun onCleared() {
         SessionNotification(app).clear()
         app.unpinSession = null
+        app.mediaAction = null
+        mediaSession.release()
         networkMonitor.close()
         disconnect()
         discovery?.close()
@@ -907,12 +951,20 @@ class RemoteModel(
             it.copy(
                 sessionActive = true,
                 monitoringSong = true,
-                notice = Notice("Song status pinned for this control session"),
+                notice = Notice("Song status monitoring is on until you unpin it"),
             )
         }
     }
 
     fun endSessionStatus() {
         mutable.update { it.copy(sessionActive = false, monitoringSong = false) }
+        if (!foreground) {
+            networkMonitor.close()
+            discovery?.close()
+            discovery = null
+            disconnect()
+        }
     }
+
+    private fun maintainBackgroundSession() = foreground || mutable.value.monitoringSong || mutable.value.snapshot?.playing == true
 }

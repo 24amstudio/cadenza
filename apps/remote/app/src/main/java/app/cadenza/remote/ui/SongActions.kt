@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -42,6 +45,30 @@ fun FavoriteButton(
         enabled = song.source != "unknown",
     ) {
         model.toggleFavorite(song)
+    }
+}
+
+@Composable
+fun FavoriteIconButton(
+    model: RemoteModel,
+    state: RemoteState,
+    song: Song,
+) {
+    val saved = state.favorites.any { it.identity == song.identity }
+    IconButton(
+        onClick = { model.toggleFavorite(song) },
+        enabled = song.source != "unknown" && !state.savingFavorite,
+        modifier = Modifier.sizeIn(minWidth = 56.dp, minHeight = 56.dp),
+    ) {
+        if (state.savingFavorite) {
+            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(
+                cadenzaVector(CadenzaIcon.STAR),
+                contentDescription = if (saved) "Remove from Favorites" else "Save to Favorites",
+                tint = if (saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -88,6 +115,7 @@ fun SongActions(
                             enabled = canQueue && !state.preparing && "queue.play-next" in state.capabilities && key !in state.pending,
                             modifier = Modifier.weight(1f).sizeIn(minHeight = 56.dp),
                         ) { Text("Play next", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        FavoriteIconButton(model, state, song)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilledTonalButton(
@@ -111,7 +139,6 @@ fun SongActions(
                             ) { Text("Prepare in Music", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
-                    FavoriteButton(model, state, song)
                 }
             }
         }
@@ -167,7 +194,7 @@ private fun SongMetadata(
         )
         listOf(song.album.takeIf(String::isNotBlank), song.durationMs?.let(::duration))
             .filterNotNull()
-            .joinToString(" · ")
+            .joinToString(" �· ")
             .takeIf(String::isNotBlank)
             ?.let {
                 Text(

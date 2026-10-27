@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -32,11 +33,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import app.cadenza.remote.RemoteModel
@@ -92,6 +95,28 @@ fun ConnectionStatus(state: RemoteState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
+    }
+}
+
+@Composable
+fun KeepScreenAwake(enabled: Boolean) {
+    val view = LocalView.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(view, lifecycle, enabled) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_START -> view.keepScreenOn = enabled
+                    Lifecycle.Event.ON_STOP -> view.keepScreenOn = false
+                    else -> Unit
+                }
+            }
+        lifecycle.addObserver(observer)
+        view.keepScreenOn = enabled && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            view.keepScreenOn = false
+        }
     }
 }
 

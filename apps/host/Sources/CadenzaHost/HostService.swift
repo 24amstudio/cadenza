@@ -24,6 +24,7 @@ final class HostService {
     private var observationEnabled = false
     private let observation = MusicObservation()
     private var listenerRecovery: Task<Void, Never>?
+    private var serviceRunning = false
     private var lastPublished: HostSnapshot?
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onDevicesChanged: (() -> Void)?
@@ -57,8 +58,10 @@ final class HostService {
             }
         }
         queue.onCredits = { [weak self] in self?.deliverCredits() }
+        queue.onIssue = { [weak self] message in self?.onIssue?(message) }
         network.onFrame = { [weak self] peer, frame in self?.receive(frame, from: peer) }
-        network.onFailure = { [weak self] _ in self?.recoverListener() }
+        network.onFailure = { [weak self] reason in self?.recoverListener(reason) }
+        network.onIssue = { [weak self] message in self?.onIssue?(message) }
         network.onDisconnect = { [weak self] id in
             self?.lastCreditSent.removeValue(forKey: id)
             self?.acknowledgedCredits.removeValue(forKey: id)
@@ -67,14 +70,20 @@ final class HostService {
     }
 
     func start(observing: Bool? = nil) async throws {
+        serviceRunning = true
         if let observing { observationEnabled = observing }
-        try store.beginEpoch()
-        let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId)
-        self.identity = identity
-        try await network.start(
-            identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
-        await catalog.configure(storefront: configuration.storefront)
-        if observationEnabled { startObservation() }
+        do {
+            try store.beginEpoch()
+            let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId)
+            self.identity = identity
+            try await network.start(
+                identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
+            await catalog.configure(storefront: configuration.storefront)
+            if observationEnabled { startObservation() }
+        } catch {
+            serviceRunning = false
+            throw error
+        }
     }
 
     func startObservation() {
@@ -102,6 +111,7 @@ final class HostService {
     }
 
     func stop() {
+        serviceRunning = false
         do { try queue.flushCredits() } catch { onIssue?(error.localizedDescription) }
         polling?.cancel()
         observation.stop()
@@ -116,25 +126,34 @@ final class HostService {
         network.stop()
     }
 
-    private func recoverListener() {
-        guard listenerRecovery == nil, let identity else { return }
+    private func recoverListener(_ reason: String?) {
+        guard serviceRunning, listenerRecovery == nil, let identity else { return }
         listenerRecovery = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.listenerRecovery = nil }
-            for seconds in [1, 2, 4, 8, 16, 30] {
-                do {
-                    try await Task.sleep(for: .seconds(seconds))
-                    try Task.checkCancellation()
-                    try await self.network.start(
-                        identity: identity, port: self.configuration.port, name: self.configuration.name,
-                        hostId: self.store.hostId)
-                    self.onDevicesChanged?()
-                    return
-                } catch is CancellationError { return } catch { continue }
+            var reported = false
+            while !Task.isCancelled {
+                for seconds in [1, 2, 4, 8, 16, 30] {
+                    do {
+                        try await Task.sleep(for: .seconds(seconds))
+                        try Task.checkCancellation()
+                        try await self.network.start(
+                            identity: identity, port: self.configuration.port, name: self.configuration.name,
+                            hostId: self.store.hostId)
+                        self.onDevicesChanged?()
+                        return
+                    } catch is CancellationError { return } catch { continue }
+                }
+                if !reported {
+                    reported = true
+                    let cause = reason.map { " (" + $0 + ")" } ?? ""
+                    self.onIssue?(
+                        "The local listener is still unavailable" + cause
+                            + ". Cadenza Host will keep retrying; check Local Network permission and the selected port."
+                    )
+                }
+                try? await Task.sleep(for: .seconds(30))
             }
-            self.onIssue?(
-                "The local listener could not recover. Check Local Network permission and the selected port, then restart Host from Settings."
-            )
         }
     }
 
@@ -160,7 +179,9 @@ final class HostService {
         guard let identity else { throw CadenzaError.failure("network", "Host is still starting.") }
         let address =
             configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
-        guard let address else { throw CadenzaError.failure("network", "Connect the Mac to your local network first.") }
+        guard let address else {
+            throw CadenzaError.failure("network", "Connect Cadenza Host to your local network first.")
+        }
         let invitation = PairingInvitation(
             host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
             certificateDerBase64: identity.certificateDerBase64,

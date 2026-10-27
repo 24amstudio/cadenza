@@ -42,7 +42,7 @@ final class MusicAccessibility {
             throw CadenzaError.failure("music_permission", "Allow Cadenza Host in Privacy & Security → Accessibility.")
         }
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first else {
-            throw CadenzaError.failure("music_unavailable", "Open Music on this Mac first.")
+            throw CadenzaError.failure("music_unavailable", "Open Music while Cadenza Host is running.")
         }
         if currentPid != app.processIdentifier { cachedPane = nil }
         currentPid = app.processIdentifier
@@ -90,6 +90,33 @@ final class MusicAccessibility {
         let values = [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
             .map { string(element, $0) }.filter { !$0.isEmpty }
         return values.joined(separator: " ")
+    }
+
+    private func normalized(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
+    private func selected(_ element: AXUIElement, descendants: [AXUIElement]) -> Bool {
+        let nodes = descendants + [element]
+        return nodes.contains {
+            (attribute($0, kAXSelectedAttribute) as? Bool) == true
+                || (attribute($0, kAXFocusedAttribute) as? Bool) == true
+        }
+    }
+
+    private func links(_ element: AXUIElement, descendants: [AXUIElement], id: String) -> Bool {
+        (descendants + [element]).contains { node in
+            if string(node, kAXIdentifierAttribute) == id { return true }
+            guard let url = attribute(node, kAXURLAttribute) as? URL,
+                url.host == "music.apple.com"
+            else { return false }
+            let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            return parts?.queryItems?.contains { $0.name == "i" && $0.value == id } == true
+                || url.path.hasSuffix("/\(id)")
+        }
     }
 
     private func requireDeadline(_ deadline: Int64) throws {
@@ -153,10 +180,22 @@ final class MusicAccessibility {
         let root = try root()
         let matches = walk(root).filter { element in
             let role = string(element, kAXRoleAttribute)
-            return [kAXButtonRole, kAXCheckBoxRole].contains(role)
-                && names.contains(string(element, kAXDescriptionAttribute).lowercased())
+            guard [kAXButtonRole, kAXCheckBoxRole].contains(role),
+                attribute(element, "AXHidden") as? Bool != true
+            else { return false }
+            let values = [
+                string(element, kAXDescriptionAttribute),
+                string(element, kAXTitleAttribute),
+                string(element, kAXIdentifierAttribute),
+                label(element),
+            ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            return names.contains { name in
+                values.contains { value in value == name || value.contains(name) }
+            }
         }
-        guard matches.count == 1, let button = matches.first else {
+        guard
+            let button = matches.first(where: { (attribute($0, kAXValueAttribute) as? Bool) == true }) ?? matches.first
+        else {
             throw CadenzaError.failure(
                 "native_queue_unavailable", "The required Music sidebar button is not accessible.")
         }
@@ -198,22 +237,18 @@ final class MusicAccessibility {
         var candidates: [AXUIElement] = []
         for row in rows {
             let nodes = walk(row)
-            let selected = (attribute(row, kAXSelectedAttribute) as? Bool) == true
-            let values = nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
+            let values =
+                nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
                 .map { string($0, kAXValueAttribute) }
-            let exactTitle = values.contains(song.title)
-            let exactArtist = values.contains(song.artist)
-            let linked = nodes.contains { node in
-                guard let url = attribute(node, kAXURLAttribute) as? URL,
-                    url.host == "music.apple.com"
-                else { return false }
-                let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
-                return parts?.queryItems?.contains { $0.name == "i" && $0.value == song.id } == true
-                    || url.path.hasSuffix("/\(song.id)")
-            }
-            if linked || (selected && exactTitle && (song.source == "library" || exactArtist)) {
-                candidates.append(row)
-            }
+                + [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].map { string(row, $0) }
+            let exactTitle = values.contains { normalized($0) == normalized(song.title) }
+            let exactArtist = values.contains { normalized($0) == normalized(song.artist) }
+            let linked = links(row, descendants: nodes, id: song.id)
+            let exactSelection = selected(row, descendants: nodes) && exactTitle
+            // Music's album track rows often omit the artist from their AX text. The
+            // deep link already identifies catalog tracks; the selected exact title
+            // is the remaining identity exposed by Music's native UI.
+            if linked || (exactSelection && (song.source == "catalog" || exactArtist)) { candidates.append(row) }
         }
         try finishRead()
         guard candidates.count == 1, let row = candidates.first else {

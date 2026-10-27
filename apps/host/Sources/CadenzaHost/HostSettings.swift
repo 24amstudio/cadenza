@@ -69,7 +69,7 @@ struct HostSettings: View {
                         target: Locale.Language(identifier: "en")
                     )
                 }.disabled(preparingTranslation)
-                Text("macOS asks before downloading a missing language model. Translation then stays on this Mac.")
+                Text("macOS asks before downloading a missing language model. Translation then stays in Cadenza Host.")
             }
             Section("Reconcile native queue") {
                 if let service = model.service {
@@ -81,7 +81,7 @@ struct HostSettings: View {
                                 set: { assignments[row.token] = $0.isEmpty ? nil : $0 }
                             )
                         ) {
-                            Text("Mac-originated").tag("")
+                            Text("Cadenza Host").tag("")
                             ForEach(savedRequests(service), id: \.id) { entry in Text(entry.label).tag(entry.id) }
                         }
                     }

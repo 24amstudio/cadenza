@@ -15,8 +15,6 @@ dist/
 local.properties
 .DS_Store
 Thumbs.db
-hs_err_pid*.log
-replay_pid*.log
 
 # Local credentials and private signing material
 .env

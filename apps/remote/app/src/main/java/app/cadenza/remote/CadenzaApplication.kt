@@ -15,6 +15,7 @@ class CadenzaApplication : Application() {
         private set
     var installationHandler: ((Intent?) -> Unit)? = null
     var unpinSession: (() -> Unit)? = null
+    var mediaAction: ((String) -> Unit)? = null
     val settings by lazy { StoredSettings(database, "app") }
     val library by lazy { RemoteLibrary(database) }
     val updateSettings by lazy { StoredSettings(database, "updates") }

@@ -7,9 +7,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
+import android.media.session.MediaSession
 import android.os.Build
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 data class SessionStatus(
@@ -20,26 +20,26 @@ data class SessionStatus(
     val artist: String,
     val playing: Boolean,
     val monitoring: Boolean,
+    val occurrenceId: String = "",
+    val canInterrupt: Boolean = false,
 ) {
     companion object {
-        fun from(state: RemoteState): SessionStatus =
-            SessionStatus(
-                state.sessionActive,
+        fun from(state: RemoteState): SessionStatus {
+            val current = state.snapshot?.current
+            return SessionStatus(
+                state.sessionActive || (state.connected && state.snapshot?.playing == true && current != null),
                 state.connected,
                 state.profile?.name.orEmpty(),
-                state.snapshot
-                    ?.current
-                    ?.song
-                    ?.title
-                    .orEmpty(),
-                state.snapshot
-                    ?.current
-                    ?.song
-                    ?.artist
-                    .orEmpty(),
+                current?.song?.title.orEmpty(),
+                current?.song?.artist.orEmpty(),
                 state.snapshot?.playing == true,
                 state.monitoringSong,
+                current?.occurrenceId.orEmpty(),
+                current?.requestedBy?.let { requester ->
+                    requester == state.profile?.remoteId || state.snapshot.allowCrossRemoteEdits
+                } ?: true,
             )
+        }
     }
 }
 
@@ -48,11 +48,15 @@ class SessionNotification(
 ) {
     private val manager = context.getSystemService(NotificationManager::class.java)
 
-    fun update(status: SessionStatus) {
+    fun update(
+        status: SessionStatus,
+        mediaToken: MediaSession.Token? = null,
+    ) {
         if (!status.active || !manager.areNotificationsEnabled() ||
             (
                 Build.VERSION.SDK_INT >= 33 &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
             )
         ) {
             clear()
@@ -70,10 +74,10 @@ class SessionNotification(
             when {
                 !status.connected -> "Reconnecting to " + status.host
                 status.title.isEmpty() -> "Connected to " + status.host
-                else -> (if (status.playing) "Playing" else "Paused") + " on " + status.host + " · " + status.artist
+                else -> (if (status.playing) "Playing" else "Paused") + " on " + status.host + " | " + status.artist
             }
         val builder =
-            NotificationCompat
+            Notification
                 .Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(status.title.ifEmpty { "Cadenza Remote" })
@@ -81,32 +85,95 @@ class SessionNotification(
                 .setContentIntent(open)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setSilent(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-                .setCategory(NotificationCompat.CATEGORY_STATUS)
-        // An explicitly pinned, currently playing song is monitoring; a generic connection is not a Live Update.
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setCategory(Notification.CATEGORY_STATUS)
+                .setLocalOnly(true)
+        if (mediaToken != null && status.title.isNotEmpty()) {
+            val style = Notification.MediaStyle().setMediaSession(mediaToken)
+            if (status.canInterrupt) {
+                style.setShowActionsInCompactView(0, 1, 2)
+                builder.addAction(Notification.Action.Builder(actionIcon(), "Previous", action("previous")).build())
+                builder.addAction(
+                    Notification.Action
+                        .Builder(
+                            actionIcon(),
+                            if (status.playing) "Pause" else "Play",
+                            action(if (status.playing) "pause" else "play"),
+                        ).build(),
+                )
+                builder.addAction(Notification.Action.Builder(actionIcon(), "Next", action("next")).build())
+            } else {
+                style.setShowActionsInCompactView(0)
+                builder.addAction(
+                    Notification.Action
+                        .Builder(
+                            actionIcon(),
+                            if (status.playing) "Pause" else "Play",
+                            action(if (status.playing) "pause" else "play"),
+                        ).build(),
+                )
+            }
+            builder.setStyle(style)
+        }
+        val unpin = unpinAction()
+        if (status.monitoring) {
+            builder.addAction(Notification.Action.Builder(actionIcon(), "Unpin", unpin).build())
+        }
+        manager.notify(ID, builder.build())
         if (Build.VERSION.SDK_INT >= 36 && status.monitoring && status.connected && status.playing &&
             manager.canPostPromotedNotifications()
         ) {
-            builder.setRequestPromotedOngoing(true)
-            builder.setShortCriticalText("Music")
-            val unpin =
-                PendingIntent.getBroadcast(
-                    context,
-                    43129,
-                    Intent(context, SessionUnpinReceiver::class.java),
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-                )
-            builder.addAction(0, "Unpin", unpin)
+            val live =
+                Notification
+                    .Builder(context, CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(status.title)
+                    .setContentText(text)
+                    .setStyle(Notification.BigTextStyle().bigText(text))
+                    .setContentIntent(open)
+                    .setOngoing(true)
+                    .setOnlyAlertOnce(true)
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
+                    .setCategory(Notification.CATEGORY_STATUS)
+                    .setLocalOnly(true)
+                    .addAction(Notification.Action.Builder(actionIcon(), "Unpin", unpin).build())
+                    .setRequestPromotedOngoing(true)
+                    .setShortCriticalText("Music")
+                    .build()
+            manager.notify(LIVE_ID, live)
+        } else {
+            manager.cancel(LIVE_ID)
         }
-        val notification: Notification = builder.build()
-        manager.notify(ID, notification)
     }
 
-    fun clear() = manager.cancel(ID)
+    private fun action(value: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            value.hashCode(),
+            Intent(context, MediaActionReceiver::class.java)
+                .setAction(MediaActionReceiver.ACTION)
+                .putExtra(MediaActionReceiver.ACTION, value),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+    private fun actionIcon(): Icon = Icon.createWithResource(context, R.drawable.ic_notification)
+
+    private fun unpinAction(): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            43129,
+            Intent(context, SessionUnpinReceiver::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+    fun clear() {
+        manager.cancel(ID)
+        manager.cancel(LIVE_ID)
+    }
 
     companion object {
         const val ID = 43129
+        const val LIVE_ID = 43130
         private const val CHANNEL = "control-session"
     }
 }

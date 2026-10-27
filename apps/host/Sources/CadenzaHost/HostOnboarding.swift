@@ -22,7 +22,7 @@ struct HostOnboarding: View {
             switch step {
             case 0:
                 Text(
-                    "Control Music on this Mac from your Android devices. Audio stays on the Mac; pairing and controls stay on your local network."
+                    "Control Music with Cadenza Host from your Android devices. Audio stays with Cadenza Host; pairing and controls stay on your local network."
                 )
                 Button("Get started") { step = 1 }.keyboardShortcut(.defaultAction)
             case 1:

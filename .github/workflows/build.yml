@@ -7,12 +7,12 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 env:
-  CI: 'true'
-  CADENZA_BUILD_PROFILE: ci
+  CI: 'false'
+  CADENZA_BUILD_PROFILE: production
 
 jobs:
   artifacts:
@@ -50,28 +50,122 @@ jobs:
         with:
           distribution: temurin
           java-version: '17.0.21+9'
+      - name: Restore Android release keystore
+        if: matrix.platform == 'remote'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CADENZA_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/cadenza-release.jks"
+          chmod 600 "$RUNNER_TEMP/cadenza-release.jks"
       - if: matrix.platform == 'remote'
         run: bash tools/ci/android-sdk.sh
-      - name: Build CI APK
+      - name: Build Production APK
         if: matrix.platform == 'remote'
         working-directory: apps/remote
         env:
-          CADENZA_ANDROID_KEYSTORE_BASE64: ${{ secrets.CADENZA_ANDROID_KEYSTORE_BASE64 }}
+          CADENZA_KEYSTORE_PATH: ${{ runner.temp }}/cadenza-release.jks
           CADENZA_KEYSTORE_PASSWORD: ${{ secrets.CADENZA_ANDROID_KEYSTORE_PASSWORD }}
           CADENZA_KEY_ALIAS: ${{ secrets.CADENZA_ANDROID_KEY_ALIAS }}
           CADENZA_KEY_PASSWORD: ${{ secrets.CADENZA_ANDROID_KEY_PASSWORD }}
         run: |
-          keystore="$RUNNER_TEMP/cadenza-ci.keystore"
-          printf '%s' "$CADENZA_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
-          CADENZA_KEYSTORE_PATH="$keystore" bash ./gradlew :app:assembleRelease -Pcadenza.profile=ci --no-daemon
-      - name: Build CI app bundle and ZIP
+          test -n "$CADENZA_KEYSTORE_PASSWORD"
+          test -n "$CADENZA_KEY_ALIAS"
+          test -n "$CADENZA_KEY_PASSWORD"
+          bash ./gradlew :app:assembleRelease -Pcadenza.profile=production --no-daemon
+          version="$(awk -F= '$1 == "VERSION_NAME" {print $2}' ../../shared/version.properties | tr -d '\r')"
+          mkdir -p ../../dist
+          cp app/build/outputs/apk/release/app-release.apk "../../dist/Cadenza-Remote-$version.apk"
+      - name: Build Production Host archive
         if: matrix.platform == 'host'
+        env:
+          CADENZA_BUILD_PROFILE: production
         run: bash apps/host/Scripts/build.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.platform == 'remote'
         with:
-          name: Cadenza-${{ matrix.platform }}-ci-${{ github.event.workflow_run.head_sha }}
-          path: |
-            apps/remote/app/build/outputs/apk/release/*.apk
-            dist/Cadenza-Host-*-ci-arm64.zip
+          name: Cadenza-remote-production-${{ github.event.workflow_run.head_sha }}
+          path: dist/Cadenza-Remote-*.apk
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.platform == 'host'
+        with:
+          name: Cadenza-host-production-${{ github.event.workflow_run.head_sha }}
+          path: dist/Cadenza-Host-*-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: artifacts
+    runs-on: macos-26
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.3'
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17.0.21+9'
+      - name: Prepare Android manifest analyzer
+        run: bash tools/ci/android-sdk.sh
+      - name: Verify release configuration
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('shared/release-config.json', 'utf8'));
+          if (config.repository !== process.env.GITHUB_REPOSITORY ||
+              typeof config.public_key_spki_base64 !== 'string' ||
+              config.public_key_spki_base64.length < 40) {
+            throw new Error('shared/release-config.json must contain this repository and the generated public update key.');
+          }
+          NODE
+      - name: Download built Production artifacts
+        env:
+          BUILD_RUN_ID: ${{ github.run_id }}
+          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/cadenza-artifacts/remote" "$RUNNER_TEMP/cadenza-artifacts/host" dist
+          gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "Cadenza-remote-production-$CHECKED_SHA" --dir "$RUNNER_TEMP/cadenza-artifacts/remote"
+          gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "Cadenza-host-production-$CHECKED_SHA" --dir "$RUNNER_TEMP/cadenza-artifacts/host"
+          cp "$RUNNER_TEMP"/cadenza-artifacts/remote/Cadenza-Remote-*.apk dist/
+          cp "$RUNNER_TEMP"/cadenza-artifacts/host/Cadenza-Host-*-arm64.zip dist/
+      - name: Restore update signing key
+        env:
+          UPDATE_PRIVATE_PEM: ${{ secrets.CADENZA_UPDATE_PRIVATE_PEM }}
+        run: |
+          test -n "$UPDATE_PRIVATE_PEM"
+          printf '%s' "$UPDATE_PRIVATE_PEM" > "$RUNNER_TEMP/cadenza-update-private.pem"
+          chmod 600 "$RUNNER_TEMP/cadenza-update-private.pem"
+      - name: Sign release metadata
+        run: |
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          bash tools/sign-release.sh "$GITHUB_REPOSITORY" "$RUNNER_TEMP/cadenza-update-private.pem"
+      - name: Publish stable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          version="$(awk -F= '$1 == "VERSION_NAME" {print $2}' shared/version.properties | tr -d '\r')"
+          build="$(awk -F= '$1 == "VERSION_CODE" {print $2}' shared/version.properties | tr -d '\r')"
+          tag="v$version"
+          notes="Automated Production build $build from $CHECKED_SHA."
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "Cadenza $version" --notes "$notes" --draft=false --prerelease=false
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$CHECKED_SHA" \
+              --title "Cadenza $version" --notes "$notes"
+          fi
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber \
+            "dist/Cadenza-Host-$version-arm64.zip" \
+            "dist/Cadenza-Remote-$version.apk" \
+            dist/cadenza-release.json dist/cadenza-release.sig

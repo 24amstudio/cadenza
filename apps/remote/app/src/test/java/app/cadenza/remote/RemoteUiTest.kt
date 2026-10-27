@@ -419,12 +419,12 @@ class RemoteUiTest {
         openApp()
         navigate("Search")
         compose.onNodeWithText("Song, artist, or album").performTextInput("A saved search")
-        compose.onNodeWithText("Mac library").performClick()
+        compose.onNodeWithText("Host library").performClick()
         navigate("Settings")
-        compose.onNodeWithText("Change this setting on Cadenza Host.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Change this setting in Cadenza Host.").performScrollTo().assertIsDisplayed()
         navigate("Search")
         compose.onNodeWithText("A saved search").assertIsDisplayed()
-        compose.onNodeWithText("Mac library").assertIsSelected()
+        compose.onNodeWithText("Host library").assertIsSelected()
         capture("search-tablet")
     }
 

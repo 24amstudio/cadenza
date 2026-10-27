@@ -17,11 +17,13 @@ final class MusicBridge {
         if let deadline, monotonicMs() >= deadline {
             throw CadenzaError.failure("expired", "The action expired before dispatch.")
         }
-        guard let url = HostResources.bundle.url(forResource: "music", withExtension: "js", subdirectory: "Resources") else {
+        guard let url = HostResources.bundle.url(forResource: "music", withExtension: "js", subdirectory: "Resources")
+        else {
             throw CadenzaError.failure("music_unavailable", "The Music automation script is missing.")
         }
         let timeout = deadline.map { min(0.9, max(0.01, Double($0 - monotonicMs()) / 1_000)) } ?? 2
-        return try await Subprocess.run("/usr/bin/osascript", ["-l", "JavaScript", url.path] + arguments, timeout: timeout)
+        return try await Subprocess.run(
+            "/usr/bin/osascript", ["-l", "JavaScript", url.path] + arguments, timeout: timeout)
     }
 
     func status(deadline: Int64? = nil) async throws -> MusicStatus {
@@ -55,10 +57,11 @@ final class MusicBridge {
             _ = try await script(["reveal", song.id])
         } else {
             guard let value = song.url, var components = URLComponents(string: value),
-                  components.scheme == "https", components.host == "music.apple.com",
-                  components.user == nil, components.password == nil,
-                  components.queryItems?.contains(where: { $0.name == "i" && $0.value == song.id }) == true
-                    || components.path.hasSuffix("/\(song.id)") else {
+                components.scheme == "https", components.host == "music.apple.com",
+                components.user == nil, components.password == nil,
+                components.queryItems?.contains(where: { $0.name == "i" && $0.value == song.id }) == true
+                    || components.path.hasSuffix("/\(song.id)")
+            else {
                 throw CadenzaError.failure("invalid_command", "This catalog result has no verified Music link.")
             }
             components.scheme = "music"
@@ -69,11 +72,14 @@ final class MusicBridge {
         let deadline = monotonicMs() + 8_000
         repeat {
             try Task.checkCancellation()
-            guard isCurrent() else { throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.") }
+            guard isCurrent() else {
+                throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.")
+            }
             try? accessibility.showQueue(deadline: min(deadline, monotonicMs() + 250))
             if accessibility.isPrepared(song) { return }
             try await Task.sleep(for: .milliseconds(150))
         } while monotonicMs() < deadline
-        throw CadenzaError.failure("song_not_ready", "Music has not exposed the exact song. Select this song in Music, then prepare it again.")
+        throw CadenzaError.failure(
+            "song_not_ready", "Music has not exposed the exact song. Select this song in Music, then prepare it again.")
     }
 }

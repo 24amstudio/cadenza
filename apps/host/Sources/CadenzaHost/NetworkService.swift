@@ -4,6 +4,7 @@ import Security
 
 @MainActor
 final class NetworkService {
+    @MainActor
     final class Peer {
         let id = identifier()
         let connection: NWConnection
@@ -44,7 +45,9 @@ final class NetworkService {
             let browserOrigin = headers.contains { $0.name.caseInsensitiveCompare("Origin") == .orderedSame }
             return NWProtocolWebSocket.Response(
                 status: browserOrigin ? .reject : .accept, subprotocol: nil,
-                additionalHeaders: [(name: "Cache-Control", value: "no-store"), (name: "X-Content-Type-Options", value: "nosniff")]
+                additionalHeaders: [
+                    (name: "Cache-Control", value: "no-store"), (name: "X-Content-Type-Options", value: "nosniff"),
+                ]
             )
         }
         parameters.defaultProtocolStack.applicationProtocols.insert(webSocket, at: 0)
@@ -53,7 +56,8 @@ final class NetworkService {
         }
         let listener = try NWListener(using: parameters, on: endpointPort)
         let record = Data(("host_id=" + hostId).utf8)
-        listener.service = NWListener.Service(name: name, type: "_cadence._tcp", txtRecord: Data([UInt8(record.count)]) + record)
+        listener.service = NWListener.Service(
+            name: name, type: "_cadence._tcp", txtRecord: Data([UInt8(record.count)]) + record)
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor in self?.accept(connection) }
         }
@@ -65,10 +69,14 @@ final class NetworkService {
                     self.ready = true
                     self.startResult?.resume()
                     self.startResult = nil
-                case let .failed(error):
+                case .failed(let error):
                     self.ready = false
-                    if let result = self.startResult { self.startResult = nil; result.resume(throwing: error) }
-                    else { self.onFailure?(error.localizedDescription) }
+                    if let result = self.startResult {
+                        self.startResult = nil
+                        result.resume(throwing: error)
+                    } else {
+                        self.onFailure?(error.localizedDescription)
+                    }
                 default: break
                 }
             }
@@ -82,7 +90,11 @@ final class NetworkService {
                 guard let self, self.listener === listener, let result = self.startResult else { return }
                 self.startResult = nil
                 listener.cancel()
-                result.resume(throwing: CadenzaError.failure("network", "The local listener did not become ready. Check local-network permission and the selected port."))
+                result.resume(
+                    throwing: CadenzaError.failure(
+                        "network",
+                        "The local listener did not become ready. Check local-network permission and the selected port."
+                    ))
             }
         }
     }
@@ -98,7 +110,10 @@ final class NetworkService {
     }
 
     private func accept(_ connection: NWConnection) {
-        guard peers.count < 32, localAddress(connection.endpoint) else { connection.cancel(); return }
+        guard peers.count < 32, localAddress(connection.endpoint) else {
+            connection.cancel()
+            return
+        }
         let peer = Peer(connection)
         peers[peer.id] = peer
         connection.stateUpdateHandler = { [weak self] state in
@@ -120,7 +135,7 @@ final class NetworkService {
     }
 
     private func localAddress(_ endpoint: NWEndpoint) -> Bool {
-        guard case let .hostPort(host, _) = endpoint else { return false }
+        guard case .hostPort(let host, _) = endpoint else { return false }
         let value = String(describing: host).lowercased()
         if value == "::1" || value.hasPrefix("fe80:") || value.hasPrefix("fc") || value.hasPrefix("fd") { return true }
         let bytes = value.split(separator: ".").compactMap { UInt8($0) }
@@ -136,10 +151,17 @@ final class NetworkService {
         peer.connection.receiveMessage { [weak self] data, context, complete, error in
             Task { @MainActor in
                 guard let self, let peer = self.peers[peerId] else { return }
-                if error != nil { self.disconnect(peerId); return }
-                let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
+                if error != nil {
+                    self.disconnect(peerId)
+                    return
+                }
+                let metadata =
+                    context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
                     as? NWProtocolWebSocket.Metadata
-                if metadata?.opcode == .close { self.disconnect(peerId); return }
+                if metadata?.opcode == .close {
+                    self.disconnect(peerId)
+                    return
+                }
                 if let data, metadata?.opcode == .text, complete {
                     let now = monotonicMs()
                     peer.receivedAt.removeAll { now - $0 > 1_000 }
@@ -153,7 +175,9 @@ final class NetworkService {
                         let frame = try ProtocolValidation.decode(data)
                         self.onFrame?(peer, frame)
                     } catch {
-                        self.send(Frame(type: "error", errorCode: "invalid_command", message: error.localizedDescription), to: peer)
+                        self.send(
+                            Frame(type: "error", errorCode: "invalid_command", message: error.localizedDescription),
+                            to: peer)
                     }
                 }
                 self.receive(peerId)
@@ -169,23 +193,28 @@ final class NetworkService {
 
     func broadcast(_ frame: Frame) {
         guard let data = try? Wire.encode(frame) else { return }
-        for peer in peers.values where peer.authenticated && (frame.type != "heartbeat" || peer.supportsHeartbeat) { send(data, to: peer) }
+        for peer in peers.values where peer.authenticated && (frame.type != "heartbeat" || peer.supportsHeartbeat) {
+            send(data, to: peer)
+        }
     }
 
     private func send(_ data: Data, to peer: Peer) {
-        guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes, peer.pendingBytes + data.count <= 4_194_304 else {
+        guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes, peer.pendingBytes + data.count <= 4_194_304
+        else {
             disconnect(peer.id)
             return
         }
         peer.pendingBytes += data.count
         let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
         let context = NWConnection.ContentContext(identifier: identifier(), metadata: [metadata])
-        peer.connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { [weak self] error in
-            Task { @MainActor in
-                self?.peers[peer.id]?.pendingBytes -= data.count
-                if error != nil { self?.disconnect(peer.id) }
-            }
-        })
+        peer.connection.send(
+            content: data, contentContext: context, isComplete: true,
+            completion: .contentProcessed { [weak self] error in
+                Task { @MainActor in
+                    self?.peers[peer.id]?.pendingBytes -= data.count
+                    if error != nil { self?.disconnect(peer.id) }
+                }
+            })
     }
 
     func disconnect(_ peerId: String) {

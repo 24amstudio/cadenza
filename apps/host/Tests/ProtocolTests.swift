@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import CadenzaHost
 
 struct ProtocolTests {
@@ -22,7 +23,8 @@ struct ProtocolTests {
     }
 
     @Test func sessionRejectsCallerIdentityInjectionAndFractionalCounters() throws {
-        let auth = #"{"version":1,"type":"hello","auth":{"remote_id":"00000000-0000-4000-8000-000000000001","token":"00000000000000000000000000000000","last_credit_sequence":0}}"#
+        let auth =
+            #"{"version":1,"type":"hello","auth":{"remote_id":"00000000-0000-4000-8000-000000000001","token":"00000000000000000000000000000000","last_credit_sequence":0}}"#
         #expect(try ProtocolValidation.decode(Data(auth.utf8)).auth?.lastCreditSequence == 0)
         let injected = auth.replacingOccurrences(of: #""token":"#, with: #""requested_by":"other","token":"#)
         #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(injected.utf8)) }
@@ -34,11 +36,11 @@ struct ProtocolTests {
 
     @Test func timedLyricsKeepOriginalTextAndEnglishTranslation() throws {
         let xml = """
-        <tt xml:lang="ja" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
-          <head><metadata><itunes:translation type="subtitle" xml:lang="en"><itunes:text for="L1">English text</itunes:text></itunes:translation></metadata></head>
-          <body><div><p begin="00:01.250" end="00:03.500" itunes:key="L1"><span>Original</span> text</p><p begin="4s" end="6s" itunes:key="L2">Next line</p></div></body>
-        </tt>
-        """
+            <tt xml:lang="ja" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+              <head><metadata><itunes:translation type="subtitle" xml:lang="en"><itunes:text for="L1">English text</itunes:text></itunes:translation></metadata></head>
+              <body><div><p begin="00:01.250" end="00:03.500" itunes:key="L1"><span>Original</span> text</p><p begin="4s" end="6s" itunes:key="L2">Next line</p></div></body>
+            </tt>
+            """
         let document = try TTMLDocument.parse(Data(xml.utf8), occurrence: id)
         #expect(document.occurrenceId == id)
         #expect(document.lines.count == 2)
@@ -54,7 +56,8 @@ struct ProtocolTests {
         #expect(TTMLDocument.milliseconds("00:65") == nil)
         #expect(TTMLDocument.milliseconds("1::02") == nil)
         #expect(TTMLDocument.milliseconds("-1s") == nil)
-        let xml = #"<!DOCTYPE tt [<!ENTITY secret SYSTEM "file:///etc/passwd">]><tt><body><p begin="0s">&secret;</p></body></tt>"#
+        let xml =
+            #"<!DOCTYPE tt [<!ENTITY secret SYSTEM "file:///etc/passwd">]><tt><body><p begin="0s">&secret;</p></body></tt>"#
         #expect(throws: (any Error).self) { try TTMLDocument.parse(Data(xml.utf8), occurrence: id) }
     }
 
@@ -70,7 +73,8 @@ struct ProtocolTests {
     }
 
     @Test func repeatedLyricLineIdentitiesAreRejectedBeforeRendering() {
-        let xml = #"<tt><body><p begin="0s" end="1s" xml:id="same">First</p><p begin="1s" end="2s" xml:id="same">Second</p></body></tt>"#
+        let xml =
+            #"<tt><body><p begin="0s" end="1s" xml:id="same">First</p><p begin="1s" end="2s" xml:id="same">Second</p></body></tt>"#
         #expect(throws: (any Error).self) { try TTMLDocument.parse(Data(xml.utf8), occurrence: id) }
     }
 }

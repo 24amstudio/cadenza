@@ -4,11 +4,15 @@ enum CadenzaError: LocalizedError, Sendable {
     case failure(String, String)
 
     var code: String {
-        switch self { case let .failure(code, _): return code }
+        switch self {
+        case .failure(let code, _): return code
+        }
     }
 
     var errorDescription: String? {
-        switch self { case let .failure(_, message): return message }
+        switch self {
+        case .failure(_, let message): return message
+        }
     }
 }
 
@@ -113,8 +117,11 @@ struct CommandAction: Codable, Sendable {
         try container.encodeIfPresent(song, forKey: .song)
         try container.encodeIfPresent(entryId, forKey: .entryId)
         if kind == "queue.move" { try container.encode(beforeEntryId, forKey: .beforeEntryId) }
-        if kind == "queue.play_now" { try container.encode(occurrenceId, forKey: .occurrenceId) }
-        else { try container.encodeIfPresent(occurrenceId, forKey: .occurrenceId) }
+        if kind == "queue.play_now" {
+            try container.encode(occurrenceId, forKey: .occurrenceId)
+        } else {
+            try container.encodeIfPresent(occurrenceId, forKey: .occurrenceId)
+        }
         try container.encodeIfPresent(positionMs, forKey: .positionMs)
         try container.encodeIfPresent(percent, forKey: .percent)
     }
@@ -161,7 +168,8 @@ struct Welcome: Codable, Sendable {
     var updates: UpdateConfiguration
     var capabilities: [String] = [
         "playback", "library", "catalog.public-web", "queue.native-accessibility",
-        "lyrics.music-cache", "lyrics.english-translation", "analytics", "updates.signed", "queue.play-next", "remote.configure", "state.heartbeat",
+        "lyrics.music-cache", "lyrics.english-translation", "analytics", "updates.signed", "queue.play-next",
+        "remote.configure", "state.heartbeat",
     ]
 }
 

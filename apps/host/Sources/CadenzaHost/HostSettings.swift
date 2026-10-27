@@ -23,8 +23,9 @@ struct HostSettings: View {
                     comparingChanges = true
                     Task { @MainActor in
                         defer { comparingChanges = false }
-                        do { changelog = try await HostChangelog.compare(configuration: model.configuration.updates) }
-                        catch { model.showError("Changes could not be compared", error.localizedDescription) }
+                        do {
+                            changelog = try await HostChangelog.compare(configuration: model.configuration.updates)
+                        } catch { model.showError("Changes could not be compared", error.localizedDescription) }
                     }
                 }.disabled(comparingChanges)
                 Toggle("Show menu bar icon", isOn: $showMenuBarIcon)
@@ -49,18 +50,23 @@ struct HostSettings: View {
                 Button("Allow Accessibility") { model.service?.music.accessibility.requestPermission() }
                 Button("Check Music Automation") {
                     Task { @MainActor in
-                        do { _ = try await model.service?.music.status(); model.notify("Music Automation is available.") }
-                        catch { model.showError("Allow Music Automation", error.localizedDescription) }
+                        do {
+                            _ = try await model.service?.music.status()
+                            model.notify("Music Automation is available.")
+                        } catch { model.showError("Allow Music Automation", error.localizedDescription) }
                     }
                 }
-                Text("Open Music's Playing Next panel for native queue verification. Open lyrics to populate Music's lyric cache.")
+                Text(
+                    "Open Music's Playing Next panel for native queue verification. Open lyrics to populate Music's lyric cache."
+                )
             }
             Section("English translation") {
                 TextField("Source language code", text: $translationSource)
                 Button(preparingTranslation ? "Preparing language pair…" : "Prepare English translation") {
                     preparingTranslation = true
                     translationConfiguration = TranslationSession.Configuration(
-                        source: Locale.Language(identifier: translationSource), target: Locale.Language(identifier: "en")
+                        source: Locale.Language(identifier: translationSource),
+                        target: Locale.Language(identifier: "en")
                     )
                 }.disabled(preparingTranslation)
                 Text("macOS asks before downloading a missing language model. Translation then stays on this Mac.")
@@ -68,10 +74,13 @@ struct HostSettings: View {
             Section("Reconcile native queue") {
                 if let service = model.service {
                     ForEach(service.queue.nativeRows, id: \.token) { row in
-                        Picker(row.title + " — " + row.artist, selection: Binding(
-                            get: { assignments[row.token] ?? "" },
-                            set: { assignments[row.token] = $0.isEmpty ? nil : $0 }
-                        )) {
+                        Picker(
+                            row.title + " — " + row.artist,
+                            selection: Binding(
+                                get: { assignments[row.token] ?? "" },
+                                set: { assignments[row.token] = $0.isEmpty ? nil : $0 }
+                            )
+                        ) {
                             Text("Mac-originated").tag("")
                             ForEach(savedRequests(service), id: \.id) { entry in Text(entry.label).tag(entry.id) }
                         }
@@ -88,13 +97,17 @@ struct HostSettings: View {
             Section("GitHub Releases") {
                 TextField("Repository, owner/name", text: $model.configuration.updates.repository)
                 TextField("Public P-256 key, SPKI base64", text: $model.configuration.updates.publicKeySpkiBase64)
-                Toggle("Check and install updates automatically", isOn: $model.configuration.automaticUpdates).disabled(!HostBuild.updatesEnabled)
+                Toggle("Check and install updates automatically", isOn: $model.configuration.automaticUpdates).disabled(
+                    !HostBuild.updatesEnabled)
                 HStack {
-                    Button(model.updateBusy ? "Checking…" : "Check for updates") { model.checkUpdates() }.disabled(model.updateBusy || !HostBuild.updatesEnabled)
+                    Button(model.updateBusy ? "Checking…" : "Check for updates") { model.checkUpdates() }.disabled(
+                        model.updateBusy || !HostBuild.updatesEnabled)
                     if let version = model.stagedVersion { Button("Install \(version)") { model.installUpdate() } }
                 }
                 if model.updateBusy { ProgressView(value: model.updateProgress) }
-                Text("Save settings to apply the repository and verification key. Updates preserve the database and Keychain identity.")
+                Text(
+                    "Save settings to apply the repository and verification key. Updates preserve the database and Keychain identity."
+                )
                 if !HostBuild.updatesEnabled { Text("Automatic updates are disabled in this build.") }
             }
         }
@@ -102,19 +115,26 @@ struct HostSettings: View {
         .sheet(isPresented: Binding(get: { changelog != nil }, set: { if !$0 { changelog = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Changelog").font(.title.bold())
-                ScrollView { Text(changelog ?? "").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                ScrollView {
+                    Text(changelog ?? "").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Button("Close") { changelog = nil }.keyboardShortcut(.cancelAction)
             }.padding(24).frame(width: 560, height: 420)
         }
         .onAppear { assignments = model.service?.queue.nativeAssignments ?? [:] }
-        .translationTask(translationConfiguration) { session in
+        .translationTask(translationConfiguration) { @concurrent session in
+            // The framework runs prepareTranslation off the main actor, so the session stays off it too.
             do {
                 try await session.prepareTranslation()
-                preparingTranslation = false
-                model.notify("English translation is ready.")
+                await MainActor.run {
+                    preparingTranslation = false
+                    model.notify("English translation is ready.")
+                }
             } catch {
-                preparingTranslation = false
-                model.showError("Could not prepare translation", error.localizedDescription)
+                await MainActor.run {
+                    preparingTranslation = false
+                    model.showError("Could not prepare translation", error.localizedDescription)
+                }
             }
         }
     }

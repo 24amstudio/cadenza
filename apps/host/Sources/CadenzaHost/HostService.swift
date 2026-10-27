@@ -43,13 +43,17 @@ final class HostService {
                     for peer in self.network.peers.values where peer.authenticated && !peer.supportsHeartbeat {
                         self.network.send(Frame(type: "state", snapshot: snapshot), to: peer)
                     }
+                } else {
+                    self.network.broadcast(Frame(type: "state", snapshot: snapshot))
                 }
-                else { self.network.broadcast(Frame(type: "state", snapshot: snapshot)) }
                 self.lastPublished = snapshot
             }
             if snapshot.current?.occurrenceId != self.lyricDocument?.occurrenceId {
                 self.lyricDocument = nil
-                if self.lyricOccurrence != snapshot.current?.occurrenceId { self.lyricJob?.cancel(); self.lyricJob = nil }
+                if self.lyricOccurrence != snapshot.current?.occurrenceId {
+                    self.lyricJob?.cancel()
+                    self.lyricJob = nil
+                }
             }
         }
         queue.onCredits = { [weak self] in self?.deliverCredits() }
@@ -67,7 +71,8 @@ final class HostService {
         try store.beginEpoch()
         let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId)
         self.identity = identity
-        try await network.start(identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
+        try await network.start(
+            identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
         await catalog.configure(storefront: configuration.storefront)
         if observationEnabled { startObservation() }
     }
@@ -84,12 +89,14 @@ final class HostService {
                 guard let self else { return }
                 await self.queue.refresh()
                 if !self.queue.busy && monotonicMs() - self.lastMaintenance > 300_000 {
-                    do { try self.store.database.maintain() }
-                    catch { self.onIssue?("Database maintenance failed: " + error.localizedDescription) }
+                    do { try self.store.database.maintain() } catch {
+                        self.onIssue?("Database maintenance failed: " + error.localizedDescription)
+                    }
                     self.lastMaintenance = monotonicMs()
                 }
                 let playing = self.queue.isPlaying
-                try? await Task.sleep(for: .milliseconds(playing ? 1_000 : (self.network.peers.isEmpty ? 10_000 : 2_000)))
+                try? await Task.sleep(
+                    for: .milliseconds(playing ? 1_000 : (self.network.peers.isEmpty ? 10_000 : 2_000)))
             }
         }
     }
@@ -118,22 +125,30 @@ final class HostService {
                 do {
                     try await Task.sleep(for: .seconds(seconds))
                     try Task.checkCancellation()
-                    try await self.network.start(identity: identity, port: self.configuration.port, name: self.configuration.name, hostId: self.store.hostId)
+                    try await self.network.start(
+                        identity: identity, port: self.configuration.port, name: self.configuration.name,
+                        hostId: self.store.hostId)
                     self.onDevicesChanged?()
                     return
-                } catch is CancellationError { return }
-                catch { continue }
+                } catch is CancellationError { return } catch { continue }
             }
-            self.onIssue?("The local listener could not recover. Check Local Network permission and the selected port, then restart Host from Settings.")
+            self.onIssue?(
+                "The local listener could not recover. Check Local Network permission and the selected port, then restart Host from Settings."
+            )
         }
     }
 
     func save(_ configuration: HostConfiguration) async throws {
-        guard !queue.busy else { throw CadenzaError.failure("busy", "Wait for the current Music action before changing network settings.") }
-        guard !configuration.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, configuration.name.utf8.count <= 63,
-              configuration.storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil,
-              configuration.port >= 1024 else {
-            throw CadenzaError.failure("configuration", "Enter a two-letter storefront, a device name, and a port from 1024 to 65535.")
+        guard !queue.busy else {
+            throw CadenzaError.failure("busy", "Wait for the current Music action before changing network settings.")
+        }
+        guard !configuration.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            configuration.name.utf8.count <= 63,
+            configuration.storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil,
+            configuration.port >= 1024
+        else {
+            throw CadenzaError.failure(
+                "configuration", "Enter a two-letter storefront, a device name, and a port from 1024 to 65535.")
         }
         try configuration.save()
         self.configuration = configuration
@@ -143,7 +158,8 @@ final class HostService {
 
     func createInvitation() throws -> PairingInvitation {
         guard let identity else { throw CadenzaError.failure("network", "Host is still starting.") }
-        let address = configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
+        let address =
+            configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         guard let address else { throw CadenzaError.failure("network", "Connect the Mac to your local network first.") }
         let invitation = PairingInvitation(
             host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
@@ -163,18 +179,26 @@ final class HostService {
 
     private func receive(_ frame: Frame, from peer: NetworkService.Peer) {
         do {
-            if !peer.authenticated { try authenticate(frame, peer: peer); return }
+            if !peer.authenticated {
+                try authenticate(frame, peer: peer)
+                return
+            }
             guard let actor = peer.remoteId,
-                  try store.database.query(
+                try store.database.query(
                     "SELECT remote_id FROM paired_remotes WHERE remote_id=? AND revoked_at_ms IS NULL", [.text(actor)]
-                  ).first != nil else { throw CadenzaError.failure("revoked", "This Remote is no longer paired.") }
+                ).first != nil
+            else { throw CadenzaError.failure("revoked", "This Remote is no longer paired.") }
             switch frame.type {
             case "remote.configure":
-                guard let name = frame.name?.trimmingCharacters(in: .whitespacesAndNewlines), (1...80).contains(name.count),
-                      !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
-                    throw CadenzaError.failure("invalid_command", "Use a Remote name from 1 to 80 characters without control characters.")
+                guard let name = frame.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    (1...80).contains(name.count),
+                    !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+                else {
+                    throw CadenzaError.failure(
+                        "invalid_command", "Use a Remote name from 1 to 80 characters without control characters.")
                 }
-                try store.database.run("UPDATE paired_remotes SET display_name=? WHERE remote_id=?", [.text(name), .text(actor)])
+                try store.database.run(
+                    "UPDATE paired_remotes SET display_name=? WHERE remote_id=?", [.text(name), .text(actor)])
                 peer.supportsHeartbeat = frame.heartbeat == true
                 network.send(Frame(type: "remote.configured", requestId: frame.requestId), to: peer)
                 queue.publish()
@@ -184,7 +208,8 @@ final class HostService {
             case "analytics.ack": try acknowledge(frame, peer: peer, actor: actor)
             case "command": command(frame, peer: peer, actor: actor)
             case "command.status":
-                let queued = receivedCommands.contains(actor + (frame.commandId ?? ""))
+                let queued =
+                    receivedCommands.contains(actor + (frame.commandId ?? ""))
                     || queue.commandQueued(frame.commandId ?? "", actor: actor)
                 network.send(try queue.journal.status(frame, actor: actor, queued: queued), to: peer)
             case "search", "song.prepare": operation(frame, peer: peer)
@@ -201,10 +226,13 @@ final class HostService {
         let remoteId: String
         var cursor: Int64 = 0
         if frame.type == "pair", let pair = frame.pair, let invitation,
-           monotonicMs() < invitationDeadline, pair.secret.count <= 128,
-           SecureStore.equal(pair.secret, invitation.secret) {
+            monotonicMs() < invitationDeadline, pair.secret.count <= 128,
+            SecureStore.equal(pair.secret, invitation.secret)
+        {
             let name = pair.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard (1...80).contains(name.count) else { throw CadenzaError.failure("invalid_command", "Enter a Remote name from 1 to 80 characters.") }
+            guard (1...80).contains(name.count) else {
+                throw CadenzaError.failure("invalid_command", "Enter a Remote name from 1 to 80 characters.")
+            }
             (remoteId, token) = try store.pair(name: name)
             peer.supportsHeartbeat = pair.heartbeat == true
             self.invitation = nil
@@ -213,14 +241,20 @@ final class HostService {
             peer.supportsHeartbeat = auth.heartbeat == true
             if let requestedName = auth.name {
                 let name = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard (1...80).contains(name.count), !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
-                    throw CadenzaError.failure("invalid_command", "Use a Remote name from 1 to 80 characters without control characters.")
+                guard (1...80).contains(name.count),
+                    !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+                else {
+                    throw CadenzaError.failure(
+                        "invalid_command", "Use a Remote name from 1 to 80 characters without control characters.")
                 }
-                try store.database.run("UPDATE paired_remotes SET display_name=? WHERE remote_id=?", [.text(name), .text(remoteId)])
+                try store.database.run(
+                    "UPDATE paired_remotes SET display_name=? WHERE remote_id=?", [.text(name), .text(remoteId)])
             }
             cursor = auth.lastCreditSequence
             try store.acknowledge(remoteId, through: cursor)
-        } else { throw CadenzaError.failure("authentication", "Pairing expired or the device credential is invalid.") }
+        } else {
+            throw CadenzaError.failure("authentication", "Pairing expired or the device credential is invalid.")
+        }
         peer.remoteId = remoteId
         peer.authenticated = true
         lastCreditSent[peer.id] = cursor
@@ -272,8 +306,11 @@ final class HostService {
             do {
                 if frame.type == "search" {
                     let songs: [Song]
-                    if frame.scope == "library" { songs = try await self.music.librarySearch(frame.query ?? "") }
-                    else { songs = try await self.catalog.search(frame.query ?? "") }
+                    if frame.scope == "library" {
+                        songs = try await self.music.librarySearch(frame.query ?? "")
+                    } else {
+                        songs = try await self.catalog.search(frame.query ?? "")
+                    }
                     try Task.checkCancellation()
                     self.queue.remember(songs)
                     self.network.send(Frame(type: "search.result", requestId: requestId, songs: songs), to: peer)
@@ -310,13 +347,17 @@ final class HostService {
                 do {
                     try await self.queue.primeLyrics(occurrence: current.occurrenceId)
                     let document = try await self.lyrics.document(song: current.song, occurrence: current.occurrenceId)
-                    guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId else { return }
+                    guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
+                    else { return }
                     self.lyricDocument = document
                     self.network.broadcast(Frame(type: "lyrics", lyrics: document))
                     let translated = await self.lyrics.english(document, song: current.song)
-                    guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == translated.occurrenceId else { return }
+                    guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == translated.occurrenceId
+                    else { return }
                     self.lyricDocument = translated
-                    if translated.revision != document.revision { self.network.broadcast(Frame(type: "lyrics", lyrics: translated)) }
+                    if translated.revision != document.revision {
+                        self.network.broadcast(Frame(type: "lyrics", lyrics: translated))
+                    }
                 } catch {
                     if !Task.isCancelled {
                         var unavailable = Frame(type: "lyrics.unavailable")
@@ -331,7 +372,8 @@ final class HostService {
 
     private func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
         guard let sequence = frame.sequence, sequence >= (acknowledgedCredits[peer.id] ?? 0),
-              sequence <= (lastCreditSent[peer.id] ?? 0) else {
+            sequence <= (lastCreditSent[peer.id] ?? 0)
+        else {
             throw CadenzaError.failure("invalid_command", "Invalid analytics acknowledgment.")
         }
         try store.acknowledge(actor, through: sequence)
@@ -372,7 +414,10 @@ final class HostService {
                 network.send(result, to: peer)
             } catch { network.disconnect(peer.id) }
         } else {
-            network.send(Frame(type: "error", requestId: request.requestId, errorCode: code, message: error.localizedDescription), to: peer)
+            network.send(
+                Frame(
+                    type: "error", requestId: request.requestId, errorCode: code, message: error.localizedDescription),
+                to: peer)
         }
     }
 }

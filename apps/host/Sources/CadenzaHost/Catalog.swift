@@ -16,10 +16,12 @@ actor Catalog {
     func search(_ query: String) async throws -> [Song] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 200 else { return [] }
-        let data = try await request(path: "search", query: [
-            URLQueryItem(name: "term", value: trimmed), URLQueryItem(name: "types", value: "songs"),
-            URLQueryItem(name: "limit", value: "40"),
-        ])
+        let data = try await request(
+            path: "search",
+            query: [
+                URLQueryItem(name: "term", value: trimmed), URLQueryItem(name: "types", value: "songs"),
+                URLQueryItem(name: "limit", value: "40"),
+            ])
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let results = root?["results"] as? [String: Any]
         let songResults = results?["songs"] as? [String: Any]
@@ -48,10 +50,11 @@ actor Catalog {
     private func parse(_ items: [[String: Any]]) -> [Song] {
         items.compactMap { item in
             guard let id = item["id"] as? String,
-                  let attributes = item["attributes"] as? [String: Any],
-                  let title = attributes["name"] as? String,
-                  let artist = attributes["artistName"] as? String,
-                  Wire.validate(SongIdentity(source: "catalog", id: id)) else { return nil }
+                let attributes = item["attributes"] as? [String: Any],
+                let title = attributes["name"] as? String,
+                let artist = attributes["artistName"] as? String,
+                Wire.validate(SongIdentity(source: "catalog", id: id))
+            else { return nil }
             let artwork = attributes["artwork"] as? [String: Any]
             let image = (artwork?["url"] as? String)?
                 .replacingOccurrences(of: "{w}", with: "400")
@@ -67,7 +70,8 @@ actor Catalog {
 
     private func safeArtwork(_ value: String?) -> String? {
         guard let value, let url = URL(string: value), url.scheme == "https",
-              let host = url.host, host.hasSuffix(".mzstatic.com") else { return nil }
+            let host = url.host, host.hasSuffix(".mzstatic.com")
+        else { return nil }
         return value
     }
 
@@ -87,7 +91,8 @@ actor Catalog {
             return try await self.request(path: path, query: query, retry: false)
         }
         guard response.statusCode == 200 else {
-            throw CadenzaError.failure("catalog_unavailable", "Apple's catalog returned HTTP \(response.statusCode). Try again later.")
+            throw CadenzaError.failure(
+                "catalog_unavailable", "Apple's catalog returned HTTP \(response.statusCode). Try again later.")
         }
         return data
     }
@@ -95,8 +100,9 @@ actor Catalog {
     private func developerToken() async throws -> String {
         if let token, tokenExpiry > Date().timeIntervalSince1970 + 300 { return token }
         if let cached = try SecureStore.read("catalog.public-token"),
-           let value = String(data: cached, encoding: .utf8),
-           let expiry = expiry(value), expiry > Date().timeIntervalSince1970 + 300 {
+            let value = String(data: cached, encoding: .utf8),
+            let expiry = expiry(value), expiry > Date().timeIntervalSince1970 + 300
+        {
             token = value
             tokenExpiry = expiry
             return value
@@ -115,7 +121,8 @@ actor Catalog {
             let request = URLRequest(url: URL(string: "https://music.apple.com\(path)")!)
             let (bundle, _) = try await http.data(request, maximum: 12_582_912)
             if let value = try extractToken(String(decoding: bundle, as: UTF8.self)),
-               let expiry = expiry(value) {
+                let expiry = expiry(value)
+            {
                 token = value
                 tokenExpiry = expiry
                 try SecureStore.write("catalog.public-token", Data(value.utf8))
@@ -145,8 +152,9 @@ actor Catalog {
         var encoded = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
         guard let data = Data(base64Encoded: encoded),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              object["iss"] as? String == "AMPWebPlay" else { return nil }
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            object["iss"] as? String == "AMPWebPlay"
+        else { return nil }
         return (object["exp"] as? NSNumber)?.doubleValue
     }
 }

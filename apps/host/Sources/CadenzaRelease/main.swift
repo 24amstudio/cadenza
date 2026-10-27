@@ -17,7 +17,9 @@ func keygen(_ path: String) throws {
         at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
     )
     let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-    guard descriptor >= 0 else { throw ReleaseFailure.invalid("Choose a new private-key filename. Existing keys are never overwritten.") }
+    guard descriptor >= 0 else {
+        throw ReleaseFailure.invalid("Choose a new private-key filename. Existing keys are never overwritten.")
+    }
     let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     let key = P256.Signing.PrivateKey()
     try handle.write(contentsOf: Data(key.pemRepresentation.utf8))
@@ -28,9 +30,11 @@ func keygen(_ path: String) throws {
 
 func manifest(_ arguments: [String]) throws {
     guard arguments.count == 9, let build = Int64(arguments[2]), build > 0,
-          ReleaseValidation.validRepository(arguments[0]),
-          arguments[1].range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil else {
-        throw ReleaseFailure.invalid("manifest requires repository, version, build, Host zip, Remote APK, private PEM, and output directory.")
+        ReleaseValidation.validRepository(arguments[0]),
+        arguments[1].range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil
+    else {
+        throw ReleaseFailure.invalid(
+            "manifest requires repository, version, build, Host zip, Remote APK, private PEM, and output directory.")
     }
     let host = URL(fileURLWithPath: arguments[3])
     let remote = URL(fileURLWithPath: arguments[4])
@@ -43,13 +47,16 @@ func manifest(_ arguments: [String]) throws {
     let key = try P256.Signing.PrivateKey(pemRepresentation: String(contentsOf: privateKey, encoding: .utf8))
     let hostAsset = ReleaseAsset(
         platform: "macos-arm64", filename: "Cadenza-Host-\(arguments[1])-arm64.zip",
-        sha256: try fileDigest(host), size: Int64(try host.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0), minimumOS: 26
+        sha256: try fileDigest(host), size: Int64(try host.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0),
+        minimumOS: 26
     )
     let remoteAsset = ReleaseAsset(
         platform: "android", filename: "Cadenza-Remote-\(arguments[1]).apk",
-        sha256: try fileDigest(remote), size: Int64(try remote.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0), minimumOS: 26
+        sha256: try fileDigest(remote), size: Int64(try remote.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0),
+        minimumOS: 26
     )
-    var release = ReleaseManifest(repository: arguments[0], version: arguments[1], build: build, assets: [hostAsset, remoteAsset])
+    var release = ReleaseManifest(
+        repository: arguments[0], version: arguments[1], build: build, assets: [hostAsset, remoteAsset])
     guard arguments[7].range(of: #"^([0-9a-f]{40}|source-[0-9a-f]{64})$"#, options: .regularExpression) != nil else {
         throw ReleaseFailure.invalid("Invalid source identity.")
     }
@@ -73,7 +80,10 @@ do {
         guard arguments.count == 2 else { throw ReleaseFailure.invalid("keygen requires a new private PEM path.") }
         try keygen(arguments[1])
     case "manifest": try manifest(Array(arguments.dropFirst()))
-    default: throw ReleaseFailure.invalid("Usage: CadenzaRelease keygen <private.pem> | manifest <repo> <version> <build> <Host.zip> <Remote.apk> <private.pem> <output> <source-id> <changelog.json>")
+    default:
+        throw ReleaseFailure.invalid(
+            "Usage: CadenzaRelease keygen <private.pem> | manifest <repo> <version> <build> <Host.zip> <Remote.apk> <private.pem> <output> <source-id> <changelog.json>"
+        )
     }
 } catch {
     FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))

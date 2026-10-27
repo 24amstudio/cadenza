@@ -11,13 +11,17 @@ struct HostConfiguration: Codable {
 
     static func load() -> HostConfiguration {
         if let data = UserDefaults.standard.data(forKey: "configuration"),
-           let value = try? JSONDecoder().decode(HostConfiguration.self, from: data) {
+            let value = try? JSONDecoder().decode(HostConfiguration.self, from: data)
+        {
             return value
         }
         var defaults = HostConfiguration()
         if let url = Bundle.main.url(forResource: "release-config", withExtension: "json"),
-           let data = try? Data(contentsOf: url),
-           let updates = try? Wire.decode(UpdateConfiguration.self, from: data) { defaults.updates = updates }
+            let data = try? Data(contentsOf: url),
+            let updates = try? Wire.decode(UpdateConfiguration.self, from: data)
+        {
+            defaults.updates = updates
+        }
         return defaults
     }
 
@@ -37,11 +41,11 @@ enum LANAddresses {
             defer { cursor = current.pointee.ifa_next }
             let interface = current.pointee
             guard let address = interface.ifa_addr,
-                  address.pointee.sa_family == UInt8(AF_INET),
-                  interface.ifa_flags & UInt32(IFF_UP) != 0,
-                  interface.ifa_flags & UInt32(IFF_LOOPBACK) == 0 else { continue }
-            let value = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
-            var value = value
+                address.pointee.sa_family == UInt8(AF_INET),
+                interface.ifa_flags & UInt32(IFF_UP) != 0,
+                interface.ifa_flags & UInt32(IFF_LOOPBACK) == 0
+            else { continue }
+            var value = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
             var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
             guard inet_ntop(AF_INET, &value, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
             let ip = String(cString: buffer)

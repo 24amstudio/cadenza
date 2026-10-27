@@ -23,15 +23,18 @@ final class MusicAccessibility {
 
     private func finishRead() throws {
         guard monotonicMs() < readDeadline else {
-            throw CadenzaError.failure("native_queue_unavailable", "Music's accessibility response exceeded its time budget. Retry after Music finishes loading.")
+            throw CadenzaError.failure(
+                "native_queue_unavailable",
+                "Music's accessibility response exceeded its time budget. Retry after Music finishes loading.")
         }
     }
 
     var permitted: Bool { AXIsProcessTrusted() }
 
     func requestPermission() {
-        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        // Literal value of kAXTrustedCheckOptionPrompt, which Swift 6 rejects as shared mutable state.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 
     private func root() throws -> AXUIElement {
@@ -65,9 +68,12 @@ final class MusicAccessibility {
     }
 
     private func parent(_ element: AXUIElement) -> AXUIElement? {
-        guard let value = attribute(element, kAXParentAttribute), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        guard let value = attribute(element, kAXParentAttribute), CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
         // AXParent has been checked against the AXUIElement Core Foundation type.
-        return value as! AXUIElement
+        let element: AXUIElement = value as! AXUIElement
+        return element
     }
 
     private func walk(_ root: AXUIElement) -> [AXUIElement] {
@@ -127,10 +133,16 @@ final class MusicAccessibility {
     private func queuePane() throws -> AXUIElement {
         let root = try root()
         if let cachedPane, !string(cachedPane, kAXRoleAttribute).isEmpty,
-           attribute(cachedPane, "AXHidden") as? Bool != true { return cachedPane }
+            attribute(cachedPane, "AXHidden") as? Bool != true
+        {
+            return cachedPane
+        }
         let elements = walk(root)
         for heading in elements where string(heading, kAXRoleAttribute) == kAXStaticTextRole {
-            guard ["playing next", "up next"].contains(label(heading).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else { continue }
+            guard
+                ["playing next", "up next"].contains(
+                    label(heading).trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            else { continue }
             var ancestor = parent(heading)
             for _ in 0..<12 {
                 guard let element = ancestor else { break }
@@ -170,7 +182,8 @@ final class MusicAccessibility {
                 && names.contains(string(element, kAXDescriptionAttribute).lowercased())
         }
         guard matches.count == 1, let button = matches.first else {
-            throw CadenzaError.failure("native_queue_unavailable", "The required Music sidebar button is not accessible.")
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "The required Music sidebar button is not accessible.")
         }
         if (attribute(button, kAXValueAttribute) as? Bool) == true { return }
         try press(button, deadline: deadline)
@@ -180,15 +193,18 @@ final class MusicAccessibility {
         beginRead(deadline: deadline)
         let pane = try queuePane()
         let nodes = walk(pane)
-        let autoplay = nodes.firstIndex {
-            string($0, kAXRoleAttribute) == kAXStaticTextRole && label($0).lowercased() == "autoplay"
-        } ?? nodes.count
-        let result = nodes.prefix(autoplay).filter { string($0, kAXRoleAttribute) == kAXRowRole }.compactMap { row -> NativeQueueRow? in
+        let autoplay =
+            nodes.firstIndex {
+                string($0, kAXRoleAttribute) == kAXStaticTextRole && label($0).lowercased() == "autoplay"
+            } ?? nodes.count
+        let result = nodes.prefix(autoplay).filter { string($0, kAXRoleAttribute) == kAXRowRole }.compactMap {
+            row -> NativeQueueRow? in
             let text = walk(row).filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
                 .map { string($0, kAXValueAttribute) }.filter { !$0.isEmpty }
             guard let title = text.first else { return nil }
             return NativeQueueRow(
-                token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: text.dropFirst().first ?? "", element: row
+                token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: text.dropFirst().first ?? "",
+                element: row
             )
         }
         try finishRead()
@@ -245,8 +261,10 @@ final class MusicAccessibility {
         beginRead(deadline: deadline)
         let root = try root()
         AXUIElementSetAttributeValue(root, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true else {
-            throw CadenzaError.failure("native_queue_unavailable", "Bring Music to the front to start this queued request.")
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true
+        else {
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "Bring Music to the front to start this queued request.")
         }
         let frame = try bounds(row.element)
         let point = CGPoint(x: frame.midX, y: frame.midY)
@@ -258,7 +276,8 @@ final class MusicAccessibility {
         defer { restorePointer(previous, source: source) }
         for count: Int64 in [1, 2] {
             for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-                let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)
+                let event = CGEvent(
+                    mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)
                 event?.setIntegerValueField(.mouseEventClickState, value: count)
                 event?.post(tap: .cghidEventTap)
             }
@@ -267,22 +286,28 @@ final class MusicAccessibility {
 
     func remove(_ row: NativeQueueRow, deadline: Int64) throws {
         beginRead(deadline: deadline)
-        try menu(row.element, choices: ["remove from playing next", "remove from up next", "remove"], deadline: deadline)
+        try menu(
+            row.element, choices: ["remove from playing next", "remove from up next", "remove"], deadline: deadline)
     }
 
     private func menu(_ element: AXUIElement, choices: [String], deadline: Int64) throws {
         try requireDeadline(deadline)
         let result = AXUIElementPerformAction(element, kAXShowMenuAction as CFString)
         if result != .success {
-            guard let button = walk(element).first(where: {
-                string($0, kAXRoleAttribute) == kAXMenuButtonRole || label($0).lowercased().contains("more")
-            }) else { throw CadenzaError.failure("native_queue_unavailable", "Music's song menu is unavailable.") }
+            guard
+                let button = walk(element).first(where: {
+                    string($0, kAXRoleAttribute) == kAXMenuButtonRole || label($0).lowercased().contains("more")
+                })
+            else { throw CadenzaError.failure("native_queue_unavailable", "Music's song menu is unavailable.") }
             try press(button, deadline: deadline)
         }
-        guard let root = application else { throw CadenzaError.failure("music_unavailable", "Music closed before its menu could be read.") }
+        guard let root = application else {
+            throw CadenzaError.failure("music_unavailable", "Music closed before its menu could be read.")
+        }
         let items = walk(root).filter { string($0, kAXRoleAttribute) == kAXMenuItemRole }
         guard let target = items.first(where: { choices.contains(string($0, kAXTitleAttribute).lowercased()) }) else {
-            throw CadenzaError.failure("native_queue_unavailable", "The required native queue menu action is unavailable.")
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "The required native queue menu action is unavailable.")
         }
         try press(target, deadline: deadline)
     }
@@ -291,7 +316,8 @@ final class MusicAccessibility {
         beginRead(deadline: deadline)
         let app = try root()
         AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true else {
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true
+        else {
             throw CadenzaError.failure("native_queue_unavailable", "Bring Music to the front to rearrange the queue.")
         }
         let queue = try rows(deadline: deadline)
@@ -305,21 +331,26 @@ final class MusicAccessibility {
             throw CadenzaError.failure("native_queue_unavailable", "Cannot create the native queue drag.")
         }
         let previous = CGEvent(source: nil)?.location
-        CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-        CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
-        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: end, mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(
+            tap: .cghidEventTap)
         restorePointer(previous, source: source)
     }
 
     private func restorePointer(_ point: CGPoint?, source: CGEventSource) {
         guard let point else { return }
-        CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(
+            tap: .cghidEventTap)
     }
 
     private func bounds(_ element: AXUIElement) throws -> CGRect {
         guard let position = attribute(element, kAXPositionAttribute),
-              let size = attribute(element, kAXSizeAttribute),
-              CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else {
+            let size = attribute(element, kAXSizeAttribute),
+            CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID()
+        else {
             throw CadenzaError.failure("native_queue_unavailable", "The native queue row is not visible.")
         }
         // AX's position and size attributes have been checked against AXValue's CF type.
@@ -328,8 +359,9 @@ final class MusicAccessibility {
         var point = CGPoint.zero
         var dimensions = CGSize.zero
         guard AXValueGetValue(positionValue, .cgPoint, &point),
-              AXValueGetValue(sizeValue, .cgSize, &dimensions),
-              dimensions.width > 0, dimensions.height > 0 else {
+            AXValueGetValue(sizeValue, .cgSize, &dimensions),
+            dimensions.width > 0, dimensions.height > 0
+        else {
             throw CadenzaError.failure("native_queue_unavailable", "The native queue row is not visible.")
         }
         let frame = CGRect(origin: point, size: dimensions)
@@ -339,12 +371,16 @@ final class MusicAccessibility {
         // AXWindow returns an AXUIElement, checked by Core Foundation type ID above.
         let windowElement = window as! AXUIElement
         guard attribute(windowElement, kAXMinimizedAttribute) as? Bool != true,
-              NSScreen.screens.contains(where: { screen in
-                  let desktopTop = NSScreen.screens.first?.frame.maxY ?? 0
-                  let screenBounds = CGRect(x: screen.frame.minX, y: desktopTop - screen.frame.maxY, width: screen.frame.width, height: screen.frame.height)
-                  return screenBounds.contains(CGPoint(x: frame.midX, y: frame.midY))
-              }) else {
-            throw CadenzaError.failure("native_queue_unavailable", "Scroll the requested Music row into view before moving or playing it.")
+            NSScreen.screens.contains(where: { screen in
+                let desktopTop = NSScreen.screens.first?.frame.maxY ?? 0
+                let screenBounds = CGRect(
+                    x: screen.frame.minX, y: desktopTop - screen.frame.maxY, width: screen.frame.width,
+                    height: screen.frame.height)
+                return screenBounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+            })
+        else {
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "Scroll the requested Music row into view before moving or playing it.")
         }
         return frame
     }
@@ -356,7 +392,8 @@ final class MusicAccessibility {
         for toolbar in walk(root) where string(toolbar, kAXRoleAttribute) == kAXToolbarRole {
             let nodes = walk(toolbar)
             guard nodes.contains(where: { label($0).contains(currentTitle) }),
-                  nodes.contains(where: { string($0, kAXRoleAttribute) == kAXSliderRole }) else { continue }
+                nodes.contains(where: { string($0, kAXRoleAttribute) == kAXSliderRole })
+            else { continue }
             let labels = nodes.filter { string($0, kAXRoleAttribute) == kAXButtonRole }.map(label)
             if labels.contains(where: { $0.contains("Dolby Atmos") }) { return "dolby_atmos" }
             if labels.contains(where: { $0.contains("Hi-Res Lossless") }) { return "hi_res_lossless" }

@@ -2,15 +2,17 @@ import CSQLite
 import Foundation
 
 enum SQLValue: Sendable, Equatable {
-    case text(String), integer(Int64), null
+    case text(String)
+    case integer(Int64)
+    case null
 
     var string: String? {
-        if case let .text(value) = self { return value }
+        if case .text(let value) = self { return value }
         return nil
     }
 
     var integer: Int64? {
-        if case let .integer(value) = self { return value }
+        if case .integer(let value) = self { return value }
         return nil
     }
 }
@@ -28,9 +30,11 @@ final class Database {
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        guard sqlite3_open_v2(
-            url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil
-        ) == SQLITE_OK else { throw failure() }
+        guard
+            sqlite3_open_v2(
+                url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil
+            ) == SQLITE_OK
+        else { throw failure() }
         do {
             try execute("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=250;")
             let version = try query("PRAGMA user_version").first?["user_version"]?.integer ?? 0
@@ -57,7 +61,8 @@ final class Database {
     }
 
     private func migrate(_ name: String) throws {
-        guard let url = HostResources.bundle.url(forResource: name, withExtension: "sql", subdirectory: "storage") else {
+        guard let url = HostResources.bundle.url(forResource: name, withExtension: "sql", subdirectory: "storage")
+        else {
             throw CadenzaError.failure("storage", "The database migration is missing from this build.")
         }
         try execute(String(contentsOf: url, encoding: .utf8))
@@ -88,7 +93,8 @@ final class Database {
         if count > 0 {
             for index in 1...count {
                 guard let pointer = sqlite3_bind_parameter_name(statement, index),
-                      let value = bindings[String(cString: pointer).dropFirst().description] else {
+                    let value = bindings[String(cString: pointer).dropFirst().description]
+                else {
                     throw CadenzaError.failure("storage", "A database parameter is missing.")
                 }
                 try bind(value, to: index, in: statement)
@@ -122,10 +128,10 @@ final class Database {
     private func prepare(_ sql: String, _ bindings: [SQLValue]) throws -> OpaquePointer {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK,
-              let statement else { throw failure() }
+            let statement
+        else { throw failure() }
         for (offset, binding) in bindings.enumerated() {
-            do { try bind(binding, to: Int32(offset + 1), in: statement) }
-            catch {
+            do { try bind(binding, to: Int32(offset + 1), in: statement) } catch {
                 sqlite3_finalize(statement)
                 throw error
             }
@@ -136,10 +142,10 @@ final class Database {
     private func bind(_ value: SQLValue, to index: Int32, in statement: OpaquePointer) throws {
         let status: Int32
         switch value {
-        case let .text(text):
+        case .text(let text):
             // SQLITE_TRANSIENT copies the string before its temporary buffer expires.
             status = sqlite3_bind_text(statement, index, text, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-        case let .integer(integer): status = sqlite3_bind_int64(statement, index, integer)
+        case .integer(let integer): status = sqlite3_bind_int64(statement, index, integer)
         case .null: status = sqlite3_bind_null(statement, index)
         }
         guard status == SQLITE_OK else { throw failure() }
@@ -172,10 +178,15 @@ final class Database {
     }
 
     func maintain() throws {
-        guard let url = HostResources.bundle.url(forResource: "maintenance", withExtension: "sql", subdirectory: "storage") else {
+        guard
+            let url = HostResources.bundle.url(
+                forResource: "maintenance", withExtension: "sql", subdirectory: "storage")
+        else {
             throw CadenzaError.failure("storage", "The database maintenance script is missing.")
         }
-        do { try execute(String(contentsOf: url, encoding: .utf8)) }
-        catch { try? execute("ROLLBACK"); throw error }
+        do { try execute(String(contentsOf: url, encoding: .utf8)) } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
     }
 }

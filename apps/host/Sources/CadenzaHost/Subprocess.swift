@@ -69,7 +69,10 @@ enum Subprocess {
 
         private func finish(timedOut: Bool = false, error: Error? = nil) {
             lock.lock()
-            if finished { lock.unlock(); return }
+            if finished {
+                lock.unlock()
+                return
+            }
             finished = true
             lock.unlock()
             defer {
@@ -78,10 +81,16 @@ enum Subprocess {
             }
             if timedOut {
                 if process.isRunning { process.terminate() }
-                completion(.failure(CadenzaError.failure("outcome_unknown", "Music did not confirm the action before its deadline.")))
+                completion(
+                    .failure(
+                        CadenzaError.failure("outcome_unknown", "Music did not confirm the action before its deadline.")
+                    ))
                 return
             }
-            if let error { completion(.failure(error)); return }
+            if let error {
+                completion(.failure(error))
+                return
+            }
             do {
                 let output = try Data(contentsOf: directory.appendingPathComponent("output"))
                 guard output.count <= Wire.maximumMessageBytes else {
@@ -90,7 +99,8 @@ enum Subprocess {
                 guard process.terminationStatus == 0 else {
                     let data = try Data(contentsOf: directory.appendingPathComponent("error"))
                     let message = String(decoding: data.prefix(2_000), as: UTF8.self)
-                    throw CadenzaError.failure("music_unavailable", message.isEmpty ? "The system command failed." : message)
+                    throw CadenzaError.failure(
+                        "music_unavailable", message.isEmpty ? "The system command failed." : message)
                 }
                 completion(.success(output))
             } catch { completion(.failure(error)) }

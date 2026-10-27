@@ -1,11 +1,13 @@
 import Foundation
 import Testing
+
 @testable import CadenzaHost
 
 @MainActor
 struct DatabaseTests {
     @Test func rollbackAndBackupPreserveCommittedData() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-test-" + UUID().uuidString)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-test-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
         #expect(try database.query("PRAGMA user_version").first?["user_version"]?.integer == 2)
@@ -17,22 +19,31 @@ struct DatabaseTests {
         )
         #expect(throws: (any Error).self) {
             try database.transaction {
-                try database.run("UPDATE paired_remotes SET display_name=? WHERE remote_id=?", [.text("rolled back"), .text(id)])
+                try database.run(
+                    "UPDATE paired_remotes SET display_name=? WHERE remote_id=?", [.text("rolled back"), .text(id)])
                 throw CadenzaError.failure("test", "Deliberate transaction failure.")
             }
         }
-        #expect(try database.query("SELECT display_name FROM paired_remotes WHERE remote_id=?", [.text(id)]).first?["display_name"]?.string == name)
+        #expect(
+            try database.query("SELECT display_name FROM paired_remotes WHERE remote_id=?", [.text(id)]).first?[
+                "display_name"]?.string == name)
         let backup = directory.appendingPathComponent("backup.sqlite")
         try database.backup(to: backup)
         let restored = try Database(url: backup)
-        #expect(try restored.query("SELECT display_name FROM paired_remotes WHERE remote_id=?", [.text(id)]).first?["display_name"]?.string == name)
+        #expect(
+            try restored.query("SELECT display_name FROM paired_remotes WHERE remote_id=?", [.text(id)]).first?[
+                "display_name"]?.string == name)
     }
 
     @Test func repeatedPartialReordersRetainUnmatchedRequestsWithoutKeyCollisions() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-test-" + UUID().uuidString)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-test-" + UUID().uuidString)
         let suite = "CadenzaTests." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         let store = try HostStore(directory: directory, defaults: defaults)
         let owner = "00000000-0000-4000-8000-000000000001"
         try store.database.run(
@@ -50,14 +61,20 @@ struct DatabaseTests {
     }
 
     @Test func anObservationGapSurvivesRestartAfterSessionCompaction() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-test-" + UUID().uuidString)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-test-" + UUID().uuidString)
         let suite = "CadenzaTests." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         let store = try HostStore(directory: directory, defaults: defaults)
         try store.recordObservationGap()
         #expect(try store.database.query("SELECT occurrence_id FROM playback_sessions").isEmpty)
         let reopened = try HostStore(directory: directory, defaults: defaults)
-        #expect(try reopened.database.query("SELECT observation_gap FROM host_state").first?["observation_gap"]?.integer == 1)
+        #expect(
+            try reopened.database.query("SELECT observation_gap FROM host_state").first?["observation_gap"]?.integer
+                == 1)
     }
 }

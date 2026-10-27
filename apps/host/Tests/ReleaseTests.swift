@@ -41,8 +41,12 @@ struct ReleaseTests {
 
     @Test func archiveRejectsTraversalLinksAndNonAppleSiliconExecutables() throws {
         try ArchiveInspection.validate(zip(name: "Cadenza Host.app/Contents/Info.plist", mode: 0x8000))
-        #expect(throws: (any Error).self) { try ArchiveInspection.validate(zip(name: "Cadenza Host.app/../../outside", mode: 0x8000)) }
-        #expect(throws: (any Error).self) { try ArchiveInspection.validate(zip(name: "Cadenza Host.app/Contents/link", mode: 0xa000)) }
+        #expect(throws: (any Error).self) {
+            try ArchiveInspection.validate(zip(name: "Cadenza Host.app/../../outside", mode: 0x8000))
+        }
+        #expect(throws: (any Error).self) {
+            try ArchiveInspection.validate(zip(name: "Cadenza Host.app/Contents/link", mode: 0xa000))
+        }
         #expect(throws: (any Error).self) { try ArchiveInspection.validate(Data([0x50, 0x4b])) }
         var executable = Data([0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 1])
         executable.append(Data(repeating: 0, count: 24))
@@ -57,16 +61,50 @@ struct ReleaseTests {
         let name = Data(name.utf8)
         var result = Data()
         func short(_ value: UInt16) { result.append(contentsOf: [UInt8(value & 255), UInt8(value >> 8)]) }
-        func word(_ value: UInt32) { short(UInt16(value & 65_535)); short(UInt16(value >> 16)) }
-        word(0x04034b50); short(20); short(0); short(0); short(0); short(0)
-        word(0); word(0); word(0); short(UInt16(name.count)); short(0); result.append(name)
+        func word(_ value: UInt32) {
+            short(UInt16(value & 65_535))
+            short(UInt16(value >> 16))
+        }
+        word(0x0403_4b50)
+        short(20)
+        short(0)
+        short(0)
+        short(0)
+        short(0)
+        word(0)
+        word(0)
+        word(0)
+        short(UInt16(name.count))
+        short(0)
+        result.append(name)
         let central = result.count
-        word(0x02014b50); short(0x0314); short(20); short(0); short(0); short(0); short(0)
-        word(0); word(0); word(0); short(UInt16(name.count)); short(0); short(0); short(0); short(0)
-        word(mode << 16); word(0); result.append(name)
+        word(0x0201_4b50)
+        short(0x0314)
+        short(20)
+        short(0)
+        short(0)
+        short(0)
+        short(0)
+        word(0)
+        word(0)
+        word(0)
+        short(UInt16(name.count))
+        short(0)
+        short(0)
+        short(0)
+        short(0)
+        word(mode << 16)
+        word(0)
+        result.append(name)
         let length = result.count - central
-        word(0x06054b50); short(0); short(0); short(1); short(1)
-        word(UInt32(length)); word(UInt32(central)); short(0)
+        word(0x0605_4b50)
+        short(0)
+        short(0)
+        short(1)
+        short(1)
+        word(UInt32(length))
+        word(UInt32(central))
+        short(0)
         return result
     }
 }

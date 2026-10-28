@@ -159,3 +159,55 @@ test('state preserves unknown quality and durations without presenting invented 
     false,
   );
 });
+
+test('Host artwork requests require bounded URL payloads and cached responses', () => {
+  const request = {
+    version: 1,
+    type: 'artwork.get',
+    request_id: uuid,
+    artwork_url: 'https://is1-ssl.mzstatic.com/image/thumb/Music/example.jpg',
+  };
+
+  assert.equal(validateSession(request), true);
+  assert.equal(
+    validateSession({ ...request, artwork_url: 'not a URL' }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'artwork',
+      request_id: uuid,
+      artwork_url: request.artwork_url,
+      artwork_data_base64: 'a'.repeat(700_000),
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'artwork',
+      request_id: uuid,
+      artwork_url: request.artwork_url,
+      artwork_data_base64: 'a'.repeat(700_001),
+    }),
+    false,
+  );
+});
+
+test('lyric state carries a validated Host provider source', () => {
+  const document = {
+    occurrence_id: uuid,
+    revision: uuid,
+    translation_source: 'original',
+    source: 'lrclib',
+    lines: [
+      { id: 'line-1', text: 'Hello', start_ms: 0, end_ms: 1000, words: [] },
+    ],
+  };
+
+  assert.equal(
+    validateSession({ version: 1, type: 'lyrics', lyrics: document }),
+    true,
+  );
+});

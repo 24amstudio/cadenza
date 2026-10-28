@@ -117,7 +117,7 @@ private class CameraScanner(
         if (stopped.get()) return
         try {
             check(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                "Camera permission is required. You can paste pairing details instead."
+                "Camera permission is required to scan the pairing QR code."
             }
             val manager = context.getSystemService(CameraManager::class.java)
             val id =
@@ -165,7 +165,7 @@ private class CameraScanner(
 
                     override fun onDisconnected(camera: CameraDevice) {
                         camera.close()
-                        fail("The camera disconnected. Paste pairing details or retry.")
+                        fail("The camera disconnected. Return to pairing and retry the QR scan.")
                     }
 
                     override fun onError(
@@ -173,7 +173,7 @@ private class CameraScanner(
                         error: Int,
                     ) {
                         camera.close()
-                        fail("The camera is unavailable. Close other camera apps or paste pairing details.")
+                        fail("The camera is unavailable. Close other camera apps and retry the QR scan.")
                     }
                 },
                 handler,
@@ -207,7 +207,7 @@ private class CameraScanner(
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-                    fail("Camera preview could not start. Paste pairing details instead.")
+                    fail("Camera preview could not start. Return to pairing and retry the QR scan.")
                 }
             }
         camera.createCaptureSession(

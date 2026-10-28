@@ -43,8 +43,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17.0.21+9'
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cache/gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/remote/gradle/wrapper/gradle-wrapper.properties', 'apps/remote/gradle.properties', 'apps/remote/settings.gradle.kts', 'apps/remote/build.gradle.kts', 'apps/remote/app/build.gradle.kts') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cache/robolectric-m2
+          key: robolectric-${{ runner.os }}-${{ hashFiles('apps/remote/app/build.gradle.kts') }}
+          restore-keys: |
+            robolectric-${{ runner.os }}-
       - run: bash tools/ci/android-sdk.sh
-      - run: bash apps/remote/check.sh
+      - name: Run Remote checks
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          bash apps/remote/check.sh
 
   host:
     runs-on: macos-26
@@ -53,4 +69,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apps/host/.build/module-cache
+          key: host-modules-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift') }}
+          restore-keys: |
+            host-modules-${{ runner.os }}-
       - run: bash apps/host/Scripts/check.sh

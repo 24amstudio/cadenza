@@ -5,30 +5,38 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
-import kotlinx.coroutines.launch
+import app.cadenza.remote.showError
 
 @Composable
 fun PairingScreen(
@@ -36,67 +44,148 @@ fun PairingScreen(
     state: RemoteState,
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    var text by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf(state.clientName) }
     var scanning by rememberSaveable { mutableStateOf(false) }
     val cameraPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) scanning = true else model.showError("Camera unavailable", "Paste pairing details from Cadenza Host instead.")
-        }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        ScreenHeader("Pair with Cadenza Host", state)
-        Text("Open Cadenza Host and choose Pair a Remote. Both devices need access to the same local network.")
-        OutlinedTextField(name, { name = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("This Remote’s name") })
-        ActionButton("Scan pairing QR", enabled = !state.connecting) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            if (granted) {
                 scanning = true
             } else {
-                cameraPermission.launch(Manifest.permission.CAMERA)
+                model.showError("Camera unavailable", "Allow camera access to scan the pairing QR code from Cadenza Host.")
             }
         }
-        OutlinedTextField(
-            text,
-            { text = it.take(4_096) },
-            Modifier.fillMaxWidth(),
-            label = { Text("Pairing details") },
-            minLines = 4,
-            maxLines = 8,
-        )
-        TextButton(onClick = {
-            scope.launch {
-                text =
-                    clipboard
-                        .getClipEntry()
-                        ?.clipData
-                        ?.getItemAt(0)
-                        ?.coerceToText(context)
-                        ?.toString()
-                        ?.take(4_096)
-                        .orEmpty()
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp, vertical = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            PairingHeader(state)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 2.dp,
+            ) {
+                Column(
+                    Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    Text("Connect this Remote", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Give this device a name, then scan the one-time QR code shown by Cadenza Host.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(80) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("This Remote's name") },
+                        isError = name.isBlank(),
+                        supportingText = if (name.isBlank()) ({ Text("Enter a name before scanning.") }) else null,
+                        singleLine = true,
+                    )
+                    Button(
+                        onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                scanning = true
+                            } else {
+                                cameraPermission.launch(Manifest.permission.CAMERA)
+                            }
+                        },
+                        enabled = !state.connecting && name.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(cadenzaVector(CadenzaIcon.QR), contentDescription = null)
+                        Spacer(Modifier.size(10.dp))
+                        Text(if (state.connecting) "Pairing..." else "Scan pairing QR")
+                    }
+                    Text(
+                        "Cadenza Host will send this Remote's name with the one-time invitation. Pairing starts as soon as the QR code is recognized.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-        }) { Text("Paste pairing details") }
-        ActionButton("Pair", pending = state.connecting, enabled = text.isNotBlank() && name.isNotBlank()) { model.pair(text, name) }
+            Text(
+                "Pairing stays on your local network. The invitation can only be used once.",
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
     if (scanning) {
         Dialog(onDismissRequest = { scanning = false }) {
-            Column {
-                QrScanner(
-                    onCode = { code ->
-                        text = code
-                        scanning = false
-                    },
-                    onError = { message ->
-                        scanning = false
-                        model.showError("Could not scan QR", message)
-                    },
-                )
-                TextButton(onClick = { scanning = false }) { Text("Cancel") }
+            Surface(
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Column(
+                    Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Scan the Host QR code", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Keep the complete code inside the frame.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    QrScanner(
+                        onCode = { code ->
+                            scanning = false
+                            model.pair(code, name)
+                        },
+                        onError = { message ->
+                            scanning = false
+                            model.showError("Could not scan QR", message)
+                        },
+                    )
+                    TextButton(onClick = { scanning = false }, modifier = Modifier.align(Alignment.End)) { Text("Cancel") }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun PairingHeader(state: RemoteState) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Surface(
+            Modifier.size(76.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.primaryContainer,
+        ) {
+            Box(
+                Modifier.fillMaxSize().padding(18.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    cadenzaVector(CadenzaIcon.QR),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Pair with Cadenza Host", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Connect to the Mac that controls Music.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ConnectionStatus(state)
         }
     }
 }

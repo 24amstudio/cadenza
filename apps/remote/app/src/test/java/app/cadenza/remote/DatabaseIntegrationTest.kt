@@ -81,27 +81,6 @@ class DatabaseIntegrationTest {
     }
 
     @Test
-    fun upgradePreservesExistingPersonalStatistics() {
-        app.openOrCreateDatabase("cadence.sqlite", 0, null).use { old ->
-            val migration =
-                app.assets
-                    .open("storage/001-initial.sql")
-                    .bufferedReader()
-                    .use { it.readText() }
-            SqlStatements.parse(migration).forEach(old::execSQL)
-            old.execSQL("INSERT INTO paired_hosts VALUES(?,?,?,?)", arrayOf<Any>(profile.hostId, profile.name, "host.test-host", 7))
-            old.execSQL("INSERT INTO song_statistics VALUES(?,?,?,?,?)", arrayOf<Any>(profile.hostId, "catalog", "123", 2, 90_000))
-            old.version = 1
-        }
-        assertEquals(3, database.readableDatabase.version)
-        assertEquals(7L, database.cursor(profile.hostId))
-        assertEquals(2L, database.statistics(profile.hostId).single().plays)
-        assertEquals(90_000L, database.statistics(profile.hostId).single().playedMs)
-        database.saveProfile(profile)
-        assertEquals(profile, database.profile(profile.hostId))
-    }
-
-    @Test
     fun unresolvedCommandsSurviveReopenAndKeepTheirPairingIdentity() {
         database.saveProfile(profile)
         val first = JSONObject().put("command_id", UUID(0, 1).toString()).put("operation", "first")

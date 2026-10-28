@@ -62,7 +62,7 @@ test('command receipts cannot silently overwrite a prior outcome or accept a mis
   pairRemotes(database);
 
   const insert = database.prepare(
-    'INSERT INTO command_receipts VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO command_receipts(remote_id,command_id,payload_sha256,outcome,revision,created_at_ms) VALUES (?, ?, ?, ?, ?, ?)',
   );
 
   insert.run('remote-a', 'command-one', 'a'.repeat(64), 'applied', 1, 1000);

@@ -150,7 +150,13 @@
     },
     "lyrics": {
       "type": "object",
-      "required": ["occurrence_id", "revision", "translation_source", "lines"],
+      "required": [
+        "occurrence_id",
+        "revision",
+        "translation_source",
+        "source",
+        "lines"
+      ],
       "properties": {
         "occurrence_id": {
           "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
@@ -159,6 +165,9 @@
         "language": { "type": "string", "maxLength": 80 },
         "translation_source": {
           "enum": ["none", "original", "apple", "machine", "apple_and_machine"]
+        },
+        "source": {
+          "enum": ["apple_music", "lrclib", "unknown"]
         },
         "lines": {
           "type": "array",

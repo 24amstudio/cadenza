@@ -105,7 +105,9 @@ fun HomeScreen(
                             label = { Text("Favorites · ${state.favorites.size}") },
                         )
                     }
-                    NowPlayingCard(state, Modifier.fillMaxWidth().clickable { select("playing", null) })
+                    if (state.snapshot?.current != null) {
+                        NowPlayingCard(state, Modifier.fillMaxWidth().clickable { select("playing", null) })
+                    }
                     if (favorites && state.unreadableFavorites > 0) {
                         UnreadableFavoritesCard(state.unreadableFavorites)
                     }
@@ -189,7 +191,7 @@ private fun LibraryHeading(state: RemoteState) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("Library", style = MaterialTheme.typography.headlineLarge)
             Text(
-                if (remaining == null) "$count requests from Cadenza Host" else "$count requests Â· $remaining total",
+                if (remaining == null) "$count requests from Cadenza Host" else "$count requests • $remaining total",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

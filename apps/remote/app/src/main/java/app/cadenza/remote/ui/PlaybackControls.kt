@@ -80,12 +80,15 @@ internal fun PlaybackTransport(
     state: RemoteState,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    leadingContent: (@Composable () -> Unit)? = null,
 ) {
     val snapshot = state.snapshot ?: return
     val current = snapshot.current ?: return
     val mayInterrupt = mayInterruptPlayback(state)
     val playback = if (snapshot.playing) "playback.pause" else "playback.resume"
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        leadingContent?.invoke()
+        if (leadingContent != null) Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         IconButton(
             onClick = {
                 model.command(
@@ -101,7 +104,7 @@ internal fun PlaybackTransport(
                 Icon(cadenzaVector(CadenzaIcon.PREVIOUS), "Previous song")
             }
         }
-        Spacer(Modifier.size(16.dp))
+        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         FilledIconButton(
             onClick = { model.command(JSONObject().put("kind", playback).put("occurrence_id", current.occurrenceId), playback) },
             enabled = state.connected && playback !in state.pending,
@@ -117,7 +120,7 @@ internal fun PlaybackTransport(
                 )
             }
         }
-        Spacer(Modifier.size(16.dp))
+        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         IconButton(
             onClick = {
                 model.command(

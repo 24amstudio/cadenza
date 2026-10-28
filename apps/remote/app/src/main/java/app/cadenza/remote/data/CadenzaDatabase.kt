@@ -9,7 +9,14 @@ import org.json.JSONObject
 
 class CadenzaDatabase(
     private val context: Context,
-) : SQLiteOpenHelper(context, "cadence.sqlite", null, 3) {
+) : SQLiteOpenHelper(context, "cadence.sqlite", null, 1) {
+    data class PendingLog(
+        val id: Long,
+        val level: String,
+        val action: String,
+        val message: String,
+    )
+
     init {
         setWriteAheadLoggingEnabled(true)
     }
@@ -21,9 +28,7 @@ class CadenzaDatabase(
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        migrate(db, "001-initial.sql")
-        migrate(db, "002-runtime.sql")
-        migrate(db, "003-favorites.sql")
+        migrate(db, "000-initial.sql")
     }
 
     override fun onUpgrade(
@@ -31,9 +36,7 @@ class CadenzaDatabase(
         oldVersion: Int,
         newVersion: Int,
     ) {
-        check(oldVersion in 1..2 && newVersion == 3) { "Unsupported database version. Your existing data was preserved." }
-        if (oldVersion < 2) migrate(db, "002-runtime.sql")
-        migrate(db, "003-favorites.sql")
+        error("Unsupported database version. Your existing data was preserved.")
     }
 
     override fun onDowngrade(
@@ -279,5 +282,46 @@ class CadenzaDatabase(
         db.rawQuery("PRAGMA optimize", null).use { while (it.moveToNext()) { /* Execute all maintenance rows. */ } }
         db.rawQuery("PRAGMA wal_checkpoint(PASSIVE)", null).use { while (it.moveToNext()) { /* Execute all maintenance rows. */ } }
         db.execSQL("PRAGMA incremental_vacuum(32)")
+    }
+
+    @Synchronized
+    fun queueLog(
+        level: String,
+        action: String,
+        message: String,
+    ) {
+        val values =
+            ContentValues().apply {
+                put("level", level.take(16))
+                put("action", action.take(120))
+                put("message", message.take(2_000))
+                put("created_at_ms", System.currentTimeMillis())
+            }
+        writableDatabase.insert("remote_log_outbox", null, values)
+        writableDatabase.execSQL(
+            "DELETE FROM remote_log_outbox WHERE log_id NOT IN (SELECT log_id FROM remote_log_outbox ORDER BY log_id DESC LIMIT 200)",
+        )
+    }
+
+    @Synchronized
+    fun pendingLogs(): List<PendingLog> {
+        val result = mutableListOf<PendingLog>()
+        readableDatabase
+            .rawQuery(
+                "SELECT log_id,level,action,message FROM remote_log_outbox ORDER BY log_id LIMIT 200",
+                null,
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    result.add(
+                        PendingLog(cursor.getLong(0), cursor.getString(1), cursor.getString(2), cursor.getString(3)),
+                    )
+                }
+            }
+        return result
+    }
+
+    @Synchronized
+    fun deleteLog(id: Long) {
+        writableDatabase.delete("remote_log_outbox", "log_id=?", arrayOf(id.toString()))
     }
 }

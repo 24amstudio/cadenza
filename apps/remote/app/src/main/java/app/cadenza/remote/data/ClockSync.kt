@@ -14,7 +14,7 @@ class ClockSync {
     var uncertaintyMs: Long = Long.MAX_VALUE
         private set
 
-    val ready: Boolean get() = samples.size >= 3 && uncertaintyMs <= 250
+    val ready: Boolean get() = samples.size >= 3 && uncertaintyMs <= 100
 
     fun reset() {
         samples.clear()
@@ -30,7 +30,7 @@ class ClockSync {
     ) {
         if (listOf(sentRemote, receivedHost, sentHost, receivedRemote).any { it !in 0..Wire.MAXIMUM_COUNTER }) return
         val roundTrip = (receivedRemote - sentRemote) - (sentHost - receivedHost)
-        if (sentRemote < 0 || receivedRemote < sentRemote || sentHost < receivedHost || roundTrip !in 0..2_000) return
+        if (sentRemote < 0 || receivedRemote < sentRemote || sentHost < receivedHost || roundTrip !in 0..1_000) return
         val offset = ((receivedHost - sentRemote) + (sentHost - receivedRemote)) / 2
         if (samples.isNotEmpty() && abs(offset - offsetMs) > 2_000) reset()
         samples.addLast(Sample(offset, (roundTrip + 1) / 2))

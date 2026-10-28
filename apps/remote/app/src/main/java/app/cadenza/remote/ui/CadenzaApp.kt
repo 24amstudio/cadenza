@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +49,9 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.dismissNotice
+import app.cadenza.remote.dismissPrompt
+import app.cadenza.remote.requestArtwork
 
 private data class Destination(
     val id: Int,
@@ -104,85 +108,87 @@ fun CadenzaApp(
             StartupScreen()
             return@MaterialExpressiveTheme
         }
-        LaunchedEffect(state.notice?.id) {
-            state.notice?.let {
-                snackbar.showSnackbar(it.message)
-                model.dismissNotice(it.id)
-            }
-        }
-        LaunchedEffect(destination) {
-            if (destination == 3) {
-                destination = 0
-                lyricsMode = true
-            }
-        }
-        BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
-        Scaffold(
-            bottomBar = {
-                // Reserve feedback space so a notice cannot cover or move a control, including after scrolling.
-                Box(Modifier.fillMaxWidth().height(64.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))) {
-                    SnackbarHost(snackbar, Modifier.align(Alignment.Center))
+        CompositionLocalProvider(LocalArtworkHost provides ArtworkHost(state.artwork) { url -> model.requestArtwork(url) }) {
+            LaunchedEffect(state.notice?.id) {
+                state.notice?.let {
+                    snackbar.showSnackbar(it.message)
+                    model.dismissNotice(it.id)
                 }
-            },
-        ) { outerPadding ->
-            BoxWithConstraints(Modifier.fillMaxSize().padding(outerPadding)) {
-                val wide = maxWidth >= 720.dp
-                val compactNavigation = maxWidth < 400.dp || LocalDensity.current.fontScale >= 1.5f
-                if (lyricsMode && state.profile != null) {
-                    LyricsScreen(model, state, onExit = ::closeLyrics)
-                } else {
-                    Column(Modifier.fillMaxSize()) {
-                        Row(Modifier.weight(1f)) {
-                            if (wide && state.profile != null) {
-                                NavigationRail(Modifier.fillMaxHeight().width(104.dp)) {
-                                    destinations.forEach { item ->
-                                        NavigationRailItem(
-                                            selected = destination == item.id,
-                                            onClick = { destination = item.id },
-                                            icon = { Icon(cadenzaVector(item.icon), contentDescription = null) },
-                                            label = { Text(item.label) },
-                                        )
+            }
+            LaunchedEffect(destination) {
+                if (destination == 3) {
+                    destination = 0
+                    lyricsMode = true
+                }
+            }
+            BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
+            Scaffold(
+                bottomBar = {
+                    // Reserve feedback space so a notice cannot cover or move a control, including after scrolling.
+                    Box(Modifier.fillMaxWidth().height(64.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))) {
+                        SnackbarHost(snackbar, Modifier.align(Alignment.Center))
+                    }
+                },
+            ) { outerPadding ->
+                BoxWithConstraints(Modifier.fillMaxSize().padding(outerPadding)) {
+                    val wide = maxWidth >= 720.dp
+                    val compactNavigation = maxWidth < 400.dp || LocalDensity.current.fontScale >= 1.5f
+                    if (lyricsMode && state.profile != null) {
+                        LyricsScreen(model, state, onExit = ::closeLyrics)
+                    } else {
+                        Column(Modifier.fillMaxSize()) {
+                            Row(Modifier.weight(1f)) {
+                                if (wide && state.profile != null) {
+                                    NavigationRail(Modifier.fillMaxHeight().width(104.dp)) {
+                                        destinations.forEach { item ->
+                                            NavigationRailItem(
+                                                selected = destination == item.id,
+                                                onClick = { destination = item.id },
+                                                icon = { Icon(cadenzaVector(item.icon), contentDescription = null) },
+                                                label = { Text(item.label) },
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            Box(Modifier.weight(1f).fillMaxHeight()) {
-                                if (state.profile == null) {
-                                    PairingScreen(model, state)
-                                } else {
-                                    screenState.SaveableStateProvider(destination) {
-                                        when (destination) {
-                                            0 ->
-                                                HomeScreen(
-                                                    model,
-                                                    state,
-                                                    wide,
-                                                    restoreLyricsFocus,
-                                                    onLyricsFocusRestored = { restoreLyricsFocus = false },
-                                                    onOpenLyrics = { lyricsMode = true },
-                                                )
-                                            1 -> SearchScreen(model, state)
-                                            2 -> QueueScreen(model, state)
-                                            4 -> AnalyticsScreen(state)
-                                            else -> SettingsScreen(model, state, installUpdate)
+                                Box(Modifier.weight(1f).fillMaxHeight()) {
+                                    if (state.profile == null) {
+                                        PairingScreen(model, state)
+                                    } else {
+                                        screenState.SaveableStateProvider(destination) {
+                                            when (destination) {
+                                                0 ->
+                                                    HomeScreen(
+                                                        model,
+                                                        state,
+                                                        wide,
+                                                        restoreLyricsFocus,
+                                                        onLyricsFocusRestored = { restoreLyricsFocus = false },
+                                                        onOpenLyrics = { lyricsMode = true },
+                                                    )
+                                                1 -> SearchScreen(model, state)
+                                                2 -> QueueScreen(model, state)
+                                                4 -> AnalyticsScreen(state)
+                                                else -> SettingsScreen(model, state, installUpdate)
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        if (!wide && state.profile != null) {
-                            NavigationBar {
-                                destinations.forEach { item ->
-                                    NavigationBarItem(
-                                        selected = destination == item.id,
-                                        onClick = { destination = item.id },
-                                        icon = {
-                                            Icon(
-                                                cadenzaVector(item.icon),
-                                                contentDescription = item.label.takeIf { compactNavigation },
-                                            )
-                                        },
-                                        label = if (compactNavigation) null else ({ Text(item.label) }),
-                                    )
+                            if (!wide && state.profile != null) {
+                                NavigationBar {
+                                    destinations.forEach { item ->
+                                        NavigationBarItem(
+                                            selected = destination == item.id,
+                                            onClick = { destination = item.id },
+                                            icon = {
+                                                Icon(
+                                                    cadenzaVector(item.icon),
+                                                    contentDescription = item.label.takeIf { compactNavigation },
+                                                )
+                                            },
+                                            label = if (compactNavigation) null else ({ Text(item.label) }),
+                                        )
+                                    }
                                 }
                             }
                         }

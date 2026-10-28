@@ -96,31 +96,6 @@ class LibraryRecoveryTest {
     }
 
     @Test
-    fun versionTwoUpgradePreservesEncryptedPayloadAndUserPreferences() {
-        db.close()
-        app.deleteDatabase("cadence.sqlite")
-        app.openOrCreateDatabase("cadence.sqlite", 0, null).use { old ->
-            for (migration in listOf("001-initial.sql", "002-runtime.sql")) {
-                val sql =
-                    app.assets
-                        .open("storage/$migration")
-                        .bufferedReader()
-                        .use { it.readText() }
-                SqlStatements.parse(sql).forEach(old::execSQL)
-            }
-            old.execSQL("INSERT INTO settings VALUES('credentials.host.synthetic','opaque-encrypted-payload')")
-            old.execSQL("INSERT INTO settings VALUES('app.client_name','My existing tablet')")
-            old.version = 2
-        }
-        db = CadenzaDatabase(app)
-        assertEquals(3, db.readableDatabase.version)
-        assertEquals("opaque-encrypted-payload", StoredSettings(db, "credentials").getString("host.synthetic", null))
-        assertEquals("My existing tablet", StoredSettings(db, "app").getString("client_name", null))
-        RemoteLibrary(db).setFavorite(song, true)
-        assertEquals(listOf(song), RemoteLibrary(db).load().songs)
-    }
-
-    @Test
     fun developmentBuildCannotScheduleDownloadOrInstallUpdates() {
         assertFalse(BuildConfig.AUTOMATIC_UPDATES)
         assertFalse(RemoteUpdater.due(app))

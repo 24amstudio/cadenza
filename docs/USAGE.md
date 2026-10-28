@@ -53,9 +53,9 @@ Each Remote renders highlighting locally. Pause, seek, replay, and song changes 
 
 Scroll lyrics manually to stop automatic following. Select **Follow current line** to resume it. Playback controls remain available in Lyrics mode, subject to the Host's request protections.
 
-Original cached lyrics arrive before any missing machine translation finishes. Host then distributes the same translated revision to every Remote, so translation does not delay the original timeline. After preparing a missing language pair, use **Reload lyrics** to retry it.
+Host checks its persistent lyric cache first, then Music's local TTML cache, then the optional LRCLIB provider. A successful provider result is stored on Host and labeled on Remote; both Remotes receive the same document revision. Missing machine translation does not delay the original timeline. After preparing a missing language pair, use **Reload lyrics** to retry it.
 
-This implementation renders supported line timings. It does not claim word highlighting when word timing has not been parsed and verified.
+Line timing is supported for all parsed documents. When a provider supplies angle-bracket word timing, Remote highlights the active word as well; documents without verified word timing remain line-timed.
 
 Translation is labeled as Apple-provided, machine-translated, or a combination. Missing lyrics or translation does not prevent playback controls.
 

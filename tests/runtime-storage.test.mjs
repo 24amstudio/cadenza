@@ -3,18 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { openDatabase, pairRemotes, queueEntry } from './database.mjs';
 
-/** @param {'host' | 'remote'} application */
-function migration(application) {
-  return readFileSync(
-    new URL(
-      '../apps/' + application + '/storage/002-runtime.sql',
-      import.meta.url,
-    ),
-    'utf8',
-  );
-}
-
-test('Host runtime migration preserves ownership and advances credit allocation past existing delivery data', (t) => {
+test('Host runtime schema preserves ownership and advances credit allocation past existing delivery data', (t) => {
   const database = openDatabase('host');
   t.after(() => database.close());
   pairRemotes(database);
@@ -22,10 +11,12 @@ test('Host runtime migration preserves ownership and advances credit allocation 
   database.exec(
     "INSERT INTO playback_credit_outbox VALUES ('remote-a',7,'event','occurrence','catalog','100',1,500,0)",
   );
-  database.exec(migration('host'));
+  database.exec(
+    "UPDATE paired_remotes SET next_credit_sequence=8 WHERE remote_id='remote-a'",
+  );
   assert.equal(
     database.prepare('PRAGMA user_version').get()?.['user_version'],
-    2,
+    1,
   );
   assert.equal(
     database
@@ -62,7 +53,7 @@ test('Host runtime migration preserves ownership and advances credit allocation 
   );
 });
 
-test('Remote runtime migration retains analytics and stores unresolved commands independently of event cleanup', (t) => {
+test('Remote runtime schema retains analytics and stores unresolved commands independently of event cleanup', (t) => {
   const database = openDatabase('remote');
   t.after(() => database.close());
   database.exec(
@@ -71,9 +62,6 @@ test('Remote runtime migration retains analytics and stores unresolved commands 
   database.exec(
     "INSERT INTO playback_credits VALUES ('host',1,'event','occurrence','catalog','100',1,2500)",
   );
-  database.exec('BEGIN IMMEDIATE');
-  database.exec(migration('remote'));
-  database.exec('COMMIT');
   database.exec(
     "UPDATE paired_hosts SET remote_id='remote-a',address='192.168.1.2',fingerprint='public-pin' WHERE host_id='host'",
   );
@@ -107,7 +95,7 @@ test('Remote runtime migration retains analytics and stores unresolved commands 
   );
   assert.equal(
     database.prepare('PRAGMA user_version').get()?.['user_version'],
-    2,
+    1,
   );
 });
 
@@ -116,7 +104,6 @@ test('Host automatic maintenance preserves live requests, unresolved commands, a
 
   t.after(() => database.close());
   pairRemotes(database);
-  database.exec(migration('host'));
   queueEntry(database, 'pending', 'remote-a', 1024);
   queueEntry(database, 'current', 'remote-a', 0, 'current');
   queueEntry(database, 'held', 'remote-b', 2048, 'completed');

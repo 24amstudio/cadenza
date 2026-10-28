@@ -32,8 +32,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -85,9 +87,12 @@ private fun LyricText(
             buildAnnotatedString {
                 line.words.forEachIndexed { index, word ->
                     if (index > 0) append(" ")
+                    val wordColor =
+                        if (index == activeWord) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    val wordAlpha = if (index == activeWord) 1f else 0.62f
                     withStyle(
                         SpanStyle(
-                            color = if (index == activeWord) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            color = wordColor.copy(alpha = wordAlpha),
                             fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
                         ),
                     ) { append(word.text) }
@@ -99,6 +104,7 @@ private fun LyricText(
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
         color = if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.blur(if (activeLine) 0.dp else 2.dp),
     )
 }
 
@@ -113,17 +119,24 @@ fun LyricsScreen(
     val document = state.lyrics?.takeIf { it.occurrenceId == occurrence }
     val stale = !state.connected || model.isStale()
     val currentPosition = position(model, 100)
+    val artwork = rememberArtwork(current?.song?.artworkUrl)
+    val backdrop =
+        artwork?.accent?.let {
+            Brush.verticalGradient(
+                listOf(
+                    it.copy(alpha = 0.30f),
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    MaterialTheme.colorScheme.surface,
+                ),
+            )
+        } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surface))
     LaunchedEffect(occurrence, state.connected) {
         if (occurrence != null && state.connected && document == null && !state.lyricsLoading) {
             model.loadLyrics(userInitiated = false)
         }
     }
     BoxWithConstraints(
-        Modifier.fillMaxSize().background(
-            Brush.verticalGradient(
-                listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surface),
-            ),
-        ),
+        Modifier.fillMaxSize().background(backdrop),
     ) {
         val expanded = maxWidth >= 720.dp
         val compactHeader = maxWidth < 400.dp && LocalDensity.current.fontScale >= 1.5f
@@ -145,7 +158,7 @@ fun LyricsScreen(
             if (expanded && current != null) {
                 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     Column(Modifier.weight(0.42f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Artwork(current.song.artworkUrl, Modifier.widthIn(max = 260.dp).fillMaxWidth().aspectRatio(1f))
+                        Artwork(artwork, Modifier.widthIn(max = 260.dp).fillMaxWidth().aspectRatio(1f))
                         TrackIdentity(current, state.profile?.remoteId)
                         Spacer(Modifier.weight(1f))
                         PlaybackTimeline(model, state, currentPosition)
@@ -154,7 +167,7 @@ fun LyricsScreen(
                     LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(0.58f).fillMaxHeight())
                 }
             } else {
-                current?.let { CompactTrackIdentity(it, state.profile?.remoteId) }
+                current?.let { CompactTrackIdentity(it, state.profile?.remoteId, artwork) }
                 LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
                 if (current != null) {
                     PlaybackTimeline(model, state, currentPosition)
@@ -183,9 +196,10 @@ private fun TrackIdentity(
 private fun CompactTrackIdentity(
     current: CurrentPlayback,
     remoteId: String?,
+    artwork: ArtworkData?,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Artwork(current.song.artworkUrl, Modifier.size(56.dp))
+        Artwork(artwork, Modifier.size(56.dp))
         TrackIdentity(current, remoteId, Modifier.weight(1f))
     }
 }
@@ -217,7 +231,12 @@ private fun LyricsContent(
                 }
             }
         LaunchedEffect(active, document?.revision, following) {
-            if (following && active >= 0) list.animateScrollToItem((active - 1).coerceAtLeast(0))
+            if (following && active >= 0) {
+                // Wait until the new lyric list has measured before seeking it. Without
+                // this frame, the initial active line can be missed until a manual scroll.
+                withFrameNanos { }
+                list.animateScrollToItem((active - 1).coerceAtLeast(0))
+            }
         }
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stale) {
@@ -252,8 +271,10 @@ private fun LyricsContent(
                 }
                 else -> {
                     LyricsSource(document)
-                    if (document.lines.none { it.endMs > it.startMs }) {
-                        Text("Timing unavailable", style = MaterialTheme.typography.bodyMedium)
+                    when (document.level) {
+                        1 -> Text("Lyrics without timing", style = MaterialTheme.typography.bodyMedium)
+                        2 -> Text("Timed by line", style = MaterialTheme.typography.bodyMedium)
+                        3 -> Text("Timed by line and word", style = MaterialTheme.typography.bodyMedium)
                     }
                     document.issue?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium)
@@ -299,6 +320,7 @@ private fun LyricsContent(
                                         it,
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.blur(if (index == active) 0.dp else 1.5.dp),
                                     )
                                 }
                             }
@@ -312,13 +334,21 @@ private fun LyricsContent(
 
 @Composable
 private fun LyricsSource(document: LyricDocument) {
+    val source =
+        when (document.source) {
+            "lrclib" -> "LRCLIB"
+            "apple_music" -> "Apple Music"
+            else -> "Host provider"
+        }
     Text(
-        when (document.translationSource) {
-            "apple" -> "English translation from Apple Music"
-            "machine" -> "English machine translation"
-            "apple_and_machine" -> "English translation from Apple Music and on-device translation"
-            else -> "Original lyrics"
-        },
+        "$source · " +
+            when (document.translationSource) {
+                "apple" -> "English translation from Apple Music"
+                "machine" -> "English machine translation"
+                "apple_and_machine" -> "English translation from Apple Music and on-device translation"
+                "original" -> "Original lyrics"
+                else -> "Lyrics"
+            },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

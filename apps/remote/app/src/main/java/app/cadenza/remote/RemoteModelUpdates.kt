@@ -10,6 +10,7 @@ fun RemoteModel.showError(
     title: String,
     message: String,
 ) {
+    reportLog("error", "ui.error", title + ": " + message)
     val now = System.currentTimeMillis()
     mutableState.update {
         it.copy(

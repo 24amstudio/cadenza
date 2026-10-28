@@ -38,7 +38,7 @@ If actual native state cannot be matched safely, use Host's reconciliation UI. K
 
 Play the song and open Music's lyrics pane. Its cache may not contain a timed document yet, may omit a song, or may change format after an OS update.
 
-Cadenza reads bounded local cache data; a cache miss is inconclusive. It does not silently fetch lyrics from another provider.
+Cadenza reads bounded local cache data first. If the LRCLIB fallback is enabled in Host settings, Host performs a bounded HTTPS lookup and labels the resulting source in Remote. If the provider is disabled or unavailable, the miss remains explicit.
 
 For missing English text, prepare the source-to-English language pair in Host settings. Unsupported or undownloaded pairs are shown explicitly. Word timing is not promised by the current line-timed renderer.
 

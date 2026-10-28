@@ -56,7 +56,7 @@ class RemoteModel(
     private val mutable = MutableStateFlow(RemoteState())
     val state = mutable.asStateFlow()
     private val clock = ClockSync()
-    private var connection: HostConnection? = null
+    internal var connection: HostConnection? = null
     private var generation = 0
     private var foreground = false
     private var receiveJob: Job? = null
@@ -96,6 +96,7 @@ class RemoteModel(
     private val frameQueue = PrioritizedFrameQueue()
     private val frameSignal = Channel<Unit>(Channel.UNLIMITED)
     private val metadata = mutableSetOf<String>()
+    internal val artworkRequests = mutableSetOf<String>()
 
     internal val mutableState get() = mutable
     internal val updateApp get() = app
@@ -287,7 +288,8 @@ class RemoteModel(
                                             "pair",
                                             JSONObject()
                                                 .put("name", remoteName)
-                                                .put("secret", invite.secret),
+                                                .put("secret", invite.secret)
+                                                .put("remote_version", BuildConfig.VERSION_NAME),
                                         )
                                 } else {
                                     val stored = requireNotNull(profile)
@@ -301,6 +303,7 @@ class RemoteModel(
                                                 .put("remote_id", stored.remoteId)
                                                 .put("token", token)
                                                 .put("last_credit_sequence", app.database.cursor(stored.hostId))
+                                                .put("remote_version", BuildConfig.VERSION_NAME)
                                         }
                                     Wire.frame("hello").put("auth", credentials)
                                 }
@@ -341,6 +344,7 @@ class RemoteModel(
         message: String,
     ) {
         if (version != generation) return
+        reportLog("warning", "connection.closed", message)
         activeEndpoint?.let { endpoints.failed(it, SystemClock.elapsedRealtime()) }
         disconnect()
         mutable.update {
@@ -382,6 +386,7 @@ class RemoteModel(
         lyricsTimeout?.cancel()
         lyricRequestId = null
         lyricUserInitiated = false
+        clearArtworkRequests()
         mutable.update {
             it.copy(
                 connected = false,
@@ -447,6 +452,8 @@ class RemoteModel(
                     }
                 }
             }
+            "artwork" -> applyArtworkFrame(frame)
+            "artwork.unavailable" -> frame.nullableString("artwork_url")?.let(::releaseArtwork)
             "analytics.credit" -> applyCredit(frame)
             "lyrics.unavailable" ->
                 if (frame.nullableString("occurrence_id") ==
@@ -524,6 +531,7 @@ class RemoteModel(
                 updateConfiguration = RemoteUpdater.configuration(app),
             )
         }
+        flushLogOutbox()
         if ("remote.configure" in mutable.value.capabilities) {
             connection?.send(
                 Wire
@@ -939,13 +947,7 @@ class RemoteModel(
 
     fun position(now: Long): Long = mutable.value.snapshot?.let { clock.position(it, now, isStale(now)) } ?: 0
 
-    private suspend fun reloadStatistics() {
-        val host = mutable.value.profile?.hostId ?: return
-        val statistics = withContext(ioDispatcher) { app.database.statistics(host) }
-        mutable.update { it.copy(statistics = statistics) }
-    }
-
-    private fun id(): String = UUID.randomUUID().toString()
+    internal fun id(): String = UUID.randomUUID().toString()
 
     fun beginPairing() {
         disconnect()

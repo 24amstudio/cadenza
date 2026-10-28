@@ -8,7 +8,7 @@ The source root and application names are now Cadenza. Existing installation ide
 | Kotlin namespace                   | Renamed to `app.cadenza.remote`; manifest component classes use the new namespace. Existing launcher shortcuts may need recreating.                                                          |
 | macOS bundle ID / Keychain service | `app.cadence.host`, preserving preferences and saved device/TLS identities. Ad-hoc code-signing changes may still cause macOS privacy prompts.                                               |
 | Host storage directory             | `~/Library/Application Support/Cadence Host`, outside the replaceable `.app` bundle.                                                                                                         |
-| SQLite files                       | `cadence.sqlite` on both platforms. Remote schema 3 adds Favorites transactionally to schema 2 and preserves version-1 migration support.                                                    |
+| SQLite files                       | Host uses `database/main.sqlite` and `database/logs.sqlite`, with binary cache files under `database/metadata/`; Remote retains its existing `cadence.sqlite`.                               |
 | LAN discovery                      | `_cadence._tcp`, so older installations can still discover the same Host. Certificate pinning remains mandatory.                                                                             |
 | Schema identity                    | `urn:cadence:protocol:v1:*`; renaming human-facing names does not create a new wire protocol.                                                                                                |
 

@@ -4,13 +4,15 @@ The native macOS companion uses Swift 6, SwiftUI, AppKit, Network.framework, Acc
 
 Application, local TLS/WebSocket service, command journal, native queue adapter, lyric distribution, signed updater, packaging, and unit-test source is implemented. Native compilation and device validation remain pending. No installable release has been verified or published.
 
+Host source is componentized under `Sources/CadenzaHost`: Host UI and lifecycle code, lyric providers and formats, artwork and catalog adapters, Music access, networking, queue coordination, storage, security, updates, and shared protocol models each have focused directories and files.
+
 ## Build and use
 
 See [building](../../docs/BUILDING.md), [setup](../../docs/SETUP.md), [usage](../../docs/USAGE.md), and [validation](../../docs/agents/VALIDATION.md). From the monorepo root on a supported Apple silicon macOS system with a compatible existing toolchain, use the check and build scripts under Scripts.
 
 The package has no external Swift dependency. CadenzaSecurity provides release verification and safe archive inspection; CadenzaUpdater installs a staged update; CadenzaRelease creates signing identities and signed metadata. Paid Apple Developer membership is not required by this design. Its ad-hoc update and privacy-permission behavior needs an actual target-system test.
 
-Transport and library metadata use the fixed owned JXA resource. Native queue effects use Accessibility with bounded reads, exact selected-song matching, durable intents, and native readback. Catalog search and lyric-cache integration are isolated undocumented adapters. Their exact macOS 27 behavior must be tested before support is claimed.
+Transport and library metadata use the fixed owned JXA resource. Native queue effects use Accessibility with bounded reads, exact selected-song matching, durable intents, and native readback. Catalog search and Music lyric extraction remain isolated adapters. When enabled, Host falls back to LRCLIB for a validated LRC document, caches the normalized result, and serves cached artwork and lyrics to authenticated Remotes.
 
 Host stores pairing references, policy, attributed requests, receipts, playback sessions, and credit delivery in SQLite outside the app bundle. Credentials and TLS identity material stay in Keychain. Database maintenance preserves unacknowledged credits and live requests.
 

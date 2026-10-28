@@ -1,5 +1,11 @@
 # Cadenza contributor instructions
 
+## External inspiration and licensing
+
+When implementing lyric, provider, synchronization, or artwork features, consult [docs/credits.md](docs/credits.md). It records ideas reviewed for Cadenza's Host-owned cache and media boundaries. Do not copy source code or assets without a separate license review; preserve attribution and ensure compatibility with Cadenza's AGPL-3.0 license.
+
+Cadenza's current provider boundary is concrete: Host checks its persistent cache, Music's local TTML cache, and then the opt-in LRCLIB fallback. Host parses and validates lyric formats, stores normalized lyric documents, retrieves and caches Apple artwork, and serves authenticated Remote requests. Remote decodes and renders the returned bytes and never contacts lyric or artwork providers directly.
+
 Read the global `C:/Users/aftah/.codex/SPEC.md` applicability and relevant sections when that file is available. This repository's [SPEC.md](SPEC.md), [implementation goalset](docs/agents/GOALSET.md), and [validation record](docs/agents/VALIDATION.md) supplement it. Missing native environments remain unverified; never mark them passed. Read the relevant agent-only references in [docs/agents/README.md](docs/agents/README.md) before implementation, review, or validation.
 
 ## Product and architecture
@@ -42,6 +48,10 @@ These are explicit product preferences and acceptance criteria for Cadenza UI wo
 | `shared/changelog.json`                            | Maintained release history, bundled offline and included in signed release metadata          |
 | `shared/release-config.json`                       | Explicit public repository and public verification key; intentionally empty until configured |
 | `tests`, `tools`                                   | Portable behavioral checks, strict JS tooling and native build/CI scripts                    |
+
+### Componentized source layout
+
+Keep maintained source componentized by feature and responsibility. Host code belongs in focused directories under `apps/host/Sources/CadenzaHost`, including `Host`, `Lyrics/Providers`, `Lyrics/Formats`, `Artwork`, `Catalog`, `Commands`, `Music`, `Network`, `Queue`, `Database`, `Security`, `Updates`, and `Shared`. Every provider gets its own directory under `Lyrics/Providers/<provider>/`; keep its adapter, transport, records, and provider-specific helpers inside that directory. Use one primary component per file: each lyric or media provider, parser, transport, cache, model group, service, and UI surface gets its own file. Do not add umbrella files such as `LyricProviders.swift`, use underscore-prefixed provider filenames to group a provider, or keep `Host*.swift` files at the source root. Adding or removing a provider or Host feature should touch its component directory and the smallest necessary integration surface. Apply the same boundaries to new Remote components where their platform permits it.
 
 ## Compatibility and naming
 

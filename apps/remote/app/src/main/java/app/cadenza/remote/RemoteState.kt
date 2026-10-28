@@ -43,6 +43,7 @@ data class RemoteState(
     val connecting: Boolean = false,
     val connectionIssue: String? = null,
     val snapshot: HostSnapshot? = null,
+    val artwork: Map<String, ByteArray> = emptyMap(),
     val lastStateAt: Long = 0,
     val lyrics: LyricDocument? = null,
     val lyricsLoading: Boolean = false,

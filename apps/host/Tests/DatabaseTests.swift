@@ -5,12 +5,41 @@ import Testing
 
 @MainActor
 struct DatabaseTests {
+    @Test func hostCachePersistsAndReportsUsage() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-cache-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
+        let cache = try HostCache(
+            database: database, mediaDirectory: directory.appendingPathComponent("media"), limitBytes: 256 * 1_048_576)
+        try cache.put(Data("lyrics".utf8), for: "lyrics:catalog:123", kind: "lyrics")
+        #expect(try cache.data(for: "lyrics:catalog:123") == Data("lyrics".utf8))
+        let stats = try cache.stats()
+        #expect(stats.entries == 1)
+        #expect(stats.bytes == 6)
+        try cache.removeAll()
+        let empty = try cache.stats()
+        #expect(empty.entries == 0)
+    }
+
+    @Test func missingMediaIsRemovedFromCacheIndex() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-media-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
+        let media = directory.appendingPathComponent("media")
+        let cache = try HostCache(database: database, mediaDirectory: media, limitBytes: 256 * 1_048_576)
+        try cache.put(Data([1, 2, 3]), for: "artwork:catalog:123", kind: "artwork")
+        let file = try #require(FileManager.default.contentsOfDirectory(at: media, includingPropertiesForKeys: nil).first)
+        try FileManager.default.removeItem(at: file)
+        #expect(try cache.data(for: "artwork:catalog:123") == nil)
+        #expect(try cache.stats().entries == 0)
+    }
+
     @Test func rollbackAndBackupPreserveCommittedData() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "cadenza-test-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
-        #expect(try database.query("PRAGMA user_version").first?["user_version"]?.integer == 2)
+        #expect(try database.query("PRAGMA user_version").first?["user_version"]?.integer == 1)
         let id = "00000000-0000-4000-8000-000000000001"
         let name = "Example's tablet; DROP TABLE paired_remotes;"
         try database.run(

@@ -4,17 +4,19 @@ Cadenza is a native monorepo. Host owns Music.app control and the authoritative 
 
 ## Source responsibilities
 
-| Area                                                            | Location                                             |
-| --------------------------------------------------------------- | ---------------------------------------------------- |
-| Host native app, Music adapters, queue coordinator, lyrics, TLS | `apps/host/Sources/CadenzaHost`                      |
-| Shared Host release verification and archive inspection         | `apps/host/Sources/CadenzaSecurity`                  |
-| Host update helper and release signer                           | `apps/host/Sources/CadenzaUpdater`, `CadenzaRelease` |
-| Remote native UI, networking, storage, updater                  | `apps/remote/app/src/main`                           |
-| Native unit tests                                               | `apps/host/Tests`, `apps/remote/app/src/test`        |
-| Wire contracts                                                  | `shared/protocol/v1`                                 |
-| Executable cross-platform SQL and JXA checks                    | `tests`                                              |
+| Area                                                    | Location                                                                                                                    |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Host native app and feature components                  | `apps/host/Sources/CadenzaHost/{Host,Lyrics,Artwork,Catalog,Commands,Music,Network,Queue,Database,Security,Updates,Shared}` |
+| Shared Host release verification and archive inspection | `apps/host/Sources/CadenzaSecurity`                                                                                         |
+| Host update helper and release signer                   | `apps/host/Sources/CadenzaUpdater`, `CadenzaRelease`                                                                        |
+| Remote native UI, networking, storage, updater          | `apps/remote/app/src/main`                                                                                                  |
+| Native unit tests                                       | `apps/host/Tests`, `apps/remote/app/src/test`                                                                               |
+| Wire contracts                                          | `shared/protocol/v1`                                                                                                        |
+| Executable cross-platform SQL and JXA checks            | `tests`                                                                                                                     |
 
 Runtime dependencies stay native. Neither app embeds Node, Bun, a browser, or a separate server runtime. SQLiteOpenHelper is used directly on Android; Room and KSP are not dependencies.
+
+Host source is organized by feature and responsibility. Each provider has its own directory under `Sources/CadenzaHost/Lyrics/Providers`, with its adapter, transport, records, and provider-specific helpers kept together. Parsers, transports, cache layers, models, services, and UI surfaces live in separate focused files; a provider change should not require editing an unrelated provider's implementation.
 
 ## Local tooling and storage
 
@@ -50,7 +52,9 @@ Run dependency and scoped secret scans locally. Device, integration, security, a
 
 ## Persistence and failure boundaries
 
-Both native databases apply the owned `001` and additive `002` migrations to schema version 2. They enable foreign keys and WAL and serialize writers. A failed migration preserves existing data; a newer schema is refused. Host uses prepared bindings and SQLite's backup API before an update. Remote also stores settings and Keystore-encrypted credential payloads in its existing SQLite database so failed writes propagate before pairing or installation continues. Schema 2 is still an unreleased development schema; there is no shipped earlier schema-2 APK to migrate.
+Both native databases apply ordered migrations, enable foreign keys and WAL, and serialize writers. Host stores `database/main.sqlite`, `database/logs.sqlite`, and `database/metadata/`: main schema 1 contains application state and the cache index, logs schema 1 contains separately retained system logs, and artwork, animated artwork, and other binary media remain private files referenced by main SQLite. Logs have seven-day default retention and a thirty-day maximum and never count toward the user media-cache limit. A failed migration preserves existing data; a newer schema is refused. Host uses prepared bindings and SQLite's backup API before an update. Remote also stores settings and Keystore-encrypted credential payloads in its existing SQLite database so failed writes propagate before pairing or installation continues.
+
+Host startup does not delete or recreate an unreadable database. SQLite integrity failures remain visible as a storage error for recovery from the preserved file or backup. If the database file is absent, SQLite creates a new schema and Host tells the user that pairings must be restored. Cache repair removes missing media references and orphaned media files, allowing the next provider lookup to refill the entry. The cache defaults to 256 MB and is user-configurable from 64 MB to 1 GB; eviction removes artwork first, then provider metadata, and retains lyrics longest.
 
 Host journals a unique command and planned queue identity before dispatch. Its session identity supplies the actor. Policy and revision are checked again immediately before a native effect. A receipt is not proof of successful playback: confirmation requires observed Music state. A crash or late native effect can remain unconfirmed, so Remote asks for the original status and never automatically repeats the mutation.
 
@@ -60,7 +64,7 @@ Host emits contiguous per-pairing credit sequences and retains unacknowledged cr
 
 ## Platform integration limits
 
-Music's queue and playback badges use bounded Accessibility reads, while transport and library metadata use a fixed JXA script with data-only arguments. Public web catalog tokens and Music's lyric cache are undocumented adapters. Their failure is explicit and must not fabricate queue ownership, lyrics, quality, or AutoMix state.
+Music's queue and playback badges use bounded Accessibility reads, while transport and library metadata use a fixed JXA script with data-only arguments. Public web catalog tokens and Music's lyric cache are undocumented adapters; LRCLIB and Apple CDN artwork use fixed, bounded HTTPS adapters on Host. Their failure is explicit and must not fabricate queue ownership, lyrics, quality, or AutoMix state.
 
 Translation uses Apple's native Translation framework on Cadenza Host. Remotes receive one lyric document and translation revision. No Android language model or paid developer API is required by this source design.
 

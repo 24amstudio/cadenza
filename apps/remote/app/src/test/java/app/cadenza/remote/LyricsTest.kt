@@ -93,8 +93,10 @@ class LyricsTest {
                 .put("occurrence_id", "00000000-0000-4000-8000-000000000001")
                 .put("revision", "00000000-0000-4000-8000-000000000002")
                 .put("translation_source", "original")
+                .put("source", "lrclib")
                 .put("lines", JSONArray().put(line))
         val parsed = Wire.lyrics(document)
+        assertEquals("lrclib", parsed.source)
         assertEquals(
             "Hello",
             parsed.lines

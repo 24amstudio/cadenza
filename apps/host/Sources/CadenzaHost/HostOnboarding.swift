@@ -115,7 +115,9 @@ struct HostOnboarding: View {
                         systemImage: automationVerified ? "checkmark.circle.fill" : "circle"
                     )
                 }
-            } label: { Label("Music control", systemImage: "music.note") }
+            } label: {
+                Label("Music control", systemImage: "music.note")
+            }
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Button("Allow Accessibility") {
@@ -129,7 +131,9 @@ struct HostOnboarding: View {
                         systemImage: accessibilityVerified ? "checkmark.circle.fill" : "circle"
                     )
                 }
-            } label: { Label("Queue verification", systemImage: "list.bullet.rectangle") }
+            } label: {
+                Label("Queue verification", systemImage: "list.bullet.rectangle")
+            }
             Text(
                 "Local Network access is requested when Host starts listening. If macOS blocks it, allow Cadenza Host "
                     + "in Privacy & Security → Local Network."
@@ -185,8 +189,8 @@ struct HostOnboarding: View {
             }
             let status =
                 MusicAuthorization.currentStatus == .notDetermined
-                    ? await MusicAuthorization.request()
-                    : MusicAuthorization.currentStatus
+                ? await MusicAuthorization.request()
+                : MusicAuthorization.currentStatus
             guard !Task.isCancelled, detectionAttempt == attempt else { return }
             guard status == .authorized else {
                 manualStorefront = true

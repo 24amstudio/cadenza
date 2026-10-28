@@ -311,9 +311,9 @@ final class HostService {
                 let completedAt = monotonicMs()
                 let latencyMessage =
                     "command_id=\(frame.commandId ?? "unknown")"
-                        + " received=\(receivedAt)"
-                        + " started=\(startedAt)"
-                        + " completed=\(completedAt)"
+                    + " received=\(receivedAt)"
+                    + " started=\(startedAt)"
+                    + " completed=\(completedAt)"
                 self.latencyLog.debug("\(latencyMessage, privacy: .public)")
                 self.network.send(result, to: peer)
             } catch { self.fail(error, request: frame, peer: peer) }

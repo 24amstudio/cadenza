@@ -1,6 +1,5 @@
 package app.cadenza.remote.ui
 
-import android.graphics.BitmapFactory
 import android.os.SystemClock
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,14 +23,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -44,12 +40,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
-import app.cadenza.remote.data.readBounded
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 
 @Composable
 fun LoadingScreen(label: String) {
@@ -157,34 +148,17 @@ fun Artwork(
     url: String?,
     modifier: Modifier = Modifier,
 ) {
-    var image by remember(url) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(url) {
-        if (url == null) return@LaunchedEffect
-        image =
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val address = URL(url)
-                    require(address.protocol == "https" && address.host.endsWith(".mzstatic.com"))
-                    val connection = address.openConnection() as HttpsURLConnection
-                    connection.instanceFollowRedirects = false
-                    connection.connectTimeout = 5_000
-                    connection.readTimeout = 5_000
-                    try {
-                        require(connection.responseCode == 200)
-                        val data = connection.inputStream.use { it.readBounded(524_288) }
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
-                        require(bounds.outWidth in 1..2_048 && bounds.outHeight in 1..2_048)
-                        BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
-                    } finally {
-                        connection.disconnect()
-                    }
-                }.getOrNull()
-            }
-    }
+    Artwork(rememberArtwork(url), modifier)
+}
+
+@Composable
+internal fun Artwork(
+    artwork: ArtworkData?,
+    modifier: Modifier,
+) {
     Surface(modifier = modifier, shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Box(contentAlignment = Alignment.Center) {
-            val bitmap = image
+            val bitmap = artwork?.image
             if (bitmap !=
                 null
             ) {

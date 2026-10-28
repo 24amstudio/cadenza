@@ -9,23 +9,23 @@ Control Apple Music from Android devices on the same local network. Music.app on
 
 Cadenza supports a macOS Cadenza Host and Android Cadenza Remote without paid Apple Developer membership or a dependency on Google Play services.
 
-The [implementation goalset](docs/GOALSET.md) evolves the existing Cadence source into Cadenza. It adds sequential Host setup, local Favorites, editable device names, theme preferences, adaptive home panes, session notifications, address failover, build identification, signed changelogs and separate Checking/Build CI. See the [current verification record](docs/VALIDATION.md) for exact checks and artifact availability. macOS compilation, real Music.app integration, target-device testing, hardware resource measurements and release installation remain unverified; no stable release has been published.
+The [implementation goalset](docs/agents/GOALSET.md) evolves the existing Cadence source into Cadenza. It adds sequential Host setup, local Favorites, editable device names, theme preferences, adaptive home panes, session notifications, address failover, build identification, signed changelogs and separate Checking/Build CI. See the [current verification record](docs/agents/VALIDATION.md) for exact checks and artifact availability. macOS compilation, real Music.app integration, target-device testing, hardware resource measurements and release installation remain unverified; no stable release has been published.
 
-The approved Android command-line toolchain is installed under `.tools` on F:, with Gradle distributions and dependencies under `.cache`. Android Studio and an emulator are not installed. Node.js is used only for development checks and will not be bundled in either app. On Windows, caches, downloads, temporary files, and build output belong on F:.
+The approved Android command-line toolchain is installed under `.tools` on D:/Dev, with Gradle distributions and dependencies under `.cache`. Android Studio and an emulator are not installed. Node.js is used only for development checks and will not be bundled in either app. On Windows, caches, downloads, temporary files, and build output belong on D:/Dev.
 
 ## Install, set up, and use
 
 - [Installation](docs/INSTALLATION.md) — requirements, Host app, and Huawei APK installation.
 - [Setup](docs/SETUP.md) — Music permissions, LAN address, storefront, pairing A/B, lyrics, and English translation.
 - [Usage](docs/USAGE.md) — search, queue, protected controls, synchronized lyrics, analytics, and updates.
-- [Building](docs/BUILDING.md) — native toolchains, strict checks, F: storage, and signed artifacts.
-- [Releases](docs/RELEASES.md) — stable GitHub baseline and signed update metadata.
-- [Troubleshooting](docs/TROUBLESHOOTING.md) and [validation status](docs/VALIDATION.md).
-- [Resource measurement](docs/RESOURCES.md), [compatibility](docs/COMPATIBILITY.md), and [contributor instructions](AGENTS.md).
+- [Building](docs/BUILDING.md) — native toolchains, strict checks, D:/Dev storage, and signed artifacts.
+- [Releases](docs/agents/RELEASES.md) — stable GitHub baseline and signed update metadata.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) and [validation status](docs/agents/VALIDATION.md).
+- [Resource measurement](docs/agents/RESOURCES.md), [compatibility](docs/agents/COMPATIBILITY.md), and [contributor instructions](AGENTS.md).
 
 ## Monorepo layout
 
-The Windows project root is `F:\Development\cadenza`. Both native applications and their shared protocol contracts live in one Git repository.
+The Windows project root is `D:\Dev`. Both native applications and their shared protocol contracts live in one Git repository.
 
 ```text
 cadenza/

@@ -26,6 +26,7 @@ function nativeBoundary(persistentId = 'AB1234567890CDEF') {
   /** @type {MusicApplication} */
   const music = {
     running: () => true,
+    launch: () => {},
     playerState: () => (playing ? 'playing' : 'paused'),
     currentTrack: () => track,
     libraryPlaylists: [

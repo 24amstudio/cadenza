@@ -42,7 +42,7 @@ final class MusicAccessibility {
             throw CadenzaError.failure("music_permission", "Allow Cadenza Host in Privacy & Security → Accessibility.")
         }
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first else {
-            throw CadenzaError.failure("music_unavailable", "Open Music while Cadenza Host is running.")
+            throw CadenzaError.failure("music_unavailable", "Music is starting. Retry in a moment while Cadenza Host connects.")
         }
         if currentPid != app.processIdentifier { cachedPane = nil }
         currentPid = app.processIdentifier

@@ -1,6 +1,6 @@
 # Cadenza project specification
 
-Version 0.4, 26 October 2026. Intended implementers are the developers of Cadenza Host and Cadenza Remote. This baseline is extended by the latest [Cadenza implementation goalset](docs/GOALSET.md). [Validation](docs/VALIDATION.md) records exact verified revisions and remaining checks. Host compilation and target-device integration remain pending. Partial local checks do not establish application conformance.
+Version 0.4, 26 October 2026. Intended implementers are the developers of Cadenza Host and Cadenza Remote. This baseline is extended by the latest [Cadenza implementation goalset](docs/agents/GOALSET.md). [Validation](docs/agents/VALIDATION.md) records exact verified revisions and remaining checks. Host compilation and target-device integration remain pending. Partial local checks do not establish application conformance.
 
 ## Scope and terminology
 
@@ -21,7 +21,7 @@ An implementation conforms to this baseline only when every applicable mandatory
 - **N03:** Use a persistent authenticated TLS connection with WebSocket messages for commands and pushed state. Bonjour/mDNS and Android NSD are the preferred discovery path; a QR/manual-address fallback may be provided. These are implementation recommendations, not a requirement to introduce a separate HTTP server runtime.
 - **N04:** Playback control must stay on the LAN without a cloud relay. Apple Music streaming, uncached catalog data, initial language models, and GitHub updates may require internet access. These dependencies must not be described as fully offline operation.
 - **N05:** Remote core operation must work without Google Play services. Vendor Android APK behavior, discovery, background restrictions, and installation must be verified on representative target devices. Platform-specific forks remain outside the initial scope.
-- **N06:** Cadenza must be maintained as one Git monorepo. Cadenza Host belongs in `apps/host`, Cadenza Remote in `apps/remote`, and shared LAN protocol contracts and fixtures in `shared/protocol`. The Windows project root is `F:\Development\cadenza`; each application retains its native build tooling.
+- **N06:** Cadenza must be maintained as one Git monorepo. Cadenza Host belongs in `apps/host`, Cadenza Remote in `apps/remote`, and shared LAN protocol contracts and fixtures in `shared/protocol`. The Windows project root is `D:\Dev`; each application retains its native build tooling.
 
 Android's native design library is [Compose Material 3](https://developer.android.com/jetpack/androidx/releases/compose-material3). Select compatible pinned versions at implementation time; Material 3 Expressive does not by itself imply an Android 16 installation minimum. Vendor installation guidance may vary by device and firmware. These documents do not replace testing on representative target devices.
 
@@ -156,7 +156,7 @@ Release keys must be backed up securely and excluded from source control and app
 
 ## Cadenza evolution requirements
 
-The goalset is normative for this evolution. Preserve stable installed IDs, Keystore/Keychain identities, SQLite filenames, protocol URNs and discovery identifiers as documented in [COMPATIBILITY.md](docs/COMPATIBILITY.md); human-facing/source names become Cadenza.
+The goalset is normative for this evolution. Preserve stable installed IDs, Keystore/Keychain identities, SQLite filenames, protocol URNs and discovery identifiers as documented in [COMPATIBILITY.md](docs/agents/COMPATIBILITY.md); human-facing/source names become Cadenza.
 
 | ID  | Required outcome and acceptance                                                                                                                                                                                                                                                                                                               |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -185,7 +185,7 @@ Acceptance evidence is behavioral tests, final strict local native/portable chec
 | 4. Maintenance and updates | Exercise migrations/backups, maintenance under playback load, cache bounds, invalid signatures, interrupted downloads/installs, OS confirmation, staggered app versions, persistent pairing, and retained analytics. Complete the measured command/replication deadline tests.                                                                                                                                                                                  | R01-R05, S01-S03, D01-D06, U01-U07                        |
 | 5. Native handoff          | Run required local strict compilation/type analysis, lint, formatting, unit/integration/device tests, security negatives, and native accessibility checks for final code. Show working interface screenshots and publish measured size/latency/resource results with limitations.                                                                                                                                                                               | I01-I04 and global quality gates                          |
 
-No complete application milestone is currently verified. Native source trees, local pairing/control service, persistence, lyric distribution, release verification, packaging, new Cadenza features and user guides are implemented and undergoing final local checks. [Validation evidence](docs/VALIDATION.md) distinguishes those checks from unexecuted Mac, LAN, tablet, accessibility, performance and update-installation tests. A failure of native queue control, cache access, no-fee updating or target compatibility must be reported as a platform blocker rather than hidden behind a simulation.
+No complete application milestone is currently verified. Native source trees, local pairing/control service, persistence, lyric distribution, release verification, packaging, new Cadenza features and user guides are implemented and undergoing final local checks. [Validation evidence](docs/agents/VALIDATION.md) distinguishes those checks from unexecuted Mac, LAN, tablet, accessibility, performance and update-installation tests. A failure of native queue control, cache access, no-fee updating or target compatibility must be reported as a platform blocker rather than hidden behind a simulation.
 
 ## Remaining implementation decisions
 

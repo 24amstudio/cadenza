@@ -13,7 +13,7 @@ This is an evolution of the existing project, not a greenfield rewrite. Preserve
 
 ## 2. Working Rules and Initial Audit
 
-- All local project work, source changes, temporary files, and generated artifacts must reside on the `F:\` drive. Verify the working directory before making changes. Do not create the project or working copies on `C:\`.
+- All local project work, source changes, temporary files, and generated artifacts must reside on the `D:/Dev\` drive. Verify the working directory before making changes. Do not create the project or working copies on `C:\`.
 - First inspect the existing Git repository, working-tree status, architecture, project structure, build systems, dependencies, connection protocols, permissions, tests, and release/update mechanisms.
 - Identify existing user changes and preserve them. Never discard work, perform destructive Git operations, or rewrite Git history.
 - Create or update an implementation plan after the initial audit, then execute the work. Do not stop after producing a plan.

@@ -1,6 +1,6 @@
 # Create a GitHub release
 
-No repository, release, production signing identity, or first installable baseline has been published by this task. A public GitHub Releases repository is the current updater source; private-repository authentication is not implemented.
+No repository, release, production signing identity, or first installable baseline has been published by this task. The updater requires an explicitly configured public GitHub repository; `shared/release-config.json` is intentionally unconfigured and private-repository authentication is not implemented.
 
 ## Establish the signing identities
 
@@ -50,7 +50,7 @@ binary_root="$(swift build -c release --arch arm64 --show-bin-path)"
 "$binary_root/CadenzaRelease" keygen ../../secrets/update-private.pem
 ```
 
-The command prints the public SPKI key as base64. Put that public value in `shared/release-config.json` together with `24amstudio/cadenza`, then add these repository Actions secrets under **Settings → Secrets and variables → Actions**:
+The command prints the public SPKI key as base64. Put that public value in `shared/release-config.json` together with `OWNER/REPOSITORY`, then add these repository Actions secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret                              | Value                                                              |
 | ----------------------------------- | ------------------------------------------------------------------ |

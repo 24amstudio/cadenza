@@ -137,8 +137,10 @@ function controlMusic(music, argv) {
 function handleRun(argv) {
   const music = Application('Music');
 
-  if (!music.running())
-    throw new Error('Open Music while Cadenza Host is running');
+  if (!music.running()) {
+    music.launch();
+    delay(1);
+  }
 
   const action = argv[0];
 

@@ -138,7 +138,7 @@ private struct PairingSheet: View {
             Text("Pair Cadenza Remote").font(.title.bold())
             Text("Scan this QR code on your tablet. It is valid for one Remote for five minutes.")
             if let image = qr(json) {
-                Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
+                Image(nsImage: image).interpolation(.none).resizable().frame(width: 400, height: 400)
                     .accessibilityLabel("Pairing QR code")
             }
             Text("\(invitation.host):\(invitation.port)").textSelection(.enabled)
@@ -150,7 +150,7 @@ private struct PairingSheet: View {
                 }
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
-        }.padding(28).frame(width: 440)
+        }.padding(32).frame(width: 560, minHeight: 560)
     }
 
     private func qr(_ value: String) -> NSImage? {

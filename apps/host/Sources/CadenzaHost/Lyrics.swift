@@ -129,12 +129,9 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         }
         for index in lines.indices {
             lines[index].translation = handler.translations[lines[index].id]
-            if lines[index].endMs <= lines[index].startMs {
-                lines[index].endMs = index + 1 < lines.count ? lines[index + 1].startMs : lines[index].startMs + 10_000
-            }
         }
         guard !lines.isEmpty else {
-            throw CadenzaError.failure("lyrics_unavailable", "No supported line timings were found.")
+            throw CadenzaError.failure("lyrics_unavailable", "No lyric lines were found.")
         }
         let supplied = lines.contains { $0.translation != nil }
         return LyricDocument(
@@ -182,10 +179,11 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
             translationTarget = attributes["for"]
             translationText = ""
         }
-        if name == "p", metadataDepth == 0, let start = Self.milliseconds(attributes["begin"]) {
+        if name == "p", metadataDepth == 0 {
             paragraph = LyricLine(
                 id: attributes["itunes:key"] ?? attributes["xml:id"] ?? "line-\(lines.count)",
-                text: "", startMs: start, endMs: Self.milliseconds(attributes["end"]) ?? start
+                text: "", startMs: Self.milliseconds(attributes["begin"]) ?? 0,
+                endMs: Self.milliseconds(attributes["end"]) ?? 0
             )
             paragraphDepth = depth
         }

@@ -2,6 +2,7 @@ package app.cadenza.remote
 
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricLine
+import app.cadenza.remote.data.LyricWord
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.ui.activeLyricIndex
 import org.json.JSONArray
@@ -11,6 +12,24 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class LyricsTest {
+    @Test
+    fun lyricLevelDistinguishesPlainLineAndWordTimedDocuments() {
+        val empty = LyricDocument("a", "b", "none", emptyList(), null)
+        val plain = LyricDocument("a", "b", "original", listOf(LyricLine("1", "Plain", 0, 0, null)), null)
+        val lineTimed = plain.copy(lines = listOf(LyricLine("1", "Timed", 0, 1_000, null)))
+        val wordTimed =
+            lineTimed.copy(
+                lines =
+                    listOf(
+                        LyricLine("1", "Timed", 0, 1_000, null, listOf(LyricWord("Timed", 0, 500))),
+                    ),
+            )
+        assertEquals(0, empty.level)
+        assertEquals(1, plain.level)
+        assertEquals(2, lineTimed.level)
+        assertEquals(3, wordTimed.level)
+    }
+
     @Test
     fun highlightingRequiresCurrentOccurrenceAndLiveTimedPosition() {
         val document =

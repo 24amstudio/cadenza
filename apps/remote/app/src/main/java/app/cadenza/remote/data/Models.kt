@@ -81,7 +81,17 @@ data class LyricDocument(
     val translationSource: String,
     val lines: List<LyricLine>,
     val issue: String?,
-)
+) {
+    /** 0: unavailable, 1: plain text, 2: timed lines, 3: timed words. */
+    val level: Int
+        get() =
+            when {
+                lines.isEmpty() -> 0
+                lines.none { it.endMs > it.startMs } -> 1
+                lines.all { line -> line.endMs > line.startMs && line.words.isNotEmpty() } -> 3
+                else -> 2
+            }
+}
 
 data class HostProfile(
     val hostId: String,

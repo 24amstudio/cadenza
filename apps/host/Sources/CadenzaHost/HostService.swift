@@ -161,11 +161,7 @@ final class HostService {
         guard !queue.busy else {
             throw CadenzaError.failure("busy", "Wait for the current Music action before changing network settings.")
         }
-        guard !configuration.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            configuration.name.utf8.count <= 63,
-            configuration.storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil,
-            configuration.port >= 1024
-        else {
+        guard configuration.isUsable else {
             throw CadenzaError.failure(
                 "configuration", "Enter a two-letter storefront, a device name, and a port from 1024 to 65535.")
         }

@@ -6,13 +6,20 @@ import Security
 final class NetworkService {
     @MainActor
     final class Peer {
+        struct Outbound: Sendable {
+            let data: Data
+        }
+
         let id = identifier()
         let connection: NWConnection
         var remoteId: String?
         var authenticated = false
         var supportsHeartbeat = false
         var receivedAt: [Int64] = []
-        var pendingBytes = 0
+        var outbound: [Outbound] = []
+        var pendingState: Outbound?
+        var outboundBytes = 0
+        var sending = false
 
         init(_ connection: NWConnection) { self.connection = connection }
     }
@@ -198,7 +205,7 @@ final class NetworkService {
 
     func send(_ frame: Frame, to peer: Peer) {
         do {
-            send(try Wire.encode(frame), to: peer)
+            send(try Wire.encode(frame), to: peer, priority: isPriority(frame.type))
         } catch {
             disconnect(peer.id)
             onIssue?("The Host could not encode a message for a Remote: " + error.localizedDescription)
@@ -215,26 +222,64 @@ final class NetworkService {
             return
         }
         for peer in peers.values where peer.authenticated && (frame.type != "heartbeat" || peer.supportsHeartbeat) {
-            send(data, to: peer)
+            send(data, to: peer, priority: isPriority(frame.type))
         }
     }
 
-    private func send(_ data: Data, to peer: Peer) {
-        guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes, peer.pendingBytes + data.count <= 4_194_304
+    private func isPriority(_ type: String) -> Bool {
+        type != "state" && type != "heartbeat"
+    }
+
+    private func send(_ data: Data, to peer: Peer, priority: Bool) {
+        guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes else {
+            disconnect(peer.id)
+            onIssue?("The Host closed a Remote connection after an outbound message exceeded the safety limit.")
+            return
+        }
+        let item = Peer.Outbound(data: data)
+        let replacedBytes = priority ? 0 : (peer.pendingState?.data.count ?? 0)
+        let nextBytes = peer.outboundBytes - replacedBytes + data.count
+        guard nextBytes <= 4_194_304
         else {
             disconnect(peer.id)
             onIssue?("The Host closed a Remote connection after its outbound message buffer exceeded the safety limit.")
             return
         }
-        peer.pendingBytes += data.count
+        peer.outboundBytes = nextBytes
+        if priority {
+            peer.outbound.append(item)
+        } else {
+            peer.pendingState = item
+        }
+        flush(peer)
+    }
+
+    private func flush(_ peer: Peer) {
+        guard !peer.sending, peers[peer.id] != nil else { return }
+        let item: Peer.Outbound
+        if !peer.outbound.isEmpty {
+            item = peer.outbound.removeFirst()
+        } else if let pending = peer.pendingState {
+            item = pending
+            peer.pendingState = nil
+        } else {
+            return
+        }
+        peer.sending = true
         let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
         let context = NWConnection.ContentContext(identifier: identifier(), metadata: [metadata])
         peer.connection.send(
-            content: data, contentContext: context, isComplete: true,
+            content: item.data, contentContext: context, isComplete: true,
             completion: .contentProcessed { [weak self] error in
                 Task { @MainActor in
-                    self?.peers[peer.id]?.pendingBytes -= data.count
-                    if error != nil { self?.disconnect(peer.id) }
+                    guard let self, let current = self.peers[peer.id] else { return }
+                    current.outboundBytes -= item.data.count
+                    current.sending = false
+                    if error != nil {
+                        self.disconnect(peer.id)
+                    } else {
+                        self.flush(current)
+                    }
                 }
             })
     }

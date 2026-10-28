@@ -23,7 +23,7 @@ import app.cadenza.remote.network.HostConnection
 import app.cadenza.remote.network.HostDiscovery
 import app.cadenza.remote.network.LocalEndpoint
 import app.cadenza.remote.network.NetworkMonitor
-import app.cadenza.remote.updates.Changelog
+import app.cadenza.remote.network.PrioritizedFrameQueue
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -70,6 +70,9 @@ class RemoteModel(
     private var retryDelay = 1_000L
     private var searchId: String? = null
     private var preparationId: String? = null
+    private var searchTimeout: Job? = null
+    private var preparationTimeout: Job? = null
+    private var lyricsTimeout: Job? = null
     private var lyricRequestId: String? = null
     private var lyricUserInitiated = false
     private var discovery: HostDiscovery? = null
@@ -90,13 +93,20 @@ class RemoteModel(
     private var lastCachedAt = 0L
     private val pending = mutableMapOf<String, PendingCommand>()
     private val statusChecks = mutableSetOf<String>()
-    private val events = Channel<Pair<Int, JSONObject>>(64)
+    private val frameQueue = PrioritizedFrameQueue()
+    private val frameSignal = Channel<Unit>(Channel.UNLIMITED)
     private val metadata = mutableSetOf<String>()
+
+    internal val mutableState get() = mutable
+    internal val updateApp get() = app
+    internal val updateDispatcher get() = ioDispatcher
+    internal val updateScope get() = viewModelScope
 
     private data class PendingCommand(
         val frame: JSONObject,
         val key: String,
         val timer: Job,
+        var sentAtElapsedMs: Long = 0,
     )
 
     init {
@@ -109,12 +119,14 @@ class RemoteModel(
             state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
         }
         viewModelScope.launch {
-            for ((version, frame) in events) {
+            for (ignored in frameSignal) {
+                val item = frameQueue.poll() ?: continue
+                val version = item.version
                 if (version == generation) {
                     receiveJob =
                         launch {
                             try {
-                                receive(frame)
+                                receive(item.frame)
                             } catch (error: CancellationException) {
                                 throw error
                             } catch (error: Exception) {
@@ -303,8 +315,11 @@ class RemoteModel(
                     }
                 },
                 received = { frame ->
-                    if (!events.trySend(version to frame).isSuccess) {
+                    val accepted = frameQueue.offer(PrioritizedFrameQueue.Item(version, frame))
+                    if (!accepted) {
                         viewModelScope.launch { connectionClosed(version, "Host messages arrived faster than they could be applied.") }
+                    } else {
+                        frameSignal.trySend(Unit)
                     }
                 },
                 closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
@@ -328,7 +343,16 @@ class RemoteModel(
         if (version != generation) return
         activeEndpoint?.let { endpoints.failed(it, SystemClock.elapsedRealtime()) }
         disconnect()
-        mutable.update { it.copy(connected = false, connecting = false, connectionIssue = message) }
+        mutable.update {
+            it.copy(
+                connected = false,
+                connecting = false,
+                connectionIssue = message,
+                searching = false,
+                preparing = false,
+                lyricsLoading = false,
+            )
+        }
         clockJob?.cancel()
         if (invitation != null) {
             showError("Could not pair", message)
@@ -347,14 +371,26 @@ class RemoteModel(
 
     fun disconnect() {
         generation++
+        frameQueue.clear()
         receiveJob?.cancel()
         reconnect?.cancel()
         clockJob?.cancel()
         connection?.disconnect()
         connection = null
+        searchTimeout?.cancel()
+        preparationTimeout?.cancel()
+        lyricsTimeout?.cancel()
         lyricRequestId = null
         lyricUserInitiated = false
-        mutable.update { it.copy(connected = false, connecting = false, lyricsLoading = false) }
+        mutable.update {
+            it.copy(
+                connected = false,
+                connecting = false,
+                searching = false,
+                preparing = false,
+                lyricsLoading = false,
+            )
+        }
     }
 
     private suspend fun receive(frame: JSONObject) {
@@ -377,14 +413,17 @@ class RemoteModel(
                     sample.counter("sent_at_host_ms"),
                     SystemClock.elapsedRealtime(),
                 )
+                mutable.update { it.copy(clockUncertaintyMs = clock.uncertaintyMs.takeIf { value -> clock.ready }) }
             }
             "search.result" ->
                 if (frame.nullableString("request_id") == searchId) {
+                    searchTimeout?.cancel()
                     val songs = frame.getJSONArray("songs").objects().map(Wire::song)
                     mutable.update { it.copy(results = songs, searching = false) }
                 }
             "song.ready" ->
                 if (frame.nullableString("request_id") == preparationId) {
+                    preparationTimeout?.cancel()
                     val song = frame.getJSONObject("song")
                     mutable.update { it.copy(preparing = false, preparedSong = song.getString("source") + ":" + song.getString("id")) }
                 }
@@ -397,6 +436,7 @@ class RemoteModel(
                 ) {
                     val notify = lyricUserInitiated && mutable.value.lyricsLoading
                     lyricUserInitiated = false
+                    lyricsTimeout?.cancel()
                     mutable.update {
                         it.copy(
                             lyrics = document,
@@ -420,6 +460,7 @@ class RemoteModel(
                         showError("Lyrics unavailable", frame.optString("message", "Open Music's lyrics pane and retry."))
                     }
                     lyricUserInitiated = false
+                    lyricsTimeout?.cancel()
                     mutable.update {
                         it.copy(
                             lyricsLoading = false,
@@ -495,9 +536,9 @@ class RemoteModel(
         clockJob?.cancel()
         clockJob =
             viewModelScope.launch {
-                repeat(4) {
+                repeat(5) {
                     pingClock()
-                    delay(100)
+                    delay(40)
                 }
                 while (true) {
                     delay(5_000)
@@ -607,6 +648,8 @@ class RemoteModel(
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before searching.")
         searchId?.let { connection?.send(Wire.frame("operation.cancel").put("request_id", it)) }
         searchId = id()
+        val requestId = searchId
+        searchTimeout?.cancel()
         mutable.update { it.copy(searching = true) }
         connection?.send(
             Wire
@@ -616,21 +659,53 @@ class RemoteModel(
                 .put("query", query.take(200))
                 .put("scope", if (library) "library" else "catalog"),
         )
+        searchTimeout =
+            viewModelScope.launch {
+                delay(15_000)
+                if (requestId == searchId && mutable.value.searching) {
+                    mutable.update {
+                        it.copy(searching = false, notice = Notice("Search timed out. Try again."))
+                    }
+                }
+            }
     }
 
     fun prepare(song: Song) {
         preparationId = id()
+        val requestId = preparationId
+        preparationTimeout?.cancel()
         mutable.update { it.copy(preparing = true, preparedSong = null) }
         connection?.send(Wire.frame("song.prepare").put("request_id", preparationId).put("song", song.identity.json()))
+        preparationTimeout =
+            viewModelScope.launch {
+                delay(15_000)
+                if (requestId == preparationId && mutable.value.preparing) {
+                    mutable.update {
+                        it.copy(preparing = false, notice = Notice("Music did not prepare this song. Try again."))
+                    }
+                }
+            }
     }
 
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
         lyricRequestId = id()
+        val requestId = lyricRequestId
+        lyricsTimeout?.cancel()
         lyricUserInitiated = userInitiated
         mutable.update { it.copy(lyricsLoading = true) }
         connection?.send(Wire.frame("lyrics.get").put("request_id", lyricRequestId))
+        lyricsTimeout =
+            viewModelScope.launch {
+                delay(15_000)
+                if (requestId == lyricRequestId && mutable.value.lyricsLoading) {
+                    lyricUserInitiated = false
+                    mutable.update {
+                        it.copy(lyricsLoading = false, lyricsIssue = "Host did not return lyrics. Try again.")
+                    }
+                }
+            }
     }
 
     fun savePreferences(
@@ -707,7 +782,9 @@ class RemoteModel(
             createdProfile = profile
             val snapshot = requireNotNull(mutable.value.snapshot) { "Wait for Host state." }
             check(mutable.value.connected && !isStale()) { "Reconnect and wait for current Host state." }
-            check(key !in mutable.value.pending) { "This request is still pending. Check its original outcome before retrying." }
+            check(key !in mutable.value.pending && pending.values.none { it.key == key }) {
+                "This request is still pending. Check its original outcome before retrying."
+            }
             val command =
                 Wire
                     .frame("command")
@@ -726,6 +803,7 @@ class RemoteModel(
                     if (session == generation && foreground && pending.containsKey(commandId)) {
                         mutable.update {
                             it.copy(
+                                pending = it.pending - key,
                                 prompt =
                                     Prompt(
                                         "Request unconfirmed",
@@ -734,6 +812,10 @@ class RemoteModel(
                                     ),
                             )
                         }
+                        // Refresh the replicated state while retaining the durable command
+                        // record. A late result still resolves the original command ID.
+                        queryRequest(commandId)
+                        connection?.send(Wire.frame("state.get").put("request_id", id()))
                     }
                 }
             pending[commandId] = PendingCommand(command, key, timer)
@@ -749,6 +831,7 @@ class RemoteModel(
             ) { "This request expired before it was sent." }
             sent = transport.send(command)
             check(sent) { "The connection closed before the request was sent." }
+            pending[commandId]?.sentAtElapsedMs = SystemClock.elapsedRealtime()
         } catch (error: Exception) {
             if (!sent && createdId != null) {
                 pending.remove(createdId)?.timer?.cancel()
@@ -766,6 +849,10 @@ class RemoteModel(
         val original = pending[commandId] ?: return
         if (frame.nullableString("host_epoch") != mutable.value.snapshot?.hostEpoch) return
         original.timer.cancel()
+        val sentAt = original.sentAtElapsedMs
+        if (sentAt > 0) {
+            mutable.update { it.copy(lastCommandLatencyMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)) }
+        }
         when (frame.getString("outcome")) {
             "applied" -> {
                 statusChecks.remove(commandId)
@@ -828,9 +915,16 @@ class RemoteModel(
     private fun operationError(frame: JSONObject) {
         val request = frame.nullableString("request_id")
         val message = frame.optString("message", "The operation failed.")
-        if (request != null && request == searchId) mutable.update { it.copy(searching = false) }
-        if (request != null && request == preparationId) mutable.update { it.copy(preparing = false) }
+        if (request != null && request == searchId) {
+            searchTimeout?.cancel()
+            mutable.update { it.copy(searching = false) }
+        }
+        if (request != null && request == preparationId) {
+            preparationTimeout?.cancel()
+            mutable.update { it.copy(preparing = false) }
+        }
         if (request != null && request == lyricRequestId) {
+            lyricsTimeout?.cancel()
             mutable.update { it.copy(lyricsLoading = false, lyricsIssue = message) }
             if (lyricUserInitiated) showError("Lyrics unavailable", message)
             lyricUserInitiated = false
@@ -849,76 +943,6 @@ class RemoteModel(
         val host = mutable.value.profile?.hostId ?: return
         val statistics = withContext(ioDispatcher) { app.database.statistics(host) }
         mutable.update { it.copy(statistics = statistics) }
-    }
-
-    fun showError(
-        title: String,
-        message: String,
-    ) {
-        mutable.update { it.copy(prompt = Prompt(title, message)) }
-    }
-
-    fun dismissPrompt() {
-        mutable.update { it.copy(prompt = null) }
-    }
-
-    fun dismissNotice(id: String) {
-        mutable.update { if (it.notice?.id == id) it.copy(notice = null) else it }
-    }
-
-    fun checkUpdates(automatic: Boolean = false) {
-        if (mutable.value.updateBusy) return
-        mutable.update { it.copy(updateBusy = true) }
-        viewModelScope.launch {
-            try {
-                val staged = withContext(ioDispatcher) { RemoteUpdater.checkAndStage(app) }
-                mutable.update {
-                    it.copy(
-                        updateBusy = false,
-                        stagedUpdate = staged?.absolutePath,
-                        notice = Notice(if (staged == null) "No newer release is available" else "Update ready to install"),
-                    )
-                }
-            } catch (error: Exception) {
-                mutable.update { it.copy(updateBusy = false) }
-                if (!automatic) showError("Update could not be prepared", error.message ?: "Your existing installation is unchanged.")
-            }
-        }
-    }
-
-    fun installing(value: Boolean) {
-        mutable.update { it.copy(installationBusy = value) }
-    }
-
-    fun showChangelog(compare: Boolean = false) {
-        if (mutable.value.comparingChanges) return
-        mutable.update { it.copy(comparingChanges = compare) }
-        viewModelScope.launch {
-            try {
-                val notes =
-                    withContext(ioDispatcher) {
-                        if (compare) Changelog.compare(mutable.value.updateConfiguration) else Changelog.bundled(app)
-                    }
-                mutable.update { it.copy(changelog = notes) }
-            } catch (error: Exception) {
-                showError(
-                    "Changes could not be compared",
-                    error.message ?: "No comparison is available while offline. Your installation was not changed.",
-                )
-            } finally {
-                mutable.update { it.copy(comparingChanges = false) }
-            }
-        }
-    }
-
-    fun dismissChangelog() {
-        mutable.update { it.copy(changelog = null) }
-    }
-
-    fun installationResult() {
-        installing(false)
-        val error = RemoteUpdater.takeInstallationError(app)
-        if (error != null) showError("Update could not be installed", error)
     }
 
     private fun id(): String = UUID.randomUUID().toString()
@@ -943,7 +967,8 @@ class RemoteModel(
         disconnect()
         discovery?.close()
         for (item in pending.values) item.timer.cancel()
-        events.close()
+        frameQueue.clear()
+        frameSignal.close()
     }
 
     fun monitorSong() {

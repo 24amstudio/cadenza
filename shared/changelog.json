@@ -2,6 +2,15 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.0.2",
+      "build": 4,
+      "changes": [
+        "Refines Host onboarding and hides playback controls when no song is active.",
+        "Opens Music automatically when Cadenza Host needs to read or control playback.",
+        "Shows the Lyrics control only when lyrics are available and identifies line and word timing support."
+      ]
+    },
+    {
       "version": "0.0.1",
       "build": 3,
       "changes": [

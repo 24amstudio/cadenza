@@ -9,11 +9,18 @@ struct HostConfiguration: Codable {
     var automaticUpdates = true
     var updates = UpdateConfiguration()
 
+    var isUsable: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && name.utf8.count <= 63
+            && storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil
+            && port in 1024...65_535
+    }
+
     static func load() -> HostConfiguration {
         if let data = UserDefaults.standard.data(forKey: "configuration"),
             let value = try? JSONDecoder().decode(HostConfiguration.self, from: data)
         {
-            return value
+            if value.isUsable { return value }
         }
         var defaults = HostConfiguration()
         if let url = Bundle.main.url(forResource: "release-config", withExtension: "json"),

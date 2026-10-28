@@ -50,6 +50,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17.0.21+9'
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: matrix.platform == 'remote'
+        with:
+          path: .cache/gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/remote/gradle/wrapper/gradle-wrapper.properties', 'apps/remote/gradle.properties', 'apps/remote/settings.gradle.kts', 'apps/remote/build.gradle.kts', 'apps/remote/app/build.gradle.kts') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
       - name: Restore Android release keystore
         if: matrix.platform == 'remote'
         env:
@@ -72,6 +79,7 @@ jobs:
           test -n "$CADENZA_KEYSTORE_PASSWORD"
           test -n "$CADENZA_KEY_ALIAS"
           test -n "$CADENZA_KEY_PASSWORD"
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           bash ./gradlew :app:assembleRelease -Pcadenza.profile=production --no-daemon
           version="$(awk -F= '$1 == "VERSION_NAME" {print $2}' ../../shared/version.properties | tr -d '\r')"
           mkdir -p ../../dist

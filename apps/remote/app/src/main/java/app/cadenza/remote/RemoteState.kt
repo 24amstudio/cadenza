@@ -21,6 +21,12 @@ data class Notice(
     val id: String = UUID.randomUUID().toString(),
 )
 
+data class DebugLogEntry(
+    val timestampMs: Long,
+    val title: String,
+    val message: String,
+)
+
 data class RemoteState(
     val loaded: Boolean = false,
     val clientName: String = "Android Remote",
@@ -46,6 +52,8 @@ data class RemoteState(
     val preparing: Boolean = false,
     val preparedSong: String? = null,
     val pending: Set<String> = emptySet(),
+    val lastCommandLatencyMs: Long? = null,
+    val clockUncertaintyMs: Long? = null,
     val statistics: List<SongStatistic> = emptyList(),
     val prompt: Prompt? = null,
     val notice: Notice? = null,
@@ -56,4 +64,5 @@ data class RemoteState(
     val stagedUpdate: String? = null,
     val changelog: String? = null,
     val comparingChanges: Boolean = false,
+    val debugLog: List<DebugLogEntry> = emptyList(),
 )

@@ -17,93 +17,35 @@ struct HostOnboarding: View {
     @State private var detectionTimeout: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            Text(title).font(.largeTitle.bold())
-            switch step {
-            case 0:
-                Text(
-                    "Control Music with Cadenza Host from your Android devices. Audio stays with Cadenza Host; pairing and controls stay on your local network."
-                )
-                Button("Get started") { step = 1 }.keyboardShortcut(.defaultAction)
-            case 1:
-                Text(
-                    "Apple Music access lets Cadenza try the storefront of your signed-in music account. If this no-fee build cannot read it, you can choose it yourself."
-                )
-                Button(busy ? "Detecting storefront…" : "Detect Apple Music storefront") { detectStorefront() }
-                    .disabled(busy)
-                if manualStorefront {
-                    Text(
-                        "Automatic detection is unavailable. Choose the country or region of your Apple Music subscription."
-                    )
-                    Picker("Apple Music storefront", selection: $model.configuration.storefront) {
-                        ForEach(
-                            Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 }.map { $0.lowercased() }
-                                .sorted(), id: \.self
-                        ) { code in
-                            Text(Locale.current.localizedString(forRegionCode: code.uppercased()) ?? code.uppercased())
-                                .tag(code)
-                        }
-                    }
-                } else if detectedStorefront {
-                    Text("Apple Music storefront: " + model.configuration.storefront.uppercased())
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 16) {
+                Image(systemName: step == 3 ? "qrcode" : "music.note.list")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 52, height: 52)
+                    .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title).font(.largeTitle.bold())
+                    Text("Step \(step + 1) of 4").foregroundStyle(.secondary)
                 }
-                if manualStorefront || detectedStorefront {
-                    Button(busy ? "Saving…" : "Continue") { saveStorefront() }.disabled(busy)
-                }
-            case 2:
-                Text(
-                    "Automation reads and controls Music. Accessibility verifies and edits its Playing Next queue. macOS asks you to approve access; Cadenza cannot grant it for you."
-                )
-                Button(busy ? "Checking Music…" : "Allow and check Music Automation") { checkAutomation() }.disabled(
-                    busy)
-                Label(
-                    automationVerified ? "Music Automation verified" : "Music Automation needs approval",
-                    systemImage: automationVerified ? "checkmark.circle" : "circle")
-                Button("Allow Accessibility") {
-                    (model.service?.music ?? MusicBridge()).accessibility.requestPermission()
-                }
-                Button("Check Accessibility") { accessibilityVerified = AXIsProcessTrusted() }
-                Label(
-                    accessibilityVerified
-                        ? "Accessibility verified" : "Approve Cadenza Host in Privacy & Security → Accessibility",
-                    systemImage: accessibilityVerified ? "checkmark.circle" : "circle")
-                Text(
-                    "Local network access is requested when Host starts listening. If it is denied, allow Cadenza Host in Privacy & Security → Local Network, then retry."
-                )
-                Button("Continue to pairing") {
-                    busy = true
-                    Task { @MainActor in
-                        defer { busy = false }
-                        await model.start()
-                        if model.running {
-                            model.service?.startObservation()
-                            step = 3
-                        }
-                    }
-                }.disabled(!automationVerified || !accessibilityVerified || busy)
-            default:
-                Text(
-                    "Open Cadenza Remote, scan a pairing QR, and keep the tablet connected. A verified connection appears below."
-                )
-                Button(model.running ? "Pair a Remote" : "Retry Host connection") {
-                    if model.running { model.pair() } else { Task { await model.start() } }
-                }.disabled(model.starting)
-                ForEach(model.connectedRemotes) { remote in
-                    Label(remote.name + " connected", systemImage: "checkmark.circle")
-                }
-                Button("Finish setup") {
-                    if model.finishOnboarding() { dismissWindow(id: "host") }
-                }.disabled(model.connectedRemotes.isEmpty || !model.running)
             }
-            Spacer(minLength: 0)
+            ProgressView(value: Double(step + 1), total: 4).padding(.top, 18)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    stepContent
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 26)
+            }
             HStack {
                 if step > 0 { Button("Back") { step -= 1 }.disabled(busy) }
                 Spacer()
-                Text("Step \(step + 1) of 4").foregroundStyle(.secondary)
+                if step < 3 { Text("You can change these settings later.").foregroundStyle(.secondary) }
             }
         }
-        .padding(32)
-        .frame(minWidth: 560, minHeight: 480)
+        .padding(36)
+        .frame(minWidth: 600, minHeight: 520)
+        .tint(.accentColor)
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification))
         { _ in
             accessibilityVerified = AXIsProcessTrusted()
@@ -111,6 +53,61 @@ struct HostOnboarding: View {
         .onDisappear {
             detectionTask?.cancel()
             detectionTimeout?.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var stepContent: some View {
+        switch step {
+        case 0:
+            Text("Control Music from your Android devices. Audio stays on this Mac, while pairing and controls stay on your local network.")
+                .font(.title3)
+            Button("Get started") { step = 1 }.keyboardShortcut(.defaultAction)
+        case 1:
+            Text("Cadenza uses your Apple Music storefront for catalog search. Detect it automatically or choose the region linked to your subscription.")
+            Button(busy ? "Detecting storefront…" : "Detect Apple Music storefront") { detectStorefront() }
+                .disabled(busy)
+            if manualStorefront {
+                Picker("Apple Music storefront", selection: $model.configuration.storefront) {
+                    ForEach(Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 }.map { $0.lowercased() }.sorted(), id: \.self) { code in
+                        Text(Locale.current.localizedString(forRegionCode: code.uppercased()) ?? code.uppercased()).tag(code)
+                    }
+                }
+                .frame(maxWidth: 320)
+            } else if detectedStorefront {
+                Label("Storefront: " + model.configuration.storefront.uppercased(), systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            if manualStorefront || detectedStorefront { Button(busy ? "Saving…" : "Continue") { saveStorefront() }.disabled(busy) }
+        case 2:
+            Text("Cadenza needs Automation to control Music and Accessibility to verify its Playing Next queue. macOS will ask for each permission.")
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button(busy ? "Checking Music…" : "Allow and check Music Automation") { checkAutomation() }.disabled(busy)
+                    Label(automationVerified ? "Music Automation verified" : "Music Automation needs approval", systemImage: automationVerified ? "checkmark.circle.fill" : "circle")
+                }
+            } label: { Label("Music control", systemImage: "music.note") }
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button("Allow Accessibility") { (model.service?.music ?? MusicBridge()).accessibility.requestPermission() }
+                    Button("Check Accessibility") { accessibilityVerified = AXIsProcessTrusted() }
+                    Label(accessibilityVerified ? "Accessibility verified" : "Approve Cadenza Host in Privacy & Security → Accessibility", systemImage: accessibilityVerified ? "checkmark.circle.fill" : "circle")
+                }
+            } label: { Label("Queue verification", systemImage: "list.bullet.rectangle") }
+            Text("Local Network access is requested when Host starts listening. If macOS blocks it, allow Cadenza Host in Privacy & Security → Local Network.").foregroundStyle(.secondary)
+            Button("Continue to pairing") {
+                busy = true
+                Task { @MainActor in
+                    defer { busy = false }
+                    await model.start()
+                    if model.running { model.service?.startObservation(); step = 3 }
+                }
+            }.disabled(!automationVerified || !accessibilityVerified || busy)
+        default:
+            Text("Open Cadenza Remote, scan a pairing QR, and keep it connected until the Host confirms the link.")
+            Button(model.running ? "Pair a Remote" : "Retry Host connection") { if model.running { model.pair() } else { Task { await model.start() } } }.disabled(model.starting)
+            ForEach(model.connectedRemotes) { remote in Label(remote.name + " connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+            Button("Finish setup") { if model.finishOnboarding() { dismissWindow(id: "host") } }.disabled(model.connectedRemotes.isEmpty || !model.running)
         }
     }
 

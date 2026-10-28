@@ -93,14 +93,29 @@ files = files.map((file) => file.replaceAll('\\', '/')).sort();
 
 const hash = createHash('sha256');
 
+/** @param {unknown} error @returns {boolean} */
+function isMissingFile(error) {
+  const fileError = /** @type {NodeJS.ErrnoException} */ (error);
+
+  return fileError.code === 'ENOENT';
+}
+
 for (const file of files) {
   const path = resolve(root, file);
 
-  if (!lstatSync(path).isFile())
-    throw new Error('Build identity requires regular source files.');
   hash.update(file.replaceAll('\\', '/'));
   hash.update('\0');
-  hash.update(readFileSync(path));
+
+  try {
+    if (!lstatSync(path).isFile())
+      throw new Error('Build identity requires regular source files.');
+    hash.update(readFileSync(path));
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+
+    hash.update('deleted');
+  }
+
   hash.update('\0');
 }
 

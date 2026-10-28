@@ -17,6 +17,7 @@ interface MusicLibrary {
 
 interface MusicApplication {
   running(): boolean;
+  launch(): void;
   playerState(): string;
   currentTrack(): MusicTrack;
   libraryPlaylists: ArrayLike<MusicLibrary>;
@@ -37,5 +38,7 @@ interface MusicApplication {
 }
 
 declare function Application(name: 'Music'): MusicApplication;
+
+declare function delay(seconds: number): void;
 
 declare var run: (argv: string[]) => string;

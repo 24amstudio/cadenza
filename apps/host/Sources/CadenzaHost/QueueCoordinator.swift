@@ -79,13 +79,17 @@ final class QueueCoordinator {
         publish()
     }
 
-    private func readState(deadline: Int64? = nil) async throws {
+    private func readState(deadline: Int64? = nil, includeQueue: Bool = true) async throws {
         let status = try await music.status(deadline: deadline)
         let now = monotonicMs()
         if primingLyrics && status.song?.identity != lastStatus?.song?.identity { primingLyrics = false }
-        if !primingLyrics { try? music.accessibility.showQueue(deadline: now + 250) }
-        let nativeRead =
-            primingLyrics ? .success(nativeRows) : Result { try music.accessibility.rows(deadline: deadline) }
+        if includeQueue, !primingLyrics { try? music.accessibility.showQueue(deadline: now + 250) }
+        let nativeRead: Result<[NativeQueueRow], Error> =
+            if !includeQueue || primingLyrics {
+                .success(nativeRows)
+            } else {
+                Result { try music.accessibility.rows(deadline: deadline) }
+            }
         let observed = (try? nativeRead.get()) ?? nativeRows
         guard observed.count <= 256, Set(observed.map(\.token)).count == observed.count else {
             throw CadenzaError.failure(
@@ -323,7 +327,11 @@ final class QueueCoordinator {
         }
         primingLyrics = false
         preparationToken = nil
-        try await readState(deadline: deadline)
+        // Playback state is independently readable from Music. Avoid an Accessibility
+        // queue walk for controls that cannot reorder or remove requests.
+        let needsQueueRead = action.kind.hasPrefix("queue.")
+            || action.kind == "playback.skip" || action.kind == "playback.previous"
+        try await readState(deadline: deadline, includeQueue: needsQueueRead)
         if action.kind.hasPrefix("queue.") {
             try music.accessibility.showQueue(deadline: deadline)
         }
@@ -388,7 +396,7 @@ final class QueueCoordinator {
                 try beforeEffect()
                 try await music.control(action, deadline: deadline)
             }
-            try await readState(deadline: deadline)
+            try await readState(deadline: deadline, includeQueue: needsQueueRead)
             try verifyPlayback(action, expectedEntry: plannedEntry)
             let result = try journal.result(command, outcome: "applied")
             try journal.finish(command, actor: actor, result: result)

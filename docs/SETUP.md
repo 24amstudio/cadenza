@@ -80,4 +80,4 @@ Reconnect Remotes to receive that configuration. A Remote does not silently acce
 
 Automatic checking, staging and installation run only in explicitly selected **Production** builds. Development and CI builds do not start them. Both apps can show bundled offline changes or perform an explicit read-only comparison with signed release notes; an empty configuration or offline failure never means newer releases were successfully checked.
 
-See [RELEASES.md](RELEASES.md) to create and sign the first release. Keep the APK signing identity and update-signing key for all later releases.
+See the [release instructions](agents/RELEASES.md) to create and sign the first release. Keep the APK signing identity and update-signing key for all later releases.

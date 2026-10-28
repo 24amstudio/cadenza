@@ -51,4 +51,4 @@ Host distributes one timed lyric document and English translation revision for t
 
 Credits have positive contiguous sequences per pairing. The first credit increments one occurrence's count only with positive observed time; later credits add playing time. Host excludes pauses and seek jumps. Remote commits aggregate and cursor changes before acknowledging. Duplicate or older credits remain ignored after raw cleanup, while a sequence gap requires replay.
 
-These contracts and portable tests do not establish native conformance. See [validation status](../../docs/VALIDATION.md).
+These contracts and portable tests do not establish native conformance. See [validation status](../../docs/agents/VALIDATION.md).

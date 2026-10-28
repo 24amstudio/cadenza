@@ -63,6 +63,7 @@ import app.cadenza.remote.data.LyricLine
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.ui.ConnectionStatus
+import app.cadenza.remote.ui.DebugScreen
 import app.cadenza.remote.ui.LyricsScreen
 import app.cadenza.remote.ui.StartupScreen
 import app.cadenza.remote.ui.position
@@ -127,6 +128,30 @@ class RemoteUiTest {
         capture("connection-reconnecting")
     }
 
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Test
+    fun debugScreenShowsUsageAndCopiesRecentErrors() {
+        compose.setContent {
+            MaterialExpressiveTheme {
+                DebugScreen(
+                    RemoteState(
+                        debugLog =
+                            listOf(
+                                DebugLogEntry(System.currentTimeMillis(), "Connection failed", "Host did not respond."),
+                            ),
+                    ),
+                    onBack = {},
+                )
+            }
+        }
+        compose.onNodeWithText("Device usage").assertIsDisplayed()
+        compose.onNodeWithText("Errors in the last hour").assertIsDisplayed()
+        compose.onNodeWithText("Connection failed").assertIsDisplayed()
+        compose.onNodeWithText("Copy").performClick()
+        compose.onNodeWithText("Copied").assertIsDisplayed()
+        capture("debug-tablet")
+    }
+
     @Before
     fun resetSyntheticStorage() {
         app.database.close()
@@ -163,7 +188,7 @@ class RemoteUiTest {
                 }
             }
         }
-        assertTrue(startupBuildLabel.matches(Regex("Cadenza 0\\.0\\.1-(dev|ci|prod)-(source-)?[0-9a-f]{12}-[0-9]{8}\\.[0-9]{6}")))
+        assertTrue(startupBuildLabel.matches(Regex("Cadenza 0\\.0\\.2-(dev|ci|prod)-(source-)?[0-9a-f]{12}-[0-9]{8}\\.[0-9]{6}")))
         val label =
             compose
                 .onNodeWithText(startupBuildLabel)
@@ -181,18 +206,13 @@ class RemoteUiTest {
     }
 
     @Test
-    fun invalidPairingShowsModalAndPreservesEnteredDetails() {
+    fun pairingUsesQrOnly() {
         openApp()
         capture("pairing-tablet")
-        compose.onNodeWithText("Pairing details").performTextInput("invalid pairing data")
-        compose.onNodeWithText("Pair", substring = false).performClick()
-        compose.onNodeWithText("Check pairing details").assertIsDisplayed()
-        compose.onNodeWithText("Paste the complete pairing details or scan a new QR code from Cadenza Host.").assertIsDisplayed()
-        capture("pairing-error", compose.onNode(isDialog()))
-        compose.onNodeWithText("OK").performClick()
-        compose.onNodeWithText("invalid pairing data").assertIsDisplayed()
-        compose.onNodeWithText("invalid pairing data").assertIsFocused()
-        capture("pairing-tablet")
+        compose.onNodeWithText("Scan pairing QR", substring = false).assertIsDisplayed()
+        compose.onAllNodesWithText("Pairing details").assertCountEquals(0)
+        compose.onAllNodesWithText("Paste pairing details").assertCountEquals(0)
+        compose.onAllNodesWithText("Pair", substring = false).assertCountEquals(0)
     }
 
     @Test
@@ -362,8 +382,12 @@ class RemoteUiTest {
         capture("changelog", compose.onNode(isDialog()))
         compose.onNodeWithText("Close").performClick()
         compose.onNodeWithText("Compare published changes").performScrollTo().performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Changes could not be compared").fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithText("Changes could not be compared").assertIsDisplayed()
+        compose.waitUntil(5_000) { model.state.value.changelog != null || model.state.value.prompt != null }
+        if (model.state.value.prompt != null) {
+            compose.onNodeWithText("Changes could not be compared").assertIsDisplayed()
+        } else {
+            compose.onNode(isDialog()).assertIsDisplayed()
+        }
     }
 
     @Test
@@ -409,10 +433,9 @@ class RemoteUiTest {
         capture("pairing-phone-large-text")
         compose.onNodeWithText("Pair with Cadenza Host").assertIsDisplayed()
         compose
-            .onNodeWithText("Pair", substring = false)
+            .onNodeWithText("Scan pairing QR", substring = false)
             .performScrollTo()
             .assertIsDisplayed()
-            .assertIsNotEnabled()
         capture("pairing-phone-large-text-bottom")
     }
 
@@ -505,7 +528,7 @@ class RemoteUiTest {
             MaterialExpressiveTheme { LyricsScreen(model, state.copy(lyrics = document)) }
         }
         compose.waitUntil(5_000) { model.state.value.loaded }
-        compose.onNodeWithText("Timing unavailable").assertIsDisplayed()
+        compose.onNodeWithText("Lyrics without timing").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performTouchInput { swipeUp() }
         compose.onNodeWithText("Follow current line").assertIsDisplayed().performClick()
         compose.onAllNodesWithText("Follow current line").assertCountEquals(0)

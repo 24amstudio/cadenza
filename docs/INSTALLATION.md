@@ -1,6 +1,6 @@
 # Install Cadenza
 
-The repository contains source and a locally built Android development APK. No stable Host/Remote release has been published. The development APK passes build, signature, and alignment checks; installation on a target Android device and real Music control remain unverified. To build a stable release, follow [BUILDING.md](BUILDING.md) and [RELEASES.md](RELEASES.md), including the remaining [validation gates](VALIDATION.md).
+The repository contains source and native validation evidence; no packaged APK or stable Host/Remote release is present in this checkout. The user reports an installed Remote, but this workspace has no ADB or device evidence and real Music control remains unverified. To build a release, follow [BUILDING.md](BUILDING.md) and the [release instructions](agents/RELEASES.md), including the remaining [validation gates](agents/VALIDATION.md).
 
 ## Requirements
 
@@ -36,17 +36,17 @@ Initial installation permission for your browser or Files app is separate from a
 
 ## Install the current development APK
 
-When listed as built in [VALIDATION.md](VALIDATION.md), the local file is `F:\Development\cadenza\dist\Cadenza-Remote-0.0.1-dev.apk`, with a companion `.sha256` file. Copy it to the Android device and open it in Files. Its preserved application ID is `app.cadence.remote.debug`, separately from stable and CI installs. Its updater is disabled. Updating a previously installed Cadence debug APK requires the same original debug keystore; do not uninstall or clear data if you want to retain it.
+After a development APK is built, record its exact path and SHA-256 in [agents/VALIDATION.md](agents/VALIDATION.md), then copy it to the Android device and open it in Files. Its preserved application ID is `app.cadence.remote.debug`, separately from stable and CI installs. Its updater is disabled. Updating a previously installed debug APK requires the same original debug keystore; do not uninstall or clear data if you want to retain it.
 
 If the Android device is connected by USB with USB debugging enabled and its authorization prompt accepted, the already installed command-line tools can install it:
 
 ```bat
 call tools\windows-env.cmd
 "%ANDROID_HOME%\platform-tools\adb.exe" devices -l
-"%ANDROID_HOME%\platform-tools\adb.exe" install -r "F:\Development\cadenza\dist\Cadenza-Remote-0.0.1-dev.apk"
+"%ANDROID_HOME%\platform-tools\adb.exe" install -r "<path-to-built-development-apk>"
 ```
 
-Run these commands from the monorepo root. No target Android device was attached during this build session; the install command has not been executed. Host must be built and running before pairing can succeed.
+Run these commands from the monorepo root. The current workspace has no ADB session, so the install command has not been independently executed here. Host must be built and running before pairing can succeed.
 
 ## Continue setup
 

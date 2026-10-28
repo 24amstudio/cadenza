@@ -24,7 +24,10 @@ import androidx.compose.ui.unit.dp
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
+import app.cadenza.remote.checkUpdates
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.dismissChangelog
+import app.cadenza.remote.showChangelog
 
 @Composable
 fun SettingsScreen(
@@ -34,6 +37,11 @@ fun SettingsScreen(
 ) {
     var name by rememberSaveable(state.clientName) { mutableStateOf(state.clientName) }
     var theme by rememberSaveable(state.theme) { mutableStateOf(state.theme) }
+    var debugOpen by rememberSaveable { mutableStateOf(false) }
+    if (debugOpen) {
+        DebugScreen(state, onBack = { debugOpen = false })
+        return
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -51,6 +59,16 @@ fun SettingsScreen(
                 ActionButton("Save preferences", pending = state.savingPreferences, enabled = name.isNotBlank()) {
                     model.savePreferences(name, theme)
                 }
+            }
+        }
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Support", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Inspect device usage and recent errors without sending diagnostics anywhere.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ActionButton("Open Debug") { debugOpen = true }
             }
         }
         Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 @MainActor
 final class HostService {
@@ -26,6 +27,7 @@ final class HostService {
     private var listenerRecovery: Task<Void, Never>?
     private var serviceRunning = false
     private var lastPublished: HostSnapshot?
+    private let latencyLog = Logger(subsystem: "app.cadence.host", category: "latency")
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onDevicesChanged: (() -> Void)?
     var onIssue: ((String) -> Void)?
@@ -195,6 +197,7 @@ final class HostService {
     }
 
     private func receive(_ frame: Frame, from peer: NetworkService.Peer) {
+        let receivedAt = monotonicMs()
         do {
             if !peer.authenticated {
                 try authenticate(frame, peer: peer)
@@ -223,7 +226,7 @@ final class HostService {
             case "clock": try clock(frame, peer: peer)
             case "state.get": network.send(Frame(type: "state", snapshot: try queue.snapshot()), to: peer)
             case "analytics.ack": try acknowledge(frame, peer: peer, actor: actor)
-            case "command": command(frame, peer: peer, actor: actor)
+            case "command": command(frame, peer: peer, actor: actor, receivedAt: receivedAt)
             case "command.status":
                 let queued =
                     receivedCommands.contains(actor + (frame.commandId ?? ""))
@@ -296,14 +299,22 @@ final class HostService {
         network.send(Frame(type: "clock", requestId: frame.requestId, clock: sample), to: peer)
     }
 
-    private func command(_ frame: Frame, peer: NetworkService.Peer, actor: String) {
+    private func command(_ frame: Frame, peer: NetworkService.Peer, actor: String, receivedAt: Int64) {
         let reservation = actor + (frame.commandId ?? "")
         receivedCommands.insert(reservation)
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.receivedCommands.remove(reservation) }
             do {
+                let startedAt = monotonicMs()
                 let result = try await self.queue.execute(frame, actor: actor)
+                let completedAt = monotonicMs()
+                let latencyMessage =
+                    "command_id=\(frame.commandId ?? "unknown")"
+                        + " received=\(receivedAt)"
+                        + " started=\(startedAt)"
+                        + " completed=\(completedAt)"
+                self.latencyLog.debug("\(latencyMessage, privacy: .public)")
                 self.network.send(result, to: peer)
             } catch { self.fail(error, request: frame, peer: peer) }
         }

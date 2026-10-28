@@ -83,6 +83,13 @@ fun DebugScreen(
             }
         }
         Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Connection timing", style = MaterialTheme.typography.titleLarge)
+                StatRow("Last command round trip", state.lastCommandLatencyMs?.let { "$it ms" } ?: "No sample yet")
+                StatRow("Clock uncertainty", state.clockUncertaintyMs?.let { "≤ $it ms" } ?: "Synchronizing")
+            }
+        }
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Errors in the last hour", style = MaterialTheme.typography.titleLarge)

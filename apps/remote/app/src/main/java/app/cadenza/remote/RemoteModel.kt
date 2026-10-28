@@ -377,6 +377,7 @@ class RemoteModel(
         clockJob?.cancel()
         connection?.disconnect()
         connection = null
+        clock.reset()
         searchTimeout?.cancel()
         preparationTimeout?.cancel()
         lyricsTimeout?.cancel()
@@ -413,7 +414,7 @@ class RemoteModel(
                     sample.counter("sent_at_host_ms"),
                     SystemClock.elapsedRealtime(),
                 )
-                mutable.update { it.copy(clockUncertaintyMs = clock.uncertaintyMs.takeIf { value -> clock.ready }) }
+                mutable.update { it.copy(clockUncertaintyMs = clock.uncertaintyMs.takeIf { clock.ready }) }
             }
             "search.result" ->
                 if (frame.nullableString("request_id") == searchId) {
@@ -829,9 +830,9 @@ class RemoteModel(
             check(
                 clock.hostTime(SystemClock.elapsedRealtime()) < command.counter("expires_at_host_ms"),
             ) { "This request expired before it was sent." }
+            pending[commandId]?.sentAtElapsedMs = SystemClock.elapsedRealtime()
             sent = transport.send(command)
             check(sent) { "The connection closed before the request was sent." }
-            pending[commandId]?.sentAtElapsedMs = SystemClock.elapsedRealtime()
         } catch (error: Exception) {
             if (!sent && createdId != null) {
                 pending.remove(createdId)?.timer?.cancel()

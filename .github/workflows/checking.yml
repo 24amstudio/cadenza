@@ -58,7 +58,8 @@ jobs:
       - run: bash tools/ci/android-sdk.sh
       - name: Run Remote checks
         run: |
-          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           bash apps/remote/check.sh
 
   host:

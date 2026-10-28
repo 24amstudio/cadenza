@@ -13,7 +13,8 @@ struct HostConfiguration: Codable {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && name.utf8.count <= 63
             && storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil
-            && port in 1024...65_535
+            && port >= 1024
+            && port <= 65_535
     }
 
     static func load() -> HostConfiguration {

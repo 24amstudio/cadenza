@@ -46,8 +46,9 @@ struct HostOnboarding: View {
         .padding(36)
         .frame(minWidth: 600, minHeight: 520)
         .tint(.accentColor)
-        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification))
-        { _ in
+        .onReceive(
+            NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)
+        ) { _ in
             accessibilityVerified = AXIsProcessTrusted()
         }
         .onDisappear {
@@ -60,54 +61,109 @@ struct HostOnboarding: View {
     private var stepContent: some View {
         switch step {
         case 0:
-            Text("Control Music from your Android devices. Audio stays on this Mac, while pairing and controls stay on your local network.")
-                .font(.title3)
+            Text(
+                "Control Music from your Android devices. Audio stays on this Mac, while pairing and controls stay "
+                    + "on your local network."
+            )
+            .font(.title3)
             Button("Get started") { step = 1 }.keyboardShortcut(.defaultAction)
         case 1:
-            Text("Cadenza uses your Apple Music storefront for catalog search. Detect it automatically or choose the region linked to your subscription.")
+            Text(
+                "Cadenza uses your Apple Music storefront for catalog search. Detect it automatically or choose "
+                    + "the region linked to your subscription."
+            )
             Button(busy ? "Detecting storefront…" : "Detect Apple Music storefront") { detectStorefront() }
                 .disabled(busy)
             if manualStorefront {
                 Picker("Apple Music storefront", selection: $model.configuration.storefront) {
-                    ForEach(Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 }.map { $0.lowercased() }.sorted(), id: \.self) { code in
-                        Text(Locale.current.localizedString(forRegionCode: code.uppercased()) ?? code.uppercased()).tag(code)
+                    ForEach(
+                        Locale.Region.isoRegions
+                            .map(\.identifier)
+                            .filter { $0.count == 2 }
+                            .map { $0.lowercased() }
+                            .sorted(),
+                        id: \.self
+                    ) { code in
+                        Text(
+                            Locale.current.localizedString(forRegionCode: code.uppercased()) ?? code.uppercased()
+                        )
+                        .tag(code)
                     }
                 }
                 .frame(maxWidth: 320)
             } else if detectedStorefront {
-                Label("Storefront: " + model.configuration.storefront.uppercased(), systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                Label(
+                    "Storefront: " + model.configuration.storefront.uppercased(),
+                    systemImage: "checkmark.circle.fill"
+                )
+                .foregroundStyle(.green)
             }
-            if manualStorefront || detectedStorefront { Button(busy ? "Saving…" : "Continue") { saveStorefront() }.disabled(busy) }
+            if manualStorefront || detectedStorefront {
+                Button(busy ? "Saving…" : "Continue") { saveStorefront() }.disabled(busy)
+            }
         case 2:
-            Text("Cadenza needs Automation to control Music and Accessibility to verify its Playing Next queue. macOS will ask for each permission.")
+            Text(
+                "Cadenza needs Automation to control Music and Accessibility to verify its Playing Next queue. "
+                    + "macOS will ask for each permission."
+            )
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Button(busy ? "Checking Music…" : "Allow and check Music Automation") { checkAutomation() }.disabled(busy)
-                    Label(automationVerified ? "Music Automation verified" : "Music Automation needs approval", systemImage: automationVerified ? "checkmark.circle.fill" : "circle")
+                    Button(busy ? "Checking Music…" : "Allow and check Music Automation") { checkAutomation() }
+                        .disabled(busy)
+                    Label(
+                        automationVerified ? "Music Automation verified" : "Music Automation needs approval",
+                        systemImage: automationVerified ? "checkmark.circle.fill" : "circle"
+                    )
                 }
             } label: { Label("Music control", systemImage: "music.note") }
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Button("Allow Accessibility") { (model.service?.music ?? MusicBridge()).accessibility.requestPermission() }
+                    Button("Allow Accessibility") {
+                        (model.service?.music ?? MusicBridge()).accessibility.requestPermission()
+                    }
                     Button("Check Accessibility") { accessibilityVerified = AXIsProcessTrusted() }
-                    Label(accessibilityVerified ? "Accessibility verified" : "Approve Cadenza Host in Privacy & Security → Accessibility", systemImage: accessibilityVerified ? "checkmark.circle.fill" : "circle")
+                    Label(
+                        accessibilityVerified
+                            ? "Accessibility verified"
+                            : "Approve Cadenza Host in Privacy & Security → Accessibility",
+                        systemImage: accessibilityVerified ? "checkmark.circle.fill" : "circle"
+                    )
                 }
             } label: { Label("Queue verification", systemImage: "list.bullet.rectangle") }
-            Text("Local Network access is requested when Host starts listening. If macOS blocks it, allow Cadenza Host in Privacy & Security → Local Network.").foregroundStyle(.secondary)
+            Text(
+                "Local Network access is requested when Host starts listening. If macOS blocks it, allow Cadenza Host "
+                    + "in Privacy & Security → Local Network."
+            )
+            .foregroundStyle(.secondary)
             Button("Continue to pairing") {
                 busy = true
                 Task { @MainActor in
                     defer { busy = false }
                     await model.start()
-                    if model.running { model.service?.startObservation(); step = 3 }
+                    if model.running {
+                        model.service?.startObservation()
+                        step = 3
+                    }
                 }
             }.disabled(!automationVerified || !accessibilityVerified || busy)
         default:
             Text("Open Cadenza Remote, scan a pairing QR, and keep it connected until the Host confirms the link.")
-            Button(model.running ? "Pair a Remote" : "Retry Host connection") { if model.running { model.pair() } else { Task { await model.start() } } }.disabled(model.starting)
-            ForEach(model.connectedRemotes) { remote in Label(remote.name + " connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-            Button("Finish setup") { if model.finishOnboarding() { dismissWindow(id: "host") } }.disabled(model.connectedRemotes.isEmpty || !model.running)
+            Button(model.running ? "Pair a Remote" : "Retry Host connection") {
+                if model.running {
+                    model.pair()
+                } else {
+                    Task { await model.start() }
+                }
+            }
+            .disabled(model.starting)
+            ForEach(model.connectedRemotes) { remote in
+                Label(remote.name + " connected", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            Button("Finish setup") {
+                if model.finishOnboarding() { dismissWindow(id: "host") }
+            }
+            .disabled(model.connectedRemotes.isEmpty || !model.running)
         }
     }
 
@@ -129,7 +185,8 @@ struct HostOnboarding: View {
             }
             let status =
                 MusicAuthorization.currentStatus == .notDetermined
-                ? await MusicAuthorization.request() : MusicAuthorization.currentStatus
+                    ? await MusicAuthorization.request()
+                    : MusicAuthorization.currentStatus
             guard !Task.isCancelled, detectionAttempt == attempt else { return }
             guard status == .authorized else {
                 manualStorefront = true
@@ -145,7 +202,9 @@ struct HostOnboarding: View {
                 model.configuration.storefront = code
                 detectedStorefront = true
                 manualStorefront = false
-            } catch { if detectionAttempt == attempt { manualStorefront = true } }
+            } catch {
+                if detectionAttempt == attempt { manualStorefront = true }
+            }
         }
         detectionTimeout = Task { @MainActor in
             try? await Task.sleep(for: .seconds(15))
@@ -181,7 +240,8 @@ struct HostOnboarding: View {
                 automationVerified = false
                 model.showError(
                     "Allow Music Automation",
-                    error.localizedDescription + " Check Privacy & Security → Automation, then retry.")
+                    error.localizedDescription + " Check Privacy & Security → Automation, then retry."
+                )
             }
         }
     }

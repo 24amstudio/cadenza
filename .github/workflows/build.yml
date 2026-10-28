@@ -79,7 +79,8 @@ jobs:
           test -n "$CADENZA_KEYSTORE_PASSWORD"
           test -n "$CADENZA_KEY_ALIAS"
           test -n "$CADENZA_KEY_PASSWORD"
-          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           bash ./gradlew :app:assembleRelease -Pcadenza.profile=production --no-daemon
           version="$(awk -F= '$1 == "VERSION_NAME" {print $2}' ../../shared/version.properties | tr -d '\r')"
           mkdir -p ../../dist

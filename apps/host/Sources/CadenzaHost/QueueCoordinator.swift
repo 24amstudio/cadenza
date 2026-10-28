@@ -329,8 +329,10 @@ final class QueueCoordinator {
         preparationToken = nil
         // Playback state is independently readable from Music. Avoid an Accessibility
         // queue walk for controls that cannot reorder or remove requests.
-        let needsQueueRead = action.kind.hasPrefix("queue.")
-            || action.kind == "playback.skip" || action.kind == "playback.previous"
+        let needsQueueRead =
+            action.kind.hasPrefix("queue.")
+            || action.kind == "playback.skip"
+            || action.kind == "playback.previous"
         try await readState(deadline: deadline, includeQueue: needsQueueRead)
         if action.kind.hasPrefix("queue.") {
             try music.accessibility.showQueue(deadline: deadline)

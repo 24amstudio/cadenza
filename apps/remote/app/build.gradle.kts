@@ -29,6 +29,9 @@ val releaseSigningAvailable =
     listOf(releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
 val buildProfile = providers.gradleProperty("cadenza.profile").getOrElse("development")
 check(buildProfile in listOf("development", "ci", "production")) { "Unknown Cadenza build profile." }
+check(buildProfile != "production" || releaseSigningAvailable) {
+    "Set CADENZA_KEYSTORE_PATH, CADENZA_KEYSTORE_PASSWORD, CADENZA_KEY_ALIAS, and CADENZA_KEY_PASSWORD for a signed release."
+}
 check(buildProfile != "production" || providers.environmentVariable("CI").orNull != "true") {
     "Checking and Build CI must not enable Production updates."
 }
@@ -202,13 +205,6 @@ androidComponents.beforeVariants(androidComponents.selector().withBuildType("rel
 
 androidComponents.onVariants { variant ->
     variant.sources.assets?.addGeneratedSourceDirectory(generateCadenzaAssets, GenerateCadenzaAssets::outputDirectory)
-}
-tasks.matching { it.name == "packageRelease" }.configureEach {
-    doFirst {
-        check(releaseSigningAvailable) {
-            "Set CADENZA_KEYSTORE_PATH, CADENZA_KEYSTORE_PASSWORD, CADENZA_KEY_ALIAS, and CADENZA_KEY_PASSWORD for a signed release."
-        }
-    }
 }
 
 dependencies {

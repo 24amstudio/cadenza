@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -58,7 +59,7 @@ final class HostCache: Sendable {
             try data.write(to: temporary, options: [.atomic])
             let destination = mediaDirectory.appendingPathComponent(filename)
             if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
             } else {
                 try FileManager.default.moveItem(at: temporary, to: destination)
             }

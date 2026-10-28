@@ -14,7 +14,8 @@ enum LRCParser {
             return nil
         }
         let lines = plain.split(whereSeparator: \.isNewline).enumerated().map { index, text in
-            LyricLine(id: "lrclib-\(index)", text: String(text).trimmingCharacters(in: .whitespaces), startMs: 0, endMs: 0)
+            LyricLine(
+                id: "lrclib-\(index)", text: String(text).trimmingCharacters(in: .whitespaces), startMs: 0, endMs: 0)
         }.filter { !$0.text.isEmpty }
         guard !lines.isEmpty else { return nil }
         return LyricDocument(
@@ -28,19 +29,24 @@ enum LRCParser {
             let line = String(raw)
             let matches = lineMatches(in: line)
             guard let first = matches.first, let range = Range(first.range, in: line),
-                let start = timestamp(String(line[range])) else { continue }
+                let start = timestamp(String(line[range]))
+            else { continue }
             let content = String(line[range.upperBound...])
                 .replacingOccurrences(
-                    of: #"\[\d{1,3}:\d{2}(?:\.\d{1,3})?\]"#, with: "", options: .regularExpression)
+                    of: #"\[\d{1,3}:\d{2}(?:\.\d{1,3})?\]"#, with: "", options: .regularExpression
+                )
                 .trimmingCharacters(in: .whitespaces)
             let words = parseWords(content, lineStart: start)
-            let cleaned = words.isEmpty
+            let cleaned =
+                words.isEmpty
                 ? content.replacingOccurrences(
                     of: #"<\d{1,3}:\d{2}(?:\.\d{1,3})?>"#, with: "", options: .regularExpression)
                 : words.map(\.text).joined(separator: " ")
             if !cleaned.isEmpty { parsed.append((start, cleaned, words)) }
             for extra in matches.dropFirst() {
-                guard let extraRange = Range(extra.range, in: line), let extraStart = timestamp(String(line[extraRange])) else { continue }
+                guard let extraRange = Range(extra.range, in: line),
+                    let extraStart = timestamp(String(line[extraRange]))
+                else { continue }
                 if !cleaned.isEmpty { parsed.append((extraStart, cleaned, words)) }
             }
         }
@@ -49,7 +55,8 @@ enum LRCParser {
             let end = index + 1 < sorted.count ? sorted[index + 1].0 : (durationMs ?? item.0 + 4_000)
             var words = item.2
             if let last = words.indices.last { words[last].endMs = max(words[last].endMs, end) }
-            return LyricLine(id: "lrclib-\(index)", text: item.1, startMs: item.0, endMs: max(item.0, end), words: words)
+            return LyricLine(
+                id: "lrclib-\(index)", text: item.1, startMs: item.0, endMs: max(item.0, end), words: words)
         }
     }
 
@@ -57,12 +64,15 @@ enum LRCParser {
         let matches = wordMatches(in: text)
         guard !matches.isEmpty else { return [] }
         return matches.enumerated().compactMap { index, match in
-            guard let timestampRange = Range(match.range, in: text), let start = timestamp(String(text[timestampRange])) else { return nil }
-            let next = index + 1 < matches.count
+            guard let timestampRange = Range(match.range, in: text), let start = timestamp(String(text[timestampRange]))
+            else { return nil }
+            let next =
+                index + 1 < matches.count
                 ? timestamp(String(text[Range(matches[index + 1].range, in: text)!]))
                 : nil
             let end = next ?? start + 500
-            let upper = index + 1 < matches.count ? Range(matches[index + 1].range, in: text)!.lowerBound : text.endIndex
+            let upper =
+                index + 1 < matches.count ? Range(matches[index + 1].range, in: text)!.lowerBound : text.endIndex
             let value = String(text[timestampRange.upperBound..<upper]).trimmingCharacters(in: .whitespaces)
             guard !value.isEmpty else { return nil }
             return LyricWord(text: value, startMs: max(lineStart, start), endMs: max(start, end))
@@ -71,7 +81,9 @@ enum LRCParser {
 
     private static func timestamp(_ value: String) -> Int64? {
         let numbers = value.filter { $0.isNumber || $0 == ":" || $0 == "." }.split(separator: ":")
-        guard numbers.count == 2, let minutes = Int64(numbers[0]), let seconds = Double(numbers[1]), seconds < 60 else { return nil }
+        guard numbers.count == 2, let minutes = Int64(numbers[0]), let seconds = Double(numbers[1]), seconds < 60 else {
+            return nil
+        }
         return minutes * 60_000 + Int64((seconds * 1_000).rounded())
     }
 

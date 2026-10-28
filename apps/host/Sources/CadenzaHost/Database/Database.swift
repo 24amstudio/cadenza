@@ -55,8 +55,9 @@ final class Database {
         let components = name.split(separator: "/", omittingEmptySubsequences: true)
         let file = components.last.map(String.init) ?? name
         let folder = components.dropLast().joined(separator: "/")
-        guard let url = HostResources.bundle.url(
-            forResource: file, withExtension: "sql", subdirectory: "storage/" + folder)
+        guard
+            let url = HostResources.bundle.url(
+                forResource: file, withExtension: "sql", subdirectory: "storage/" + folder)
         else {
             throw CadenzaError.failure("storage", "The database migration is missing from this build.")
         }

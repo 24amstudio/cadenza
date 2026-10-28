@@ -17,7 +17,9 @@ final class LRCLIBHTTP: NSObject, URLSessionTaskDelegate, Sendable {
         }
         var data = Data()
         for try await byte in bytes {
-            guard data.count < maximum else { throw CadenzaError.failure("lyrics_provider", "The lyric response is too large.") }
+            guard data.count < maximum else {
+                throw CadenzaError.failure("lyrics_provider", "The lyric response is too large.")
+            }
             data.append(byte)
         }
         return (data, response)

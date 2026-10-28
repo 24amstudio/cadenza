@@ -97,7 +97,9 @@ struct ProtocolTests {
         let record = LRCLIBRecord(
             trackName: "Other", artistName: "Example Artist", albumName: nil, duration: 180,
             instrumental: false, plainLyrics: "text", syncedLyrics: nil)
-        #expect(!record.matches(Song(source: "catalog", id: "1", title: "Example", artist: "Example Artist", durationMs: 180_000)))
+        #expect(
+            !record.matches(
+                Song(source: "catalog", id: "1", title: "Example", artist: "Example Artist", durationMs: 180_000)))
     }
 
     @Test func artworkProviderAcceptsOnlyAppleCdnArtworkURLs() {

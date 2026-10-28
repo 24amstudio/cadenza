@@ -43,7 +43,8 @@ final class HostModel {
             self.service = service
             if service.store.database.wasCreated {
                 notify("Host storage was recreated. Pair your Remotes again.")
-                service.logger.log(.warning, category: "storage", action: "database.recreated", "Host database was recreated")
+                service.logger.log(
+                    .warning, category: "storage", action: "database.recreated", "Host database was recreated")
             }
             service.onSnapshot = { [weak self] value in self?.snapshot = value }
             service.onDevicesChanged = { [weak self] in self?.refreshDevices() }
@@ -62,7 +63,9 @@ final class HostModel {
             refreshCacheStats()
             checkPreviousInstallation()
         } catch {
-            service?.logger.log(.error, category: "host.lifecycle", action: "service.start.failed", "Host could not start", metadata: ["error": error.localizedDescription])
+            service?.logger.log(
+                .error, category: "host.lifecycle", action: "service.start.failed", "Host could not start",
+                metadata: ["error": error.localizedDescription])
             service?.stop()
             service = nil
             running = false
@@ -116,7 +119,9 @@ final class HostModel {
                 scheduleUpdates()
                 notify("Settings saved.")
             } catch {
-                service?.logger.log(.error, category: "settings", action: "settings.save.failed", "Settings could not be saved", metadata: ["error": error.localizedDescription])
+                service?.logger.log(
+                    .error, category: "settings", action: "settings.save.failed", "Settings could not be saved",
+                    metadata: ["error": error.localizedDescription])
                 running = service?.network.ready ?? false
                 showError("Could not save settings", error.localizedDescription)
             }

@@ -57,7 +57,9 @@ actor Lyrics {
         }
         if !fallbackProviders.isEmpty,
             let data = try? JSONEncoder().encode(ProviderMiss(checkedAtMs: wallMs()))
-        { try? await disk.put(data, for: "lyrics-miss:" + key, kind: "provider") }
+        {
+            try? await disk.put(data, for: "lyrics-miss:" + key, kind: "provider")
+        }
         throw unavailable()
     }
 

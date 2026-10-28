@@ -11,14 +11,16 @@ struct HostConfiguration: Codable {
     var updates = UpdateConfiguration()
 
     enum CodingKeys: String, CodingKey {
-        case name, port, storefront, advertisedAddress, automaticUpdates, lyricsProviderEnabled, cacheLimitBytes, updates
+        case name, port, storefront, advertisedAddress, automaticUpdates, lyricsProviderEnabled, cacheLimitBytes,
+            updates
     }
 
     init() {}
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        name = try values.decodeIfPresent(String.self, forKey: .name) ?? (Host.current().localizedName ?? "Cadenza Host")
+        name =
+            try values.decodeIfPresent(String.self, forKey: .name) ?? (Host.current().localizedName ?? "Cadenza Host")
         port = try values.decodeIfPresent(UInt16.self, forKey: .port) ?? 43127
         storefront = try values.decodeIfPresent(String.self, forKey: .storefront) ?? "us"
         advertisedAddress = try values.decodeIfPresent(String.self, forKey: .advertisedAddress) ?? ""
@@ -44,7 +46,7 @@ struct HostConfiguration: Codable {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && name.utf8.count <= 63
             && storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil
-            && port in 1024...65_535
+            && (1024...65_535).contains(port)
             && cacheLimitBytes >= 64 * 1_048_576
             && cacheLimitBytes <= 1_024 * 1_048_576
     }

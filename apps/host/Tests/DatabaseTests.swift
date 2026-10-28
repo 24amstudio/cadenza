@@ -6,7 +6,8 @@ import Testing
 @MainActor
 struct DatabaseTests {
     @Test func hostCachePersistsAndReportsUsage() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-cache-" + UUID().uuidString)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-cache-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
         let cache = try HostCache(
@@ -22,13 +23,15 @@ struct DatabaseTests {
     }
 
     @Test func missingMediaIsRemovedFromCacheIndex() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cadenza-media-" + UUID().uuidString)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-media-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
         let media = directory.appendingPathComponent("media")
         let cache = try HostCache(database: database, mediaDirectory: media, limitBytes: 256 * 1_048_576)
         try cache.put(Data([1, 2, 3]), for: "artwork:catalog:123", kind: "artwork")
-        let file = try #require(FileManager.default.contentsOfDirectory(at: media, includingPropertiesForKeys: nil).first)
+        let file = try #require(
+            FileManager.default.contentsOfDirectory(at: media, includingPropertiesForKeys: nil).first)
         try FileManager.default.removeItem(at: file)
         #expect(try cache.data(for: "artwork:catalog:123") == nil)
         #expect(try cache.stats().entries == 0)

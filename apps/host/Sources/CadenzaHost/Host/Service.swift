@@ -217,7 +217,9 @@ final class HostService {
 
     private func receive(_ frame: Frame, from peer: NetworkService.Peer) {
         let receivedAt = monotonicMs()
-        logger.log(.debug, category: "protocol", action: "frame.received", "Received frame", remoteVersion: peer.remoteVersion, metadata: ["type": frame.type])
+        logger.log(
+            .debug, category: "protocol", action: "frame.received", "Received frame", remoteVersion: peer.remoteVersion,
+            metadata: ["type": frame.type])
         do {
             if !peer.authenticated {
                 try authenticate(frame, peer: peer)
@@ -247,7 +249,8 @@ final class HostService {
                 guard let action = frame.logAction, let level = frame.logLevel,
                     let message = frame.logMessage, let logLevel = HostLogLevel(rawValue: level)
                 else { throw CadenzaError.failure("invalid_command", "Invalid log report.") }
-                logger.log(logLevel, category: "remote", action: action, message,
+                logger.log(
+                    logLevel, category: "remote", action: action, message,
                     source: "remote", remoteVersion: peer.remoteVersion)
             case "artwork.get": loadArtwork(peer: peer, requestId: frame.requestId, url: frame.artworkUrl)
             case "clock": try clock(frame, peer: peer)
@@ -491,7 +494,9 @@ final class HostService {
 
     private func fail(_ error: Error, request: Frame, peer: NetworkService.Peer) {
         let code = (error as? CadenzaError)?.code ?? "unavailable"
-        logger.log(.warning, category: "protocol", action: "request.failed", "Request failed", remoteVersion: peer.remoteVersion, metadata: ["type": request.type, "code": code])
+        logger.log(
+            .warning, category: "protocol", action: "request.failed", "Request failed",
+            remoteVersion: peer.remoteVersion, metadata: ["type": request.type, "code": code])
         if request.type == "command" {
             do {
                 let phase = try store.database.query(

@@ -16,7 +16,8 @@ final class ArtworkHTTP: NSObject, URLSessionTaskDelegate, Sendable {
             throw CadenzaError.failure("artwork_unavailable", "The artwork response was invalid.")
         }
         guard response.statusCode == 200 else {
-            throw CadenzaError.failure("artwork_unavailable", "Apple's artwork CDN returned HTTP \(response.statusCode).")
+            throw CadenzaError.failure(
+                "artwork_unavailable", "Apple's artwork CDN returned HTTP \(response.statusCode).")
         }
         var data = Data()
         for try await byte in bytes {

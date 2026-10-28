@@ -23,13 +23,19 @@ final class HostCache: Sendable {
 
     func data(for key: String) throws -> Data? {
         let hashed = Self.key(key)
-        guard let row = try database.query(
-            "SELECT payload,file_path FROM cache_entries WHERE cache_key=?", [.text(hashed)]).first else { return nil }
+        guard
+            let row = try database.query(
+                "SELECT payload,file_path FROM cache_entries WHERE cache_key=?", [.text(hashed)]
+            ).first
+        else { return nil }
         let data: Data?
-        if let payload = row["payload"]?.string { data = Data(payload.utf8) }
-        else if let path = row["file_path"]?.string {
+        if let payload = row["payload"]?.string {
+            data = Data(payload.utf8)
+        } else if let path = row["file_path"]?.string {
             data = try? Data(contentsOf: mediaDirectory.appendingPathComponent(path))
-        } else { data = nil }
+        } else {
+            data = nil
+        }
         guard let data else {
             try removeEntry(hashed, filePath: row["file_path"]?.string)
             return nil
@@ -41,7 +47,8 @@ final class HostCache: Sendable {
 
     func put(_ data: Data, for key: String, kind: String) throws {
         guard ["lyrics", "artwork", "animated_artwork", "provider"].contains(kind),
-            data.count <= Int(limitBytes) else { return }
+            data.count <= Int(limitBytes)
+        else { return }
         let hashed = Self.key(key)
         let isMedia = kind == "artwork" || kind == "animated_artwork"
         guard isMedia || String(data: data, encoding: .utf8) != nil else { return }
@@ -52,7 +59,9 @@ final class HostCache: Sendable {
             let destination = mediaDirectory.appendingPathComponent(filename)
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-            } else { try FileManager.default.moveItem(at: temporary, to: destination) }
+            } else {
+                try FileManager.default.moveItem(at: temporary, to: destination)
+            }
         }
         try database.transaction {
             try database.run("DELETE FROM cache_entries WHERE cache_key=?", [.text(hashed)])
@@ -70,7 +79,8 @@ final class HostCache: Sendable {
     func remove(_ key: String) throws {
         let hashed = Self.key(key)
         let row = try database.query(
-            "SELECT file_path FROM cache_entries WHERE cache_key=?", [.text(hashed)]).first
+            "SELECT file_path FROM cache_entries WHERE cache_key=?", [.text(hashed)]
+        ).first
         try removeEntry(hashed, filePath: row?["file_path"]?.string)
     }
 
@@ -83,24 +93,28 @@ final class HostCache: Sendable {
 
     func stats() throws -> HostCacheStats {
         let row = try database.query(
-            "SELECT count(*) AS entries, coalesce(sum(byte_count),0) AS bytes FROM cache_entries").first
+            "SELECT count(*) AS entries, coalesce(sum(byte_count),0) AS bytes FROM cache_entries"
+        ).first
         return HostCacheStats(
             bytes: row?["bytes"]?.integer ?? 0, entries: Int(row?["entries"]?.integer ?? 0), limitBytes: limitBytes)
     }
 
     private func evictIfNeeded() throws {
         while try stats().bytes > limitBytes {
-            guard let row = try database.query(
-                """
-                SELECT cache_key,file_path FROM cache_entries
-                ORDER BY CASE kind
-                    WHEN 'artwork' THEN 0
-                    WHEN 'animated_artwork' THEN 0
-                    WHEN 'provider' THEN 1
-                    ELSE 2
-                END, accessed_at_ms ASC LIMIT 1
-                """).first,
-                let key = row["cache_key"]?.string else { return }
+            guard
+                let row = try database.query(
+                    """
+                    SELECT cache_key,file_path FROM cache_entries
+                    ORDER BY CASE kind
+                        WHEN 'artwork' THEN 0
+                        WHEN 'animated_artwork' THEN 0
+                        WHEN 'provider' THEN 1
+                        ELSE 2
+                    END, accessed_at_ms ASC LIMIT 1
+                    """
+                ).first,
+                let key = row["cache_key"]?.string
+            else { return }
             try removeEntry(key, filePath: row["file_path"]?.string)
         }
     }
@@ -116,7 +130,7 @@ final class HostCache: Sendable {
             }
         }
         for url in try FileManager.default.contentsOfDirectory(at: mediaDirectory, includingPropertiesForKeys: nil)
-            where !referenced.contains(url.lastPathComponent) {
+        where !referenced.contains(url.lastPathComponent) {
             try? FileManager.default.removeItem(at: url)
         }
     }

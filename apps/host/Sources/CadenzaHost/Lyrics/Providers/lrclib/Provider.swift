@@ -47,7 +47,9 @@ struct LRCLIBProvider: LyricsProvider {
             URLQueryItem(name: "artist_name", value: song.artist),
         ]
         if !song.album.isEmpty { items.append(URLQueryItem(name: "album_name", value: song.album)) }
-        if let duration = song.durationMs { items.append(URLQueryItem(name: "duration", value: String(duration / 1_000))) }
+        if let duration = song.durationMs {
+            items.append(URLQueryItem(name: "duration", value: String(duration / 1_000)))
+        }
         return items
     }
 

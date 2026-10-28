@@ -27,7 +27,7 @@ final class ArtworkProvider {
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as NSDictionary?,
             let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
             let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
-            width.intValue in 1...2_048, height.intValue in 1...2_048
+            (1...2_048).contains(width.intValue), (1...2_048).contains(height.intValue)
         else { throw CadenzaError.failure("artwork_unavailable", "The artwork response was not an image.") }
         try cache.put(fetched.0, for: "artwork:" + url, kind: "artwork")
         return fetched.0

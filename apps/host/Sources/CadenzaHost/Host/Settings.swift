@@ -94,8 +94,11 @@ struct HostSettings: View {
                 }
             }
             Section("System logs") {
-                Picker("Keep logs for", selection: Binding(
-                    get: { HostLogRetention.days }, set: { HostLogRetention.days = $0 })) {
+                Picker(
+                    "Keep logs for",
+                    selection: Binding(
+                        get: { HostLogRetention.days }, set: { HostLogRetention.days = $0 })
+                ) {
                     ForEach([7, 14, 30], id: \.self) { days in Text("\(days) days").tag(days) }
                 }
                 Text("Logs are stored separately from the media cache and never count toward its size limit.")

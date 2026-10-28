@@ -60,7 +60,9 @@ enum ProtocolValidation {
         else {
             throw invalid("The message contains unexpected or missing fields.")
         }
-        if type == "pair" { try nested(object["pair"], fields: ["name", "secret"], optional: ["heartbeat", "remote_version"]) }
+        if type == "pair" {
+            try nested(object["pair"], fields: ["name", "secret"], optional: ["heartbeat", "remote_version"])
+        }
         if type == "log.report" {
             guard let level = object["log_level"] as? String, ["debug", "info", "warning", "error"].contains(level),
                 let action = object["log_action"] as? String, (1...120).contains(action.count),
@@ -74,7 +76,8 @@ enum ProtocolValidation {
         }
         if type == "hello" {
             try nested(
-                object["auth"], fields: ["remote_id", "token", "last_credit_sequence"], optional: ["name", "heartbeat", "remote_version"])
+                object["auth"], fields: ["remote_id", "token", "last_credit_sequence"],
+                optional: ["name", "heartbeat", "remote_version"])
         }
         if type == "clock" { try nested(object["clock"], fields: ["sent_at_remote_ms"]) }
         if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }

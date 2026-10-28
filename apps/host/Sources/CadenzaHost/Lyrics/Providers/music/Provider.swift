@@ -13,7 +13,7 @@ struct MusicLyricsProvider: LyricsProvider {
         ) {
             candidates = listed.prefix(2_048)
         } else {
-            candidates = Array<URL>().prefix(0)
+            candidates = [URL]().prefix(0)
         }
         let files = candidates.compactMap { url -> (URL, Int, Date)? in
             guard let values = try? url.resourceValues(forKeys: Set(keys)),

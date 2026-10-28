@@ -150,7 +150,9 @@ private struct PairingSheet: View {
                 }
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
-        }.padding(32).frame(width: 560, minHeight: 560)
+        }
+        .padding(32)
+        .frame(minWidth: 560, minHeight: 560)
     }
 
     private func qr(_ value: String) -> NSImage? {

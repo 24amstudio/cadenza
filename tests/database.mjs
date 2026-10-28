@@ -4,12 +4,13 @@ import { DatabaseSync } from 'node:sqlite';
 /** @param {'host' | 'remote'} application @param {string} [path] */
 export function openDatabase(application, path = ':memory:') {
   const database = new DatabaseSync(path);
+
+  const migration =
+    application === 'host' ? 'main/000-initial.sql' : '000-initial.sql';
+
   database.exec(
     readFileSync(
-      new URL(
-        `../apps/${application}/storage/001-initial.sql`,
-        import.meta.url,
-      ),
+      new URL(`../apps/${application}/storage/${migration}`, import.meta.url),
       'utf8',
     ),
   );

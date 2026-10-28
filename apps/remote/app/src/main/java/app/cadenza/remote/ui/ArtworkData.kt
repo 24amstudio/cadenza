@@ -9,15 +9,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import app.cadenza.remote.data.readBounded
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 import android.graphics.Color as AndroidColor
+
+internal data class ArtworkHost(
+    val cached: Map<String, ByteArray>,
+    val request: (String) -> Unit,
+)
+
+internal val LocalArtworkHost = staticCompositionLocalOf<ArtworkHost?> { null }
 
 internal data class ArtworkData(
     val image: ImageBitmap,
@@ -26,7 +30,6 @@ internal data class ArtworkData(
 
 private object ArtworkCache {
     private const val MAX_KILOBYTES = 12 * 1024
-    private const val FAILURE_TTL_MS = 30_000L
     private val images =
         object : LruCache<String, Bitmap>(MAX_KILOBYTES) {
             override fun sizeOf(
@@ -34,72 +37,49 @@ private object ArtworkCache {
                 value: Bitmap,
             ): Int = (value.allocationByteCount / 1024).coerceAtLeast(1)
         }
-    private val failures = mutableMapOf<String, Long>()
 
     @Synchronized
-    fun get(url: String): Bitmap? {
-        val failure = failures[url]
-        if (failure != null && failure > System.currentTimeMillis()) return null
-        if (failure != null) failures.remove(url)
-        return images.get(url)
-    }
+    fun get(url: String): Bitmap? = images.get(url)
 
     @Synchronized
     fun put(
         url: String,
         image: Bitmap,
     ) {
-        failures.remove(url)
         images.put(url, image)
-    }
-
-    @Synchronized
-    fun markFailure(url: String) {
-        failures[url] = System.currentTimeMillis() + FAILURE_TTL_MS
-        if (failures.size > 64) {
-            failures.entries.removeIf { it.value <= System.currentTimeMillis() }
-        }
     }
 }
 
 @Composable
 internal fun rememberArtwork(url: String?): ArtworkData? {
-    var artwork by remember(url) { mutableStateOf<ArtworkData?>(null) }
-    LaunchedEffect(url) {
-        artwork = url?.let { loadArtwork(it) }
+    val host = LocalArtworkHost.current
+    val bytes = url?.let { host?.cached?.get(it) }
+    var artwork by remember(url, bytes) { mutableStateOf<ArtworkData?>(null) }
+    LaunchedEffect(url, bytes) {
+        if (url == null) {
+            artwork = null
+        } else if (bytes != null) {
+            artwork =
+                try {
+                    loadArtwork(url, bytes)
+                } catch (_: Exception) {
+                    null
+                }
+        } else {
+            host?.request(url)
+            artwork = ArtworkCache.get(url)?.toArtworkData()
+        }
     }
     return artwork
 }
 
-private suspend fun loadArtwork(url: String): ArtworkData? {
-    val cached = ArtworkCache.get(url)
-    if (cached != null) return cached.toArtworkData()
-    val image =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val address = URL(url)
-                require(address.protocol == "https" && address.userInfo == null)
-                require(address.host != "mzstatic.com" && address.host.endsWith(".mzstatic.com"))
-                val connection = address.openConnection() as HttpsURLConnection
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                try {
-                    require(connection.responseCode == 200)
-                    val bytes = connection.inputStream.use { it.readBounded(524_288) }
-                    decode(bytes)
-                } finally {
-                    connection.disconnect()
-                }
-            }.getOrNull()
-        }
-    if (image == null) {
-        ArtworkCache.markFailure(url)
-        return null
+private suspend fun loadArtwork(
+    url: String,
+    bytes: ByteArray,
+): ArtworkData =
+    withContext(kotlinx.coroutines.Dispatchers.Default) {
+        ArtworkCache.get(url)?.toArtworkData() ?: decode(bytes).also { image -> ArtworkCache.put(url, image) }.toArtworkData()
     }
-    ArtworkCache.put(url, image)
-    return image.toArtworkData()
-}
 
 private fun decode(bytes: ByteArray): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

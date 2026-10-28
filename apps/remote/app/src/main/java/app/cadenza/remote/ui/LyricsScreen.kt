@@ -334,13 +334,21 @@ private fun LyricsContent(
 
 @Composable
 private fun LyricsSource(document: LyricDocument) {
+    val source =
+        when (document.source) {
+            "lrclib" -> "LRCLIB"
+            "apple_music" -> "Apple Music"
+            else -> "Host provider"
+        }
     Text(
-        when (document.translationSource) {
-            "apple" -> "English translation from Apple Music"
-            "machine" -> "English machine translation"
-            "apple_and_machine" -> "English translation from Apple Music and on-device translation"
-            else -> "Original lyrics"
-        },
+        "$source · " +
+            when (document.translationSource) {
+                "apple" -> "English translation from Apple Music"
+                "machine" -> "English machine translation"
+                "apple_and_machine" -> "English translation from Apple Music and on-device translation"
+                "original" -> "Original lyrics"
+                else -> "Lyrics"
+            },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

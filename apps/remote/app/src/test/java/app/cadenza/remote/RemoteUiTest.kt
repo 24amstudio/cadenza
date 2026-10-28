@@ -503,7 +503,11 @@ class RemoteUiTest {
         compose.waitUntil(5_000) {
             model.state.value.loaded
         }
-        compose.onNodeWithText("English machine translation").assertIsDisplayed()
+        val sourceLabel = "Apple Music · English machine translation"
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(sourceLabel).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(sourceLabel).assertIsDisplayed()
         compose.onNodeWithText("Synchronization paused.").assertIsDisplayed()
         compose.onNodeWithText("I sing with you").assertIsNotSelected()
         compose.onNodeWithText("The night awakens").assertIsNotSelected()

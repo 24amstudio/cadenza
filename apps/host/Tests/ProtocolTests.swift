@@ -77,4 +77,33 @@ struct ProtocolTests {
             #"<tt><body><p begin="0s" end="1s" xml:id="same">First</p><p begin="1s" end="2s" xml:id="same">Second</p></body></tt>"#
         #expect(throws: (any Error).self) { try TTMLDocument.parse(Data(xml.utf8), occurrence: id) }
     }
+
+    @Test func lrclibLrcParserBuildsLineAndWordTimings() throws {
+        let record = LRCLIBRecord(
+            trackName: "Example", artistName: "Example Artist", albumName: "Album", duration: 12,
+            instrumental: false,
+            plainLyrics: nil,
+            syncedLyrics: "[00:01.00]<00:01.00>Hello <00:01.50>world\n[00:03.00]Next line")
+        let document = try #require(try LRCParser.document(record, occurrence: id))
+        #expect(document.source == "lrclib")
+        #expect(document.lines.count == 2)
+        #expect(document.lines[0].startMs == 1_000)
+        #expect(document.lines[0].words.count == 2)
+        #expect(document.lines[0].words[1].startMs == 1_500)
+        #expect(document.lines[0].endMs == 3_000)
+    }
+
+    @Test func lrclibMatchRejectsWrongTrackAndLargeDurationDrift() {
+        let record = LRCLIBRecord(
+            trackName: "Other", artistName: "Example Artist", albumName: nil, duration: 180,
+            instrumental: false, plainLyrics: "text", syncedLyrics: nil)
+        #expect(!record.matches(Song(source: "catalog", id: "1", title: "Example", artist: "Example Artist", durationMs: 180_000)))
+    }
+
+    @Test func artworkProviderAcceptsOnlyAppleCdnArtworkURLs() {
+        #expect(ArtworkProvider.isAllowedURL("https://is1-ssl.mzstatic.com/image/thumb/Music.jpg"))
+        #expect(!ArtworkProvider.isAllowedURL("http://is1-ssl.mzstatic.com/image/thumb/Music.jpg"))
+        #expect(!ArtworkProvider.isAllowedURL("https://example.com/image.jpg"))
+        #expect(!ArtworkProvider.isAllowedURL("https://mzstatic.com/image.jpg"))
+    }
 }

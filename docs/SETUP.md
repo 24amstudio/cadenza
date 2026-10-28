@@ -60,7 +60,7 @@ The switch defaults off and persists in SQLite. Local Host controls retain autho
 
 ## Prepare lyrics and English translation
 
-Cadenza first reads Music's own locally cached timed lyrics. Music must expose lyrics and populate its cache; availability is not guaranteed for every song.
+Cadenza first reads Music's own locally cached timed lyrics. When Music has no matching document, Host can use the optional LRCLIB fallback over HTTPS. The Host stores successful results and Remotes receive them from Host, so Remote devices do not contact the provider.
 
 The Host can switch Music's lyrics and Playing Next panels while preparing and verifying data. These are Music.app UI operations and depend on the installed Music version.
 

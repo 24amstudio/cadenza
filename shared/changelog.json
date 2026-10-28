@@ -7,7 +7,8 @@
       "changes": [
         "Refines Host onboarding and hides playback controls when no song is active.",
         "Opens Music automatically when Cadenza Host needs to read or control playback.",
-        "Shows the Lyrics control only when lyrics are available and identifies line and word timing support."
+        "Shows the Lyrics control only when lyrics are available and identifies line and word timing support.",
+        "Adds Host-owned LRCLIB lyric fallback, persistent lyric and artwork caching, and source labels on Remote."
       ]
     },
     {

@@ -81,6 +81,7 @@ data class LyricDocument(
     val translationSource: String,
     val lines: List<LyricLine>,
     val issue: String?,
+    val source: String = "apple_music",
 ) {
     /** 0: unavailable, 1: plain text, 2: timed lines, 3: timed words. */
     val level: Int
@@ -260,12 +261,15 @@ object Wire {
         require(value.getString("translation_source") in listOf("none", "original", "apple", "machine", "apple_and_machine")) {
             "Unknown translation source."
         }
+        val source = value.optString("source", "apple_music")
+        require(source in listOf("apple_music", "lrclib", "unknown")) { "Unknown lyric source." }
         return LyricDocument(
             value.identifier("occurrence_id"),
             value.identifier("revision"),
             value.getString("translation_source"),
             lines,
             value.nullableString("issue"),
+            source,
         )
     }
 

@@ -2,6 +2,13 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.0.3",
+      "build": 5,
+      "changes": [
+        "Fixes the stretched pairing camera preview and scans the Host QR code with CameraX."
+      ]
+    },
+    {
       "version": "0.0.2",
       "build": 4,
       "changes": [

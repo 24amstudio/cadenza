@@ -188,7 +188,8 @@ class RemoteUiTest {
                 }
             }
         }
-        assertTrue(startupBuildLabel.matches(Regex("Cadenza 0\\.0\\.2-(dev|ci|prod)-(source-)?[0-9a-f]{12}-[0-9]{8}\\.[0-9]{6}")))
+        val version = Regex.escape(BuildConfig.VERSION_NAME.substringBefore('-'))
+        assertTrue(startupBuildLabel.matches(Regex("Cadenza $version-(dev|ci|prod)-(source-)?[0-9a-f]{12}-[0-9]{8}\\.[0-9]{6}")))
         val label =
             compose
                 .onNodeWithText(startupBuildLabel)

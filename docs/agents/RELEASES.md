@@ -23,7 +23,7 @@ Back up the private update key and APK keystore securely before publishing a bas
 
 ## Configure automatic Build CI publishing
 
-The `Build` workflow runs after a successful `Checking` push to `main`. It builds both apps with the `production` profile, signs the release metadata, and creates or updates the stable `vVERSION` release. It does not require a manually created tag. Because the visible version remains `0.0.1`, each later published build updates the existing `v0.0.1` assets; increase `VERSION_CODE` for every build that must be accepted as newer by installed apps.
+The `Build` workflow runs after a successful `Checking` push to `main`. It builds both apps with the `production` profile, signs the release metadata, and creates or updates the stable `vVERSION` release. It does not require a manually created tag. A build that keeps the same `VERSION_NAME` reuses the existing `vVERSION` tag and overwrites its assets without moving the tag, so installed apps and the release page show no change. Change `VERSION_NAME` only when the user authorizes a new version, and increase `VERSION_CODE` for every build that must be accepted as newer by installed apps.
 
 Generate the Android release keystore on a trusted machine with JDK `keytool`; never use the disposable debug keystore:
 
@@ -77,7 +77,7 @@ This file contains public configuration. Both native builds include it. Host set
 
 ## Build the release
 
-1. Keep `VERSION_NAME=0.0.1` until the user explicitly authorizes another version. Set a strictly increasing `VERSION_CODE` in `shared/version.properties` for a new release build.
+1. Change `VERSION_NAME` only when the user explicitly authorizes another version. Set a strictly increasing `VERSION_CODE` in `shared/version.properties` for every new release build.
 2. Run all required local portable and native checks.
 3. Build both apps with the explicit `production` profile, from identical source, using the preserved signing identities. Development and CI profiles cannot self-update.
 4. Put both versioned artifacts in `dist`.

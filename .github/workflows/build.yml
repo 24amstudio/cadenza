@@ -106,21 +106,12 @@ jobs:
           /usr/bin/security set-keychain-settings -lut 21600 "$keychain"
           /usr/bin/security unlock-keychain -p "$keychain_password" "$keychain"
           signing_archive="$RUNNER_TEMP/cadenza-signing.p12"
-          signing_certificate="$RUNNER_TEMP/cadenza-signing.cer"
           printf '%s' "$MACOS_SIGNING_CERTIFICATE_BASE64" | /usr/bin/base64 --decode > "$signing_archive"
           /usr/bin/security import "$signing_archive" -k "$keychain" -P "$MACOS_SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          /usr/bin/openssl pkcs12 -in "$signing_archive" -nokeys -passin env:MACOS_SIGNING_CERTIFICATE_PASSWORD |
-            /usr/bin/sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "$signing_certificate"
-          test -s "$signing_certificate"
-          # Keep trust settings in the runner user's domain; the admin-domain form can open
-          # an authorization prompt and leave a non-interactive runner waiting indefinitely.
-          /usr/bin/security add-trusted-cert -r trustRoot -p codeSign -k "$keychain" "$signing_certificate"
-          /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          /usr/bin/security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
           /usr/bin/security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
           /usr/bin/security default-keychain -s "$keychain"
-          identities="$(/usr/bin/security find-identity -v -p codesigning "$keychain")"
-          printf '%s\n' "$identities"
-          printf '%s\n' "$identities" | /usr/bin/grep -F "$MACOS_SIGNING_IDENTITY"
+          /usr/bin/codesign --force --sign "$MACOS_SIGNING_IDENTITY" --keychain "$keychain" --timestamp=none --dryrun /usr/bin/true
           echo "CADENZA_MACOS_SIGNING_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
       - name: Build Production Host archive
         if: matrix.platform == 'host'

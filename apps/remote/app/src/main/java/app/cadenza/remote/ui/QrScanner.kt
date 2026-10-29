@@ -48,6 +48,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+private val compactPairingMagic = byteArrayOf(0x43, 0x44, 0x5A, 0x50)
+
 @Composable
 fun QrScanner(
     onCode: (ByteArray) -> Unit,
@@ -217,12 +219,17 @@ internal fun decodeQrPayload(
     return null
 }
 
-private fun resultPayload(result: Result): ByteArray {
+internal fun resultPayload(result: Result): ByteArray {
+    val raw = result.rawBytes
+    if (raw != null && raw.startsWith(compactPairingMagic)) return raw
     val segments = result.resultMetadata?.get(ResultMetadataType.BYTE_SEGMENTS) as? List<*>
     val binary = segments?.filterIsInstance<ByteArray>()?.takeIf { it.isNotEmpty() }
     return binary?.fold(ByteArray(0)) { output, segment -> output + segment }
         ?: result.text.toByteArray(Charsets.UTF_8)
 }
+
+private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
+    size >= prefix.size && prefix.indices.all { index -> this[index] == prefix[index] }
 
 private fun rotatedSources(
     source: LuminanceSource,

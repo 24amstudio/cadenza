@@ -3,7 +3,7 @@ import Network
 
 @MainActor
 final class SSDPResponder {
-    static let serviceType = "urn:cadenza:host:1"
+    nonisolated static let serviceType = "urn:cadenza:host:1"
     private static let multicastAddress = "239.255.255.250"
     private static let multicastPort: UInt16 = 1900
 
@@ -52,7 +52,7 @@ final class SSDPResponder {
         group = nil
     }
 
-    static func response(for data: Data, hostId: String, location: String) -> Data? {
+    nonisolated static func response(for data: Data, hostId: String, location: String) -> Data? {
         guard requestMatches(data),
             hostId.range(of: "^[0-9a-f-]{36}$", options: .regularExpression) != nil,
             location.hasPrefix("https://"),
@@ -74,7 +74,7 @@ final class SSDPResponder {
         return Data(lines.joined(separator: "\r\n").utf8)
     }
 
-    static func requestMatches(_ data: Data) -> Bool {
+    nonisolated static func requestMatches(_ data: Data) -> Bool {
         guard data.count <= 4_096,
             let text = String(data: data, encoding: .utf8)
         else { return false }

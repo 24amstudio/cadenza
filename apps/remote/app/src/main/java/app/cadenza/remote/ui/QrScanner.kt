@@ -220,12 +220,13 @@ internal fun decodeQrPayload(
 }
 
 internal fun resultPayload(result: Result): ByteArray {
-    val raw = result.rawBytes
-    if (raw != null && raw.startsWith(compactPairingMagic)) return raw
     val segments = result.resultMetadata?.get(ResultMetadataType.BYTE_SEGMENTS) as? List<*>
     val binary = segments?.filterIsInstance<ByteArray>()?.takeIf { it.isNotEmpty() }
-    return binary?.fold(ByteArray(0)) { output, segment -> output + segment }
-        ?: result.text.toByteArray(Charsets.UTF_8)
+    val segmented = binary?.fold(ByteArray(0)) { output, segment -> output + segment }
+    if (segmented?.startsWith(compactPairingMagic) == true) return segmented
+    val raw = result.rawBytes
+    if (raw != null && raw.startsWith(compactPairingMagic)) return raw
+    return segmented ?: result.text.toByteArray(Charsets.UTF_8)
 }
 
 private fun ByteArray.startsWith(prefix: ByteArray): Boolean =

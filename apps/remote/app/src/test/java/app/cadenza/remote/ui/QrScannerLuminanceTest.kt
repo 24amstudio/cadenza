@@ -5,6 +5,7 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.Result
+import com.google.zxing.ResultMetadataType
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
 import org.junit.Assert.assertArrayEquals
@@ -41,6 +42,18 @@ class QrScannerLuminanceTest {
         val result = Result("CDZP\u0001�", raw, null, BarcodeFormat.QR_CODE)
 
         assertArrayEquals(raw, resultPayload(result))
+    }
+
+    @Test
+    fun compactPairingPrefersByteSegmentsOverDecoderRawBytes() {
+        val raw = byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x00)
+        val segmented = byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x01, 0x02)
+        val result =
+            Result("CDZP\u0001", raw, null, BarcodeFormat.QR_CODE).apply {
+                putMetadata(ResultMetadataType.BYTE_SEGMENTS, listOf(segmented))
+            }
+
+        assertArrayEquals(segmented, resultPayload(result))
     }
 
     @Test

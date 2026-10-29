@@ -420,18 +420,19 @@ final class HostService {
         ]
         let hostPolicy = peer.map(policy(for:)) ?? transportPolicy
         let preference = peer?.status?.preference
-        let decision = peer.map {
-            decideTransport(
-                peer: $0,
-                paths: paths,
+        let decision =
+            peer.map {
+                decideTransport(
+                    peer: $0,
+                    paths: paths,
+                    remotePreference: preference,
+                    remoteConstraints: $0.status?.constraints
+                )
+            } ?? TransportNegotiator.decide(
+                host: hostPolicy,
+                remote: nil,
                 remotePreference: preference,
-                remoteConstraints: $0.status?.constraints
-            )
-        } ?? TransportNegotiator.decide(
-            host: hostPolicy,
-            remote: nil,
-            remotePreference: preference,
-            paths: paths)
+                paths: paths)
         SessionStatus(
             reportedAtMs: monotonicMs(),
             device: "host",

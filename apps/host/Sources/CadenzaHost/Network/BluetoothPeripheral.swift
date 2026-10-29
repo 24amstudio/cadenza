@@ -169,10 +169,13 @@ final class BluetoothPeripheral: NSObject, CBPeripheralManagerDelegate {
         let centralID = central.identifier
         while var pending = outbound[centralID]?.first {
             while pending.nextChunk < pending.chunks.count {
-                guard manager.updateValue(
-                    pending.chunks[pending.nextChunk],
-                    for: characteristic,
-                    onSubscribedCentrals: [central]) else {
+                guard
+                    manager.updateValue(
+                        pending.chunks[pending.nextChunk],
+                        for: characteristic,
+                        onSubscribedCentrals: [central]
+                    )
+                else {
                     outbound[centralID]?[0] = pending
                     return
                 }

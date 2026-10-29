@@ -76,7 +76,8 @@ struct HostSettings: View {
                         get: { model.hostTransportPolicy.manualPath ?? "auto" },
                         set: {
                             model.hostTransportPolicy.manualPath = $0 == "auto" ? nil : $0
-                        })) {
+                        })
+                ) {
                     Text("Auto").tag("auto")
                     Text("Use LAN").tag("lan")
                     Text("Use Bluetooth").tag("ble")
@@ -103,7 +104,8 @@ struct HostSettings: View {
                                     model.remoteTransportPreferences[remote.id]
                                         ?? model.hostTransportPolicy.preference
                                 },
-                                set: { model.remoteTransportPreferences[remote.id] = $0 })) {
+                                set: { model.remoteTransportPreferences[remote.id] = $0 })
+                        ) {
                             Text("Balanced").tag(TransportPreference.balanced)
                             Text("Prefer latency").tag(TransportPreference.latency)
                             Text("Prefer Host efficiency").tag(TransportPreference.hostEfficiency)
@@ -114,7 +116,8 @@ struct HostSettings: View {
                             "Path for \(remote.name)",
                             selection: Binding(
                                 get: { model.remoteTransportManualPaths[remote.id] ?? "auto" },
-                                set: { model.remoteTransportManualPaths[remote.id] = $0 })) {
+                                set: { model.remoteTransportManualPaths[remote.id] = $0 })
+                        ) {
                             Text("Auto").tag("auto")
                             Text("Use LAN").tag("lan")
                             Text("Use Bluetooth").tag("ble")

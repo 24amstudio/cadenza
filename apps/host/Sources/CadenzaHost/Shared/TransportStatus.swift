@@ -167,16 +167,17 @@ enum TransportNegotiator {
             guard path.state == "connected" || path.state == "degraded" else {
                 return false
             }
-            let constraints = remoteConstraints.map {
-                TransportConstraints(
-                    maximumLatencyMs: min(host.constraints.maximumLatencyMs, $0.maximumLatencyMs),
-                    maximumLossPercent: min(host.constraints.maximumLossPercent, $0.maximumLossPercent),
-                    requireReliable: host.constraints.requireReliable || $0.requireReliable,
-                    minimumReliabilityPercent: max(
-                        host.constraints.minimumReliabilityPercent,
-                        $0.minimumReliabilityPercent)
-                )
-            } ?? host.constraints
+            let constraints =
+                remoteConstraints.map {
+                    TransportConstraints(
+                        maximumLatencyMs: min(host.constraints.maximumLatencyMs, $0.maximumLatencyMs),
+                        maximumLossPercent: min(host.constraints.maximumLossPercent, $0.maximumLossPercent),
+                        requireReliable: host.constraints.requireReliable || $0.requireReliable,
+                        minimumReliabilityPercent: max(
+                            host.constraints.minimumReliabilityPercent,
+                            $0.minimumReliabilityPercent)
+                    )
+                } ?? host.constraints
             if let rtt = path.rttMs {
                 guard rtt <= constraints.maximumLatencyMs else { return false }
             }

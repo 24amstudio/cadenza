@@ -90,4 +90,12 @@ class ClockSyncTest {
             }
         assertThrows(IllegalArgumentException::class.java) { Wire.invitation(damaged) }
     }
+
+    @Test
+    fun compactPairingIsNotRoutedThroughTheJsonFallback() {
+        val payload = byteArrayOf(0x43, 0x44, 0x5A, 0x50)
+
+        assertTrue(Wire.isCompactInvitation(payload))
+        assertFalse(Wire.isCompactInvitation("{\"version\":1}".toByteArray()))
+    }
 }

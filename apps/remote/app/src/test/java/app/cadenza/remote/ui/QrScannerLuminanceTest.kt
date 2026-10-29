@@ -4,6 +4,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.DecodeHintType
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatReader
+import com.google.zxing.Result
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
 import org.junit.Assert.assertArrayEquals
@@ -32,6 +33,14 @@ class QrScannerLuminanceTest {
         extractLuminance(rowStride = 6, pixelStride = 2, width = 3, height = 1, buffer = plane, data = data)
 
         assertArrayEquals(byteArrayOf(10, 11, 12), data)
+    }
+
+    @Test
+    fun compactPairingKeepsRawQrBytesInsteadOfLossyText() {
+        val raw = byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0xFF.toByte(), 0x00)
+        val result = Result("CDZP\u0001�", raw, null, BarcodeFormat.QR_CODE)
+
+        assertArrayEquals(raw, resultPayload(result))
     }
 
     @Test

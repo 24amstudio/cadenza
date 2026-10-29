@@ -428,11 +428,12 @@ final class HostService {
                     remotePreference: preference,
                     remoteConstraints: $0.status?.constraints
                 )
-            } ?? TransportNegotiator.decide(
-                host: hostPolicy,
-                remote: nil,
-                remotePreference: preference,
-                paths: paths)
+            } ??
+                TransportNegotiator.decide(
+                    host: hostPolicy,
+                    remote: nil,
+                    remotePreference: preference,
+                    paths: paths)
         SessionStatus(
             reportedAtMs: monotonicMs(),
             device: "host",

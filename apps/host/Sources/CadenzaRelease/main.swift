@@ -31,7 +31,10 @@ func keygen(_ path: String) throws {
 func manifest(_ arguments: [String]) throws {
     guard arguments.count == 9, let build = Int64(arguments[2]), build > 0,
         ReleaseValidation.validRepository(arguments[0]),
-        arguments[1].range(of: #"^[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$"#, options: .regularExpression) != nil
+        arguments[1].range(
+            of: #"^[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$"#,
+            options: .regularExpression
+        ) != nil
     else {
         throw ReleaseFailure.invalid(
             "manifest requires repository, version, build, Host zip, Remote APK, private PEM, and output directory.")

@@ -29,7 +29,7 @@ enum HostChangelog {
         guard let object = try JSONSerialization.jsonObject(with: metadata) as? [String: Any],
             object["draft"] as? Bool == false, object["prerelease"] as? Bool == false,
             let tag = object["tag_name"] as? String,
-            tag.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil
+            tag.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$"#, options: .regularExpression) != nil
         else {
             throw CadenzaError.failure("changelog", "A compatible stable release is unavailable.")
         }

@@ -1,5 +1,4 @@
 package app.cadenza.remote
-
 import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
@@ -38,7 +37,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
 
@@ -97,7 +95,6 @@ class RemoteModel(
     private val frameSignal = Channel<Unit>(Channel.UNLIMITED)
     private val metadata = mutableSetOf<String>()
     internal val artworkRequests = mutableSetOf<String>()
-
     internal val mutableState get() = mutable
     internal val updateApp get() = app
     internal val updateDispatcher get() = ioDispatcher
@@ -178,7 +175,9 @@ class RemoteModel(
                     startDiscovery()
                     connect()
                 }
-                if (RemoteUpdater.due(app)) checkUpdates(automatic = true)
+                if (BuildConfig.AUTOMATIC_UPDATES && RemoteUpdater.configuration(app).repository.isNotBlank()) {
+                    checkUpdates(automatic = true)
+                }
             } catch (error: Exception) {
                 mutable.update { it.copy(loaded = true) }
                 showError("Storage needs attention", error.message ?: "Your data was preserved. Restart Cadenza and retry.")
@@ -225,24 +224,21 @@ class RemoteModel(
     }
 
     fun pair(
-        text: String,
+        payload: ByteArray,
         name: String,
     ) {
         try {
+            val invite =
+                runCatching { Wire.invitation(payload) }
+                    .getOrElse { Wire.invitation(String(payload, Charsets.UTF_8)) }
             require(name.trim().length in 1..80) { "Enter the name that should appear beside your requests." }
             require(name.none { it.isISOControl() }) { "Use a name without control characters." }
-            invitation = Wire.invitation(text)
+            invitation = invite
             endpoints.clear()
             remoteName = name.trim()
             connect()
         } catch (error: Exception) {
-            val message =
-                if (error is JSONException) {
-                    "Paste the complete pairing details or scan a new QR code from Cadenza Host."
-                } else {
-                    error.message ?: "Scan a new QR code from Cadenza Host."
-                }
-            showError("Check pairing details", message)
+            showError("Could not scan QR", error.message ?: "Scan a current Host QR code.")
         }
     }
 
@@ -621,7 +617,6 @@ class RemoteModel(
                 .associateBy { it.source + ":" + it.id }
 
         fun song(value: Song): Song = value.artworkUrl?.let { value } ?: known[value.source + ":" + value.id] ?: value
-
         return snapshot.copy(
             current = snapshot.current?.copy(song = song(snapshot.current.song)),
             queue = snapshot.queue.map { it.copy(song = song(it.song)) },

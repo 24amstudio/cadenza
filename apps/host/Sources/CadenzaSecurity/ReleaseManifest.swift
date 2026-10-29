@@ -84,7 +84,7 @@ public enum ReleaseValidation {
         }
         guard manifest.schema == 1, manifest.protocolMajor == 1,
             manifest.repository == repository,
-            manifest.version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil,
+            manifest.version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$"#, options: .regularExpression) != nil,
             manifest.tag == "v" + manifest.version,
             manifest.build > currentBuild,
             manifest.build <= 9_007_199_254_740_991,

@@ -207,8 +207,7 @@ final class HostModel {
             }
         }
         updateScheduler = scheduler
-        let checked = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
-        if Date().timeIntervalSince(checked) >= 86_400 { checkUpdates(automatic: true) }
+        checkUpdates(automatic: true)
     }
 
     private func checkPreviousInstallation() {

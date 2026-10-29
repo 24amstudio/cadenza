@@ -7,6 +7,12 @@ repository="$1"
 key="$2"
 version="$(awk -F= '$1 == "VERSION_NAME" {print $2}' "$project_root/shared/version.properties" | tr -d '\r')"
 build="$(awk -F= '$1 == "VERSION_CODE" {print $2}' "$project_root/shared/version.properties" | tr -d '\r')"
+version="${CADENZA_RELEASE_VERSION:-$version}"
+build="${CADENZA_BUILD_NUMBER:-$build}"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$ && "$build" =~ ^[0-9]+$ ]] || {
+  printf '%s\n' 'Invalid release version or build number.' >&2
+  exit 2
+}
 cd "$project_root/apps/host"
 /usr/bin/swift build -c release --arch arm64 --product CadenzaRelease -Xswiftc -warnings-as-errors
 binary_root="$(/usr/bin/swift build -c release --arch arm64 --show-bin-path)"

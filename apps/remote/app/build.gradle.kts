@@ -19,6 +19,15 @@ val cadenzaVersion =
     Properties().apply {
         rootProject.file("../../shared/version.properties").inputStream().use(::load)
     }
+val releaseVersion = providers.environmentVariable("CADENZA_RELEASE_VERSION").orNull
+val releaseBuildNumber = providers.environmentVariable("CADENZA_BUILD_NUMBER").orNull?.toIntOrNull()
+check(releaseBuildNumber == null || releaseBuildNumber > 0) { "CADENZA_BUILD_NUMBER must be positive." }
+val resolvedVersionName = releaseVersion ?: cadenzaVersion.getProperty("VERSION_NAME")
+val resolvedVersionCode = releaseBuildNumber ?: cadenzaVersion.getProperty("VERSION_CODE").toInt()
+tasks.configureEach {
+    inputs.property("cadenzaResolvedVersionName", resolvedVersionName)
+    inputs.property("cadenzaResolvedVersionCode", resolvedVersionCode)
+}
 val buildInstant = providers.environmentVariable("SOURCE_DATE_EPOCH").orNull?.let { Instant.ofEpochSecond(it.toLong()) } ?: Instant.now()
 val buildTimestamp = DateTimeFormatter.ofPattern("yyyyMMdd.HHmmss").withZone(ZoneOffset.UTC).format(buildInstant)
 val releaseStore = providers.environmentVariable("CADENZA_KEYSTORE_PATH").orNull
@@ -52,8 +61,8 @@ android {
         applicationId = "app.cadence.remote"
         minSdk = 31
         targetSdk = 36
-        versionCode = cadenzaVersion.getProperty("VERSION_CODE").toInt()
-        versionName = cadenzaVersion.getProperty("VERSION_NAME")
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["cadenzaBuildProfile"] = "development"
         buildConfigField("String", "BUILD_ID", "\"${sourceIdentity.get()}\"")

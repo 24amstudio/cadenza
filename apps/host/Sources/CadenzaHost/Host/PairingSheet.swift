@@ -13,18 +13,21 @@ struct PairingSheet: View {
     let invitation: PairingInvitation
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
+    @State private var showingLargeCode = false
     private var json: String { (try? String(decoding: Wire.encode(invitation), as: UTF8.self)) ?? "" }
+    private var pairingData: Data { PairingQRPayload(invitation: invitation).encoded }
 
     var body: some View {
         VStack(spacing: 20) {
             Text("Pair Cadenza Remote").font(.title.bold())
             Text("Scan this QR code on your tablet. It is valid for one Remote for five minutes.")
-            if let image = qr(json) {
+            if let image = qr(pairingData) {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 400, height: 400)
                     .accessibilityLabel("Pairing QR code")
             }
             Text("\(invitation.host):\(invitation.port)").textSelection(.enabled)
             HStack {
+                Button("Show larger QR") { showingLargeCode = true }
                 Button(copied ? "Copied" : "Copy pairing details") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(json, forType: .string)
@@ -35,11 +38,14 @@ struct PairingSheet: View {
         }
         .padding(32)
         .frame(minWidth: 560, minHeight: 560)
+        .sheet(isPresented: $showingLargeCode) {
+            PairingFullscreenSheet(image: qr(pairingData), host: invitation.host, port: invitation.port)
+        }
     }
 
-    private func qr(_ value: String) -> NSImage? {
+    private func qr(_ value: Data) -> NSImage? {
         let generator = CIFilter.qrCodeGenerator()
-        generator.message = Data(value.utf8)
+        generator.message = value
         generator.correctionLevel = "M"
         guard let output = generator.outputImage,
             let image = CIContext().createCGImage(
@@ -47,5 +53,53 @@ struct PairingSheet: View {
                 from: output.extent.applying(CGAffineTransform(scaleX: 8, y: 8)))
         else { return nil }
         return NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width), height: CGFloat(image.height)))
+    }
+}
+
+private struct PairingQRPayload {
+    let invitation: PairingInvitation
+
+    var encoded: Data {
+        let address = Data(invitation.host.utf8)
+        let secret = Data(invitation.secret.utf8)
+        let certificate = Data(base64Encoded: invitation.certificateDerBase64) ?? Data()
+        let fingerprintCharacters = Array(invitation.fingerprint)
+        let fingerprint = stride(from: 0, to: fingerprintCharacters.count, by: 2).compactMap {
+            UInt8(String(fingerprintCharacters[$0...($0 + 1)]), radix: 16)
+        }
+        var result = Data([0x43, 0x44, 0x5A, 0x50, UInt8(invitation.version)])
+        result.append(UInt8(address.count))
+        result.append(address)
+        result.append(UInt8((invitation.port >> 8) & 0xFF))
+        result.append(UInt8(invitation.port & 0xFF))
+        result.append(UInt8(secret.count))
+        result.append(secret)
+        result.append(UInt8((certificate.count >> 8) & 0xFF))
+        result.append(UInt8(certificate.count & 0xFF))
+        result.append(certificate)
+        result.append(contentsOf: fingerprint)
+        return result
+    }
+}
+
+private struct PairingFullscreenSheet: View {
+    let image: NSImage?
+    let host: String
+    let port: Int
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Scan this QR code on your Remote").font(.title.bold())
+            Text("Keep the complete code inside the camera frame.")
+            if let image {
+                Image(nsImage: image).interpolation(.none).resizable().frame(width: 680, height: 680)
+                    .accessibilityLabel("Pairing QR code")
+            }
+            Text("\(host):\(port)").textSelection(.enabled)
+            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+        }
+        .padding(36)
+        .frame(minWidth: 800, minHeight: 800)
     }
 }

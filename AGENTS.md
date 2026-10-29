@@ -96,7 +96,7 @@ Run targeted checks for coherent edits and reserve packaging for final validatio
 
 ## Builds, changelogs and updates
 
-The visible application version is currently **0.0.3**. Do not bump it again unless the user explicitly requests a version change; do not infer a version bump from ordinary features or milestones. Keep the internal release build number increasing so the newest build is identifiable and preferred; do not use it as a reason to preserve obsolete build behavior. Android startup displays `Cadenza VERSION-PROFILE-SOURCE-YYYYMMDD.HHMMSS`; the timestamp is embedded at build time in UTC, and `source-` identifies an uncommitted source digest rather than a Git commit.
+The checked-in product version is currently **0.0.3**. Do not bump it again unless the user explicitly requests a product-version change; ordinary CI builds derive a unique release version from the UTC commit date, Checking run number and 12-character commit hash. CI supplies that run number as the increasing build code, so `shared/version.properties` does not need an edit for every build. Android startup displays `Cadenza VERSION-PROFILE-SOURCE-YYYYMMDD.HHMMSS`; the timestamp is embedded at build time in UTC, and `source-` identifies an uncommitted source digest rather than a Git commit.
 
 Profiles are `development`, `ci`, `production`. Defaults disable automatic update checks/downloads/installation. Android selects a release profile with `-Pcadenza.profile=...`; Host uses `CADENZA_BUILD_PROFILE`. Debug is always development. CI rejects Production profiles. Production Android needs the original private release keystore through environment variables; never commit signing material. Signing identity, manifest verification identity and installed data must survive upgrades.
 

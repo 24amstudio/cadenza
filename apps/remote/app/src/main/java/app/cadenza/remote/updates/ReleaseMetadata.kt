@@ -20,7 +20,7 @@ fun fetchReleaseMetadata(config: UpdateConfiguration): ReleaseMetadata {
         )
     check(!metadata.getBoolean("draft") && !metadata.getBoolean("prerelease")) { "A stable release is not available." }
     val tag = metadata.getString("tag_name")
-    require(tag.matches(Regex("v[0-9]+\\.[0-9]+\\.[0-9]+"))) { "Unexpected release tag." }
+    require(tag.matches(Regex("v[0-9]+\\.[0-9]+\\.[0-9]+(_[0-9]{8}\\.[0-9]+-[0-9a-f]{12})?"))) { "Unexpected release tag." }
     val base = "https://github.com/" + config.repository + "/releases/download/" + tag + "/"
     val data = GitHubDownload.bytes(base + "cadenza-release.json", 65_536)
     val signature = GitHubDownload.bytes(base + "cadenza-release.sig", 128)

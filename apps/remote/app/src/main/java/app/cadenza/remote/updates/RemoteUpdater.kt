@@ -22,19 +22,28 @@ object RemoteUpdater {
 
     fun configuration(context: Context): UpdateConfiguration {
         val preferences = preferences(context)
-        if (!preferences.contains("repository")) {
-            return runCatching {
-                val data =
-                    context.assets
-                        .open("release-config.json")
-                        .bufferedReader()
-                        .use { it.readText() }
-                val value = JSONObject(data)
-                UpdateConfiguration(value.getString("repository"), value.getString("public_key_spki_base64"))
-            }.getOrDefault(UpdateConfiguration())
+        val bundled = bundledConfiguration(context)
+        if (!preferences.contains("repository")) return bundled
+        val stored = UpdateConfiguration(preferences.getString("repository", "").orEmpty(), preferences.getString("key", "").orEmpty())
+        if (stored.repository.isBlank() || stored.publicKeySpkiBase64.isBlank()) {
+            return UpdateConfiguration(
+                stored.repository.ifBlank { bundled.repository },
+                stored.publicKeySpkiBase64.ifBlank { bundled.publicKeySpkiBase64 },
+            )
         }
-        return UpdateConfiguration(preferences.getString("repository", "").orEmpty(), preferences.getString("key", "").orEmpty())
+        return stored
     }
+
+    private fun bundledConfiguration(context: Context): UpdateConfiguration =
+        runCatching {
+            val data =
+                context.assets
+                    .open("release-config.json")
+                    .bufferedReader()
+                    .use { it.readText() }
+            val value = JSONObject(data)
+            UpdateConfiguration(value.getString("repository"), value.getString("public_key_spki_base64"))
+        }.getOrDefault(UpdateConfiguration())
 
     fun acceptConfiguration(
         context: Context,

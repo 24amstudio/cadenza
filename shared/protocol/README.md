@@ -1,6 +1,6 @@
 # Cadenza LAN protocol
 
-Version 1 uses JSON text frames over a persistent local TLS WebSocket. Host advertises `_cadence._tcp` with a public `host_id` TXT record. Discovery identifies a candidate address. The QR carries the Host's public DER certificate and its SHA-256 fingerprint. Remote validates the certificate with the platform trust manager using that certificate as its only trust anchor, then pins the exact leaf certificate. No private key leaves the Host. The pin binds the Host across LAN address changes; a changed certificate requires pairing again.
+Version 1 uses JSON text frames over a persistent local TLS WebSocket. Host advertises `_cadence._tcp` with a public `host_id` TXT record. Discovery identifies a candidate address. The QR uses a compact binary envelope containing the Host address, one-use secret, public DER certificate and its raw SHA-256 fingerprint; Remote verifies the certificate against that fingerprint, then pins the exact leaf certificate. No private key leaves the Host. The pin binds the Host across LAN address changes; a changed certificate requires pairing again.
 
 ## Contracts
 

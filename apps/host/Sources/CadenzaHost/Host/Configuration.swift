@@ -53,18 +53,27 @@ struct HostConfiguration: Codable {
 
     static func load() -> HostConfiguration {
         if let data = UserDefaults.standard.data(forKey: "configuration"),
-            let value = try? JSONDecoder().decode(HostConfiguration.self, from: data)
+            var value = try? JSONDecoder().decode(HostConfiguration.self, from: data)
         {
-            if value.isUsable { return value }
+            if value.isUsable {
+                let bundled = bundledUpdates()
+                if value.updates.repository.isEmpty || value.updates.publicKeySpkiBase64.isEmpty {
+                    value.updates = bundled
+                }
+                return value
+            }
         }
         var defaults = HostConfiguration()
-        if let url = Bundle.main.url(forResource: "release-config", withExtension: "json"),
+        defaults.updates = bundledUpdates()
+        return defaults
+    }
+
+    private static func bundledUpdates() -> UpdateConfiguration {
+        guard let url = Bundle.main.url(forResource: "release-config", withExtension: "json"),
             let data = try? Data(contentsOf: url),
             let updates = try? Wire.decode(UpdateConfiguration.self, from: data)
-        {
-            defaults.updates = updates
-        }
-        return defaults
+        else { return UpdateConfiguration() }
+        return updates
     }
 
     func save() throws {

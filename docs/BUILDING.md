@@ -58,7 +58,7 @@ bash apps/host/Scripts/check.sh
 bash apps/host/Scripts/build.sh
 ```
 
-The default build creates an optimized, ad-hoc-signed `Cadenza Host.app` under the Host staging directory and `dist/Cadenza-Host-VERSION-development-arm64.zip`. The updater helper is bundled separately. OS frameworks provide UI, networking, security, translation, XML, and SQLite. Development updates are disabled.
+The default build creates an optimized, ad-hoc-signed `Cadenza Host.app` under the Host staging directory and `dist/Cadenza-Host-VERSION-development-arm64.zip`. Set `CADENZA_MACOS_SIGNING_IDENTITY` to a stable installed macOS signing identity for production updates; otherwise each ad-hoc replacement can trigger a new Keychain authorization prompt. Build CI restores the same identity from `CADENZA_MACOS_SIGNING_CERTIFICATE_BASE64` and `CADENZA_MACOS_SIGNING_CERTIFICATE_PASSWORD` before the production Host build. The updater helper is bundled separately. OS frameworks provide UI, networking, security, translation, XML, and SQLite. Development updates are disabled.
 
 To apply native formatting before checks:
 
@@ -124,7 +124,7 @@ For Host Production packaging use `CADENZA_BUILD_PROFILE=production bash apps/ho
 
 The apps embed version, profile and immutable source identity. A clean Git checkout embeds its commit SHA; an uncommitted tree or source archive embeds a SHA-256 over maintained source files. The APK also includes `assets/build-identity.txt`. Release signing checks both artifacts' embedded identities against the current source and requires a Production Host profile. Do not edit source between building the two artifacts and signing their release metadata.
 
-The visible version is **0.0.3** (build 5) in `shared/version.properties`. Change it only when the user authorizes a new version. Internal build numbers still increase to preserve upgrades. Android's native startup screen centers the build label at the bottom: `Cadenza VERSION-PROFILE-SOURCE-20261026.223300`. The profile is `dev`, `ci` or `prod`; dirty/uncommitted trees use `source-` followed by a short digest. The final timestamp is build time in UTC, not launch time. Set `SOURCE_DATE_EPOCH` to epoch seconds when a reproducible timestamp is required. Android's earlier system-managed splash remains an OS-provided icon screen; the text appears while Cadenza loads local state, without a forced delay.
+The checked-in product version is **0.0.3** in `shared/version.properties`. Change it only when the user authorizes a new product version. CI does not edit this file: it uses the Checking run number as the strictly increasing build code and derives a release version such as `0.0.3_20261029.1001-eb751fa0730d`; the GitHub title is `Cadenza 0.0.3_20261029.1001 (eb751fa0730d)`. Android's native startup screen centers the build label at the bottom: `Cadenza VERSION-PROFILE-SOURCE-20261026.223300`. The profile is `dev`, `ci` or `prod`; dirty/uncommitted trees use `source-` followed by a short digest. The final timestamp is build time in UTC, not launch time. Set `SOURCE_DATE_EPOCH` to epoch seconds when a reproducible timestamp is required. Android's earlier system-managed splash remains an OS-provided icon screen; the text appears while Cadenza loads local state, without a forced delay.
 
 ## GitHub CI
 

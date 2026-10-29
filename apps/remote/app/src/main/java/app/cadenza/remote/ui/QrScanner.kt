@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Size
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -35,9 +36,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
+import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.ReaderException
+import com.google.zxing.Result
+import com.google.zxing.ResultMetadataType
 import com.google.zxing.common.HybridBinarizer
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
@@ -46,7 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 fun QrScanner(
-    onCode: (String) -> Unit,
+    onCode: (ByteArray) -> Unit,
     onError: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -78,7 +82,7 @@ fun QrScanner(
 
 private class CameraScanner(
     private val context: Context,
-    private val onCode: (String) -> Unit,
+    private val onCode: (ByteArray) -> Unit,
     private val onError: (String) -> Unit,
 ) : ImageAnalysis.Analyzer {
     private val main = Handler(Looper.getMainLooper())
@@ -147,7 +151,8 @@ private class CameraScanner(
                                 ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
                             ),
                         ).build(),
-                ).setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                ).setTargetRotation(view.display?.rotation ?: Surface.ROTATION_0)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
                 .also { it.setAnalyzer(analysisExecutor, this) }
@@ -168,16 +173,9 @@ private class CameraScanner(
             val pixels = frame.width * frame.height
             if (luminance.size != pixels) luminance = ByteArray(pixels)
             extractLuminance(plane.rowStride, plane.pixelStride, frame.width, frame.height, plane.buffer, luminance)
-            val source = PlanarYUVLuminanceSource(luminance, frame.width, frame.height, 0, 0, frame.width, frame.height, false)
-            try {
-                val result = decoder.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
-                if (result.text.length <= 4_096 && !stopped.get() && complete.compareAndSet(false, true)) {
-                    main.post { onCode(result.text) }
-                }
-            } catch (_: ReaderException) {
-                // No readable QR in this frame; the next frame is independent.
-            } finally {
-                decoder.reset()
+            val payload = decodeQrPayload(luminance, frame.width, frame.height, frame.imageInfo.rotationDegrees, decoder)
+            if (payload != null && !stopped.get() && complete.compareAndSet(false, true)) {
+                main.post { onCode(payload) }
             }
         }
     }
@@ -190,6 +188,73 @@ private class CameraScanner(
         if (!stopped.compareAndSet(false, true)) return
         provider?.unbindAll()
         analysisExecutor.shutdown()
+    }
+}
+
+internal fun decodeQrPayload(
+    luminance: ByteArray,
+    width: Int,
+    height: Int,
+    rotationDegrees: Int,
+    decoder: MultiFormatReader,
+): ByteArray? {
+    val frame = PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
+    val crops = listOf(frame) + centeredQrCrops(frame)
+    for (crop in crops) {
+        val orientations = rotatedSources(crop, rotationDegrees)
+        for (source in orientations) {
+            try {
+                val result = decoder.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
+                val payload = resultPayload(result)
+                if (payload.size <= 4_096) return payload
+            } catch (_: ReaderException) {
+                // Try the next crop or orientation; camera frames are independent.
+            } finally {
+                decoder.reset()
+            }
+        }
+    }
+    return null
+}
+
+private fun resultPayload(result: Result): ByteArray {
+    val segments = result.resultMetadata?.get(ResultMetadataType.BYTE_SEGMENTS) as? List<*>
+    val binary = segments?.filterIsInstance<ByteArray>()?.takeIf { it.isNotEmpty() }
+    return binary?.fold(ByteArray(0)) { output, segment -> output + segment }
+        ?: result.text.toByteArray(Charsets.UTF_8)
+}
+
+private fun rotatedSources(
+    source: LuminanceSource,
+    rotationDegrees: Int,
+): List<LuminanceSource> {
+    if (!source.isRotateSupported) return listOf(source)
+    val turns = ((rotationDegrees % 360) + 360) % 360 / 90
+    if (turns == 0) return listOf(source)
+    var rotated = source
+    repeat(turns) {
+        rotated = rotated.rotateCounterClockwise()
+    }
+    return listOf(source, rotated)
+}
+
+private fun centeredQrCrops(source: LuminanceSource): List<LuminanceSource> {
+    if (!source.isCropSupported) return emptyList()
+    val width = source.width
+    val height = source.height
+    return listOf(0.88f, 0.72f).mapNotNull { fraction ->
+        val cropWidth = (width * fraction).toInt()
+        val cropHeight = (height * fraction).toInt()
+        if (cropWidth < 1 || cropHeight < 1) {
+            null
+        } else {
+            source.crop(
+                (width - cropWidth) / 2,
+                (height - cropHeight) / 2,
+                cropWidth,
+                cropHeight,
+            )
+        }
     }
 }
 

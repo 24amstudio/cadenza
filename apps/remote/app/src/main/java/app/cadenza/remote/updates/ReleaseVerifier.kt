@@ -62,9 +62,10 @@ object ReleaseVerifier {
         val manifest = JSONObject(data.toString(Charsets.UTF_8))
         val version = manifest.getString("version")
         val build = manifest.getLong("build")
+        val versionPattern = Regex("[0-9]+\\.[0-9]+\\.[0-9]+(_[0-9]{8}\\.[0-9]+-[0-9a-f]{12})?")
         require(
             manifest.getInt("schema") == 1 && manifest.getInt("protocol_major") == 1 &&
-                manifest.getString("repository") == repository && version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+")) &&
+                manifest.getString("repository") == repository && version.matches(versionPattern) &&
                 manifest.getString("tag") == "v" + version && build > currentBuild &&
                 build <= Wire.MAXIMUM_COUNTER,
         ) { "The update is incompatible or is not newer than this installation." }

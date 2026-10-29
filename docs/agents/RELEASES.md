@@ -23,7 +23,7 @@ Back up the private update key and APK keystore securely before publishing a bas
 
 ## Configure automatic Build CI publishing
 
-The `Build` workflow runs after a successful `Checking` push to `main`. It builds both apps with the `production` profile, signs the release metadata, and creates or updates the stable `vVERSION` release. It does not require a manually created tag. A build that keeps the same `VERSION_NAME` reuses the existing `vVERSION` tag and overwrites its assets without moving the tag, so installed apps and the release page show no change. Change `VERSION_NAME` only when the user authorizes a new version, and increase `VERSION_CODE` for every build that must be accepted as newer by installed apps.
+The `Build` workflow runs after a successful `Checking` push to `main`. It builds both apps with the `production` profile, signs the release metadata, and creates a unique stable release for every checked revision. CI derives a release version such as `0.0.3_20261029.1001-eb751fa0730d` from the checked-in semantic version, the Checking run number, the UTC commit date, and the commit hash. The GitHub title is shown as `Cadenza 0.0.3_20261029.1001 (eb751fa0730d)`. No manual version bump or tag is required for ordinary builds.
 
 Generate the Android release keystore on a trusted machine with JDK `keytool`; never use the disposable debug keystore:
 
@@ -77,7 +77,7 @@ This file contains public configuration. Both native builds include it. Host set
 
 ## Build the release
 
-1. Change `VERSION_NAME` only when the user explicitly authorizes another version. Set a strictly increasing `VERSION_CODE` in `shared/version.properties` for every new release build.
+1. Change `VERSION_NAME` only when the user explicitly authorizes another product version. Ordinary CI builds leave `shared/version.properties` unchanged; CI supplies a strictly increasing Checking run number as the build code and derives the unique release version automatically.
 2. Run all required local portable and native checks.
 3. Build both apps with the explicit `production` profile, from identical source, using the preserved signing identities. Development and CI profiles cannot self-update.
 4. Put both versioned artifacts in `dist`.
@@ -98,7 +98,7 @@ The manifest binds repository, tag, app build, immutable source ID, maintained c
 
 ## Publish after validation
 
-After the repository configuration and Actions secrets are present, the `Build` workflow publishes the four signed files to the stable `vVERSION` release automatically. It creates the release on the first successful Production build and replaces its assets on later builds. Draft and prerelease builds are excluded from automatic installation.
+After the repository configuration and Actions secrets are present, the `Build` workflow publishes the four signed files to a unique stable `vVERSION_DATE.RUN-SHA` release automatically. Draft and prerelease builds are excluded from automatic installation.
 
 ## Verify updates
 

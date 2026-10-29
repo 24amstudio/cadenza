@@ -18,7 +18,7 @@ Normal app updates preserve the identity outside the app bundle. Revoking a Remo
 
 Open Music and check Host → Settings → Music permissions. Allow Automation and Accessibility in macOS privacy settings.
 
-An ad-hoc app update may cause macOS to ask again. A logged-out, sleeping, locked, minimized, or inaccessible Music session may prevent native UI actions.
+An ad-hoc app update may cause macOS to ask again because macOS authorizes Keychain access by the app's code-signing identity. Production Host archives must use the same stable Developer ID signing identity for every update; changing that identity cannot be fixed by pressing “Always Allow” in the app. A logged-out, sleeping, locked, minimized, or inaccessible Music session may prevent native UI actions.
 
 ## Catalog search fails
 

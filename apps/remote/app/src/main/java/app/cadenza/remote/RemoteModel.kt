@@ -246,8 +246,11 @@ class RemoteModel(
     ) {
         try {
             val invite =
-                runCatching { Wire.invitation(payload) }
-                    .getOrElse { Wire.invitation(String(payload, Charsets.UTF_8)) }
+                if (Wire.isCompactInvitation(payload)) {
+                    Wire.invitation(payload)
+                } else {
+                    Wire.invitation(String(payload, Charsets.UTF_8))
+                }
             require(name.trim().length in 1..80) { "Enter the name that should appear beside your requests." }
             require(name.none { it.isISOControl() }) { "Use a name without control characters." }
             invitation = invite

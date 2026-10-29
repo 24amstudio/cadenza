@@ -159,6 +159,9 @@ object Wire {
     const val MAXIMUM_BYTES = 1_048_576
     const val MAXIMUM_COUNTER = 9_007_199_254_740_991L
 
+    fun isCompactInvitation(payload: ByteArray): Boolean =
+        payload.size >= pairingMagic.size && payload.copyOfRange(0, pairingMagic.size).contentEquals(pairingMagic)
+
     fun frame(type: String): JSONObject = JSONObject().put("version", 1).put("type", type)
 
     fun song(value: JSONObject): Song =
@@ -317,7 +320,11 @@ object Wire {
         input.get(certificate)
         val fingerprintBytes = ByteArray(32)
         input.get(fingerprintBytes)
-        require(!input.hasRemaining() && port in 1024..65535) { "Invalid Host address." }
+        require(port in 1024..65535) { "Invalid Host address." }
+        var padding = 0
+        while (input.hasRemaining()) {
+            require(input.get().toInt() == 0 && ++padding <= 16) { "Invalid pairing envelope padding." }
+        }
         require(host.matches(Regex("[A-Za-z0-9.\\-:]{1,253}"))) { "Invalid Host address." }
         require(secret.length in 32..128) { "Invalid pairing identity." }
         val encodedCertificate = Base64.getEncoder().encodeToString(certificate)

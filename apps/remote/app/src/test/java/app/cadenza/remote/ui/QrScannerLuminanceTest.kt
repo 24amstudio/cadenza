@@ -1,16 +1,21 @@
 package app.cadenza.remote.ui
 
+import app.cadenza.remote.TestCertificate
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.DecodeHintType
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.Result
+import com.google.zxing.ResultMetadataType
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class QrScannerLuminanceTest {
     @Test
@@ -41,6 +46,74 @@ class QrScannerLuminanceTest {
         val result = Result("CDZP\u0001�", raw, null, BarcodeFormat.QR_CODE)
 
         assertArrayEquals(raw, resultPayload(result))
+    }
+
+    @Test
+    fun compactPairingPrefersByteSegmentsOverDecoderRawBytes() {
+        val raw = byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x00)
+        val segmented = byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x01, 0x02)
+        val result =
+            Result("CDZP\u0001", raw, null, BarcodeFormat.QR_CODE).apply {
+                putMetadata(ResultMetadataType.BYTE_SEGMENTS, listOf(segmented))
+            }
+
+        assertArrayEquals(segmented, resultPayload(result))
+    }
+
+    @Test
+    fun pairingCandidateSelectionSkipsAnIncompleteDecoderRepresentation() {
+        val invitation =
+            JSONObject()
+                .put("version", 1)
+                .put("host", "192.168.1.20")
+                .put("port", 43127)
+                .put("fingerprint", TestCertificate.fingerprint)
+                .put("certificate_der_base64", TestCertificate.encoded)
+                .put("secret", "s".repeat(44))
+                .put("host_name", "Example Cadenza Host")
+                .toString()
+        val result =
+            Result(
+                invitation,
+                byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x00),
+                null,
+                BarcodeFormat.QR_CODE,
+            )
+
+        assertNotNull(pairingResultPayload(result))
+        assertArrayEquals(invitation.toByteArray(), requireNotNull(pairingResultPayload(result)))
+    }
+
+    @Test
+    fun pairingCandidateSelectionAcceptsTheCompleteCompactRepresentation() {
+        val host = "192.168.1.20".toByteArray()
+        val secret = "s".repeat(44).toByteArray()
+        val certificate = TestCertificate.bytes
+        val fingerprint =
+            TestCertificate.fingerprint
+                .chunked(2)
+                .map { it.toInt(16).toByte() }
+                .toByteArray()
+        val payload =
+            ByteBuffer
+                .allocate(5 + 1 + host.size + 2 + 1 + secret.size + 2 + certificate.size + fingerprint.size)
+                .order(ByteOrder.BIG_ENDIAN)
+                .put(byteArrayOf(0x43, 0x44, 0x5A, 0x50, 1))
+                .put(host.size.toByte())
+                .put(host)
+                .putShort(43127.toShort())
+                .put(secret.size.toByte())
+                .put(secret)
+                .putShort(certificate.size.toShort())
+                .put(certificate)
+                .put(fingerprint)
+                .array()
+        val result =
+            Result("CDZP", byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x00), null, BarcodeFormat.QR_CODE).apply {
+                putMetadata(ResultMetadataType.BYTE_SEGMENTS, listOf(payload))
+            }
+
+        assertArrayEquals(payload, requireNotNull(pairingResultPayload(result)))
     }
 
     @Test

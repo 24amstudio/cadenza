@@ -33,6 +33,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.cadenza.remote.data.Wire
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -175,7 +176,15 @@ private class CameraScanner(
             val pixels = frame.width * frame.height
             if (luminance.size != pixels) luminance = ByteArray(pixels)
             extractLuminance(plane.rowStride, plane.pixelStride, frame.width, frame.height, plane.buffer, luminance)
-            val payload = decodeQrPayload(luminance, frame.width, frame.height, frame.imageInfo.rotationDegrees, decoder)
+            val payload =
+                decodeQrPayload(
+                    luminance,
+                    frame.width,
+                    frame.height,
+                    frame.imageInfo.rotationDegrees,
+                    decoder,
+                    ::isValidPairingPayload,
+                )
             if (payload != null && !stopped.get() && complete.compareAndSet(false, true)) {
                 main.post { onCode(payload) }
             }
@@ -199,6 +208,7 @@ internal fun decodeQrPayload(
     height: Int,
     rotationDegrees: Int,
     decoder: MultiFormatReader,
+    validator: (ByteArray) -> Boolean = { true },
 ): ByteArray? {
     val frame = PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
     val crops = listOf(frame) + centeredQrCrops(frame)
@@ -207,8 +217,8 @@ internal fun decodeQrPayload(
         for (source in orientations) {
             try {
                 val result = decoder.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
-                val payload = resultPayload(result)
-                if (payload.size <= 4_096) return payload
+                val payload = resultPayloadCandidates(result).firstOrNull { it.size <= 4_096 && validator(it) }
+                if (payload != null) return payload
             } catch (_: ReaderException) {
                 // Try the next crop or orientation; camera frames are independent.
             } finally {
@@ -219,14 +229,34 @@ internal fun decodeQrPayload(
     return null
 }
 
-internal fun resultPayload(result: Result): ByteArray {
-    val raw = result.rawBytes
-    if (raw != null && raw.startsWith(compactPairingMagic)) return raw
+internal fun resultPayload(result: Result): ByteArray =
+    resultPayloadCandidates(result).firstOrNull { it.startsWith(compactPairingMagic) }
+        ?: resultPayloadCandidates(result).first()
+
+internal fun resultPayloadCandidates(result: Result): List<ByteArray> {
     val segments = result.resultMetadata?.get(ResultMetadataType.BYTE_SEGMENTS) as? List<*>
     val binary = segments?.filterIsInstance<ByteArray>()?.takeIf { it.isNotEmpty() }
-    return binary?.fold(ByteArray(0)) { output, segment -> output + segment }
-        ?: result.text.toByteArray(Charsets.UTF_8)
+    val segmented = binary?.fold(ByteArray(0)) { output, segment -> output + segment }
+    val text = result.text.toByteArray(Charsets.UTF_8)
+    val candidates = listOfNotNull(segmented, result.rawBytes, text)
+    val compact = candidates.filter { it.startsWith(compactPairingMagic) }
+    val other = candidates.filterNot { it.startsWith(compactPairingMagic) }
+    return (compact + other).fold(emptyList()) { unique, candidate ->
+        if (unique.any { it.contentEquals(candidate) }) unique else unique + candidate
+    }
 }
+
+internal fun pairingResultPayload(result: Result): ByteArray? =
+    resultPayloadCandidates(result).firstOrNull { it.size <= 4_096 && isValidPairingPayload(it) }
+
+private fun isValidPairingPayload(payload: ByteArray): Boolean =
+    runCatching {
+        if (Wire.isCompactInvitation(payload)) {
+            Wire.invitation(payload)
+        } else {
+            Wire.invitation(String(payload, Charsets.UTF_8))
+        }
+    }.isSuccess
 
 private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
     size >= prefix.size && prefix.indices.all { index -> this[index] == prefix[index] }

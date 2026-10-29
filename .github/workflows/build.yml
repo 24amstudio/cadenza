@@ -32,7 +32,7 @@ jobs:
           - platform: host
             runner: macos-26
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -145,7 +145,7 @@ jobs:
   release:
     needs: artifacts
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 6
     env:
       GH_TOKEN: ${{ github.token }}
     steps:

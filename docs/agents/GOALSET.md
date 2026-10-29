@@ -185,21 +185,22 @@ Implement two clearly separated CI pipelines.
 
 ### Checking CI
 
-Runs on every relevant commit/push and pull request, across branches.
+Runs on every relevant commit/push and pull request, across branches, with a six-minute limit per job.
 
-It must run the checks applicable to each project:
+For branch and pull-request runs it performs the fast static gates applicable to each project:
 
-- Unit and other existing automated tests.
 - Compilation and type checking.
 - Linting and static analysis.
 - Code formatting checks.
 - Any additional repository-specific quality gates identified during the audit.
 
+Behavioral and native test suites remain required local gates. The `main` Build workflow repeats the static Checking gates before packaging.
+
 Use the project's supported tools and add missing configuration where necessary. Document the commands so developers can run the same checks locally.
 
 ### Build CI
 
-Build CI may execute only on the `main` branch, and only after Checking CI has completed successfully for the relevant revision.
+Build CI may execute only on the `main` branch, and only after Checking CI has completed successfully for the relevant revision. Each Build job has a six-minute limit.
 
 It must:
 

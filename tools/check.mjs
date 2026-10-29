@@ -6,6 +6,7 @@ import development from '../package.json' with { type: 'json' };
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const temporaryDirectory = join(root, '.cache', 'tmp');
+const staticOnly = process.argv.includes('--static');
 
 mkdirSync(temporaryDirectory, { recursive: true });
 
@@ -143,7 +144,7 @@ if (process.platform === 'win32') {
   run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', parse]);
 }
 
-run(process.execPath, ['tools/test.mjs']);
+if (!staticOnly) run(process.execPath, ['tools/test.mjs']);
 
 const workflowLint =
   process.env['CADENZA_ACTIONLINT'] ??
@@ -166,7 +167,7 @@ run(workflowLint, [
 
 if (process.argv.includes('--portable')) {
   process.stdout.write(
-    'Portable checks passed. Native compile, lint, format, integration, and accessibility checks remain required.\n',
+    `${staticOnly ? 'Portable static checks' : 'Portable checks'} passed. Native compile, lint, format, integration, and accessibility checks remain required.\n`,
   );
 } else {
   run(process.execPath, ['tools/native-check.mjs']);

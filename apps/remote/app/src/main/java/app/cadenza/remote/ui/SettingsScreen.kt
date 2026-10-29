@@ -56,6 +56,54 @@ fun SettingsScreen(
                 ThemePreference.entries.forEach { option ->
                     FilterChip(selected = theme == option, onClick = { theme = option }, label = { Text(option.label) })
                 }
+                Text("Connection transport", style = MaterialTheme.typography.titleLarge)
+                Text("Choose the path this Remote uses for its Host session.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = state.transportMode == "lan",
+                        onClick = { model.setTransportMode("lan") },
+                        label = { Text("Wi-Fi / LAN") },
+                    )
+                    FilterChip(
+                        selected = state.transportMode == "ble",
+                        onClick = { model.setTransportMode("ble") },
+                        label = { Text("Bluetooth") },
+                    )
+                    FilterChip(
+                        selected = state.transportMode == "hybrid",
+                        onClick = { model.setTransportMode("hybrid") },
+                        label = { Text("Hybrid") },
+                    )
+                }
+                Text("Transport preference", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "The Host blends this preference with its own limits and priorities.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        "latency" to "Latency",
+                        "balanced" to "Balanced",
+                        "remote_efficiency" to "Battery",
+                        "reliability" to "Reliability",
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = state.transportPreference == value,
+                            onClick = { model.setTransportPreference(value) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                state.effectiveTransport?.let { decision ->
+                    Text("Effective path: ${decision.selected ?: "Unavailable"}")
+                    Text(
+                        "Host policy: ${decision.hostPreference} · " +
+                            "Remote policy: ${decision.remotePreference ?: state.transportPreference} · " +
+                            "${decision.policyMode} · ${decision.confidence} confidence",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(decision.reason, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 ActionButton("Save preferences", pending = state.savingPreferences, enabled = name.isNotBlank()) {
                     model.savePreferences(name, theme)
                 }

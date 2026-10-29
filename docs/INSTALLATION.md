@@ -1,6 +1,6 @@
 # Install Cadenza
 
-The repository contains source and native validation evidence; no packaged APK or stable Host/Remote release is present in this checkout. The user reports an installed Remote, but this workspace has no ADB or device evidence and real Music control remains unverified. To build a release, follow [BUILDING.md](BUILDING.md) and the [release instructions](agents/RELEASES.md), including the remaining [validation gates](agents/VALIDATION.md).
+This repository contains source, not packaged application installers. Download a release from the configured GitHub Releases page, or follow [BUILDING.md](BUILDING.md) to build one locally.
 
 ## Requirements
 
@@ -36,9 +36,9 @@ Initial installation permission for your browser or Files app is separate from a
 
 ## Install the current development APK
 
-After a development APK is built, record its exact path and SHA-256 in [agents/VALIDATION.md](agents/VALIDATION.md), then copy it to the Android device and open it in Files. Its preserved application ID is `app.cadence.remote.debug`, separately from stable and CI installs. Its updater is disabled. Updating a previously installed debug APK requires the same original debug keystore; do not uninstall or clear data if you want to retain it.
+After a development APK is built, copy it to the Android device and open it in Files. Its preserved application ID is `app.cadence.remote.debug`, separately from stable and CI installs. Its updater is disabled. Updating a previously installed debug APK requires the same original debug keystore; do not uninstall or clear data if you want to retain it.
 
-If the Android device is connected by USB with USB debugging enabled and its authorization prompt accepted, the already installed command-line tools can install it:
+If the Android device is connected by USB with USB debugging enabled and its authorization prompt accepted, Android command-line tools can install it:
 
 ```bat
 call tools\windows-env.cmd

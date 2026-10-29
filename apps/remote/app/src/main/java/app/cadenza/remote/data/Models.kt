@@ -32,6 +32,8 @@ data class QueueEntry(
     val requesterName: String,
     val song: Song,
     val estimatedWaitMs: Long?,
+    val estimatedStartHostMs: Long?,
+    val estimateStatus: String?,
 )
 
 data class CurrentPlayback(
@@ -204,6 +206,8 @@ object Wire {
                     item.getString("requester_name"),
                     song(item.getJSONObject("song")),
                     item.nullableLong("estimated_wait_ms"),
+                    item.nullableLong("estimated_start_host_ms"),
+                    item.nullableString("estimate_status"),
                 )
             }
         require(queue.size <= 256) { "The shared queue exceeds its limit." }

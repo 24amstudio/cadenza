@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.RemoteModel
+import app.cadenza.remote.checkRequest
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.dismissNotice
 import app.cadenza.remote.dismissPrompt

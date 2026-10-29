@@ -1,5 +1,6 @@
 package app.cadenza.remote
 
+import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.HostSnapshot
 import app.cadenza.remote.data.LyricDocument
@@ -41,6 +42,9 @@ data class RemoteState(
     val profile: HostProfile? = null,
     val connected: Boolean = false,
     val connecting: Boolean = false,
+    val effectiveTransport: EffectiveTransportDecision? = null,
+    val transportPreference: String = "balanced",
+    val transportMode: String = "lan",
     val connectionIssue: String? = null,
     val snapshot: HostSnapshot? = null,
     val artwork: Map<String, ByteArray> = emptyMap(),

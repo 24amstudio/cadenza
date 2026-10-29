@@ -2,6 +2,10 @@
 
 Version 1 uses JSON text frames over a persistent local TLS WebSocket. Host advertises `_cadence._tcp` with a public `host_id` TXT record. Discovery identifies a candidate address. The QR uses a compact binary envelope containing the Host address, one-use secret, public DER certificate and its raw SHA-256 fingerprint; Remote verifies the certificate against that fingerprint, then pins the exact leaf certificate. No private key leaves the Host. The pin binds the Host across LAN address changes; a changed certificate requires pairing again.
 
+The session contract also defines transport policy and status frames. A pairing may bind LAN (Wi-Fi or Ethernet), BLE, or both to one logical Remote session. `transport.configure` selects `lan_only`, `ble_only`, or `hybrid` mode and deterministic or opportunistic path selection. `session.status` carries bounded power, resource, constraints, and per-path health data in both directions; energy estimates use `energy_percent_per_hour`, `energy_confidence`, and `sample_age_ms` and remain estimates rather than exact battery accounting. Either side may reject a path with latency, loss, or reliability limits. Host and Remote preferences are blended only after those hard limits, and the resulting selected path, bulk path, policy mode, confidence, and reason are returned to both sides. Manual Host path selection and minimum dwell are explicit policy fields; they do not override hard limits. Transport hints never replace Host authentication or command receipts.
+
+LAN discovery uses Bonjour/DNS-SD first. Host also joins the local SSDP multicast group and answers a bounded `M-SEARCH` for `urn:cadenza:host:1`; Remote may issue that query as an optional fallback. SSDP responses are untrusted address hints and must include a Host ID and local HTTPS location; the QR certificate fingerprint and authenticated handshake remain authoritative. SSDP is never used for port forwarding, WAN exposure, or trust.
+
 ## Contracts
 
 | Schema                | Purpose                                                                        |
@@ -51,4 +55,4 @@ Host distributes one timed lyric document and English translation revision for t
 
 Credits have positive contiguous sequences per pairing. The first credit increments one occurrence's count only with positive observed time; later credits add playing time. Host excludes pauses and seek jumps. Remote commits aggregate and cursor changes before acknowledging. Duplicate or older credits remain ignored after raw cleanup, while a sequence gap requires replay.
 
-These contracts and portable tests do not establish native conformance. See [validation status](../../docs/agents/VALIDATION.md).
+These contracts define the wire format; each native application must also pass its platform-specific build and integration checks.

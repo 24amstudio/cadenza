@@ -67,6 +67,18 @@
         "song": { "$ref": "#/$defs/song" },
         "estimated_wait_ms": {
           "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "estimated_start_host_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "estimate_status": {
+          "enum": [
+            "known",
+            "paused",
+            "unknown_duration",
+            "external_queue_change",
+            "unsynchronized"
+          ]
         }
       },
       "additionalProperties": false

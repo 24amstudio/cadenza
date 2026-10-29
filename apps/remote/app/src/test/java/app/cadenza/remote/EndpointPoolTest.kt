@@ -31,4 +31,22 @@ class EndpointPoolTest {
         pool.offer(LocalEndpoint("invalid", 80), 5)
         assertEquals(saved, pool.next(saved, 400_000))
     }
+
+    @Test
+    fun repeatedlyFailedEndpointWaitsForCooldownBeforeRetry() {
+        val saved = LocalEndpoint("192.168.1.20", 43127)
+        val alternate = LocalEndpoint("10.10.10.24", 43127)
+        val fresh = LocalEndpoint("172.16.0.30", 43127)
+        val pool = EndpointPool()
+        pool.offer(saved, 1)
+        pool.offer(alternate, 2)
+        pool.offer(fresh, 3)
+
+        pool.failed(saved, 10)
+        pool.failed(alternate, 11)
+        assertEquals(fresh, pool.next(saved, 12))
+        pool.failed(fresh, 13)
+        assertEquals(saved, pool.next(saved, 500))
+        assertEquals(saved, pool.next(saved, 1_010))
+    }
 }

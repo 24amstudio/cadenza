@@ -1,9 +1,11 @@
 package app.cadenza.remote
+
 import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.data.ClockSync
+import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.HostSnapshot
 import app.cadenza.remote.data.LyricDocument
@@ -11,18 +13,25 @@ import app.cadenza.remote.data.PairingInvitation
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.data.TransportPathStatus
 import app.cadenza.remote.data.UpdateConfiguration
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.data.counter
 import app.cadenza.remote.data.deviceName
 import app.cadenza.remote.data.nullableString
 import app.cadenza.remote.data.objects
+import app.cadenza.remote.network.BleConnection
 import app.cadenza.remote.network.EndpointPool
 import app.cadenza.remote.network.HostConnection
 import app.cadenza.remote.network.HostDiscovery
+import app.cadenza.remote.network.HybridConnection
 import app.cadenza.remote.network.LocalEndpoint
 import app.cadenza.remote.network.NetworkMonitor
+import app.cadenza.remote.network.PathMeasurement
+import app.cadenza.remote.network.PathMeasurementService
 import app.cadenza.remote.network.PrioritizedFrameQueue
+import app.cadenza.remote.network.RemoteConnection
+import app.cadenza.remote.network.RemoteStatusPublisher
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -47,50 +56,58 @@ class RemoteModel(
     constructor(application: Application) : this(application, Dispatchers.IO)
 
     private val app = application as CadenzaApplication
-    private val preferences = app.settings
+    internal val preferences = app.settings
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
     private val mediaSession = RemoteMediaSession(app, mediaActions::handle)
     val mediaToken get() = mediaSession.token
-    private val mutable = MutableStateFlow(RemoteState())
+    internal val mutable = MutableStateFlow(RemoteState())
     val state = mutable.asStateFlow()
-    private val clock = ClockSync()
-    internal var connection: HostConnection? = null
+    internal val clock = ClockSync()
+    internal var connection: RemoteConnection? = null
+    internal var transportMode = "lan"
+    internal var transportPreference = "balanced"
     private var generation = 0
-    private var foreground = false
+    internal var foreground = false
     private var receiveJob: Job? = null
-    private var invitation: PairingInvitation? = null
+    internal var invitation: PairingInvitation? = null
     private var remoteName = deviceName(application)
     private var reconnect: Job? = null
     private var clockJob: Job? = null
     private var lastReceivedAt = 0L
-    private var lastHeartbeatAt = 0L
+    internal var lastHeartbeatAt = 0L
     private var lastClockSentAt = 0L
+    internal var lastStatusSentAt = 0L
     private var retryDelay = 1_000L
-    private var searchId: String? = null
-    private var preparationId: String? = null
-    private var searchTimeout: Job? = null
-    private var preparationTimeout: Job? = null
-    private var lyricsTimeout: Job? = null
-    private var lyricRequestId: String? = null
-    private var lyricUserInitiated = false
-    private var discovery: HostDiscovery? = null
+    internal var searchId: String? = null
+    internal var preparationId: String? = null
+    internal var searchTimeout: Job? = null
+    internal var preparationTimeout: Job? = null
+    internal var lyricsTimeout: Job? = null
+    internal var lyricRequestId: String? = null
+    internal var lyricUserInitiated = false
+    internal var discovery: HostDiscovery? = null
     private var lastDiscoveredAt = 0L
     private val endpoints = EndpointPool()
+    internal val statusPublisher = RemoteStatusPublisher(app)
+    internal val pathMeasurements = PathMeasurementService()
+    private val handshake = RemoteHandshake(app, ioDispatcher) { remoteName }
     private var activeEndpoint: LocalEndpoint? = null
-    private val networkMonitor =
+    internal val networkMonitor =
         NetworkMonitor(app) {
             viewModelScope.launch {
                 if (foreground && mutable.value.loaded && mutable.value.profile != null) {
                     discovery?.close()
                     discovery = null
-                    startDiscovery()
-                    if (!mutable.value.connected && !mutable.value.connecting) connect()
+                    if (!mutable.value.connected) {
+                        startDiscovery()
+                        if (!mutable.value.connecting) connect()
+                    }
                 }
             }
         }
     private var lastCachedAt = 0L
-    private val pending = mutableMapOf<String, PendingCommand>()
-    private val statusChecks = mutableSetOf<String>()
+    internal val pending = mutableMapOf<String, PendingCommand>()
+    internal val statusChecks = mutableSetOf<String>()
     private val frameQueue = PrioritizedFrameQueue()
     private val frameSignal = Channel<Unit>(Channel.UNLIMITED)
     private val metadata = mutableSetOf<String>()
@@ -100,7 +117,7 @@ class RemoteModel(
     internal val updateDispatcher get() = ioDispatcher
     internal val updateScope get() = viewModelScope
 
-    private data class PendingCommand(
+    internal data class PendingCommand(
         val frame: JSONObject,
         val key: String,
         val timer: Job,
@@ -154,6 +171,8 @@ class RemoteModel(
                     it.copy(
                         loaded = true,
                         clientName = remoteName,
+                        transportMode = preferences.getString("transport_mode", "lan") ?: "lan",
+                        transportPreference = preferences.getString("transport_preference", "balanced") ?: "balanced",
                         theme = theme,
                         favorites = library.songs,
                         unreadableFavorites = library.unreadable,
@@ -193,12 +212,8 @@ class RemoteModel(
         if (!visible) {
             discovery?.close()
             discovery = null
-            // Prompts are transient interaction feedback. Do not replay a stale
-            // command dialog when the Activity is recreated or returns from the
-            // background; the durable request remains available for an explicit
-            // status check after reconnecting.
             mutable.update { it.copy(prompt = null) }
-            if (!maintainBackgroundSession()) {
+            if (!maintainBackgroundSessionInternal()) {
                 endSessionStatus()
                 disconnect()
             }
@@ -219,6 +234,8 @@ class RemoteModel(
                     return@HostDiscovery
                 }
                 lastDiscoveredAt = now
+                discovery?.close()
+                discovery = null
                 connect()
             }.also { it.start() }
     }
@@ -254,6 +271,25 @@ class RemoteModel(
         }
     }
 
+    fun setTransportMode(mode: String) {
+        require(mode in setOf("lan", "ble", "hybrid")) { "Unsupported transport mode." }
+        if (transportMode == mode) return
+        transportMode = mode
+        preferences.write("transport_mode" to mode)
+        mutable.update { it.copy(transportMode = mode) }
+        if (mutable.value.connected || mutable.value.connecting) connect()
+    }
+
+    fun setTransportPreference(preference: String) {
+        require(preference in setOf("latency", "host_efficiency", "remote_efficiency", "reliability", "balanced")) {
+            "Unsupported transport preference."
+        }
+        transportPreference = preference
+        preferences.write("transport_preference" to preference)
+        mutable.update { it.copy(transportPreference = preference) }
+        if (mutable.value.connected) publishStatus()
+    }
+
     private fun openConnection() {
         disconnect()
         val invite = invitation
@@ -269,63 +305,77 @@ class RemoteModel(
         lastHeartbeatAt = 0
         mutable.update { it.copy(connecting = true, connectionIssue = null) }
         connection =
-            HostConnection(
-                host,
-                port,
-                fingerprint,
-                invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
-                opened = {
-                    viewModelScope.launch {
-                        if (version != generation) return@launch
-                        try {
-                            val frame =
-                                if (invite != null) {
-                                    Wire
-                                        .frame(
-                                            "pair",
-                                        ).put(
-                                            "pair",
-                                            JSONObject()
-                                                .put("name", remoteName)
-                                                .put("secret", invite.secret)
-                                                .put("remote_version", BuildConfig.VERSION_NAME),
-                                        )
-                                } else {
-                                    val stored = requireNotNull(profile)
-                                    val credentials =
-                                        withContext(ioDispatcher) {
-                                            val token =
-                                                requireNotNull(
-                                                    app.vault.read("host." + stored.hostId),
-                                                ) { "Pairing credentials are unavailable. Pair again." }
-                                            JSONObject()
-                                                .put("remote_id", stored.remoteId)
-                                                .put("token", token)
-                                                .put("last_credit_sequence", app.database.cursor(stored.hostId))
-                                                .put("remote_version", BuildConfig.VERSION_NAME)
-                                        }
-                                    Wire.frame("hello").put("auth", credentials)
-                                }
+            if (transportMode == "ble") {
+                BleConnection(
+                    getApplication(),
+                    opened = {
+                        viewModelScope.launch {
                             if (version != generation) return@launch
-                            frame.put("request_id", id())
-                            connection?.send(frame)
-                        } catch (error: Exception) {
-                            if (version != generation) return@launch
-                            showError("Pair this Remote again", error.message ?: "The saved credential could not be read.")
-                            disconnect()
+                            sendHandshake(invite, profile, version)
                         }
-                    }
-                },
-                received = { frame ->
-                    val accepted = frameQueue.offer(PrioritizedFrameQueue.Item(version, frame))
-                    if (!accepted) {
-                        viewModelScope.launch { connectionClosed(version, "Host messages arrived faster than they could be applied.") }
-                    } else {
-                        frameSignal.trySend(Unit)
-                    }
-                },
-                closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
-            )
+                    },
+                    received = { frame ->
+                        val accepted = frameQueue.offer(PrioritizedFrameQueue.Item(version, frame))
+                        if (!accepted) {
+                            viewModelScope.launch { connectionClosed(version, "Host messages arrived faster than they could be applied.") }
+                        } else {
+                            frameSignal.trySend(Unit)
+                        }
+                    },
+                    closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
+                )
+            } else if (transportMode == "hybrid") {
+                HybridConnection(
+                    getApplication(),
+                    host,
+                    port,
+                    fingerprint,
+                    invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
+                    opened = {
+                        viewModelScope.launch {
+                            if (version != generation) return@launch
+                            sendHandshake(invite, profile, version)
+                        }
+                    },
+                    received = { frame ->
+                        val accepted = frameQueue.offer(PrioritizedFrameQueue.Item(version, frame))
+                        if (!accepted) {
+                            viewModelScope.launch { connectionClosed(version, "Host messages arrived faster than they could be applied.") }
+                        } else {
+                            frameSignal.trySend(Unit)
+                        }
+                    },
+                    closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
+                )
+            } else {
+                HostConnection(
+                    host,
+                    port,
+                    fingerprint,
+                    invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
+                    opened = {
+                        viewModelScope.launch {
+                            if (version != generation) return@launch
+                            try {
+                                sendHandshake(invite, profile, version)
+                            } catch (error: Exception) {
+                                if (version != generation) return@launch
+                                showError("Pair this Remote again", error.message ?: "The saved credential could not be read.")
+                                disconnect()
+                            }
+                        }
+                    },
+                    received = { frame ->
+                        val accepted = frameQueue.offer(PrioritizedFrameQueue.Item(version, frame))
+                        if (!accepted) {
+                            viewModelScope.launch { connectionClosed(version, "Host messages arrived faster than they could be applied.") }
+                        } else {
+                            frameSignal.trySend(Unit)
+                        }
+                    },
+                    closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
+                )
+            }
         connection?.connect()
         clockJob =
             viewModelScope.launch {
@@ -336,6 +386,17 @@ class RemoteModel(
                     connectionClosed(version, "Host did not finish the connection handshake.")
                 }
             }
+    }
+
+    private suspend fun sendHandshake(
+        invite: PairingInvitation?,
+        profile: HostProfile?,
+        version: Int,
+    ) {
+        val frame = handshake.frame(invite, profile)
+        if (version != generation) return
+        frame.put("request_id", id())
+        connection?.send(frame)
     }
 
     private fun connectionClosed(
@@ -361,7 +422,8 @@ class RemoteModel(
             showError("Could not pair", message)
             return
         }
-        if (maintainBackgroundSession() && mutable.value.profile != null) {
+        if (maintainBackgroundSessionInternal() && mutable.value.profile != null) {
+            startDiscovery()
             reconnect?.cancel()
             reconnect =
                 viewModelScope.launch {
@@ -401,6 +463,7 @@ class RemoteModel(
     private suspend fun receive(frame: JSONObject) {
         lastReceivedAt = SystemClock.elapsedRealtime()
         when (frame.getString("type")) {
+            "session.status" -> applySessionStatus(frame.getJSONObject("status"))
             "heartbeat" -> {
                 if (frame.optString("host_epoch") == mutable.value.snapshot?.hostEpoch) {
                     lastHeartbeatAt = lastReceivedAt
@@ -412,6 +475,18 @@ class RemoteModel(
             "state" -> applyState(frame.getJSONObject("snapshot"))
             "clock" -> {
                 val sample = frame.getJSONObject("clock")
+                val sentAt = sample.getLong("sent_at_remote_ms")
+                val measuredRtt = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)
+                pathMeasurements.record(
+                    PathMeasurement(
+                        transport = if (transportMode == "ble") "ble" else "lan",
+                        rttMs = measuredRtt,
+                        lossPercent = 0.0,
+                        energyPercentPerHour = null,
+                        confidence = "low",
+                        sampleAgeMs = SystemClock.elapsedRealtime(),
+                    ),
+                )
                 clock.observe(
                     sample.counter("sent_at_remote_ms"),
                     sample.counter("received_at_host_ms"),
@@ -476,7 +551,7 @@ class RemoteModel(
                     }
                 }
             "command.result" -> commandResult(frame)
-            "error" -> operationError(frame)
+            "error" -> operationErrorInternal(frame)
             "operation.started" -> Unit
             else -> Unit
         }
@@ -504,6 +579,8 @@ class RemoteModel(
         }
         invitation = null
         activeEndpoint?.let { endpoints.succeeded(it, SystemClock.elapsedRealtime()) }
+        discovery?.close()
+        discovery = null
         retryDelay = 1_000
         metadata.clear()
         val release = value.getJSONObject("updates")
@@ -532,6 +609,7 @@ class RemoteModel(
             )
         }
         flushLogOutbox()
+        publishStatus()
         if ("remote.configure" in mutable.value.capabilities) {
             connection?.send(
                 Wire
@@ -550,6 +628,7 @@ class RemoteModel(
                 }
                 while (true) {
                     delay(5_000)
+                    if (SystemClock.elapsedRealtime() - lastStatusSentAt >= 15_000) publishStatus()
                     if (SystemClock.elapsedRealtime() - lastReceivedAt > 10_000) {
                         connectionClosed(generation, "The Host stopped responding. Reconnecting…")
                         return@launch
@@ -562,7 +641,6 @@ class RemoteModel(
                 }
             }
         reloadStatistics()
-        startDiscovery()
         if (RemoteUpdater.due(app)) checkUpdates(automatic = true)
         val outstanding = withContext(ioDispatcher) { app.database.pending(profile) }
         for ((frame, key) in outstanding) {
@@ -819,8 +897,6 @@ class RemoteModel(
                                     ),
                             )
                         }
-                        // Refresh the replicated state while retaining the durable command
-                        // record. A late result still resolves the original command ID.
                         queryRequest(commandId)
                         connection?.send(Wire.frame("state.get").put("request_id", id()))
                     }
@@ -903,62 +979,6 @@ class RemoteModel(
         }
     }
 
-    fun checkRequest(commandId: String) {
-        statusChecks.add(commandId)
-        queryRequest(commandId)
-        dismissPrompt()
-        mutable.update { it.copy(notice = Notice("Checking request status")) }
-    }
-
-    private fun queryRequest(commandId: String) {
-        if (pending.containsKey(
-                commandId,
-            )
-        ) {
-            connection?.send(Wire.frame("command.status").put("command_id", commandId).put("request_id", id()))
-        }
-    }
-
-    private fun operationError(frame: JSONObject) {
-        val request = frame.nullableString("request_id")
-        val message = frame.optString("message", "The operation failed.")
-        if (request != null && request == searchId) {
-            searchTimeout?.cancel()
-            mutable.update { it.copy(searching = false) }
-        }
-        if (request != null && request == preparationId) {
-            preparationTimeout?.cancel()
-            mutable.update { it.copy(preparing = false) }
-        }
-        if (request != null && request == lyricRequestId) {
-            lyricsTimeout?.cancel()
-            mutable.update { it.copy(lyricsLoading = false, lyricsIssue = message) }
-            if (lyricUserInitiated) showError("Lyrics unavailable", message)
-            lyricUserInitiated = false
-        } else {
-            showError("Action unavailable", message)
-        }
-        if (frame.optString("error_code") in listOf("authentication", "revoked")) disconnect()
-    }
-
-    fun isStale(now: Long = SystemClock.elapsedRealtime()): Boolean =
-        !mutable.value.connected || now - maxOf(mutable.value.lastStateAt, lastHeartbeatAt) > 3_000
-
-    fun position(now: Long): Long = mutable.value.snapshot?.let { clock.position(it, now, isStale(now)) } ?: 0
-
-    internal fun id(): String = UUID.randomUUID().toString()
-
-    fun beginPairing() {
-        disconnect()
-        discovery?.close()
-        discovery = null
-        for (item in pending.values) item.timer.cancel()
-        pending.clear()
-        statusChecks.clear()
-        invitation = null
-        mutable.update { it.copy(profile = null, snapshot = null, lyrics = null, results = emptyList(), pending = emptySet()) }
-    }
-
     override fun onCleared() {
         SessionNotification(app).clear()
         app.unpinSession = null
@@ -972,25 +992,5 @@ class RemoteModel(
         frameSignal.close()
     }
 
-    fun monitorSong() {
-        mutable.update {
-            it.copy(
-                sessionActive = true,
-                monitoringSong = true,
-                notice = Notice("Song status monitoring is on until you unpin it"),
-            )
-        }
-    }
-
-    fun endSessionStatus() {
-        mutable.update { it.copy(sessionActive = false, monitoringSong = false) }
-        if (!foreground) {
-            networkMonitor.close()
-            discovery?.close()
-            discovery = null
-            disconnect()
-        }
-    }
-
-    private fun maintainBackgroundSession() = foreground || mutable.value.monitoringSong || mutable.value.snapshot?.playing == true
+    fun beginPairing() = beginPairingInternal()
 }

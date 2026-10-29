@@ -32,7 +32,10 @@
         "error",
         "heartbeat",
         "remote.configure",
-        "remote.configured"
+        "remote.configured",
+        "transport.configure",
+        "transport.configured",
+        "session.status"
       ]
     },
     "request_id": {
@@ -236,9 +239,233 @@
     },
     "heartbeat": {
       "type": "boolean"
+    },
+    "transport": {
+      "type": "object",
+      "required": ["mode", "selection"],
+      "properties": {
+        "mode": {
+          "enum": ["lan_only", "ble_only", "hybrid"]
+        },
+        "selection": {
+          "enum": ["deterministic", "opportunistic"]
+        },
+        "primary": {
+          "enum": ["lan", "wifi", "ethernet", "ble"]
+        },
+        "bulk": {
+          "enum": ["lan", "ble", "auto"]
+        },
+        "manual": {
+          "enum": ["lan", "ble", "auto"]
+        },
+        "minimum_dwell_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "object",
+      "required": ["reported_at_ms", "device", "paths"],
+      "properties": {
+        "reported_at_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "device": {
+          "enum": ["host", "remote"]
+        },
+        "preference": {
+          "enum": [
+            "latency",
+            "host_efficiency",
+            "remote_efficiency",
+            "reliability",
+            "balanced"
+          ]
+        },
+        "power": {
+          "type": "object",
+          "properties": {
+            "battery_percent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "charging": { "type": "boolean" },
+            "source": {
+              "enum": ["battery", "ac", "usb", "wireless", "unknown"]
+            }
+          },
+          "additionalProperties": false
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "cpu_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "memory_bytes": {
+              "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+            },
+            "storage_bytes": {
+              "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+            }
+          },
+          "additionalProperties": false
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "maximum_latency_ms": {
+              "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+            },
+            "maximum_loss_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "require_reliable": { "type": "boolean" },
+            "minimum_reliability_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false
+        },
+        "paths": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["transport", "state"],
+            "properties": {
+              "transport": {
+                "enum": ["lan", "wifi", "ethernet", "ble"]
+              },
+              "state": {
+                "enum": ["connected", "connecting", "degraded", "disconnected"]
+              },
+              "rssi_dbm": {
+                "type": "integer",
+                "minimum": -127,
+                "maximum": 0
+              },
+              "rtt_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "loss_percent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "throughput_kbps": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "backlog_bytes": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "energy_percent_per_hour": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000
+              },
+              "energy_confidence": {
+                "enum": ["low", "medium", "high"]
+              },
+              "sample_age_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 604800000
+              },
+              "p95_rtt_ms": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "reconnects": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              },
+              "active_remotes": {
+                "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "effective": {
+          "type": "object",
+          "required": ["reason", "host_preference"],
+          "properties": {
+            "selected": { "enum": ["lan", "wifi", "ethernet", "ble", null] },
+            "bulk": { "enum": ["lan", "ble", "auto", null] },
+            "reason": { "type": "string", "maxLength": 500 },
+            "host_preference": {
+              "enum": [
+                "latency",
+                "host_efficiency",
+                "remote_efficiency",
+                "reliability",
+                "balanced"
+              ]
+            },
+            "remote_preference": {
+              "enum": [
+                "latency",
+                "host_efficiency",
+                "remote_efficiency",
+                "reliability",
+                "balanced",
+                null
+              ]
+            },
+            "policy_mode": {
+              "enum": [
+                "host_led",
+                "remote_led",
+                "balanced_negotiation",
+                "manual"
+              ]
+            },
+            "confidence": { "enum": ["low", "medium", "high"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "transport.configure" } } },
+      "then": {
+        "required": ["transport"],
+        "properties": {
+          "transport": { "$ref": "#/properties/transport" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "transport.configured" } } },
+      "then": {
+        "required": ["transport"],
+        "properties": {
+          "transport": { "$ref": "#/properties/transport" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.status" } } },
+      "then": {
+        "required": ["status"],
+        "properties": {
+          "status": { "$ref": "#/properties/status" }
+        }
+      }
+    },
     {
       "if": { "properties": { "type": { "const": "artwork.get" } } },
       "then": {

@@ -106,14 +106,12 @@ struct HostWindow: View {
             Button("Pair a Remote", action: model.pair).disabled(!model.running)
             List(model.remotes) { remote in
                 HStack {
-                    Text(remote.name)
+                    RemoteStatusRow(remote: remote)
                     Spacer()
-                    if remote.revoked {
-                        Text("Unpaired").foregroundStyle(.secondary)
-                    } else {
+                    if !remote.revoked {
                         Button("Unpair", role: .destructive) { model.revoke(remote) }
                     }
-                }.padding(.vertical, 6)
+                }
             }
         }
     }

@@ -57,6 +57,7 @@ import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
+import app.cadenza.remote.isStale
 
 internal fun activeLyricIndex(
     document: LyricDocument?,

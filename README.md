@@ -7,11 +7,7 @@ Control Apple Music from Android devices on the same local network. Music.app on
 | **Cadenza Host**   | macOS companion, pairing, shared queue, Music.app control, and lyric distribution       | Swift, SwiftUI, AppKit where needed, and SQLite                         |
 | **Cadenza Remote** | Android interface, attributed requests, synchronized sing along, and personal analytics | Kotlin, Jetpack Compose with Material 3 Expressive, and platform SQLite |
 
-Cadenza supports a macOS Cadenza Host and Android Cadenza Remote without paid Apple Developer membership or a dependency on Google Play services.
-
-The [implementation goalset](docs/agents/GOALSET.md) evolves the existing Cadence source into Cadenza. It adds sequential Host setup, local Favorites, editable device names, theme preferences, adaptive home panes, session notifications, address failover, build identification, signed changelogs and separate Checking/Build CI. See the [current verification record](docs/agents/VALIDATION.md) for exact checks and artifact availability. macOS compilation, real Music.app integration, target-device testing, hardware resource measurements and release installation remain unverified; no stable release has been published.
-
-The approved Android command-line toolchain is installed under `.tools` on D:/Dev, with Gradle distributions and dependencies under `.cache`. Android Studio and an emulator are not installed. Node.js is used only for development checks and will not be bundled in either app. On Windows, caches, downloads, temporary files, and build output belong on D:/Dev.
+Cadenza supports a macOS Cadenza Host and Android Cadenza Remote without paid Apple Developer membership or a dependency on Google Play services. Music.app remains the audio player; Remote controls playback over the local network.
 
 ## Install, set up, and use
 
@@ -19,13 +15,11 @@ The approved Android command-line toolchain is installed under `.tools` on D:/De
 - [Setup](docs/SETUP.md) — Music permissions, LAN address, storefront, pairing A/B, lyrics, and English translation.
 - [Usage](docs/USAGE.md) — search, queue, protected controls, synchronized lyrics, analytics, and updates.
 - [Building](docs/BUILDING.md) — native toolchains, strict checks, D:/Dev storage, and signed artifacts.
-- [Releases](docs/agents/RELEASES.md) — stable GitHub baseline and signed update metadata.
-- [Troubleshooting](docs/TROUBLESHOOTING.md) and [validation status](docs/agents/VALIDATION.md).
-- [Resource measurement](docs/agents/RESOURCES.md), [compatibility](docs/agents/COMPATIBILITY.md), and [contributor instructions](AGENTS.md).
+- [Troubleshooting](docs/TROUBLESHOOTING.md).
 
 ## Monorepo layout
 
-The Windows project root is `D:\Dev`. Both native applications and their shared protocol contracts live in one Git repository.
+Both native applications and their shared protocol contracts live in one Git repository.
 
 ```text
 cadenza/
@@ -44,15 +38,13 @@ Each application retains its native build tooling. The root specification govern
 
 ## Development checks
 
-With the already available development dependencies, run from the repository root:
+After installing the development dependencies, run from the repository root:
 
 ```powershell
 node tools/check.mjs --portable
 ```
 
-Portable checks include strict development-script analysis, lint with warnings treated as failures, formatting, line limits, shell syntax, and protocol/SQLite/JXA behavior tests. The complete `node tools/check.mjs` gate adds the native checks available on the current platform: macOS runs Host and Remote checks, while Windows and Linux run Remote checks and report Host as deferred. Commit and push hooks use this platform-aware gate; CI still runs both native suites. Missing checks remain explicitly unverified.
-
-The next platform check, after source review, is the [Music probe](apps/host/README.md#read-only-music-probe). It uses built-in macOS tools and installs nothing. Native queue control, catalog playback, cache access, update installation, and actual UI screenshots still require target-device evidence.
+Portable checks include strict development-script analysis, lint with warnings treated as failures, formatting, line limits, shell syntax, and protocol/SQLite/JXA behavior tests. The complete `node tools/check.mjs` gate adds the native checks available on the current platform. Commit and push hooks use this platform-aware gate, and CI runs both native suites on their supported platforms.
 
 ## Required behavior
 

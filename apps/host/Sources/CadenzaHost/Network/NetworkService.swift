@@ -11,10 +11,17 @@ final class NetworkService {
         }
 
         let id = identifier()
-        let connection: NWConnection
+        let connection: NWConnection?
+        let transport: String
+        let sendTransport: ((Data) -> Bool)?
+        let cancelTransport: () -> Void
         var remoteId: String?
         var remoteVersion: String?
         var authenticated = false
+        var status: SessionStatus?
+        var effectiveDecision: EffectiveTransportDecision?
+        var transportPolicy = TransportPolicy(
+            mode: "lan_only", selection: "deterministic", primary: "lan", bulk: "lan")
         var supportsHeartbeat = false
         var receivedAt: [Int64] = []
         var outbound: [Outbound] = []
@@ -22,13 +29,31 @@ final class NetworkService {
         var outboundBytes = 0
         var sending = false
 
-        init(_ connection: NWConnection) { self.connection = connection }
+        init(_ connection: NWConnection) {
+            self.connection = connection
+            transport = "lan"
+            sendTransport = nil
+            cancelTransport = { connection.cancel() }
+        }
+
+        init(
+            transport: String,
+            send: @escaping (Data) -> Bool,
+            cancel: @escaping () -> Void,
+        ) {
+            connection = nil
+            self.transport = transport
+            sendTransport = send
+            cancelTransport = cancel
+        }
     }
 
     private var listener: NWListener?
+    private let ssdp = SSDPResponder()
     private var startResult: CheckedContinuation<Void, Error>?
     private(set) var ready = false
     private(set) var peers: [String: Peer] = [:]
+    private var bluetoothPeers: [UUID: String] = [:]
     var onFrame: ((Peer, Frame) -> Void)?
     var onDisconnect: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
@@ -115,6 +140,10 @@ final class NetworkService {
                     ))
             }
         }
+        ssdp.start(
+            hostId: hostId,
+            address: LANAddresses.all().first ?? "127.0.0.1",
+            port: port)
     }
 
     func stop() {
@@ -123,8 +152,10 @@ final class NetworkService {
         startResult = nil
         listener?.cancel()
         listener = nil
-        for peer in peers.values { peer.connection.cancel() }
+        ssdp.stop()
+        for peer in peers.values { peer.cancelTransport() }
         peers.removeAll()
+        bluetoothPeers.removeAll()
     }
 
     private func accept(_ connection: NWConnection) {
@@ -167,9 +198,10 @@ final class NetworkService {
 
     private func receive(_ peerId: String) {
         guard let peer = peers[peerId] else { return }
-        peer.connection.receiveMessage { [weak self] data, context, complete, error in
+        guard let connection = peer.connection else { return }
+        connection.receiveMessage { [weak self] data, context, complete, error in
             Task { @MainActor in
-                guard let self, let peer = self.peers[peerId] else { return }
+                guard let self, self.peers[peerId] != nil else { return }
                 if error != nil {
                     self.disconnect(peerId)
                     return
@@ -182,25 +214,60 @@ final class NetworkService {
                     return
                 }
                 if let data, metadata?.opcode == .text, complete {
-                    let now = monotonicMs()
-                    peer.receivedAt.removeAll { now - $0 > 1_000 }
-                    let limit = peer.authenticated ? 512 : 5
-                    guard peer.receivedAt.count < limit, peer.authenticated || data.count <= 4_096 else {
-                        self.disconnect(peerId)
-                        return
-                    }
-                    peer.receivedAt.append(now)
-                    do {
-                        let frame = try ProtocolValidation.decode(data)
-                        self.onFrame?(peer, frame)
-                    } catch {
-                        self.send(
-                            Frame(type: "error", errorCode: "invalid_command", message: error.localizedDescription),
-                            to: peer)
-                    }
+                    self.consume(data, peerId: peerId)
                 }
                 self.receive(peerId)
             }
+        }
+    }
+
+    func acceptBluetooth(
+        centralID: UUID,
+        send: @escaping (Data) -> Bool,
+        cancel: @escaping () -> Void,
+    ) {
+        guard peers.count < 32 else {
+            cancel()
+            return
+        }
+        if let old = bluetoothPeers.removeValue(forKey: centralID) { disconnect(old) }
+        let peer = Peer(transport: "ble", send: send, cancel: cancel)
+        peers[peer.id] = peer
+        bluetoothPeers[centralID] = peer.id
+        Task { @MainActor [weak self, weak peer] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, let peer, self.peers[peer.id]?.authenticated == false else { return }
+            self.disconnect(peer.id)
+        }
+    }
+
+    func receiveBluetooth(_ data: Data, from centralID: UUID) {
+        guard let peerId = bluetoothPeers[centralID] else { return }
+        consume(data, peerId: peerId)
+    }
+
+    func disconnectBluetooth(_ centralID: UUID) {
+        guard let peerId = bluetoothPeers.removeValue(forKey: centralID) else { return }
+        disconnect(peerId)
+    }
+
+    private func consume(_ data: Data, peerId: String) {
+        guard let peer = peers[peerId] else { return }
+        let now = monotonicMs()
+        peer.receivedAt.removeAll { now - $0 > 1_000 }
+        let limit = peer.authenticated ? 512 : 5
+        guard peer.receivedAt.count < limit, peer.authenticated || data.count <= 4_096 else {
+            disconnect(peerId)
+            return
+        }
+        peer.receivedAt.append(now)
+        do {
+            let frame = try ProtocolValidation.decode(data)
+            onFrame?(peer, frame)
+        } catch {
+            send(
+                Frame(type: "error", errorCode: "invalid_command", message: error.localizedDescription),
+                to: peer)
         }
     }
 
@@ -269,25 +336,42 @@ final class NetworkService {
         peer.sending = true
         let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
         let context = NWConnection.ContentContext(identifier: identifier(), metadata: [metadata])
-        peer.connection.send(
-            content: item.data, contentContext: context, isComplete: true,
-            completion: .contentProcessed { [weak self] error in
-                Task { @MainActor in
-                    guard let self, let current = self.peers[peer.id] else { return }
-                    current.outboundBytes -= item.data.count
-                    current.sending = false
-                    if error != nil {
-                        self.disconnect(peer.id)
-                    } else {
-                        self.flush(current)
+        if let connection = peer.connection {
+            connection.send(
+                content: item.data, contentContext: context, isComplete: true,
+                completion: .contentProcessed { [weak self] error in
+                    Task { @MainActor in
+                        guard let self, let current = self.peers[peer.id] else { return }
+                        current.outboundBytes -= item.data.count
+                        current.sending = false
+                        if error != nil {
+                            self.disconnect(peer.id)
+                        } else {
+                            self.flush(current)
+                        }
                     }
-                }
-            })
+                })
+        } else if let sendTransport = peer.sendTransport {
+            guard sendTransport(item.data) else {
+                peer.outboundBytes -= item.data.count
+                peer.sending = false
+                disconnect(peer.id)
+                return
+            }
+            peer.outboundBytes -= item.data.count
+            peer.sending = false
+            flush(peer)
+        } else {
+            peer.outboundBytes -= item.data.count
+            peer.sending = false
+            disconnect(peer.id)
+        }
     }
 
     func disconnect(_ peerId: String) {
         guard let peer = peers.removeValue(forKey: peerId) else { return }
-        peer.connection.cancel()
+        bluetoothPeers = bluetoothPeers.filter { $0.value != peerId }
+        peer.cancelTransport()
         onDisconnect?(peerId)
     }
 

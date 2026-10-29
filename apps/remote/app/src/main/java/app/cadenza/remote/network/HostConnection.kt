@@ -12,6 +12,14 @@ import java.net.UnknownHostException
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 
+interface RemoteConnection {
+    fun connect()
+
+    fun send(frame: JSONObject): Boolean
+
+    fun disconnect()
+}
+
 class HostConnection(
     host: String,
     port: Int,
@@ -20,7 +28,8 @@ class HostConnection(
     private val opened: () -> Unit,
     private val received: (JSONObject) -> Unit,
     private val closed: (String) -> Unit,
-) : WebSocketListener() {
+) : WebSocketListener(),
+    RemoteConnection {
     private val identity = PinnedIdentity(certificateDerBase64, fingerprint)
     private val client =
         OkHttpClient
@@ -57,17 +66,17 @@ class HostConnection(
 
     @Volatile private var stopped = false
 
-    fun connect() {
+    override fun connect() {
         socket = client.newWebSocket(Request.Builder().url(address).build(), this)
     }
 
-    fun send(frame: JSONObject): Boolean {
+    override fun send(frame: JSONObject): Boolean {
         val data = frame.toString()
         require(data.toByteArray().size <= Wire.MAXIMUM_BYTES) { "The control message is too large." }
         return socket?.send(data) == true
     }
 
-    fun disconnect() {
+    override fun disconnect() {
         stopped = true
         socket?.close(1000, "Remote closed")
         socket?.cancel()

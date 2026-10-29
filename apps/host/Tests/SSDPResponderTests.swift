@@ -2,13 +2,12 @@ import XCTest
 @testable import CadenzaHost
 
 final class SSDPResponderTests: XCTestCase {
-    private let request = Data(
-        (
-            "M-SEARCH * HTTP/1.1\r\n"
-                + "HOST: 239.255.255.250:1900\r\n"
-                + "MAN: \"ssdp:discover\"\r\n"
-                + "ST: urn:cadenza:host:1\r\n\r\n"
-        ).utf8)
+    private let request = Data((
+        "M-SEARCH * HTTP/1.1\r\n"
+            + "HOST: 239.255.255.250:1900\r\n"
+            + "MAN: \"ssdp:discover\"\r\n"
+            + "ST: urn:cadenza:host:1\r\n\r\n"
+    ).utf8)
 
     func testResponderAcceptsOnlyCadenzaSearches() {
         XCTAssertTrue(SSDPResponder.requestMatches(request))

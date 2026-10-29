@@ -43,6 +43,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
+import app.cadenza.remote.endSessionStatus
+import app.cadenza.remote.isStale
+import app.cadenza.remote.monitorSong
 import app.cadenza.remote.showError
 import org.json.JSONObject
 

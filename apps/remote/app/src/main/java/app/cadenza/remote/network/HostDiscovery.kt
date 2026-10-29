@@ -22,8 +22,11 @@ class HostDiscovery(
     private val manager = context.getSystemService(NsdManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
     private var modern: AutoCloseable? = null
+    private val ssdp = SsdpDiscovery(found)
     private val pending = ArrayDeque<NsdServiceInfo>()
-    private var resolving = false
+    private val queuedNames = mutableSetOf<String>()
+    private val delivered = mutableSetOf<String>()
+    private var activeResolvers = 0
     private var running = false
     private val discovery =
         object : NsdManager.DiscoveryListener {
@@ -51,9 +54,11 @@ class HostDiscovery(
                 handler.post {
                     if (!running || !service.serviceType.startsWith("_cadence._tcp")) return@post
                     if (Build.VERSION.SDK_INT >= 34) {
-                        val resolver = modern as? ModernResolver ?: ModernResolver(manager, ::deliver).also { modern = it }
+                        val resolver =
+                            modern as? ModernResolver
+                                ?: ModernResolver(manager, ::deliver).also { modern = it }
                         resolver.resolve(service)
-                    } else if (pending.size < 32) {
+                    } else if (pending.size < 32 && queuedNames.add(service.serviceName)) {
                         pending.addLast(service)
                         resolveNext()
                     }
@@ -69,6 +74,7 @@ class HostDiscovery(
             if (!running) return@post
             val hostId = info.attributes["host_id"]?.toString(Charsets.UTF_8) ?: return@post
             if (!hostId.matches(Regex("[0-9a-f-]{36}")) || info.port !in 1024..65535) return@post
+            if (!delivered.add("$hostId|$address|${info.port}")) return@post
             found(DiscoveredHost(hostId, address, info.port))
         }
     }
@@ -76,44 +82,56 @@ class HostDiscovery(
     // Some vendor builds need the resolver available before Android API 34.
     @Suppress("DEPRECATION")
     private fun resolveNext() {
-        if (resolving || pending.isEmpty() || !running) return
-        resolving = true
-        manager.resolveService(
-            pending.removeFirst(),
-            object : NsdManager.ResolveListener {
-                override fun onResolveFailed(
-                    serviceInfo: NsdServiceInfo,
-                    errorCode: Int,
-                ) = done()
+        if (!running) return
+        while (activeResolvers < 3 && pending.isNotEmpty()) {
+            activeResolvers++
+            val service = pending.removeFirst()
+            var finished = false
+            manager.resolveService(
+                service,
+                object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(
+                        serviceInfo: NsdServiceInfo,
+                        errorCode: Int,
+                    ) = done(serviceInfo)
 
-                override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                    serviceInfo.host?.hostAddress?.let { deliver(serviceInfo, it) }
-                    done()
-                }
-
-                private fun done() {
-                    handler.post {
-                        resolving = false
-                        resolveNext()
+                    override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                        serviceInfo.host?.hostAddress?.let { deliver(serviceInfo, it) }
+                        done(serviceInfo)
                     }
-                }
-            },
-        )
+
+                    private fun done(serviceInfo: NsdServiceInfo) {
+                        if (finished) return
+                        finished = true
+                        handler.post {
+                            queuedNames.remove(serviceInfo.serviceName)
+                            activeResolvers = (activeResolvers - 1).coerceAtLeast(0)
+                            if (running) resolveNext()
+                        }
+                    }
+                },
+            )
+        }
     }
 
     fun start() {
         if (running) return
         running = true
+        ssdp.start()
         runCatching { manager.discoverServices("_cadence._tcp.", NsdManager.PROTOCOL_DNS_SD, discovery) }
-            .onFailure { running = false }
+            .onFailure { /* SSDP remains available as the optional fallback. */ }
     }
 
     fun close() {
         if (running) runCatching { manager.stopServiceDiscovery(discovery) }
         running = false
         pending.clear()
+        queuedNames.clear()
+        delivered.clear()
+        activeResolvers = 0
         modern?.close()
         modern = null
+        ssdp.close()
     }
 
     @RequiresApi(34)

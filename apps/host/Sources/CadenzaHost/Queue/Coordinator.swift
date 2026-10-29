@@ -231,18 +231,24 @@ final class QueueCoordinator {
 
     func snapshot() throws -> HostSnapshot {
         var queue: [QueueEntry] = []
+        let snapshotHostTime = monotonicMs()
         var remaining = current?.song.durationMs.map { max(0, $0 - (current?.positionMs ?? 0)) }
         if current == nil { remaining = 0 }
         for row in nativeRows {
             let entry = try bindings[row.token].flatMap { try store.entry($0) }
             let song =
                 entry.map(store.song) ?? Song(source: "unknown", id: row.token, title: row.title, artist: row.artist)
+            let estimateStatus =
+                !synchronized ? "unsynchronized" : remaining == nil ? "unknown_duration" :
+                    (lastStatus?.playing == true ? "known" : "paused")
             queue.append(
                 QueueEntry(
                     id: entry?["entry_id"]?.string ?? "mac-\(row.token)",
                     requestedBy: entry?["requested_by"]?.string,
                     requesterName: try store.remoteName(entry?["requested_by"]?.string), song: song,
-                    estimatedWaitMs: remaining
+                    estimatedWaitMs: remaining,
+                    estimatedStartHostMs: remaining.map { snapshotHostTime + $0 },
+                    estimateStatus: estimateStatus
                 ))
             if let value = remaining, let duration = song.durationMs, duration <= Wire.maximumCounter - value {
                 remaining = value + duration
@@ -254,7 +260,7 @@ final class QueueCoordinator {
         let incoming = lastMixing == true && incomingMatches.count == 1 ? incomingMatches.first?.song : nil
         return HostSnapshot(
             hostId: store.hostId, hostEpoch: store.epoch, revision: try store.revision,
-            sequence: sequence, hostTimeMs: monotonicMs(), allowCrossRemoteEdits: try store.crossEdits,
+            sequence: sequence, hostTimeMs: snapshotHostTime, allowCrossRemoteEdits: try store.crossEdits,
             playing: lastStatus?.playing ?? false, volume: lastStatus?.volume ?? 0,
             current: current, queue: queue, totalRemainingMs: remaining,
             quality: lastQuality,

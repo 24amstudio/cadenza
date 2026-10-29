@@ -6,6 +6,8 @@ struct QueueEntry: Codable, Identifiable, Equatable, Sendable {
     var requesterName: String
     var song: Song
     var estimatedWaitMs: Int64?
+    var estimatedStartHostMs: Int64? = nil
+    var estimateStatus: String? = nil
 }
 
 struct CurrentPlayback: Codable, Equatable, Sendable {

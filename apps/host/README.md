@@ -8,7 +8,7 @@ Host source is componentized under `Sources/CadenzaHost`: Host UI and lifecycle 
 
 ## Build and use
 
-See [building](../../docs/BUILDING.md), [setup](../../docs/SETUP.md), [usage](../../docs/USAGE.md), and [validation](../../docs/agents/VALIDATION.md). From the monorepo root on a supported Apple silicon macOS system with a compatible existing toolchain, use the check and build scripts under Scripts.
+See [building](../../docs/BUILDING.md), [setup](../../docs/SETUP.md), and [usage](../../docs/USAGE.md). From the monorepo root on a supported Apple silicon macOS system with a compatible existing toolchain, use the check and build scripts under Scripts.
 
 The package has no external Swift dependency. CadenzaSecurity provides release verification and safe archive inspection; CadenzaUpdater installs a staged update; CadenzaRelease creates signing identities and signed metadata. Paid Apple Developer membership is not required by this design. Its ad-hoc update and privacy-permission behavior needs an actual target-system test.
 

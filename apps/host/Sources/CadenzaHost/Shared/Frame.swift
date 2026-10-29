@@ -14,6 +14,8 @@ struct Frame: Codable, Sendable {
     var auth: DeviceAuth? = nil
     var pair: PairRequest? = nil
     var welcome: Welcome? = nil
+    var transport: TransportPolicy? = nil
+    var status: SessionStatus? = nil
     var snapshot: HostSnapshot? = nil
     var query: String? = nil
     var scope: String? = nil

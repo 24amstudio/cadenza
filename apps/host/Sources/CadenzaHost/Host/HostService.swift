@@ -11,12 +11,17 @@ final class HostService {
     let logger: HostLogger
     let lyrics: Lyrics
     let network = NetworkService()
+    let bluetooth = BluetoothPeripheral()
     let queue: QueueCoordinator
     private(set) var configuration: HostConfiguration
+    var transportPolicy = HostTransportPolicy()
+    var remoteTransportPreferences: [String: TransportPreference] = [:]
+    var remoteTransportManualPaths: [String: String] = [:]
     private(set) var invitation: PairingInvitation?
     private var invitationDeadline: Int64 = 0
     private var identity: TLSIdentity?
     private var polling: Task<Void, Never>?
+    private var statusReporting: Task<Void, Never>?
     private var jobs: [String: Task<Void, Never>] = [:]
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
@@ -25,6 +30,8 @@ final class HostService {
     private var acknowledgedCredits: [String: Int64] = [:]
     private var lastMaintenance: Int64 = 0
     private var receivedCommands: Set<String> = []
+    private var transportDecisions: [String: EffectiveTransportDecision] = [:]
+    private var transportDecisionAt: [String: Int64] = [:]
     private var observationEnabled = false
     private let observation = MusicObservation()
     private var listenerRecovery: Task<Void, Never>?
@@ -84,7 +91,26 @@ final class HostService {
         network.onDisconnect = { [weak self] id in
             self?.lastCreditSent.removeValue(forKey: id)
             self?.acknowledgedCredits.removeValue(forKey: id)
+            self?.transportDecisions.removeValue(forKey: id)
+            self?.transportDecisionAt.removeValue(forKey: id)
             self?.onDevicesChanged?()
+        }
+        bluetooth.onIssue = { [weak self] message in self?.onIssue?(message) }
+        bluetooth.onSubscribe = { [weak self] centralID in
+            guard let self else { return }
+            self.network.acceptBluetooth(
+                centralID: centralID,
+                send: { [weak self] data in
+                    guard let self else { return false }
+                    return self.bluetooth.send(data, to: centralID, completion: {})
+                },
+                cancel: {})
+        }
+        bluetooth.onReceive = { [weak self] centralID, data in
+            self?.network.receiveBluetooth(data, from: centralID)
+        }
+        bluetooth.onUnsubscribe = { [weak self] centralID in
+            self?.network.disconnectBluetooth(centralID)
         }
     }
 
@@ -98,6 +124,8 @@ final class HostService {
             self.identity = identity
             try await network.start(
                 identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
+            bluetooth.start()
+            startStatusReporting()
             await catalog.configure(storefront: configuration.storefront)
             if observationEnabled { startObservation() }
         } catch {
@@ -113,6 +141,8 @@ final class HostService {
             await self.queue.refresh()
         }
         polling?.cancel()
+        statusReporting?.cancel()
+        statusReporting = nil
         polling = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -145,6 +175,21 @@ final class HostService {
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
         network.stop()
+        bluetooth.stop()
+    }
+
+    private func startStatusReporting() {
+        statusReporting?.cancel()
+        statusReporting = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, !Task.isCancelled else { return }
+                for peer in self.network.peers.values where peer.authenticated {
+                    self.network.send(
+                        Frame(type: "session.status", status: self.hostStatus(for: peer)), to: peer)
+                }
+            }
+        }
     }
 
     private func recoverListener(_ reason: String?) {
@@ -245,6 +290,24 @@ final class HostService {
                 network.send(Frame(type: "remote.configured", requestId: frame.requestId), to: peer)
                 queue.publish()
                 onDevicesChanged?()
+            case "session.status":
+                guard let status = frame.status, status.device == "remote" else {
+                    throw CadenzaError.failure("invalid_command", "Invalid Remote status.")
+                }
+                peer.status = status
+                peer.effectiveDecision = self.decideTransport(
+                    peer: peer, paths: status.paths, remotePreference: status.preference,
+                    remoteConstraints: status.constraints)
+                network.send(Frame(type: "session.status", status: self.hostStatus(for: peer)), to: peer)
+                onDevicesChanged?()
+            case "transport.configure":
+                guard let policy = frame.transport,
+                    ["lan_only", "ble_only", "hybrid"].contains(policy.mode),
+                    ["deterministic", "opportunistic"].contains(policy.selection)
+                else { throw CadenzaError.failure("invalid_command", "Invalid transport policy.") }
+                peer.transportPolicy = policy
+                network.send(
+                    Frame(type: "transport.configured", requestId: frame.requestId, transport: policy), to: peer)
             case "log.report":
                 guard let action = frame.logAction, let level = frame.logLevel,
                     let message = frame.logMessage, let logLevel = HostLogLevel(rawValue: level)
@@ -317,10 +380,78 @@ final class HostService {
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
+        network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try queue.snapshot()), to: peer)
         Task { @MainActor [weak self] in await self?.queue.refresh() }
         sendCredits(peer)
         onDevicesChanged?()
+    }
+
+    func publishTransportStatus() {
+        for peer in network.peers.values where peer.authenticated {
+            network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
+        }
+    }
+
+    private func hostStatus(for peer: NetworkService.Peer? = nil) -> SessionStatus {
+        let remotePeers = peer.flatMap { target in
+            network.peers.values.filter { $0.remoteId == target.remoteId && $0.authenticated }
+        } ?? []
+        let hasLan = remotePeers.contains { $0.transport == "lan" }
+        let hasBle = remotePeers.contains { $0.transport == "ble" }
+        let paths = [
+            TransportPathStatus(
+                transport: "lan", state: hasLan ? "connected" : "disconnected",
+                rssiDbm: nil, rttMs: nil, lossPercent: nil, throughputKbps: nil, backlogBytes: nil),
+            TransportPathStatus(
+                transport: "ble", state: hasBle ? "connected" : "disconnected",
+                rssiDbm: nil, rttMs: nil, lossPercent: nil, throughputKbps: nil, backlogBytes: nil),
+        ]
+        let hostPolicy = peer.map(policy(for:)) ?? transportPolicy
+        let preference = peer?.status?.preference
+        let decision = peer.map {
+            decideTransport(
+                peer: $0, paths: paths, remotePreference: preference, remoteConstraints: $0.status?.constraints)
+        } ?? TransportNegotiator.decide(
+            host: hostPolicy, remote: nil, remotePreference: preference, paths: paths)
+        SessionStatus(
+            reportedAtMs: monotonicMs(), device: "host", power: nil, resources: nil,
+            paths: paths, effective: decision, preference: hostPolicy.preference,
+            constraints: hostPolicy.constraints)
+    }
+
+    private func policy(for peer: NetworkService.Peer) -> HostTransportPolicy {
+        var policy = transportPolicy
+        if let remoteId = peer.remoteId, let override = remoteTransportPreferences[remoteId] {
+            policy.preference = override
+        }
+        if let remoteId = peer.remoteId, let manual = remoteTransportManualPaths[remoteId] {
+            policy.manualPath = manual == "auto" ? nil : manual
+        }
+        return policy
+    }
+
+    private func decideTransport(
+        peer: NetworkService.Peer,
+        paths: [TransportPathStatus],
+        remotePreference: TransportPreference?,
+        remoteConstraints: TransportConstraints?
+    ) -> EffectiveTransportDecision {
+        let policy = policy(for: peer)
+        let candidate = TransportNegotiator.decide(
+            host: policy, remote: peer.transportPolicy, remotePreference: remotePreference,
+            remoteConstraints: remoteConstraints, paths: paths)
+        let key = peer.remoteId ?? peer.id
+        let now = monotonicMs()
+        if let previous = transportDecisions[key], previous.selected != candidate.selected,
+            now - (transportDecisionAt[key] ?? 0) < policy.minimumDwellMs,
+            let selected = previous.selected,
+            paths.contains(where: { $0.transport == selected && $0.state == "connected" }) {
+            return previous
+        }
+        transportDecisions[key] = candidate
+        transportDecisionAt[key] = now
+        return candidate
     }
 
     private func clock(_ frame: Frame, peer: NetworkService.Peer) throws {

@@ -1,6 +1,6 @@
 # Build Cadenza from source
 
-Android debug/release source checks and debug APK packaging pass on Windows. Host compilation and real-device verification remain pending. See [agents/VALIDATION.md](agents/VALIDATION.md) for completed checks and limitations.
+This guide covers the toolchains, checks, and packaging steps for building Cadenza from source.
 
 ## Toolchain requirements
 
@@ -10,7 +10,7 @@ Remote needs JDK 17, Android SDK platform `android-37.0`, build-tools 36.0.0, an
 
 The Android plugin is a release candidate. Plugin 9.4.1 calls a deprecated Gradle API that fails the strict build on Gradle 9.8.2; older Gradle versions fail the current Android lint update check. The release candidate removes those deprecated calls. Warnings remain errors. The only disabled lint advisory is `OldTargetApi`, because current dependencies require compileSdk 37 while the requested runtime target remains 36; no lint baseline or other warning suppression is used.
 
-The user approved command-line tool downloads onto D:/Dev. Temurin JDK 17, Android command-line tools, SDK components, Gradle, and build dependencies are installed there. The JDK and command-line-tools archives were checksum-verified before extraction. No Swift toolchain, Android Studio, or emulator was installed. Release users install the app packages without these build tools.
+Temurin JDK 17, Android command-line tools, SDK components, Gradle, and build dependencies can be installed under D:/Dev. Verify downloaded archives against the checksums published by their upstream projects. Android Studio and an emulator are optional; release users install the app packages without these build tools.
 
 ## Windows storage on D:/Dev
 
@@ -45,11 +45,11 @@ call tools\windows-env.cmd
 "%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%ANDROID_HOME%" "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
 ```
 
-That command downloads the selected SDK components and asks you to accept their licenses. These components have been installed in this workspace. Older command-line tools may not recognize the `android-37.0` package; use command-line tools 22.0 or later. SDK Manager 22.0 still supports this command and recommends the newer Android CLI for future installations.
+That command downloads the selected SDK components and asks you to accept their licenses. Older command-line tools may not recognize the `android-37.0` package; use command-line tools 22.0 or later. SDK Manager 22.0 still supports this command and recommends the newer Android CLI for future installations.
 
 ## Build and check Host
 
-Source transfer archives are listed in [agents/VALIDATION.md](agents/VALIDATION.md) when available. They must include both apps, shared SQL/version/changelog files and the Gradle wrapper, and exclude toolchains, caches, build output, Git metadata and signing material. Extract an archive into a new, empty macOS directory. Without Git history the build tool uses a source SHA-256 identity. Node 22+ is needed for build identification and development checks; it is not shipped with the app.
+If you build from a source archive, extract it into a new, empty macOS directory. The archive should include both apps, shared SQL/version/changelog files and the Gradle wrapper, and exclude toolchains, caches, build output, Git metadata and signing material. Without Git history the build tool uses a source SHA-256 identity. Node 22+ is needed for build identification and development checks; it is not shipped with the app.
 
 On macOS, from the monorepo root:
 
@@ -130,13 +130,17 @@ The checked-in product version is **0.0.3** in `shared/version.properties`. Chan
 
 Checking runs on pushes across branches and PRs with a six-minute limit per job. It performs static portable type/lint/format checks, Android ktlint/lint/Kotlin compilation and Swift format/type checks; it does not run the native test suites in CI. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, repeats those checks, builds Production artifacts with repository Actions secrets, signs the release metadata, and creates or updates the stable GitHub Release. Build jobs also have a six-minute limit. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
 
-CI workflows have not executed until an actual repository is configured and pushed after local gates pass. Runner SDK/toolchain availability remains a CI validation item; it is not proof of successful native compilation here.
+Configure and push the repository before relying on the CI workflows. CI runners must provide the platform SDKs and toolchains described above.
 
 ## Shared checks
 
-Workflow validation uses `actionlint` 1.7.12. Install the official platform binary into `.tools/actionlint-1.7.12` or set `CADENZA_ACTIONLINT` to its absolute executable path. The Windows amd64 ZIP SHA-256 is `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`; the Apple silicon macOS tarball SHA-256 is `aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f`. Both come from the official `rhysd/actionlint` v1.7.12 release. Windows tooling is installed under D:/Dev in this workspace; root checks never download tools themselves. CI bootstraps the pinned Linux binary with its SHA-256 check.
+Workflow validation uses `actionlint` 1.7.12. Install the official platform binary into `.tools/actionlint-1.7.12` or set `CADENZA_ACTIONLINT` to its absolute executable path. The Windows amd64 ZIP SHA-256 is `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`; the Apple silicon macOS tarball SHA-256 is `aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f`. Both come from the official `rhysd/actionlint` v1.7.12 release. Keep local tooling under D:/Dev; root checks never download tools themselves. CI bootstraps the pinned Linux binary with its SHA-256 check.
 
-Node is development tooling only. With the already installed development dependencies, run the portable checks documented in [agents/VALIDATION.md](agents/VALIDATION.md). They execute the actual SQL migrations and owned Music automation script at an explicit native-API boundary.
+Node is development tooling only. After installing the development dependencies, run the portable checks from the repository root:
+
+```powershell
+node tools/check.mjs --portable
+```
 
 Native strict compilation, platform lint/formatting, real-device networking, accessibility, and Music integration remain separate mandatory gates. A green portable suite does not establish that either native app builds.
 

@@ -24,11 +24,46 @@ final class HostModel {
     var showingSetup = false
     var selectedTab = 2
     var connectedRemotes: [PairedRemote] = []
+    var hostTransportPolicy: HostTransportPolicy = {
+        guard let data = UserDefaults.standard.data(forKey: "hostTransportPolicy"),
+            let value = try? JSONDecoder().decode(HostTransportPolicy.self, from: data)
+        else { return HostTransportPolicy() }
+        return value
+    }()
+    var remoteTransportPreferences: [String: TransportPreference] = {
+        guard let data = UserDefaults.standard.data(forKey: "remoteTransportPreferences"),
+            let value = try? JSONDecoder().decode([String: TransportPreference].self, from: data)
+        else { return [:] }
+        return value
+    }()
+    var remoteTransportManualPaths: [String: String] = {
+        guard let data = UserDefaults.standard.data(forKey: "remoteTransportManualPaths"),
+            let value = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return [:] }
+        return value
+    }()
     var cacheStats: HostCacheStats?
     var clearingCache = false
     private var updater: HostUpdater?
     private var updateScheduler: NSBackgroundActivityScheduler?
     private var toastTask: Task<Void, Never>?
+
+    func saveTransportPolicy() {
+        if let data = try? JSONEncoder().encode(hostTransportPolicy) {
+            UserDefaults.standard.set(data, forKey: "hostTransportPolicy")
+        }
+        if let data = try? JSONEncoder().encode(remoteTransportPreferences) {
+            UserDefaults.standard.set(data, forKey: "remoteTransportPreferences")
+        }
+        if let data = try? JSONEncoder().encode(remoteTransportManualPaths) {
+            UserDefaults.standard.set(data, forKey: "remoteTransportManualPaths")
+        }
+        service?.transportPolicy = hostTransportPolicy
+        service?.remoteTransportPreferences = remoteTransportPreferences
+        service?.remoteTransportManualPaths = remoteTransportManualPaths
+        service?.publishTransportStatus()
+        notify("Transport policy saved.")
+    }
 
     func start() async {
         guard !starting, !saving, !running else { return }
@@ -41,6 +76,9 @@ final class HostModel {
             ).appendingPathComponent("Cadence Host", isDirectory: true)
             let service = try HostService(directory: directory, configuration: configuration)
             self.service = service
+            service.transportPolicy = hostTransportPolicy
+            service.remoteTransportPreferences = remoteTransportPreferences
+            service.remoteTransportManualPaths = remoteTransportManualPaths
             if service.store.database.wasCreated {
                 notify("Host storage was recreated. Pair your Remotes again.")
                 service.logger.log(
@@ -74,14 +112,20 @@ final class HostModel {
     }
 
     func refreshDevices() {
-        let ids = Set(service?.network.peers.values.compactMap(\.remoteId) ?? [])
+        let connected = Dictionary(
+            service?.network.peers.values.compactMap { peer in
+                guard let remoteId = peer.remoteId else { return nil }
+                return (remoteId, peer.status)
+            } ?? [], uniquingKeysWith: { _, latest in latest })
         do {
             remotes =
                 try service?.store.remotes().compactMap { row in
                     guard let id = row["remote_id"]?.string, let name = row["display_name"]?.string else { return nil }
-                    return PairedRemote(id: id, name: name, revoked: row["revoked_at_ms"]?.integer != nil)
+                    return PairedRemote(
+                        id: id, name: name, revoked: row["revoked_at_ms"]?.integer != nil,
+                        status: connected[id] ?? nil)
                 } ?? []
-            connectedRemotes = remotes.filter { ids.contains($0.id) && !$0.revoked }
+            connectedRemotes = remotes.filter { connected[$0.id] != nil && !$0.revoked }
             if service?.invitation == nil { invitation = nil }
         } catch { showError("Could not read pairings", error.localizedDescription) }
     }

@@ -33,6 +33,7 @@ enum ProtocolValidation {
         } else if ![
             "pair", "hello", "clock", "search", "song.prepare", "operation.cancel", "lyrics.get", "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get",
+            "transport.configure", "session.status",
         ].contains(frame.type) {
             throw invalid("Unknown message type.")
         }
@@ -50,6 +51,8 @@ enum ProtocolValidation {
             "operation.cancel": ["request_id"], "lyrics.get": [], "analytics.ack": ["sequence"],
             "state.get": [], "command.status": ["command_id"],
             "remote.configure": ["name", "heartbeat", "request_id"],
+            "transport.configure": ["transport"],
+            "session.status": ["status"],
             "log.report": ["log_action", "log_level", "log_message"],
             "artwork.get": ["request_id", "artwork_url"],
         ]
@@ -80,6 +83,27 @@ enum ProtocolValidation {
                 optional: ["name", "heartbeat", "remote_version"])
         }
         if type == "clock" { try nested(object["clock"], fields: ["sent_at_remote_ms"]) }
+        if type == "transport.configure" {
+            try nested(object["transport"], fields: ["mode", "selection"], optional: ["primary", "bulk", "manual", "minimum_dwell_ms"])
+            if let transport = object["transport"] as? [String: Any], let manual = transport["manual"] as? String,
+                !["lan", "ble", "auto"].contains(manual) { throw invalid("Invalid manual transport.") }
+        }
+        if type == "session.status" {
+            try nested(
+                object["status"], fields: ["reported_at_ms", "device", "paths"], optional: ["power", "resources", "preference", "constraints", "effective"])
+            if let status = object["status"] as? [String: Any], let constraints = status["constraints"] as? [String: Any] {
+                try nested(
+                    constraints,
+                    fields: [],
+                    optional: ["maximum_latency_ms", "maximum_loss_percent", "require_reliable", "minimum_reliability_percent"])
+                if let latency = constraints["maximum_latency_ms"] { try counter(latency) }
+                for key in ["maximum_loss_percent", "minimum_reliability_percent"] {
+                    if let value = constraints[key] as? NSNumber, value.doubleValue.isFinite,
+                        (0...100).contains(value.doubleValue) { continue }
+                    if constraints[key] != nil { throw invalid("Invalid transport constraint.") }
+                }
+            }
+        }
         if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")

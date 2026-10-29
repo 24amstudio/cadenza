@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
+import app.cadenza.remote.position
 import kotlinx.coroutines.delay
 
 @Composable

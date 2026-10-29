@@ -11,9 +11,11 @@ class EndpointPool {
         val endpoint: LocalEndpoint,
         var seenAt: Long,
         var failedAt: Long? = null,
+        var failures: Int = 0,
     )
 
     private val candidates = mutableListOf<Candidate>()
+    private val retryCooldowns = longArrayOf(0, 1_000, 2_000, 4_000, 8_000, 30_000)
 
     fun offer(
         endpoint: LocalEndpoint,
@@ -34,14 +36,26 @@ class EndpointPool {
     ): LocalEndpoint {
         candidates.removeAll { now - it.seenAt > 300_000 && it.endpoint != fallback }
         offer(fallback, now)
-        return candidates.minWith(compareBy<Candidate> { it.failedAt ?: Long.MIN_VALUE }.thenByDescending { it.seenAt }).endpoint
+        val eligible =
+            candidates.filter { candidate ->
+                val failedAt = candidate.failedAt
+                failedAt == null || now - failedAt >= retryCooldowns[candidate.failures]
+            }
+        val selected =
+            eligible.minWithOrNull(
+                compareBy<Candidate> { it.failedAt ?: Long.MIN_VALUE }.thenByDescending { it.seenAt },
+            )
+        return selected?.endpoint ?: candidates.minBy { it.failedAt ?: Long.MIN_VALUE }.endpoint
     }
 
     fun failed(
         endpoint: LocalEndpoint,
         now: Long,
     ) {
-        candidates.firstOrNull { it.endpoint == endpoint }?.failedAt = now
+        candidates.firstOrNull { it.endpoint == endpoint }?.let {
+            it.failedAt = now
+            it.failures = (it.failures + 1).coerceAtMost(5)
+        }
     }
 
     fun succeeded(
@@ -49,7 +63,10 @@ class EndpointPool {
         now: Long,
     ) {
         offer(endpoint, now)
-        candidates.firstOrNull { it.endpoint == endpoint }?.failedAt = null
+        candidates.firstOrNull { it.endpoint == endpoint }?.let {
+            it.failedAt = null
+            it.failures = 0
+        }
     }
 
     fun clear() = candidates.clear()

@@ -64,7 +64,9 @@ struct HostTransportPolicy: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         preference = try values.decodeIfPresent(TransportPreference.self, forKey: .preference) ?? .balanced
-        constraints = try values.decodeIfPresent(TransportConstraints.self, forKey: .constraints) ?? TransportConstraints()
+        constraints =
+            try values.decodeIfPresent(TransportConstraints.self, forKey: .constraints)
+            ?? TransportConstraints()
         mode = try values.decodeIfPresent(String.self, forKey: .mode) ?? "hybrid"
         manualPath = try values.decodeIfPresent(String.self, forKey: .manualPath)
         minimumDwellMs = try values.decodeIfPresent(Int64.self, forKey: .minimumDwellMs) ?? 30_000
@@ -172,7 +174,8 @@ enum TransportNegotiator {
                     requireReliable: host.constraints.requireReliable || $0.requireReliable,
                     minimumReliabilityPercent: max(
                         host.constraints.minimumReliabilityPercent,
-                        $0.minimumReliabilityPercent))
+                        $0.minimumReliabilityPercent)
+                )
             } ?? host.constraints
             if let rtt = path.rttMs {
                 guard rtt <= constraints.maximumLatencyMs else { return false }
@@ -211,10 +214,11 @@ enum TransportNegotiator {
         }
         let candidates = constrained.isEmpty ? valid : constrained
         let selected =
-            host.manualPath.flatMap { manual in candidates.first { $0.transport == manual } } ?? candidates.max {
-            score($0, host: host.preference, remote: remotePreference)
-                < score($1, host: host.preference, remote: remotePreference)
-        }
+            host.manualPath.flatMap { manual in candidates.first { $0.transport == manual } }
+            ?? candidates.max {
+                score($0, host: host.preference, remote: remotePreference)
+                    < score($1, host: host.preference, remote: remotePreference)
+            }
         let bulk = remote?.bulk == "ble" ? "ble" : "lan"
         let confidence = selected?.energyConfidence ?? "low"
         return EffectiveTransportDecision(

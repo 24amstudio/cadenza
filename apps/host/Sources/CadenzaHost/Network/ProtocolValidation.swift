@@ -113,7 +113,10 @@ enum ProtocolValidation {
                 if let latency = constraints["maximum_latency_ms"] { try counter(latency) }
                 for key in ["maximum_loss_percent", "minimum_reliability_percent"] {
                     if let value = constraints[key] as? NSNumber, value.doubleValue.isFinite,
-                        (0...100).contains(value.doubleValue) { continue }
+                        (0...100).contains(value.doubleValue)
+                    {
+                        continue
+                    }
                     if constraints[key] != nil { throw invalid("Invalid transport constraint.") }
                 }
             }

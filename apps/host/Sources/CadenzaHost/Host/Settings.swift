@@ -74,8 +74,9 @@ struct HostSettings: View {
                     "Path selection",
                     selection: Binding(
                         get: { model.hostTransportPolicy.manualPath ?? "auto" },
-                        set: { model.hostTransportPolicy.manualPath = $0 == "auto" ? nil : $0 }))
-                {
+                        set: {
+                            model.hostTransportPolicy.manualPath = $0 == "auto" ? nil : $0
+                        })) {
                     Text("Auto").tag("auto")
                     Text("Use LAN").tag("lan")
                     Text("Use Bluetooth").tag("ble")
@@ -98,9 +99,11 @@ struct HostSettings: View {
                         Picker(
                             remote.name,
                             selection: Binding(
-                                get: { model.remoteTransportPreferences[remote.id] ?? model.hostTransportPolicy.preference },
-                                set: { model.remoteTransportPreferences[remote.id] = $0 }))
-                        {
+                                get: {
+                                    model.remoteTransportPreferences[remote.id]
+                                        ?? model.hostTransportPolicy.preference
+                                },
+                                set: { model.remoteTransportPreferences[remote.id] = $0 })) {
                             Text("Balanced").tag(TransportPreference.balanced)
                             Text("Prefer latency").tag(TransportPreference.latency)
                             Text("Prefer Host efficiency").tag(TransportPreference.hostEfficiency)
@@ -111,8 +114,7 @@ struct HostSettings: View {
                             "Path for \(remote.name)",
                             selection: Binding(
                                 get: { model.remoteTransportManualPaths[remote.id] ?? "auto" },
-                                set: { model.remoteTransportManualPaths[remote.id] = $0 }))
-                        {
+                                set: { model.remoteTransportManualPaths[remote.id] = $0 })) {
                             Text("Auto").tag("auto")
                             Text("Use LAN").tag("lan")
                             Text("Use Bluetooth").tag("ble")

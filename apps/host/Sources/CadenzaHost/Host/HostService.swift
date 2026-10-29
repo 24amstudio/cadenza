@@ -425,7 +425,8 @@ final class HostService {
                 peer: $0,
                 paths: paths,
                 remotePreference: preference,
-                remoteConstraints: $0.status?.constraints)
+                remoteConstraints: $0.status?.constraints
+            )
         } ?? TransportNegotiator.decide(
             host: hostPolicy,
             remote: nil,

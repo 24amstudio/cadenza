@@ -102,7 +102,7 @@ final class HostService {
                 centralID: centralID,
                 send: { [weak self] data in
                     guard let self else { return false }
-                    return self.bluetooth.send(data, to: centralID, completion: {})
+                    return self.bluetooth.send(data, to: centralID, completion: { _ in })
                 },
                 cancel: {})
         }
@@ -434,7 +434,7 @@ final class HostService {
                 remote: nil,
                 remotePreference: preference,
                 paths: paths)
-        SessionStatus(
+        return SessionStatus(
             reportedAtMs: monotonicMs(),
             device: "host",
             power: nil,

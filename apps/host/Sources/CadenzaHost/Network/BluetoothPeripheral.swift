@@ -2,7 +2,7 @@ import CoreBluetooth
 import Foundation
 
 @MainActor
-final class BluetoothPeripheral: NSObject, CBPeripheralManagerDelegate {
+final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDelegate {
     static let serviceUUID = CBUUID(string: "9F4C0001-4B9C-4F2D-9C2A-1C8F8B3D4A10")
     static let writeUUID = CBUUID(string: "9F4C0002-4B9C-4F2D-9C2A-1C8F8B3D4A10")
     static let notifyUUID = CBUUID(string: "9F4C0003-4B9C-4F2D-9C2A-1C8F8B3D4A10")

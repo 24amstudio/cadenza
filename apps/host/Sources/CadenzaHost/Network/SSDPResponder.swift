@@ -33,7 +33,7 @@ final class SSDPResponder {
                     hostId: hostId,
                     location: "https://\(address):\(servicePort.rawValue)/")
                 guard let response else { return }
-                group.reply(content: response, message: message)
+                message.reply(content: response)
             }
             group.stateUpdateHandler = { state in
                 if case .failed(let error) = state {

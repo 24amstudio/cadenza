@@ -201,7 +201,7 @@ final class NetworkService {
         guard let connection = peer.connection else { return }
         connection.receiveMessage { [weak self] data, context, complete, error in
             Task { @MainActor in
-                guard let self, let peer = self.peers[peerId] else { return }
+                guard let self, self.peers[peerId] != nil else { return }
                 if error != nil {
                     self.disconnect(peerId)
                     return

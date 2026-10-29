@@ -92,7 +92,8 @@ struct HostSettings: View {
                     "Host limits always exclude paths that exceed these thresholds. "
                         + "Preferences are blended with each Remote's preference.")
                 if !model.remotes.isEmpty {
-                    Text("Per-Remote Host overrides", style: .headline)
+                    Text("Per-Remote Host overrides")
+                        .font(.headline)
                     ForEach(model.remotes) { remote in
                         Button("Use global default for \(remote.name)") {
                             model.remoteTransportPreferences.removeValue(forKey: remote.id)

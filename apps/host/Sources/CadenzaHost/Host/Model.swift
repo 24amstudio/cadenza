@@ -112,19 +112,21 @@ final class HostModel {
     }
 
     func refreshDevices() {
-        let connected = Dictionary(
+        let connected: [String: SessionStatus?] = Dictionary(
             service?.network.peers.values.compactMap { peer in
                 guard let remoteId = peer.remoteId else { return nil }
                 return (remoteId, peer.status)
             } ?? [], uniquingKeysWith: { _, latest in latest })
         do {
-            remotes =
-                try service?.store.remotes().compactMap { row in
-                    guard let id = row["remote_id"]?.string, let name = row["display_name"]?.string else { return nil }
-                    return PairedRemote(
-                        id: id, name: name, revoked: row["revoked_at_ms"]?.integer != nil,
-                        status: connected[id] ?? nil)
-                } ?? []
+            let rows = try service?.store.remotes() ?? []
+            remotes = rows.compactMap { row in
+                guard let id = row["remote_id"]?.string, let name = row["display_name"]?.string else {
+                    return nil
+                }
+                return PairedRemote(
+                    id: id, name: name, revoked: row["revoked_at_ms"]?.integer != nil,
+                    status: connected[id] ?? nil)
+            }
             connectedRemotes = remotes.filter { connected[$0.id] != nil && !$0.revoked }
             if service?.invitation == nil { invitation = nil }
         } catch { showError("Could not read pairings", error.localizedDescription) }

@@ -23,7 +23,9 @@ struct TransportConstraints: Codable, Equatable, Sendable {
     var requireReliable: Bool = false
     var minimumReliabilityPercent: Double = 85
 
-    enum CodingKeys: String, CodingKey { case maximumLatencyMs, maximumLossPercent, requireReliable, minimumReliabilityPercent }
+    enum CodingKeys: String, CodingKey {
+        case maximumLatencyMs, maximumLossPercent, requireReliable, minimumReliabilityPercent
+    }
 
     init(
         maximumLatencyMs: Int64 = 500,
@@ -53,7 +55,9 @@ struct HostTransportPolicy: Codable, Equatable, Sendable {
     var manualPath: String? = nil
     var minimumDwellMs: Int64 = 30_000
 
-    enum CodingKeys: String, CodingKey { case preference, constraints, mode, manualPath, minimumDwellMs }
+    enum CodingKeys: String, CodingKey {
+        case preference, constraints, mode, manualPath, minimumDwellMs
+    }
 
     init() {}
 
@@ -76,7 +80,9 @@ struct EffectiveTransportDecision: Codable, Equatable, Sendable {
     var policyMode: String = "balanced_negotiation"
     var confidence: String = "low"
 
-    enum CodingKeys: String, CodingKey { case selected, bulk, reason, hostPreference, remotePreference, policyMode, confidence }
+    enum CodingKeys: String, CodingKey {
+        case selected, bulk, reason, hostPreference, remotePreference, policyMode, confidence
+    }
 
     init(
         selected: String?,
@@ -156,20 +162,26 @@ enum TransportNegotiator {
         paths: [TransportPathStatus]
     ) -> EffectiveTransportDecision {
         let valid = paths.filter { path in
-            guard path.state == "connected" || path.state == "degraded" else { return false }
+            guard path.state == "connected" || path.state == "degraded" else {
+                return false
+            }
             let constraints = remoteConstraints.map {
                 TransportConstraints(
                     maximumLatencyMs: min(host.constraints.maximumLatencyMs, $0.maximumLatencyMs),
                     maximumLossPercent: min(host.constraints.maximumLossPercent, $0.maximumLossPercent),
                     requireReliable: host.constraints.requireReliable || $0.requireReliable,
-                    minimumReliabilityPercent: max(host.constraints.minimumReliabilityPercent, $0.minimumReliabilityPercent))
+                    minimumReliabilityPercent: max(
+                        host.constraints.minimumReliabilityPercent,
+                        $0.minimumReliabilityPercent))
             } ?? host.constraints
-            if let rtt = path.rttMs { guard rtt <= constraints.maximumLatencyMs else { return false } }
+            if let rtt = path.rttMs {
+                guard rtt <= constraints.maximumLatencyMs else { return false }
+            }
             if let loss = path.lossPercent {
                 guard loss <= constraints.maximumLossPercent else { return false }
                 guard 100 - loss >= constraints.minimumReliabilityPercent else { return false }
             }
-            guard path.transport == "lan" || path.transport == "wifi" || path.transport == "ethernet" || path.transport == "ble" else { return false }
+            guard ["lan", "wifi", "ethernet", "ble"].contains(path.transport) else { return false }
             return true
         }
         guard !valid.isEmpty else {
@@ -184,7 +196,9 @@ enum TransportNegotiator {
         }
         let constrained = valid.filter { path in
             guard host.mode == "hybrid" else {
-                return host.mode == "ble_only" ? path.transport == "ble" : ["lan", "wifi", "ethernet"].contains(path.transport)
+                return host.mode == "ble_only"
+                    ? path.transport == "ble"
+                    : ["lan", "wifi", "ethernet"].contains(path.transport)
             }
             if let remote {
                 switch remote.mode {
@@ -196,7 +210,8 @@ enum TransportNegotiator {
             return true
         }
         let candidates = constrained.isEmpty ? valid : constrained
-        let selected = host.manualPath.flatMap { manual in candidates.first { $0.transport == manual } } ?? candidates.max {
+        let selected =
+            host.manualPath.flatMap { manual in candidates.first { $0.transport == manual } } ?? candidates.max {
             score($0, host: host.preference, remote: remotePreference)
                 < score($1, host: host.preference, remote: remotePreference)
         }
@@ -229,7 +244,8 @@ enum TransportNegotiator {
             case .balanced: return (0.4, 0.3, 0.3)
             }
         }
-        let a = weight(host), b = remote.map(weight)
+        let a = weight(host)
+        let b = remote.map(weight)
         let divisor = b == nil ? 1.0 : 2.0
         let values = [
             (a.0 + (b?.0 ?? a.0)) / divisor,

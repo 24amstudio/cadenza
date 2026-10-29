@@ -5,7 +5,8 @@ final class BluetoothFrameCodecTests: XCTestCase {
     func testCodecReassemblesMultipleFramesAcrossChunks() throws {
         let first = Data("first".utf8)
         let second = Data(repeating: 7, count: 300)
-        let bytes = try BluetoothFrameCodec.chunks(for: first, maximumChunkBytes: 20)
+        let bytes =
+            try BluetoothFrameCodec.chunks(for: first, maximumChunkBytes: 20)
             + BluetoothFrameCodec.chunks(for: second, maximumChunkBytes: 20)
         let codec = BluetoothFrameCodec()
         var result: [Data] = []

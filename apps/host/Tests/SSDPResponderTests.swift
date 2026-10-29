@@ -3,7 +3,8 @@ import XCTest
 
 final class SSDPResponderTests: XCTestCase {
     private let request = Data(
-        "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nST: urn:cadenza:host:1\r\n\r\n".utf8)
+        "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nST: urn:cadenza:host:1\r\n\r\n".utf8
+    )
 
     func testResponderAcceptsOnlyCadenzaSearches() {
         XCTAssertTrue(SSDPResponder.requestMatches(request))

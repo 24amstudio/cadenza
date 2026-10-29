@@ -62,14 +62,20 @@ struct HostSettings: View {
                     step: 50)
                 Slider(value: $model.hostTransportPolicy.constraints.maximumLossPercent, in: 0...100, step: 1) {
                     Text(
-                        "Maximum packet loss: \(model.hostTransportPolicy.constraints.maximumLossPercent, specifier: "%.0f")%")
+                        "Maximum packet loss: \(model.hostTransportPolicy.constraints.maximumLossPercent, specifier: "%.0f")%"
+                    )
                 }
                 Slider(value: $model.hostTransportPolicy.constraints.minimumReliabilityPercent, in: 0...100, step: 1) {
-                    Text("Minimum reliability: \(model.hostTransportPolicy.constraints.minimumReliabilityPercent, specifier: "%.0f")%")
+                    Text(
+                        "Minimum reliability: \(model.hostTransportPolicy.constraints.minimumReliabilityPercent, specifier: "%.0f")%"
+                    )
                 }
-                Picker("Path selection", selection: Binding(
-                    get: { model.hostTransportPolicy.manualPath ?? "auto" },
-                    set: { model.hostTransportPolicy.manualPath = $0 == "auto" ? nil : $0 })) {
+                Picker(
+                    "Path selection",
+                    selection: Binding(
+                        get: { model.hostTransportPolicy.manualPath ?? "auto" },
+                        set: { model.hostTransportPolicy.manualPath = $0 == "auto" ? nil : $0 }))
+                {
                     Text("Auto").tag("auto")
                     Text("Use LAN").tag("lan")
                     Text("Use Bluetooth").tag("ble")
@@ -89,18 +95,24 @@ struct HostSettings: View {
                         Button("Use global default for \(remote.name)") {
                             model.remoteTransportPreferences.removeValue(forKey: remote.id)
                         }
-                        Picker(remote.name, selection: Binding(
-                            get: { model.remoteTransportPreferences[remote.id] ?? model.hostTransportPolicy.preference },
-                            set: { model.remoteTransportPreferences[remote.id] = $0 })) {
+                        Picker(
+                            remote.name,
+                            selection: Binding(
+                                get: { model.remoteTransportPreferences[remote.id] ?? model.hostTransportPolicy.preference },
+                                set: { model.remoteTransportPreferences[remote.id] = $0 }))
+                        {
                             Text("Balanced").tag(TransportPreference.balanced)
                             Text("Prefer latency").tag(TransportPreference.latency)
                             Text("Prefer Host efficiency").tag(TransportPreference.hostEfficiency)
                             Text("Prefer Remote efficiency").tag(TransportPreference.remoteEfficiency)
                             Text("Prefer reliability").tag(TransportPreference.reliability)
                         }
-                        Picker("Path for \(remote.name)", selection: Binding(
-                            get: { model.remoteTransportManualPaths[remote.id] ?? "auto" },
-                            set: { model.remoteTransportManualPaths[remote.id] = $0 })) {
+                        Picker(
+                            "Path for \(remote.name)",
+                            selection: Binding(
+                                get: { model.remoteTransportManualPaths[remote.id] ?? "auto" },
+                                set: { model.remoteTransportManualPaths[remote.id] = $0 }))
+                        {
                             Text("Auto").tag("auto")
                             Text("Use LAN").tag("lan")
                             Text("Use Bluetooth").tag("ble")

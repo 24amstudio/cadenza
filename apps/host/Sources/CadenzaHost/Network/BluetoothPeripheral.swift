@@ -47,7 +47,9 @@ final class BluetoothPeripheral: NSObject, CBPeripheralManagerDelegate {
         manager.removeAllServices()
         notifyCharacteristic = nil
         for sends in outbound.values {
-            sends.forEach { $0.completion(CadenzaError.failure("network", "Bluetooth stopped.")) }
+            for send in sends {
+                send.completion(CadenzaError.failure("network", "Bluetooth stopped."))
+            }
         }
         outbound.removeAll()
         inbound.removeAll()
@@ -149,9 +151,11 @@ final class BluetoothPeripheral: NSObject, CBPeripheralManagerDelegate {
         let centralID = central.identifier
         subscribed.removeAll { $0.identifier == centralID }
         inbound.removeValue(forKey: centralID)
-        outbound.removeValue(forKey: centralID)?.forEach {
-            queuedBytes -= $0.remainingBytes
-            $0.completion(CadenzaError.failure("network", "Bluetooth Remote disconnected."))
+        if let pending = outbound.removeValue(forKey: centralID) {
+            for send in pending {
+                queuedBytes -= send.remainingBytes
+                send.completion(CadenzaError.failure("network", "Bluetooth Remote disconnected."))
+            }
         }
         onUnsubscribe?(centralID)
     }
@@ -168,8 +172,8 @@ final class BluetoothPeripheral: NSObject, CBPeripheralManagerDelegate {
                 guard manager.updateValue(
                     pending.chunks[pending.nextChunk],
                     for: characteristic,
-                    onSubscribedCentrals: [central]
-                ) else {
+                    onSubscribedCentrals: [central])
+                else {
                     outbound[centralID]?[0] = pending
                     return
                 }

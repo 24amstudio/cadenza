@@ -394,29 +394,51 @@ final class HostService {
     }
 
     private func hostStatus(for peer: NetworkService.Peer? = nil) -> SessionStatus {
-        let remotePeers = peer.flatMap { target in
-            network.peers.values.filter { $0.remoteId == target.remoteId && $0.authenticated }
-        } ?? []
+        let remotePeers =
+            peer.flatMap { target in
+                network.peers.values.filter { $0.remoteId == target.remoteId && $0.authenticated }
+            } ?? []
         let hasLan = remotePeers.contains { $0.transport == "lan" }
         let hasBle = remotePeers.contains { $0.transport == "ble" }
         let paths = [
             TransportPathStatus(
-                transport: "lan", state: hasLan ? "connected" : "disconnected",
-                rssiDbm: nil, rttMs: nil, lossPercent: nil, throughputKbps: nil, backlogBytes: nil),
+                transport: "lan",
+                state: hasLan ? "connected" : "disconnected",
+                rssiDbm: nil,
+                rttMs: nil,
+                lossPercent: nil,
+                throughputKbps: nil,
+                backlogBytes: nil),
             TransportPathStatus(
-                transport: "ble", state: hasBle ? "connected" : "disconnected",
-                rssiDbm: nil, rttMs: nil, lossPercent: nil, throughputKbps: nil, backlogBytes: nil),
+                transport: "ble",
+                state: hasBle ? "connected" : "disconnected",
+                rssiDbm: nil,
+                rttMs: nil,
+                lossPercent: nil,
+                throughputKbps: nil,
+                backlogBytes: nil),
         ]
         let hostPolicy = peer.map(policy(for:)) ?? transportPolicy
         let preference = peer?.status?.preference
         let decision = peer.map {
             decideTransport(
-                peer: $0, paths: paths, remotePreference: preference, remoteConstraints: $0.status?.constraints)
+                peer: $0,
+                paths: paths,
+                remotePreference: preference,
+                remoteConstraints: $0.status?.constraints)
         } ?? TransportNegotiator.decide(
-            host: hostPolicy, remote: nil, remotePreference: preference, paths: paths)
+            host: hostPolicy,
+            remote: nil,
+            remotePreference: preference,
+            paths: paths)
         SessionStatus(
-            reportedAtMs: monotonicMs(), device: "host", power: nil, resources: nil,
-            paths: paths, effective: decision, preference: hostPolicy.preference,
+            reportedAtMs: monotonicMs(),
+            device: "host",
+            power: nil,
+            resources: nil,
+            paths: paths,
+            effective: decision,
+            preference: hostPolicy.preference,
             constraints: hostPolicy.constraints)
     }
 
@@ -446,7 +468,8 @@ final class HostService {
         if let previous = transportDecisions[key], previous.selected != candidate.selected,
             now - (transportDecisionAt[key] ?? 0) < policy.minimumDwellMs,
             let selected = previous.selected,
-            paths.contains(where: { $0.transport == selected && $0.state == "connected" }) {
+            paths.contains(where: { $0.transport == selected && $0.state == "connected" })
+        {
             return previous
         }
         transportDecisions[key] = candidate

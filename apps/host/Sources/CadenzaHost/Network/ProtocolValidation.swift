@@ -84,18 +84,32 @@ enum ProtocolValidation {
         }
         if type == "clock" { try nested(object["clock"], fields: ["sent_at_remote_ms"]) }
         if type == "transport.configure" {
-            try nested(object["transport"], fields: ["mode", "selection"], optional: ["primary", "bulk", "manual", "minimum_dwell_ms"])
-            if let transport = object["transport"] as? [String: Any], let manual = transport["manual"] as? String,
-                !["lan", "ble", "auto"].contains(manual) { throw invalid("Invalid manual transport.") }
+            try nested(
+                object["transport"],
+                fields: ["mode", "selection"],
+                optional: ["primary", "bulk", "manual", "minimum_dwell_ms"])
+            if let transport = object["transport"] as? [String: Any],
+                let manual = transport["manual"] as? String,
+                !["lan", "ble", "auto"].contains(manual)
+            {
+                throw invalid("Invalid manual transport.")
+            }
         }
         if type == "session.status" {
             try nested(
-                object["status"], fields: ["reported_at_ms", "device", "paths"], optional: ["power", "resources", "preference", "constraints", "effective"])
-            if let status = object["status"] as? [String: Any], let constraints = status["constraints"] as? [String: Any] {
+                object["status"],
+                fields: ["reported_at_ms", "device", "paths"],
+                optional: ["power", "resources", "preference", "constraints", "effective"])
+            if let status = object["status"] as? [String: Any],
+                let constraints = status["constraints"] as? [String: Any]
+            {
                 try nested(
                     constraints,
                     fields: [],
-                    optional: ["maximum_latency_ms", "maximum_loss_percent", "require_reliable", "minimum_reliability_percent"])
+                    optional: [
+                        "maximum_latency_ms", "maximum_loss_percent", "require_reliable",
+                        "minimum_reliability_percent",
+                    ])
                 if let latency = constraints["maximum_latency_ms"] { try counter(latency) }
                 for key in ["maximum_loss_percent", "minimum_reliability_percent"] {
                     if let value = constraints[key] as? NSNumber, value.doubleValue.isFinite,

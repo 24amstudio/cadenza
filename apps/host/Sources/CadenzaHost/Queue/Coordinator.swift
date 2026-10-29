@@ -238,9 +238,14 @@ final class QueueCoordinator {
             let entry = try bindings[row.token].flatMap { try store.entry($0) }
             let song =
                 entry.map(store.song) ?? Song(source: "unknown", id: row.token, title: row.title, artist: row.artist)
-            let estimateStatus =
-                !synchronized ? "unsynchronized" : remaining == nil ? "unknown_duration" :
-                    (lastStatus?.playing == true ? "known" : "paused")
+            let estimateStatus: String
+            if !synchronized {
+                estimateStatus = "unsynchronized"
+            } else if remaining == nil {
+                estimateStatus = "unknown_duration"
+            } else {
+                estimateStatus = lastStatus?.playing == true ? "known" : "paused"
+            }
             queue.append(
                 QueueEntry(
                     id: entry?["entry_id"]?.string ?? "mac-\(row.token)",

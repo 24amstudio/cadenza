@@ -128,7 +128,7 @@ The checked-in product version is **0.0.3** in `shared/version.properties`. Chan
 
 ## GitHub CI
 
-Checking runs on pushes across branches and PRs, with portable strict type/lint/format/contract checks, Android compilation/lint/unit/render checks and native Swift format/compile/tests. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, builds Production artifacts with repository Actions secrets, signs the release metadata, and creates or updates the stable GitHub Release. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
+Checking runs on pushes across branches and PRs with a six-minute limit per job. It performs static portable type/lint/format checks, Android ktlint/lint/Kotlin compilation and Swift format/type checks; it does not run the native test suites in CI. Build runs only after a successful Checking push for `main` in the same repository, checks out that exact SHA, repeats those checks, builds Production artifacts with repository Actions secrets, signs the release metadata, and creates or updates the stable GitHub Release. Build jobs also have a six-minute limit. The ZIP contains the `.app`; no DMG is needed for this distribution approach.
 
 CI workflows have not executed until an actual repository is configured and pushed after local gates pass. Runner SDK/toolchain availability remains a CI validation item; it is not proof of successful native compilation here.
 

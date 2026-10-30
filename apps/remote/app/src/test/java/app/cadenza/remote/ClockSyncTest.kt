@@ -10,6 +10,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
+import java.util.Base64
 
 class ClockSyncTest {
     @Test
@@ -84,6 +85,26 @@ class ClockSyncTest {
         assertEquals(43127, invitation.port)
         assertEquals(TestCertificate.fingerprint, invitation.fingerprint)
         assertEquals(TestCertificate.encoded, invitation.certificateDerBase64)
+        val textPayload = "CDZP:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload)
+        val textInvitation = Wire.invitation(textPayload.toByteArray())
+        assertEquals(invitation.host, textInvitation.host)
+        assertEquals(invitation.fingerprint, textInvitation.fingerprint)
+        val fingerprintOnlyPayload =
+            ByteBuffer
+                .allocate(5 + 1 + host.size + 2 + 1 + secret.size + fingerprint.size)
+                .put(byteArrayOf(0x43, 0x44, 0x5A, 0x50, 2))
+                .put(host.size.toByte())
+                .put(host)
+                .putShort(43127.toShort())
+                .put(secret.size.toByte())
+                .put(secret)
+                .put(fingerprint)
+                .array()
+        val fingerprintOnlyInvitation = Wire.invitation(fingerprintOnlyPayload)
+        assertEquals(invitation.fingerprint, fingerprintOnlyInvitation.fingerprint)
+        assertEquals("", fingerprintOnlyInvitation.certificateDerBase64)
+        val fingerprintOnlyText = "CDZP:" + Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprintOnlyPayload)
+        assertEquals(invitation.fingerprint, Wire.invitation(fingerprintOnlyText.toByteArray()).fingerprint)
         val damaged =
             payload.copyOf().also {
                 it[it.lastIndex] = (it.last() + 1).toByte()
@@ -96,6 +117,7 @@ class ClockSyncTest {
         val payload = byteArrayOf(0x43, 0x44, 0x5A, 0x50)
 
         assertTrue(Wire.isCompactInvitation(payload))
+        assertTrue(Wire.isCompactInvitation("CDZP:AQ".toByteArray()))
         assertFalse(Wire.isCompactInvitation("{\"version\":1}".toByteArray()))
     }
 }

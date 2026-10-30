@@ -16,6 +16,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Base64
 
 class QrScannerLuminanceTest {
     @Test
@@ -114,6 +115,12 @@ class QrScannerLuminanceTest {
             }
 
         assertArrayEquals(payload, requireNotNull(pairingResultPayload(result)))
+        val textPayload = "CDZP:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload)
+        val textResult =
+            Result(textPayload, byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01, 0x00), null, BarcodeFormat.QR_CODE).apply {
+                putMetadata(ResultMetadataType.BYTE_SEGMENTS, listOf(byteArrayOf(0x43, 0x44, 0x5A, 0x50, 0x01)))
+            }
+        assertArrayEquals(textPayload.toByteArray(), requireNotNull(pairingResultPayload(textResult)))
     }
 
     @Test

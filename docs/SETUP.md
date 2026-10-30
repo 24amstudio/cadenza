@@ -41,7 +41,7 @@ Wi-Fi client isolation, guest networks, firewalls, separate router subnets, and 
 
 Each invitation expires after five minutes and can pair one Remote. Generate another invitation to pair Remote B; Remote A keeps its connection and identity. Device credentials are distinct and stored in Cadenza Host's Keychain and Android Keystore-backed storage.
 
-Discovery helps locate Host; the QR supplies its public certificate and fingerprint to establish trust. A changed Host identity requires verification and pairing again. No private certificate key is transferred.
+Discovery helps locate Host; the QR supplies its one-use secret and certificate fingerprint, then Remote retrieves the public certificate over the authenticated local bootstrap socket before establishing pinned TLS. A changed Host identity requires verification and pairing again. No private certificate key is transferred.
 
 The Android 12 / API 31 baseline uses the normal `INTERNET` permission for the LAN connection. This build targets Android 16 / API 36, so it does not request Android 17's `ACCESS_LOCAL_NETWORK` permission. Vendor Android versions may apply their own network restrictions; verify the target device during installation.
 

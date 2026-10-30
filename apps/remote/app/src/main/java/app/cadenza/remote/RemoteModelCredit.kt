@@ -1,7 +1,5 @@
 package app.cadenza.remote
 
-import app.cadenza.remote.data.HostSnapshot
-import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
@@ -9,27 +7,6 @@ import app.cadenza.remote.recommendation.RecommendationTrack
 import app.cadenza.remote.recommendation.newRecommendationId
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-
-internal fun RemoteModel.enrichArtwork(snapshot: HostSnapshot): HostSnapshot {
-    val currentSong =
-        mutable.value.snapshot
-            ?.current
-            ?.song
-    val queueSongs =
-        mutable.value.snapshot
-            ?.queue
-            .orEmpty()
-            .map { it.song }
-    val known = mutable.value.favorites + mutable.value.results + listOfNotNull(currentSong) + queueSongs
-    val artwork = known.filter { it.artworkUrl != null }.associateBy { it.source + ":" + it.id }
-
-    fun song(value: Song): Song = value.artworkUrl?.let { value } ?: artwork[value.source + ":" + value.id] ?: value
-    return snapshot.copy(
-        current = snapshot.current?.copy(song = song(snapshot.current.song)),
-        queue = snapshot.queue.map { it.copy(song = song(it.song)) },
-        incoming = snapshot.incoming?.let(::song),
-    )
-}
 
 internal suspend fun RemoteModel.applyCredit(frame: JSONObject) {
     val host = mutable.value.profile?.hostId ?: return

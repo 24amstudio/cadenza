@@ -140,8 +140,8 @@ private class CameraScanner(
             } else {
                 CameraSelector.DEFAULT_FRONT_CAMERA
             }
-        // The invitation QR is dense because it carries a base64 certificate, and smaller frames
-        // decoded it erratically from a distance. CameraX picks the closest size the device supports.
+        // CameraX picks the closest high-resolution frame the device supports so the QR remains
+        // readable on lower-resolution cameras and at a comfortable scanning distance.
         val analysis =
             ImageAnalysis
                 .Builder()

@@ -72,7 +72,8 @@ enum ProtocolValidation {
             throw invalid("The message contains unexpected or missing fields.")
         }
         if type == "pair" {
-            try nested(object["pair"], fields: ["name", "secret"], optional: ["heartbeat", "remote_version"])
+            try nested(
+                object["pair"], fields: ["name"], optional: ["secret", "pin", "heartbeat", "remote_version"])
         }
         if type == "log.report" {
             guard let level = object["log_level"] as? String, ["debug", "info", "warning", "error"].contains(level),
@@ -140,9 +141,17 @@ enum ProtocolValidation {
             try counter(auth["last_credit_sequence"])
         }
         if let pair = object["pair"] as? [String: Any] {
-            guard let secret = pair["secret"] as? String, (32...128).contains(secret.count),
-                let name = pair["name"] as? String, (1...80).contains(name.count)
+            guard let name = pair["name"] as? String, (1...80).contains(name.count),
+                (pair["secret"] == nil) != (pair["pin"] == nil)
             else { throw invalid("Invalid pairing details.") }
+            if let secret = pair["secret"] as? String, !(32...128).contains(secret.count) {
+                throw invalid("Invalid pairing secret.")
+            }
+            if let pin = pair["pin"] as? String,
+                pin.count != 4 || !pin.unicodeScalars.allSatisfy({ (48...57).contains($0.value) })
+            {
+                throw invalid("Invalid pairing PIN.")
+            }
         }
         if let clock = object["clock"] as? [String: Any] { try counter(clock["sent_at_remote_ms"]) }
         if type == "analytics.ack" { try counter(object["sequence"]) }

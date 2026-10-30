@@ -15,14 +15,14 @@ class RemoteHandshake(
     suspend fun frame(
         invite: PairingInvitation?,
         profile: HostProfile?,
+        pin: String? = null,
     ): JSONObject =
-        if (invite != null) {
+        if (invite != null || pin != null) {
+            val pair = JSONObject().put("name", name())
+            if (pin != null) pair.put("pin", pin) else pair.put("secret", requireNotNull(invite).secret)
             Wire.frame("pair").put(
                 "pair",
-                JSONObject()
-                    .put("name", name())
-                    .put("secret", invite.secret)
-                    .put("remote_version", BuildConfig.VERSION_NAME),
+                pair.put("remote_version", BuildConfig.VERSION_NAME),
             )
         } else {
             val stored = requireNotNull(profile)

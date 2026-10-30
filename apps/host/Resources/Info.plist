@@ -10,7 +10,6 @@
     <key>CFBundleShortVersionString</key><string>0.0.3</string>
     <key>CFBundleVersion</key><string>5</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
-    <key>LSUIElement</key><true/>
     <key>LSMultipleInstancesProhibited</key><true/>
     <key>NSAppleMusicUsageDescription</key><string>Cadenza detects the storefront for your Apple Music account during setup.</string>
     <key>NSAppleEventsUsageDescription</key><string>Cadenza Host controls Music when you use a paired Cadenza Remote.</string>

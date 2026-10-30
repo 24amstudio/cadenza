@@ -156,11 +156,11 @@ fun JSONArray.objects(): List<JSONObject> = (0 until length()).map(::getJSONObje
 
 object Wire {
     private val pairingMagic = byteArrayOf(0x43, 0x44, 0x5A, 0x50)
+    private val pairingTextPrefix = "CDZP:".toByteArray(Charsets.US_ASCII)
     const val MAXIMUM_BYTES = 1_048_576
     const val MAXIMUM_COUNTER = 9_007_199_254_740_991L
 
-    fun isCompactInvitation(payload: ByteArray): Boolean =
-        payload.size >= pairingMagic.size && payload.copyOfRange(0, pairingMagic.size).contentEquals(pairingMagic)
+    fun isCompactInvitation(payload: ByteArray): Boolean = payload.hasPrefix(pairingMagic) || payload.hasPrefix(pairingTextPrefix)
 
     fun frame(type: String): JSONObject = JSONObject().put("version", 1).put("type", type)
 
@@ -303,6 +303,20 @@ object Wire {
     }
 
     fun invitation(payload: ByteArray): PairingInvitation {
+        if (payload.hasPrefix(pairingTextPrefix)) {
+            require(payload.size in (pairingTextPrefix.size + 1)..4_096) { "Pairing data is too large." }
+            val encoded = payload.copyOfRange(pairingTextPrefix.size, payload.size).toString(Charsets.US_ASCII)
+            require(encoded.matches(Regex("[A-Za-z0-9_-]+"))) { "This QR code is not a Cadenza Host invitation." }
+            val decoded =
+                runCatching { Base64.getUrlDecoder().decode(encoded) }
+                    .getOrElse { throw IllegalArgumentException("This QR code is not a Cadenza Host invitation.") }
+            require(decoded.size in 4..4_096) { "Pairing data is too large." }
+            return binaryInvitation(decoded)
+        }
+        return binaryInvitation(payload)
+    }
+
+    private fun binaryInvitation(payload: ByteArray): PairingInvitation {
         require(payload.size in 4..4_096) { "Pairing data is too large." }
         val input = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
         val magic = ByteArray(pairingMagic.size)
@@ -344,4 +358,7 @@ object Wire {
             require(it.toByteArray(Charsets.UTF_8).size == length && it.none(Char::isISOControl)) { "Invalid $field." }
         }
     }
+
+    private fun ByteArray.hasPrefix(prefix: ByteArray): Boolean =
+        size >= prefix.size && prefix.indices.all { index -> this[index] == prefix[index] }
 }

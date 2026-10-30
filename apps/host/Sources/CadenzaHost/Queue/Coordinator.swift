@@ -31,6 +31,7 @@ final class QueueCoordinator {
     private var pendingPlaybackMs: Int64 = 0
     private var pendingPlaybackOccurrence: String?
     private var preparationToken: String?
+    private var artworkTask: Task<Void, Never>?
     private(set) var knownSongs: [SongIdentity: Song] = [:]
 
     private struct QueuedCommand {
@@ -141,6 +142,7 @@ final class QueueCoordinator {
                     requesterName: try store.remoteName(row["requested_by"]?.string), song: store.song(row),
                     positionMs: status.positionMs, sampledAtHostMs: now
                 )
+                if let current { requestArtwork(for: current.song, occurrenceId: occurrence) }
             }
         }
         if let song = status.song, status.state != "stopped", current == nil || songChanged {
@@ -162,6 +164,7 @@ final class QueueCoordinator {
             try store.database.run("UPDATE host_state SET current_native_id=?", [.text(song.id)])
             lastObservation = nil
             forcedEntry = nil
+            requestArtwork(for: actual, occurrenceId: occurrence)
         }
         if status.song == nil || status.state == "stopped" {
             if current != nil {
@@ -227,6 +230,24 @@ final class QueueCoordinator {
         current?.sampledAtHostMs = now
         lastStatus = status
         lastObservation = now
+    }
+
+    private func requestArtwork(for song: Song, occurrenceId: String) {
+        artworkTask?.cancel()
+        guard song.artworkUrl == nil else { return }
+        let query = String((song.title + " " + song.artist).prefix(200))
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        artworkTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let match = try? await catalog.search(query).first(where: {
+                $0.artworkUrl != nil &&
+                    $0.title.compare(song.title, options: .caseInsensitive) == .orderedSame &&
+                    $0.artist.compare(song.artist, options: .caseInsensitive) == .orderedSame
+            }), let artworkUrl = match.artworkUrl else { return }
+            guard !Task.isCancelled, current?.occurrenceId == occurrenceId else { return }
+            current?.song.artworkUrl = artworkUrl
+            publish()
+        }
     }
 
     func snapshot() throws -> HostSnapshot {

@@ -59,9 +59,9 @@ class RemoteModel(
     application: Application,
     private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(application) {
-
     constructor(application: Application) : this(application, Dispatchers.IO)
     internal val app = application as CadenzaApplication
+
     internal val preferences = app.settings
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
     private val mediaSession = RemoteMediaSession(app, mediaActions::handle)
@@ -860,7 +860,6 @@ class RemoteModel(
         mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key) }
     }
-
     private suspend fun sendCommand(
         action: JSONObject,
         key: String,

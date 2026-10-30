@@ -128,6 +128,31 @@ final class MusicAccessibility {
         }
     }
 
+    private func click(_ element: AXUIElement, deadline: Int64, count: Int = 1) throws {
+        let app = try root()
+        AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true
+        else {
+            throw CadenzaError.failure("native_queue_unavailable", "Bring Music to the front before selecting a song.")
+        }
+        let frame = try bounds(element)
+        try requireDeadline(deadline)
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            throw CadenzaError.failure("native_queue_unavailable", "The native Music input source is unavailable.")
+        }
+        let previous = CGEvent(source: nil)?.location
+        defer { restorePointer(previous, source: source) }
+        for clickState in 1...count {
+            for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+                let event = CGEvent(
+                    mouseEventSource: source, mouseType: type,
+                    mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left)
+                event?.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
+                event?.post(tap: .cghidEventTap)
+            }
+        }
+    }
+
     private func queuePane() throws -> AXUIElement {
         let root = try root()
         if let cachedPane, !string(cachedPane, kAXRoleAttribute).isEmpty,
@@ -164,6 +189,68 @@ final class MusicAccessibility {
         beginRead(deadline: deadline)
         try showPanel(["playing next", "up next"], deadline: deadline)
         cachedPane = nil
+    }
+
+    func searchCatalog(_ song: Song, deadline: Int64) async throws -> Bool {
+        beginRead(deadline: deadline)
+        let root = try root()
+        let textFields = walk(root).filter { element in
+            guard string(element, kAXRoleAttribute) == kAXTextFieldRole else { return false }
+            return attribute(element, "AXHidden") as? Bool != true
+        }
+        let fields = textFields.filter { element in
+            let values = [
+                string(element, kAXIdentifierAttribute), string(element, kAXTitleAttribute),
+                string(element, kAXDescriptionAttribute),
+            ].map { normalized($0) }
+            return values.contains { $0.contains("search") }
+        }
+        guard let field = fields.first ?? (textFields.count == 1 ? textFields.first : nil) else { return false }
+        let query = "\(song.title) \(song.artist)"
+        try click(field, deadline: deadline)
+        guard AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, query as CFTypeRef) == .success else {
+            return false
+        }
+        try returnKey(deadline: deadline)
+        while monotonicMs() < deadline {
+            beginRead(deadline: deadline)
+            let candidates = catalogSearchCandidates(root: root, song: song)
+            if candidates.count == 1, let candidate = candidates.first {
+                try click(candidate, deadline: deadline)
+                return true
+            }
+            try await Task.sleep(for: .milliseconds(120))
+        }
+        return false
+    }
+
+    private func returnKey(deadline: Int64) throws {
+        try requireDeadline(deadline)
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+            let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+            let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+        else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's search field could not accept input.")
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    private func catalogSearchCandidates(root: AXUIElement, song: Song) -> [AXUIElement] {
+        let roles = [kAXRowRole, kAXGroupRole, kAXButtonRole, "AXUIElement"]
+        return walk(root).filter { element in
+            guard roles.contains(string(element, kAXRoleAttribute)) else { return false }
+            let nodes = walk(element)
+            let values = nodes.flatMap { node in
+                [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].map { string(node, $0) }
+            }
+            let title = normalized(song.title)
+            let artist = normalized(song.artist)
+            let exactTitle = values.contains { normalized($0) == title }
+            let exactArtist = values.contains { normalized($0) == artist }
+            let songResult = values.contains { normalized($0) == "song" || normalized($0).hasPrefix("song ") }
+            return exactTitle && exactArtist && songResult
+        }
     }
 
     func showLyrics(deadline: Int64) throws {
@@ -240,18 +327,27 @@ final class MusicAccessibility {
             let exactTitle = values.contains { normalized($0) == normalized(song.title) }
             let exactArtist = values.contains { normalized($0) == normalized(song.artist) }
             let linked = links(row, descendants: nodes, id: song.id)
-            let exactSelection = selected(row, descendants: nodes) && exactTitle
             // Music's album track rows often omit the artist from their AX text. The
-            // deep link already identifies catalog tracks; the selected exact title
-            // is the remaining identity exposed by Music's native UI.
-            if linked || (exactSelection && (song.source == "catalog" || exactArtist)) { candidates.append(row) }
+            // deep link already identifies catalog tracks; the exact title is the
+            // remaining identity exposed by Music's native UI.
+            if linked || (exactTitle && (song.source == "catalog" || exactArtist)) { candidates.append(row) }
         }
         try finishRead()
         guard candidates.count == 1, let row = candidates.first else {
             throw CadenzaError.failure(
                 "native_queue_unavailable",
-                "Music has not exposed one exact selected song. Select this song in Music, then retry."
+                "Music did not expose one exact song after navigation. Retry the preparation action."
             )
+        }
+        beginRead(deadline: deadline)
+        if !selected(row, descendants: walk(row)) {
+            try click(row, deadline: deadline)
+            beginRead(deadline: deadline)
+            guard selected(row, descendants: walk(row)) else {
+                throw CadenzaError.failure(
+                    "native_queue_unavailable", "Music did not select the exact song row. Retry the preparation action."
+                )
+            }
         }
         return row
     }

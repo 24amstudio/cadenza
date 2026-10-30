@@ -47,9 +47,9 @@ node tools/check.mjs
 
 The portable command runs strict TypeScript analysis of maintained JavaScript/JXA, Oxlint with warnings denied and the generic anti-slop rules, formatting, physical file caps, shell syntax, PowerShell static parsing on Windows, and real SQL/JXA/protocol behavior tests. The `--portable --static` variant performs the same static checks without behavioral tests and is the fast mode used by Checking CI.
 
-The complete command adds the native checks available on the current platform. macOS runs Swift Host checks and Android Remote checks; Windows and Linux run the Remote checks and report Host as deferred. It fails when the native toolchain for the current platform is unavailable. `.githooks/pre-commit` and `pre-push` call this platform-aware gate. CI runs the separate Host and Remote jobs, so a deferred local platform never becomes a reported pass.
+The complete command adds the native checks available on the current platform. macOS runs Swift Host checks and Android Remote checks; Windows and Linux run the Remote checks and report Host as deferred. It fails when the native toolchain for the current platform is unavailable. `.githooks/pre-commit` runs the fast `--portable --static` gate, while `.githooks/pre-push` calls this platform-aware gate. CI runs the separate Host and Remote jobs, so a deferred local platform never becomes a reported pass.
 
-Run dependency and scoped secret scans locally. Device, integration, security, accessibility, performance, and update-installation evidence is tracked in [VALIDATION.md](VALIDATION.md). Checking CI is limited to static lint, formatting and type checks; the local commit/push gates remain comprehensive and continue to run the behavioral and native test suites. Build CI repeats the static checks on `main` before packaging.
+Run dependency and scoped secret scans locally. Device, integration, security, accessibility, performance, and update-installation evidence is tracked in [VALIDATION.md](VALIDATION.md). The pre-commit gate is intentionally limited to fast static checks; the pre-push gate remains comprehensive and runs the portable behavioral tests plus available native suites. Build CI repeats the static checks on `main` before packaging.
 
 ## Persistence and failure boundaries
 

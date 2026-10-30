@@ -306,8 +306,12 @@ struct HostSettings: View {
 
     private var phaseDescription: String {
         let phase = model.service.flatMap { try? $0.store.recommendationPhase } ?? "learning"
-        let reason = model.service.flatMap { try? $0.store.recommendationPhaseReason } ?? "Waiting for a valid profile."
-        if creeMode == "auto" { return "Auto · (phase == "ready" ? "Ready to plan" : phase.capitalized). (reason)" }
+        let reason = model.service.flatMap { try? $0.store.recommendationPhaseReason }
+            ?? "Waiting for a valid profile."
+        if creeMode == "auto" {
+            let label = phase == "ready" ? "Ready to plan" : phase.capitalized
+            return "Auto · \(label). \(reason)"
+        }
         switch creeMode {
         case "auto": "Learning. Auto mode observes first and plans only after Host readiness gates pass."
         case "shadow": "Shadow. CREE scores candidates and observes outcomes without changing Music."
@@ -316,7 +320,6 @@ struct HostSettings: View {
         default: "CREE is unavailable until its mode is repaired."
         }
     }
-
     private func reloadCREE() {
         guard let service = model.service else { return }
         creeEnabled = (try? service.store.creeEnabled) ?? true

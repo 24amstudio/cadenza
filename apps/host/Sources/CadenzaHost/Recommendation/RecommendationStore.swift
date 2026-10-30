@@ -184,6 +184,6 @@ private struct RecommendationProfileEnvelope: Codable, Sendable {
     var profile: RecommendationProfile
 }
 
-private extension RecommendationTrack {
+extension RecommendationTrack {
     var key: String { source + ":" + id }
 }

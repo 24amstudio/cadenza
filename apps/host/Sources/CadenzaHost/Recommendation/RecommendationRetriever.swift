@@ -36,6 +36,6 @@ struct RecommendationCandidateRetriever: Sendable {
     }
 }
 
-private extension RecommendationTrack {
+extension RecommendationTrack {
     var identity: SongIdentity { SongIdentity(source: source, id: id) }
 }

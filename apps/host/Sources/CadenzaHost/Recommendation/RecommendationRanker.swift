@@ -69,6 +69,6 @@ struct RecommendationFeedbackModel: Sendable {
     }
 }
 
-private extension Double {
+extension Double {
     func clamped(to range: ClosedRange<Double>) -> Double { min(max(self, range.lowerBound), range.upperBound) }
 }

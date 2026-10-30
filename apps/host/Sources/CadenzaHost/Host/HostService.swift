@@ -20,6 +20,8 @@ final class HostService {
     var remoteTransportManualPaths: [String: String] = [:]
     private(set) var invitation: PairingInvitation?
     private var invitationDeadline: Int64 = 0
+    private var invitationPinDeadline: Int64 = 0
+    private var invitationPinAttempts = 0
     private var identity: TLSIdentity?
     private var polling: Task<Void, Never>?
     private var statusReporting: Task<Void, Never>?
@@ -257,10 +259,13 @@ final class HostService {
         let invitation = PairingInvitation(
             host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
             certificateDerBase64: identity.certificateDerBase64,
-            secret: try SecureStore.randomToken(), hostName: configuration.name
+            secret: try SecureStore.randomToken(), hostName: configuration.name,
+            pin: String(format: "%04d", Int.random(in: 0...9_999))
         )
         self.invitation = invitation
         invitationDeadline = monotonicMs() + 300_000
+        invitationPinDeadline = monotonicMs() + 7_000
+        invitationPinAttempts = 0
         return invitation
     }
 
@@ -357,9 +362,17 @@ final class HostService {
         let remoteId: String
         var cursor: Int64 = 0
         if frame.type == "pair", let pair = frame.pair, let invitation,
-            monotonicMs() < invitationDeadline, pair.secret.count <= 128,
-            SecureStore.equal(pair.secret, invitation.secret)
+            monotonicMs() < invitationDeadline
         {
+            let now = monotonicMs()
+            let secretValid = pair.secret.map { SecureStore.equal($0, invitation.secret) } ?? false
+            let pinValid =
+                !invitation.pin.isEmpty && invitationPinAttempts < 3 && now < invitationPinDeadline
+                && pair.pin == invitation.pin
+            guard secretValid || pinValid else {
+                if pair.pin != nil { invitationPinAttempts += 1 }
+                throw CadenzaError.failure("authentication", "The pairing PIN is invalid or expired.")
+            }
             let name = pair.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard (1...80).contains(name.count) else {
                 throw CadenzaError.failure("invalid_command", "Enter a Remote name from 1 to 80 characters.")
@@ -368,6 +381,8 @@ final class HostService {
             peer.supportsHeartbeat = pair.heartbeat == true
             peer.remoteVersion = pair.remoteVersion
             self.invitation = nil
+            invitationPinDeadline = 0
+            invitationPinAttempts = 3
         } else if frame.type == "hello", let auth = frame.auth, try store.authenticate(auth) {
             remoteId = auth.remoteId
             peer.remoteVersion = auth.remoteVersion
@@ -392,9 +407,14 @@ final class HostService {
         peer.authenticated = true
         lastCreditSent[peer.id] = cursor
         acknowledgedCredits[peer.id] = cursor
+        let welcomeAddress =
+            configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         var welcome = Welcome(
             hostId: store.hostId, hostName: configuration.name, hostEpoch: store.epoch,
-            remoteId: remoteId, token: token, hostTimeMs: monotonicMs(), updates: configuration.updates
+            remoteId: remoteId, token: token, hostAddress: welcomeAddress,
+            hostPort: Int(configuration.port), hostFingerprint: identity?.fingerprint,
+            hostCertificateDerBase64: identity?.certificateDerBase64,
+            hostTimeMs: monotonicMs(), updates: configuration.updates
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)

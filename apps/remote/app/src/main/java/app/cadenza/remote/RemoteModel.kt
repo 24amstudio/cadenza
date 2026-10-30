@@ -72,7 +72,8 @@ class RemoteModel(
     internal var foreground = false
     private var receiveJob: Job? = null
     internal var invitation: PairingInvitation? = null
-    private var remoteName = deviceName(application)
+    internal var pairingPin: String? = null
+    internal var remoteName = deviceName(application)
     private var reconnect: Job? = null
     private var clockJob: Job? = null
     private var lastReceivedAt = 0L
@@ -89,11 +90,11 @@ class RemoteModel(
     internal var lyricUserInitiated = false
     internal var discovery: HostDiscovery? = null
     private var lastDiscoveredAt = 0L
-    private val endpoints = EndpointPool()
+    internal val endpoints = EndpointPool()
     internal val statusPublisher = RemoteStatusPublisher(app)
     internal val pathMeasurements = PathMeasurementService()
     private val handshake = RemoteHandshake(app, ioDispatcher) { remoteName }
-    private var activeEndpoint: LocalEndpoint? = null
+    internal var activeEndpoint: LocalEndpoint? = null
     internal val networkMonitor =
         NetworkMonitor(app) {
             viewModelScope.launch {
@@ -242,6 +243,7 @@ class RemoteModel(
         try {
             val invite = parsePairingInvitation(payload, name)
             invitation = invite
+            pairingPin = null
             endpoints.clear()
             remoteName = name.trim()
             if (invite.certificateDerBase64.isEmpty()) {
@@ -306,12 +308,12 @@ class RemoteModel(
         disconnect()
         val invite = invitation
         val profile = mutable.value.profile
-        val fallback = LocalEndpoint(invite?.host ?: profile?.address ?: return, invite?.port ?: profile?.port ?: return)
-        val endpoint = if (invite != null) fallback else endpoints.next(fallback, SystemClock.elapsedRealtime())
+        val fallback = connectionFallback(invite, profile)
+        val endpoint = fallback?.let { if (invite != null) it else endpoints.next(it, SystemClock.elapsedRealtime()) }
         activeEndpoint = endpoint
-        val host = endpoint.address
-        val port = endpoint.port
-        val fingerprint = invite?.fingerprint ?: profile?.fingerprint ?: return
+        val host = endpoint?.address.orEmpty()
+        val port = endpoint?.port ?: 0
+        val fingerprint = invite?.fingerprint ?: profile?.fingerprint
         val version = ++generation
         clock.reset()
         lastHeartbeatAt = 0
@@ -341,7 +343,7 @@ class RemoteModel(
                     getApplication(),
                     host,
                     port,
-                    fingerprint,
+                    requireNotNull(fingerprint),
                     invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
                     opened = {
                         viewModelScope.launch {
@@ -363,7 +365,7 @@ class RemoteModel(
                 HostConnection(
                     host,
                     port,
-                    fingerprint,
+                    requireNotNull(fingerprint),
                     invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
                     opened = {
                         viewModelScope.launch {
@@ -405,7 +407,7 @@ class RemoteModel(
         profile: HostProfile?,
         version: Int,
     ) {
-        val frame = handshake.frame(invite, profile)
+        val frame = handshake.frame(invite, profile, pairingPin)
         if (version != generation) return
         frame.put("request_id", id())
         connection?.send(frame)
@@ -430,7 +432,7 @@ class RemoteModel(
             )
         }
         clockJob?.cancel()
-        if (invitation != null) {
+        if (invitation != null || pairingPin != null) {
             showError("Could not pair", message)
             return
         }
@@ -573,16 +575,7 @@ class RemoteModel(
         require(value.getInt("protocol_major") == 1) { "Update Host and Remote to compatible versions." }
         val invite = invitation
         val previous = mutable.value.profile
-        val profile =
-            HostProfile(
-                value.getString("host_id"),
-                value.getString("host_name"),
-                activeEndpoint?.address ?: invite?.host ?: requireNotNull(previous).address,
-                activeEndpoint?.port ?: invite?.port ?: requireNotNull(previous).port,
-                invite?.fingerprint ?: requireNotNull(previous).fingerprint,
-                value.getString("remote_id"),
-                invite?.certificateDerBase64 ?: requireNotNull(previous).certificateDerBase64,
-            )
+        val profile = hostProfileFromWelcome(value, activeEndpoint, invite, previous)
         val token = value.nullableString("token")
         withContext(ioDispatcher) {
             if (token != null) app.vault.save("host." + profile.hostId, token)
@@ -590,6 +583,7 @@ class RemoteModel(
             preferences.write("active_host" to profile.hostId, "client_name" to remoteName)
         }
         invitation = null
+        pairingPin = null
         activeEndpoint?.let { endpoints.succeeded(it, SystemClock.elapsedRealtime()) }
         discovery?.close()
         discovery = null

@@ -23,7 +23,7 @@ Unknown mutation fields and message types are rejected. Optional defined fields 
 
 ## Session and timing
 
-An unpaired Remote sends `pair` with a one-use invitation secret and display name. Host returns a distinct credential once. Later connections send `hello` with that Remote identity, token, and last committed credit sequence. Tokens are never placed in a URL, Bonjour record, ordinary database row, or log.
+An unpaired Remote can send `pair` with either the one-use QR invitation secret or a four-digit Bluetooth PIN, plus its display name. The Host accepts a PIN for seven seconds and at most three attempts, then returns a distinct credential once. The PIN is only a short provisioning proof; it is not a long-lived credential. Later connections send `hello` with that Remote identity, token, and last committed credit sequence. Tokens are never placed in a URL, Bonjour record, ordinary database row, or log. A Bluetooth pairing can later add a LAN endpoint to the same Host profile; the authenticated Host certificate and identity remain authoritative.
 
 Host creates a fresh epoch for every service start. Clock exchanges include the original Remote monotonic timestamp and Host receive/send times. Remote uses repeated samples and measured uncertainty before issuing an absolute Host deadline. Native animation uses that mapped timeline.
 

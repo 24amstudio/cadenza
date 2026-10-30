@@ -60,8 +60,16 @@ final class MusicBridge {
             guard let url = components.url, NSWorkspace.shared.open(url) else {
                 throw CadenzaError.failure("music_unavailable", "Music could not open this song.")
             }
+            // Opening a music:// URL can leave Music behind another app. Bring its
+            // document window forward so Accessibility can select the exact track.
+            NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
+                .first?.activate(options: [.activateAllWindows])
         }
-        let deadline = monotonicMs() + 8_000
+        let deadline = monotonicMs() + 12_000
+        if song.source == "catalog" {
+            let searchDeadline = min(deadline - 2_000, monotonicMs() + 6_000)
+            _ = try? await accessibility.searchCatalog(song, deadline: searchDeadline)
+        }
         repeat {
             try Task.checkCancellation()
             guard isCurrent() else {
@@ -72,6 +80,6 @@ final class MusicBridge {
             try await Task.sleep(for: .milliseconds(150))
         } while monotonicMs() < deadline
         throw CadenzaError.failure(
-            "song_not_ready", "Music has not exposed the exact song. Select this song in Music, then prepare it again.")
+            "song_not_ready", "Music did not expose the exact song after navigation. Retry the preparation action.")
     }
 }

@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -97,9 +98,19 @@ private fun LyricText(
         label = "lyric-line-color",
     )
     val inactiveBlur by animateDpAsState(
-        if (activeLine) 0.dp else 2.dp,
+        if (activeLine) 0.dp else 1.dp,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
         label = "lyric-line-blur",
+    )
+    val lineAlpha by animateFloatAsState(
+        if (activeLine) 1f else 0.68f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-line-alpha",
+    )
+    val lineScale by animateFloatAsState(
+        if (activeLine) 1.02f else 1f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-line-scale",
     )
     val wordFocus by animateFloatAsState(
         activeWord.toFloat(),
@@ -112,7 +123,6 @@ private fun LyricText(
         } else {
             buildAnnotatedString {
                 line.words.forEachIndexed { index, word ->
-                    if (index > 0) append(" ")
                     val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
                     val wordColor =
                         lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
@@ -127,11 +137,18 @@ private fun LyricText(
             }
         }
     if (line.words.isNotEmpty() && onWordClick != null) {
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
+        Row(
+            Modifier
+                .graphicsLayer {
+                    alpha = lineAlpha
+                    scaleX = lineScale
+                    scaleY = lineScale
+                }.horizontalScroll(rememberScrollState()),
+        ) {
             line.words.forEachIndexed { index, word ->
                 val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
                 Text(
-                    word.text + if (index == line.words.lastIndex) "" else " ",
+                    word.text,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
                     color =
@@ -141,7 +158,7 @@ private fun LyricText(
                         Modifier
                             .blur(inactiveBlur)
                             .clickable(role = Role.Button) { onWordClick(word.startMs) }
-                            .semantics { contentDescription = "Seek to ${word.text}" },
+                            .semantics { contentDescription = "Seek to ${word.text.trim()}" },
                 )
             }
         }
@@ -151,7 +168,13 @@ private fun LyricText(
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
             color = activeLineColor,
-            modifier = Modifier.blur(inactiveBlur),
+            modifier =
+                Modifier
+                    .graphicsLayer {
+                        alpha = lineAlpha
+                        scaleX = lineScale
+                        scaleY = lineScale
+                    }.blur(inactiveBlur),
         )
     }
 }
@@ -390,11 +413,19 @@ private fun LyricsContent(
                                     )
                                 }
                                 line.translation?.let {
+                                    val translationAlpha by animateFloatAsState(
+                                        if (index == active) 1f else 0.68f,
+                                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                        label = "lyric-translation-alpha",
+                                    )
                                     Text(
                                         it,
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.blur(if (index == active) 0.dp else 1.5.dp),
+                                        modifier =
+                                            Modifier
+                                                .graphicsLayer { alpha = translationAlpha }
+                                                .blur(if (index == active) 0.dp else 1.dp),
                                     )
                                 }
                             }

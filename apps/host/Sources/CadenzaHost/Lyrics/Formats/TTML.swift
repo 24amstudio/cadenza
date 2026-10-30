@@ -132,6 +132,12 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         if translationTarget != nil { translationText += string }
         if paragraph != nil { paragraph?.text += string }
         if !wordCaptures.isEmpty { wordCaptures[wordCaptures.count - 1].text += string }
+        if wordCaptures.isEmpty, string.allSatisfy(\.isWhitespace), var line = paragraph,
+            let last = line.words.indices.last
+        {
+            line.words[last].text += " "
+            paragraph = line
+        }
         if (paragraph?.text.utf8.count ?? 0) > 20_000 || translationText.utf8.count > 20_000 {
             failure = "A lyric line is too large."
             parser.abortParsing()
@@ -144,9 +150,14 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         let name = elementName.split(separator: ":").last.map(String.init) ?? elementName
         if name == "span", let capture = wordCaptures.last, capture.depth == depth {
             wordCaptures.removeLast()
+            let hasTrailingSpace = capture.text.last?.isWhitespace == true
             let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
-                paragraph?.words.append(LyricWord(text: text, startMs: capture.startMs, endMs: capture.endMs))
+                paragraph?.words.append(
+                    LyricWord(
+                        text: text + (hasTrailingSpace ? " " : ""),
+                        startMs: capture.startMs,
+                        endMs: capture.endMs))
             }
         }
         if name == "p", paragraphDepth == depth, var line = paragraph {

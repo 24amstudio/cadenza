@@ -70,6 +70,14 @@ struct ProtocolTests {
         #expect(line.endMs == 2_000)
     }
 
+    @Test func timedWordSpacingDoesNotSplitSyllables() throws {
+        let xml =
+            #"<tt><body><p begin="1s" end="2s"><span begin="1s" end="1.2s">Dan</span> <span begin="1.2s" end="1.4s">me</span><span begin="1.4s" end="1.6s">ne</span><span begin="1.6s" end="1.8s">ma</span><span begin="1.8s" end="2s">ni</span> <span begin="1.8s" end="2s">aku,</span></p></body></tt>"#
+        let line = try #require(TTMLDocument.parse(Data(xml.utf8), occurrence: id).lines.first)
+        #expect(line.text == "Dan menemani aku,")
+        #expect(line.words.map(\.text).joined() == "Dan menemani aku,")
+    }
+
     @Test func timedLinesInferMissingEndBounds() throws {
         let xml =
             #"<tt><body><p xml:id="L1" begin="1s">First</p><p xml:id="L2" begin="2s">Second</p></body></tt>"#

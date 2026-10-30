@@ -368,7 +368,7 @@ final class HostService {
             let secretValid = pair.secret.map { SecureStore.equal($0, invitation.secret) } ?? false
             let pinValid =
                 !invitation.pin.isEmpty && invitationPinAttempts < 3 && now < invitationPinDeadline
-                    && pair.pin == invitation.pin
+                && pair.pin == invitation.pin
             guard secretValid || pinValid else {
                 if pair.pin != nil { invitationPinAttempts += 1 }
                 throw CadenzaError.failure("authentication", "The pairing PIN is invalid or expired.")

@@ -87,7 +87,7 @@ Use the existing system Bun by absolute path. Resolve it from the original shell
 | `node tools/check.mjs --portable`                     | Strict TS/JXA analysis, strict Oxlint, Prettier, source limits, shell syntax and portable behavioral tests |
 | `apps\remote\check.cmd` / `bash apps/remote/check.sh` | Kotlin compilation (both variants), ktlint, unit/render tests, Android lint                                |
 | `bash apps/host/Scripts/check.sh`                     | Strict Swift format lint and Swift compilation/tests on macOS                                              |
-| `node tools/check.mjs`                                | Platform-aware local gate: Host+Remote on macOS, Remote on Windows/Linux; used by commit/push hooks        |
+| `node tools/check.mjs`                                | Platform-aware local gate: Host+Remote on macOS, Remote on Windows/Linux; used by the pre-push hook        |
 | `apps\remote\build.cmd Debug`                         | Development APK, with updates disabled                                                                     |
 | `bash apps/host/Scripts/build.sh`                     | Ad-hoc native app and ZIP, default development profile                                                     |
 | `node tools/build-info.mjs`                           | Immutable commit SHA for a clean Git tree, otherwise a source SHA-256 identity                             |

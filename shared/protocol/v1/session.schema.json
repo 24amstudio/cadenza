@@ -789,6 +789,9 @@
           },
           "song": {
             "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
+          },
+          "song_metadata": {
+            "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
           }
         }
       }

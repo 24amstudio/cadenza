@@ -44,6 +44,13 @@ struct ProtocolTests {
         #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(unicodeDigits.utf8)) }
     }
 
+    @Test func songPreparationMayCarryFavoriteMetadataForLibraryRecovery() throws {
+        let frame =
+            #"{"version":1,"type":"song.prepare","request_id":"00000000-0000-4000-8000-000000000001","song":{"source":"library","id":"0123456789ABCDEF"},"song_metadata":{"source":"library","id":"0123456789ABCDEF","title":"Saved song","artist":"Artist","album":"Album","duration_ms":120000}}"#
+        let decoded = try ProtocolValidation.decode(Data(frame.utf8))
+        #expect(decoded.songMetadata?.title == "Saved song")
+    }
+
     @Test func timedLyricsKeepOriginalTextAndEnglishTranslation() throws {
         let xml = """
             <tt xml:lang="ja" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
@@ -68,6 +75,14 @@ struct ProtocolTests {
         let line = try #require(TTMLDocument.parse(Data(xml.utf8), occurrence: id).lines.first)
         #expect(line.startMs == 1_000)
         #expect(line.endMs == 2_000)
+    }
+
+    @Test func timedWordSpacingDoesNotSplitSyllables() throws {
+        let xml =
+            #"<tt><body><p begin="1s" end="2s"><span begin="1s" end="1.2s">Dan</span> <span begin="1.2s" end="1.4s">me</span><span begin="1.4s" end="1.6s">ne</span><span begin="1.6s" end="1.8s">ma</span><span begin="1.8s" end="2s">ni</span> <span begin="1.8s" end="2s">aku,</span></p></body></tt>"#
+        let line = try #require(TTMLDocument.parse(Data(xml.utf8), occurrence: id).lines.first)
+        #expect(line.text == "Dan menemani aku,")
+        #expect(line.words.map(\.text).joined() == "Dan menemani aku,")
     }
 
     @Test func timedLinesInferMissingEndBounds() throws {

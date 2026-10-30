@@ -66,8 +66,10 @@ enum ProtocolValidation {
         ]
         guard let fields = required[type] else { throw invalid("Unknown message type.") }
         let keys = Set(object.keys)
+        var optionalFields = Set(["version", "type", "request_id"])
+        if type == "song.prepare" { optionalFields.insert("song_metadata") }
         guard keys.isSuperset(of: fields.union(["version", "type"])),
-            keys.isSubset(of: fields.union(["version", "type", "request_id"]))
+            keys.isSubset(of: fields.union(optionalFields))
         else {
             throw invalid("The message contains unexpected or missing fields.")
         }
@@ -130,7 +132,23 @@ enum ProtocolValidation {
                 }
             }
         }
-        if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
+        if type == "song.prepare" {
+            try nested(object["song"], fields: ["source", "id"])
+            if let metadata = object["song_metadata"] as? [String: Any] {
+                try nested(
+                    metadata,
+                    fields: ["source", "id", "title", "artist", "album"],
+                    optional: ["duration_ms", "artwork_url", "url"])
+                guard let source = metadata["source"] as? String,
+                    let identity = object["song"] as? [String: Any],
+                    source == identity["source"] as? String,
+                    metadata["id"] as? String == identity["id"] as? String
+                else { throw invalid("Song metadata does not match its identity.") }
+                let data = try JSONSerialization.data(withJSONObject: metadata)
+                let song = try Wire.decode(Song.self, from: data)
+                guard Wire.validate(song) else { throw invalid("Invalid song metadata.") }
+            }
+        }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")
         }

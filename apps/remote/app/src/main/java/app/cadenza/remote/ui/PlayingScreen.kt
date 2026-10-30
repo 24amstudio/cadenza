@@ -3,19 +3,19 @@ package app.cadenza.remote.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -68,123 +68,70 @@ fun PlayingScreen(
         }
     }
     val current = state.snapshot?.current
+    val currentPosition = position(model, 100)
     val artwork = rememberArtwork(current?.song?.artworkUrl)
     val backdrop =
         artwork?.accent?.let {
             Brush.verticalGradient(
-                listOf(it.copy(alpha = 0.24f), MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), MaterialTheme.colorScheme.surface),
+                listOf(it.copy(alpha = 0.28f), MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), MaterialTheme.colorScheme.surface),
             )
         } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.colorScheme.surface))
     val lyrics = state.lyrics?.takeIf { it.occurrenceId == current?.occurrenceId && it.level > 0 }
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
+    LaunchedEffect(current?.occurrenceId, state.connected) {
+        if (current != null && state.connected && lyrics == null && !state.lyricsLoading) {
+            model.loadLyrics(userInitiated = false)
+        }
+    }
 
-    Box(Modifier.fillMaxSize().background(backdrop)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(backdrop)) {
+        val tablet = wide && maxWidth >= 760.dp
+        val contentPadding = if (wide) 28.dp else 20.dp
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(if (wide) 20.dp else 16.dp),
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(if (current == null) "Ready to play" else "Now playing", style = MaterialTheme.typography.headlineMedium)
-                    ConnectionStatus(state)
-                }
-                if (!wide && lyricsMayBeAvailable) {
-                    FilterChip(
-                        selected = false,
-                        onClick = onOpenLyrics,
-                        label = { Text("Lyrics") },
-                        leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
-                        modifier = Modifier.focusRequester(lyricsFocusRequester),
-                    )
-                }
-            }
+            PlayerHeader(state, lyricsMayBeAvailable, onOpenLyrics, lyricsFocusRequester)
             if (current == null) {
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 2.dp,
+                EmptyPlayerSurface()
+            } else if (tablet) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 520.dp, max = 640.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    Row(
-                        Modifier.padding(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        Modifier.weight(0.44f),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f),
+                        tonalElevation = 2.dp,
                     ) {
-                        Surface(
-                            Modifier.size(64.dp),
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    cadenzaVector(CadenzaIcon.MUSIC),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(32.dp),
-                                )
-                            }
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Nothing is playing", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                "Search for a song and add it to the Host queue.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        PlayerPanel(model, state, artwork, currentPosition, true)
+                    }
+                    Surface(
+                        Modifier.weight(0.56f).fillMaxSize(),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.54f),
+                        tonalElevation = 1.dp,
+                    ) {
+                        LyricsContent(
+                            model,
+                            state,
+                            lyrics,
+                            currentPosition,
+                            !state.connected || model.isStale(),
+                            Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
+                        )
                     }
                 }
             } else {
                 Surface(
                     Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f),
-                    tonalElevation = 3.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.88f),
+                    tonalElevation = 2.dp,
                 ) {
-                    if (wide) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Artwork(artwork, Modifier.size(170.dp))
-                            PlayerDetails(
-                                model,
-                                state,
-                                Modifier.fillMaxWidth(),
-                                true,
-                                lyricsMayBeAvailable,
-                                onOpenLyrics,
-                                lyricsFocusRequester,
-                            )
-                        }
-                    } else {
-                        Column(
-                            Modifier.fillMaxWidth().padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(20.dp),
-                        ) {
-                            Artwork(
-                                artwork,
-                                Modifier
-                                    .widthIn(max = 320.dp)
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f)
-                                    .align(Alignment.CenterHorizontally),
-                            )
-                            PlayerDetails(
-                                model,
-                                state,
-                                Modifier.fillMaxWidth(),
-                                false,
-                                lyricsMayBeAvailable,
-                                onOpenLyrics,
-                                lyricsFocusRequester,
-                            )
-                        }
-                    }
+                    PlayerPanel(model, state, artwork, currentPosition, false)
                 }
                 state.nextRecommendation?.let { recommendation ->
                     Surface(
@@ -213,106 +160,172 @@ fun PlayingScreen(
 }
 
 @Composable
-private fun PlayerDetails(
-    model: RemoteModel,
+private fun PlayerHeader(
     state: RemoteState,
-    modifier: Modifier,
-    wide: Boolean,
     lyricsMayBeAvailable: Boolean,
     onOpenLyrics: () -> Unit,
     lyricsFocusRequester: FocusRequester,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(if (state.snapshot?.current == null) "Ready to play" else "Now playing", style = MaterialTheme.typography.headlineMedium)
+            ConnectionStatus(state)
+        }
+        if (lyricsMayBeAvailable) {
+            FilterChip(
+                selected = false,
+                onClick = onOpenLyrics,
+                label = { Text("Lyrics") },
+                leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
+                modifier = Modifier.focusRequester(lyricsFocusRequester),
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyPlayerSurface() {
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            Modifier.padding(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                Modifier.size(64.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        cadenzaVector(CadenzaIcon.MUSIC),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Nothing is playing", style = MaterialTheme.typography.titleLarge)
+                Text("Search for a song and add it to the Host queue.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerPanel(
+    model: RemoteModel,
+    state: RemoteState,
+    artwork: ArtworkData?,
+    currentPosition: Long,
+    wide: Boolean,
 ) {
     val snapshot = state.snapshot ?: return
     val current = snapshot.current ?: return
     val owner = current.requestedBy == state.profile?.remoteId
     val canInterrupt = mayInterruptPlayback(state)
-    val currentPosition = position(model)
     val observationsCurrent = !model.isStale()
     val mixing = snapshot.mixing.takeIf { observationsCurrent }
     var volume by remember { mutableFloatStateOf(-1f) }
     val volumeSlider = remember { SliderState(trackRange = 0f..100f) }
     volumeSlider.value = if (volume >= 0) volume else snapshot.volume.toFloat()
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(current.song.title, style = MaterialTheme.typography.headlineSmall)
-        Text(current.song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        AssistChip(
-            onClick = {
-                model.showError(
-                    "Request ownership",
-                    if (canInterrupt) {
-                        "You can control this request."
-                    } else {
-                        "This request belongs to " + current.requesterName +
-                            ". Host settings protect it from skipping, seeking, and replacement. Pause and resume are shared."
-                    },
-                )
-            },
-            label = { Text("Requested by " + if (owner) "you" else current.requesterName) },
-            leadingIcon =
-                if (!canInterrupt) {
-                    { Icon(cadenzaVector(CadenzaIcon.LOCK), contentDescription = "Protected request", modifier = Modifier.size(18.dp)) }
-                } else {
-                    null
-                },
+    Column(
+        Modifier.fillMaxWidth().padding(if (wide) 24.dp else 20.dp),
+        verticalArrangement = Arrangement.spacedBy(if (wide) 14.dp else 16.dp),
+        horizontalAlignment = if (wide) Alignment.CenterHorizontally else Alignment.Start,
+    ) {
+        Artwork(
+            artwork,
+            Modifier
+                .widthIn(max = if (wide) 300.dp else 280.dp)
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .align(Alignment.CenterHorizontally),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                when (if (observationsCurrent) snapshot.quality else "unknown") {
-                    "lossless" -> "Lossless"
-                    "hi_res_lossless" -> "Hi-Res Lossless"
-                    "dolby_atmos" -> "Dolby Atmos"
-                    "unknown" -> "Quality waiting for Cadenza Host"
-                    else -> "Quality not reported by Cadenza Host"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (mixing == true) {
-                Text("• AutoMix", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(current.song.title, style = if (wide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
+                Text(current.song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Requested by " + if (owner) "you" else current.requesterName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+            FavoriteIconButton(model, state, current.song)
         }
-        if (mixing == true && snapshot.incoming != null) {
-            Text("AutoMix → " + snapshot.incoming.title, style = MaterialTheme.typography.bodyMedium)
-        } else if (mixing == true) {
-            Text("AutoMix transition - Incoming song not reported", style = MaterialTheme.typography.bodyMedium)
-        } else if (mixing == null) {
-            Text(
-                if (observationsCurrent) "AutoMix not reported by Cadenza Host" else "AutoMix status waiting for Cadenza Host",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        HorizontalDivider()
-        PlaybackTimeline(model, state, currentPosition)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PlaybackTransport(
-                model,
-                state,
-                Modifier.weight(1f),
-                leadingContent =
-                    if (wide && lyricsMayBeAvailable) {
-                        {
-                            FilterChip(
-                                selected = false,
-                                onClick = onOpenLyrics,
-                                label = { Text("Lyrics") },
-                                leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
-                                modifier = Modifier.focusRequester(lyricsFocusRequester),
-                            )
-                        }
+        if (!wide) {
+            AssistChip(
+                onClick = {
+                    model.showError(
+                        "Request ownership",
+                        if (canInterrupt) {
+                            "You can control this request."
+                        } else {
+                            "This request belongs to " + current.requesterName +
+                                ". Pause and resume are shared."
+                        },
+                    )
+                },
+                label = { Text(if (owner) "Your request" else "Shared request") },
+                leadingIcon =
+                    if (!canInterrupt) {
+                        { Icon(cadenzaVector(CadenzaIcon.LOCK), contentDescription = "Protected request", modifier = Modifier.size(18.dp)) }
                     } else {
                         null
                     },
             )
-            FavoriteIconButton(model, state, current.song)
-        }
-        HorizontalDivider()
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Music volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            Box(Modifier.size(24.dp)) {
-                if ("playback.volume" in state.pending) {
-                    CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Volume change pending" })
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(qualityLabel(snapshot.quality, observationsCurrent), style = MaterialTheme.typography.bodyMedium)
+                if (mixing ==
+                    true
+                ) {
+                    Text("· AutoMix", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
             }
+            if (mixing == true && snapshot.incoming != null) {
+                Text(
+                    "AutoMix → " + snapshot.incoming.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (mixing == null) {
+                Text(
+                    if (observationsCurrent) "AutoMix not reported by Cadenza Host" else "AutoMix status waiting for Cadenza Host",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        HorizontalDivider()
+        PlaybackTimeline(model, state, currentPosition)
+        PlaybackTransport(model, state, Modifier.fillMaxWidth(), compact = true)
+        HorizontalDivider()
+        if (!wide) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Music volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                Box(Modifier.size(24.dp)) {
+                    if ("playback.volume" in state.pending) {
+                        CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Volume change pending" })
+                    }
+                }
+            }
+        } else if ("playback.volume" in state.pending) {
+            CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Volume change pending" })
         }
         Slider(
             state = volumeSlider,
@@ -325,10 +338,25 @@ private fun PlayerDetails(
             },
             enabled = state.connected && "playback.volume" !in state.pending,
         )
-        OutlinedButton(
-            onClick = { if (state.monitoringSong) model.endSessionStatus() else model.monitorSong() },
-            enabled = state.connected,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (state.monitoringSong) "Unpin song status" else "Pin song status") }
+        if (!wide) {
+            OutlinedButton(
+                onClick = { if (state.monitoringSong) model.endSessionStatus() else model.monitorSong() },
+                enabled = state.connected,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (state.monitoringSong) "Unpin song status" else "Pin song status") }
+        }
     }
 }
+
+private fun qualityLabel(
+    quality: String,
+    current: Boolean,
+): String =
+    when {
+        !current -> "Quality waiting for Cadenza Host"
+        quality == "lossless" -> "Lossless"
+        quality == "hi_res_lossless" -> "Hi-Res Lossless"
+        quality == "dolby_atmos" -> "Dolby Atmos"
+        quality == "unknown" -> "Quality waiting for Cadenza Host"
+        else -> "Quality not reported by Cadenza Host"
+    }

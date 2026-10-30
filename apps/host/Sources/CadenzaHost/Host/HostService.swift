@@ -773,7 +773,7 @@ final class HostService {
                     guard let song = frame.song, Wire.validate(song) else {
                         throw CadenzaError.failure("invalid_command", "Invalid song identity.")
                     }
-                    try await self.queue.prepare(song)
+                    try await self.queue.prepare(song, metadata: frame.songMetadata)
                     try Task.checkCancellation()
                     self.network.send(Frame(type: "song.ready", requestId: requestId, song: song), to: peer)
                 }

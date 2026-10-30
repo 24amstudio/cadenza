@@ -7,6 +7,7 @@ import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.data.TransportPathStatus
 import app.cadenza.remote.data.UpdateConfiguration
 import java.util.UUID
 
@@ -55,6 +56,7 @@ data class RemoteState(
     val connected: Boolean = false,
     val connecting: Boolean = false,
     val effectiveTransport: EffectiveTransportDecision? = null,
+    val transportPaths: List<TransportPathStatus> = emptyList(),
     val transportPreference: String = "balanced",
     val transportMode: String = "lan",
     val connectionIssue: String? = null,

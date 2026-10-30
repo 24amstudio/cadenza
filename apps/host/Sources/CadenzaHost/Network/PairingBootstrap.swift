@@ -110,7 +110,7 @@ final class PairingBootstrap {
                     connection.cancel()
                     return
                 }
-                guard certificate.count in 512...3_072 else {
+                guard (512...3_072).contains(certificate.count) else {
                     connection.cancel()
                     return
                 }
@@ -137,7 +137,7 @@ final class PairingBootstrap {
         else { return nil }
         let length = Int(data[magic.count + 1])
         let start = magic.count + 2
-        guard length in 32...128, data.count == start + length else { return nil }
+        guard (32...128).contains(length), data.count == start + length else { return nil }
         return data.subdata(in: start..<(start + length))
     }
 

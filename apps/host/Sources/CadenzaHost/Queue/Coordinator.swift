@@ -239,11 +239,14 @@ final class QueueCoordinator {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         artworkTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let match = try? await catalog.search(query).first(where: {
-                $0.artworkUrl != nil &&
-                    $0.title.compare(song.title, options: .caseInsensitive) == .orderedSame &&
-                    $0.artist.compare(song.artist, options: .caseInsensitive) == .orderedSame
-            }), let artworkUrl = match.artworkUrl else { return }
+            guard
+                let match = try? await catalog.search(query).first(where: {
+                    $0.artworkUrl != nil
+                        && $0.title.compare(song.title, options: .caseInsensitive) == .orderedSame
+                        && $0.artist.compare(song.artist, options: .caseInsensitive) == .orderedSame
+                }),
+                let artworkUrl = match.artworkUrl
+            else { return }
             guard !Task.isCancelled, current?.occurrenceId == occurrenceId else { return }
             current?.song.artworkUrl = artworkUrl
             publish()
@@ -589,10 +592,12 @@ final class QueueCoordinator {
                 guard let metadata, metadata.identity == identity else { throw error }
                 let query = "\(metadata.title) \(metadata.artist)".trimmingCharacters(in: .whitespacesAndNewlines)
                 let candidates = try await music.librarySearch(query)
-                guard let replacement = candidates.first(where: {
-                    $0.title.caseInsensitiveCompare(metadata.title) == .orderedSame
-                        && $0.artist.caseInsensitiveCompare(metadata.artist) == .orderedSame
-                }) else { throw error }
+                guard
+                    let replacement = candidates.first(where: {
+                        $0.title.caseInsensitiveCompare(metadata.title) == .orderedSame
+                            && $0.artist.caseInsensitiveCompare(metadata.artist) == .orderedSame
+                    })
+                else { throw error }
                 song = replacement
             }
         } else if let known = knownSongs[identity] {

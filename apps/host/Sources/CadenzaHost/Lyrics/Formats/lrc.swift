@@ -84,7 +84,8 @@ enum LRCParser {
                 index + 1 < matches.count ? Range(matches[index + 1].range, in: text)!.lowerBound : text.endIndex
             let rawValue = String(text[timestampRange.upperBound..<upper])
             let hasTrailingSpace = rawValue.last?.isWhitespace == true
-            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value =
+                rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 + (hasTrailingSpace ? " " : "")
             guard !value.isEmpty else { return nil }
             return LyricWord(text: value, startMs: max(lineStart, start), endMs: max(start, end))

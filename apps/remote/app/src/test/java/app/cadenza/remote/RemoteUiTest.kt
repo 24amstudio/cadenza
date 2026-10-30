@@ -365,6 +365,7 @@ class RemoteUiTest {
         seedProfile()
         openApp()
         navigate("Settings")
+        capture("settings-revamp-tablet")
         compose.onNodeWithText("Remote name").performTextReplacement("Bedroom tablet")
         compose.onNodeWithText("Dark", substring = false).performClick()
         compose.onNodeWithText("Save preferences").performScrollTo().performClick()

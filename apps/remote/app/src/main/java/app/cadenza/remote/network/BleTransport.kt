@@ -205,6 +205,10 @@ class BleTransport(
 
     @SuppressLint("MissingPermission")
     fun startScan() {
+        if (!hasScanPermission()) {
+            closed("Allow Nearby devices to connect over Bluetooth.")
+            return
+        }
         if (scanning) return
         val scanner = scanner ?: return closed("Bluetooth is unavailable.")
         scanning = true
@@ -225,6 +229,10 @@ class BleTransport(
 
     private fun hasConnectPermission(): Boolean =
         context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun hasScanPermission(): Boolean =
+        context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) ==
             PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")

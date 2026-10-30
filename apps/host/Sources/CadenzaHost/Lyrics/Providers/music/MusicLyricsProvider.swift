@@ -14,9 +14,11 @@ struct MusicLyricsProvider: LyricsProvider {
             // Prefer the newest cache entries and keep this read small enough
             // that an unavailable Music cache does not block LRCLIB fallback.
             candidates = listed.sorted { left, right in
-                let leftDate = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                let leftDate =
+                    (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                     ?? .distantPast
-                let rightDate = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                let rightDate =
+                    (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                     ?? .distantPast
                 return leftDate > rightDate
             }.prefix(512)

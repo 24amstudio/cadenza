@@ -622,7 +622,8 @@ final class HostService {
                         }
                     }
                     guard let document else {
-                        throw lastError ?? CadenzaError.failure(
+                        if let lastError { throw lastError }
+                        throw CadenzaError.failure(
                             "lyrics_unavailable", "Lyrics are unavailable. Try again from the Lyrics pane.")
                     }
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId

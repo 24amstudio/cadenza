@@ -61,7 +61,9 @@ enum LRCParser {
     }
 
     private static func line(
-        id: String, text: String, startMs: Int64, endMs: Int64, words: [LyricWord] = []) -> LyricLine {
+        id: String, text: String, startMs: Int64, endMs: Int64,
+        words: [LyricWord] = []
+    ) -> LyricLine {
         let romanized = text.applyingTransform(.toLatin, reverse: false).flatMap { $0 == text ? nil : $0 }
         return LyricLine(
             id: id, text: text, startMs: startMs, endMs: endMs, words: words, romanized: romanized)

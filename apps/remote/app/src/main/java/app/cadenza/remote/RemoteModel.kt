@@ -1,5 +1,4 @@
 package app.cadenza.remote
-
 import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
@@ -55,13 +54,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.UUID
-
 class RemoteModel(
     application: Application,
     private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(application, Dispatchers.IO)
-
     internal val app = application as CadenzaApplication
     internal val preferences = app.settings
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
@@ -83,7 +80,7 @@ class RemoteModel(
     private var clockJob: Job? = null
     private var lastReceivedAt = 0L
     internal var lastHeartbeatAt = 0L
-    private var lastClockSentAt = 0L
+    internal var lastClockSentAt = 0L
     internal var lastStatusSentAt = 0L
     private var retryDelay = 1_000L
     internal var searchId: String? = null
@@ -127,7 +124,6 @@ class RemoteModel(
     internal val recommendationEngine by lazy {
         RecommendationEngine(RecommendationPassportSigner(application.packageName + ".recommendation"))
     }
-
     init {
         app.unpinSession = ::endSessionStatus
         app.mediaAction = mediaActions::handle
@@ -207,7 +203,6 @@ class RemoteModel(
             }
         }
     }
-
     fun setForeground(visible: Boolean) {
         foreground = visible
         if (visible) networkMonitor.start() else networkMonitor.close()
@@ -223,7 +218,6 @@ class RemoteModel(
             }
         }
     }
-
     private fun startDiscovery() {
         if (!foreground || !mutable.value.loaded || discovery != null) return
         discovery =
@@ -243,7 +237,6 @@ class RemoteModel(
                 connect()
             }.also { it.start() }
     }
-
     fun pair(
         payload: ByteArray,
         name: String,
@@ -290,7 +283,6 @@ class RemoteModel(
             showError("Could not scan QR", message)
         }
     }
-
     fun connect() {
         try {
             openConnection()
@@ -301,7 +293,6 @@ class RemoteModel(
             showError("Could not connect", message)
         }
     }
-
     fun setTransportMode(mode: String) {
         require(mode in setOf("lan", "ble", "hybrid")) { "Unsupported transport mode." }
         if (transportMode == mode) return
@@ -310,7 +301,6 @@ class RemoteModel(
         mutable.update { it.copy(transportMode = mode) }
         if (mutable.value.connected || mutable.value.connecting) connect()
     }
-
     fun setTransportPreference(preference: String) {
         require(preference in setOf("latency", "host_efficiency", "remote_efficiency", "reliability", "balanced")) {
             "Unsupported transport preference."
@@ -320,7 +310,6 @@ class RemoteModel(
         mutable.update { it.copy(transportPreference = preference) }
         if (mutable.value.connected) publishStatus()
     }
-
     private fun openConnection() {
         disconnect()
         val invite = invitation
@@ -418,7 +407,6 @@ class RemoteModel(
                 }
             }
     }
-
     private suspend fun sendHandshake(
         invite: PairingInvitation?,
         profile: HostProfile?,
@@ -429,7 +417,6 @@ class RemoteModel(
         frame.put("request_id", id())
         connection?.send(frame)
     }
-
     private fun connectionClosed(
         version: Int,
         message: String,
@@ -464,7 +451,6 @@ class RemoteModel(
                 }
         }
     }
-
     fun disconnect() {
         generation++
         frameQueue.clear()
@@ -490,7 +476,6 @@ class RemoteModel(
             )
         }
     }
-
     private suspend fun receive(frame: JSONObject) {
         lastReceivedAt = SystemClock.elapsedRealtime()
         when (frame.getString("type")) {
@@ -588,7 +573,6 @@ class RemoteModel(
             else -> Unit
         }
     }
-
     private suspend fun welcome(value: JSONObject) {
         require(value.getInt("protocol_major") == 1) { "Update Host and Remote to compatible versions." }
         val invite = invitation
@@ -685,7 +669,6 @@ class RemoteModel(
             requestRecommendation()
         }
     }
-
     private suspend fun applyState(value: JSONObject) {
         val snapshot = mutable.value.enrichArtwork(Wire.snapshot(value))
         require(snapshot.hostId == mutable.value.profile?.hostId) { "Host identity did not match this pairing." }
@@ -714,17 +697,6 @@ class RemoteModel(
         val new = songs.filter { metadata.add(it.source + ":" + it.id) }
         if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }
     }
-
-    private fun pingClock() {
-        lastClockSentAt = SystemClock.elapsedRealtime()
-        connection?.send(
-            Wire
-                .frame("clock")
-                .put("request_id", id())
-                .put("clock", JSONObject().put("sent_at_remote_ms", SystemClock.elapsedRealtime())),
-        )
-    }
-
     fun search(
         query: String,
         library: Boolean,
@@ -753,7 +725,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun prepare(song: Song) {
         preparationId = id()
         val requestId = preparationId
@@ -770,7 +741,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
@@ -791,7 +761,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun savePreferences(
         name: String,
         theme: ThemePreference,
@@ -817,7 +786,6 @@ class RemoteModel(
             }
         }
     }
-
     fun toggleFavorite(song: Song) {
         if (mutable.value.savingFavorite) return
         val saved = mutable.value.favorites.none { it.identity == song.identity }
@@ -862,7 +830,6 @@ class RemoteModel(
             }
         }
     }
-
     fun command(
         action: JSONObject,
         key: String,
@@ -871,7 +838,6 @@ class RemoteModel(
         mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key) }
     }
-
     private suspend fun sendCommand(
         action: JSONObject,
         key: String,
@@ -945,7 +911,6 @@ class RemoteModel(
             showError("Action unavailable", error.message ?: "Reconnect and retry.")
         }
     }
-
     private suspend fun commandResult(frame: JSONObject) {
         val commandId = frame.getString("command_id")
         val original = pending[commandId] ?: return
@@ -997,7 +962,6 @@ class RemoteModel(
             }
         }
     }
-
     override fun onCleared() {
         SessionNotification(app).clear()
         app.unpinSession = null

@@ -58,7 +58,7 @@ fun SettingsScreen(
             val mode = pendingTransport
             pendingTransport = null
             if (mode != null && permissions.values.all { it }) {
-                model.setTransportMode(mode)
+                model.reconnectWithTransport(mode)
             } else if (mode != null) {
                 model.showError("Bluetooth permission needed", "Allow Nearby devices so Cadenza can connect to this Host over Bluetooth.")
             }
@@ -70,7 +70,7 @@ fun SettingsScreen(
                     ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
             )
         ) {
-            model.setTransportMode(mode)
+            model.reconnectWithTransport(mode)
         } else {
             pendingTransport = mode
             bluetoothPermissions.launch(
@@ -98,10 +98,17 @@ fun SettingsScreen(
                 }
                 Text("Connection transport", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Wi-Fi pairing is already trusted for Bluetooth. Choose Hybrid after pairing to keep both paths connected; Cadenza can use Bluetooth when Wi-Fi is unavailable.",
+                    "Wi-Fi pairing also authorizes Bluetooth. Connect Bluetooth to scan for the nearby Cadenza Host, or choose Hybrid to keep both paths ready.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                ActionButton("Add connection method") {
+                ActionButton(
+                    "Connect Bluetooth",
+                    pending = state.connecting && state.transportMode == "ble",
+                    enabled = state.profile != null,
+                ) {
+                    chooseTransport("ble")
+                }
+                ActionButton("Choose connection paths") {
                     draftTransportMethods = TransportMethodRegistry.selectedFor(state.transportMode)
                     showTransportDialog = true
                 }
@@ -122,6 +129,7 @@ fun SettingsScreen(
                         label = { Text("Hybrid") },
                     )
                 }
+                TransportPathIndicator(state)
                 Text("Transport preference", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "The Host blends this preference with its own limits and priorities.",
@@ -142,7 +150,14 @@ fun SettingsScreen(
                     }
                 }
                 state.effectiveTransport?.let { decision ->
-                    Text("Effective path: ${decision.selected ?: "Unavailable"}")
+                    Text(
+                        "Negotiated primary path: " +
+                            when (decision.selected) {
+                                "ble" -> "Bluetooth"
+                                "lan", "wifi", "ethernet" -> "Wi-Fi / LAN"
+                                else -> "Unavailable"
+                            },
+                    )
                     Text(
                         "Host policy: ${decision.hostPreference} · " +
                             "Remote policy: ${decision.remotePreference ?: state.transportPreference} · " +
@@ -219,10 +234,13 @@ fun SettingsScreen(
     if (showTransportDialog) {
         AlertDialog(
             onDismissRequest = { showTransportDialog = false },
-            title = { Text("Add connection method") },
+            title = { Text("Choose connection paths") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Keep one or both paths connected to this Host.")
+                    Text(
+                        "Choose which paths to connect now. Bluetooth scans for the nearby Cadenza Host " +
+                            "and uses this Remote's saved pairing.",
+                    )
                     TransportMethodRegistry.available.forEach { option ->
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Checkbox(

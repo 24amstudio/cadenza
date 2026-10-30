@@ -303,6 +303,16 @@ class RemoteModel(
         if (mutable.value.connected || mutable.value.connecting) connect()
     }
 
+    fun reconnectWithTransport(mode: String) {
+        require(mode in setOf("lan", "ble", "hybrid")) { "Unsupported transport mode." }
+        if (transportMode != mode) {
+            transportMode = mode
+            preferences.write("transport_mode" to mode)
+            mutable.update { it.copy(transportMode = mode) }
+        }
+        connect()
+    }
+
     fun setTransportPreference(preference: String) {
         require(preference in setOf("latency", "host_efficiency", "remote_efficiency", "reliability", "balanced")) {
             "Unsupported transport preference."
@@ -334,7 +344,7 @@ class RemoteModel(
                     opened = {
                         viewModelScope.launch {
                             if (version != generation) return@launch
-                            sendHandshake(invite, profile, version)
+                            sendHandshakeChecked(invite, profile, version)
                         }
                     },
                     received = { frame ->
@@ -357,7 +367,7 @@ class RemoteModel(
                     opened = {
                         viewModelScope.launch {
                             if (version != generation) return@launch
-                            sendHandshake(invite, profile, version)
+                            sendHandshakeChecked(invite, profile, version)
                         }
                     },
                     received = { frame ->
@@ -379,13 +389,7 @@ class RemoteModel(
                     opened = {
                         viewModelScope.launch {
                             if (version != generation) return@launch
-                            try {
-                                sendHandshake(invite, profile, version)
-                            } catch (error: Exception) {
-                                if (version != generation) return@launch
-                                showError("Pair this Remote again", error.message ?: "The saved credential could not be read.")
-                                disconnect()
-                            }
+                            sendHandshakeChecked(invite, profile, version)
                         }
                     },
                     received = { frame ->
@@ -402,7 +406,7 @@ class RemoteModel(
         connection?.connect()
         clockJob =
             viewModelScope.launch {
-                delay(6_000)
+                delay(if (transportMode == "lan") 6_000 else 20_000)
                 if (version == generation &&
                     !mutable.value.connected
                 ) {
@@ -420,6 +424,20 @@ class RemoteModel(
         if (version != generation) return
         frame.put("request_id", id())
         connection?.send(frame)
+    }
+
+    private suspend fun sendHandshakeChecked(
+        invite: PairingInvitation?,
+        profile: HostProfile?,
+        version: Int,
+    ) {
+        try {
+            sendHandshake(invite, profile, version)
+        } catch (error: Exception) {
+            if (version != generation) return
+            showError("Pair this Remote again", error.message ?: "The saved credential could not be read.")
+            disconnect()
+        }
     }
 
     private fun connectionClosed(
@@ -476,6 +494,8 @@ class RemoteModel(
             it.copy(
                 connected = false,
                 connecting = false,
+                effectiveTransport = null,
+                transportPaths = emptyList(),
                 searching = false,
                 preparing = false,
                 lyricsLoading = false,

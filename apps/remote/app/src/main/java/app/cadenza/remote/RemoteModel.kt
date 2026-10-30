@@ -256,8 +256,9 @@ class RemoteModel(
                         }.onFailure { error ->
                             if (invitation == invite) {
                                 invitation = null
-                                mutable.update { it.copy(connecting = false) }
-                                showError("Could not connect", error.message ?: "Could not retrieve the Host certificate.")
+                                val message = error.message ?: "Could not retrieve the Host certificate."
+                                mutable.update { it.copy(connecting = false, connectionIssue = message) }
+                                showError("Could not connect", message)
                             }
                         }
                 }
@@ -265,7 +266,9 @@ class RemoteModel(
                 connect()
             }
         } catch (error: Exception) {
-            showError("Could not scan QR", error.message ?: "Scan a current Host QR code.")
+            val message = error.message ?: "Scan a current Host QR code."
+            mutable.update { it.copy(connecting = false, connectionIssue = message) }
+            showError("Could not scan QR", message)
         }
     }
 
@@ -274,7 +277,9 @@ class RemoteModel(
             openConnection()
         } catch (error: Exception) {
             disconnect()
-            showError("Could not connect", error.message ?: "Check pairing details and reconnect.")
+            val message = error.message ?: "Check pairing details and reconnect."
+            mutable.update { it.copy(connectionIssue = message) }
+            showError("Could not connect", message)
         }
     }
 

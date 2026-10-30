@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -24,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -46,6 +48,7 @@ fun PairingScreen(
     val context = LocalContext.current
     var name by rememberSaveable { mutableStateOf(state.clientName) }
     var scanning by rememberSaveable { mutableStateOf(false) }
+    var pairingPending by rememberSaveable { mutableStateOf(false) }
     val cameraPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -65,6 +68,7 @@ fun PairingScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             PairingHeader(state)
+            if (pairingPending) PairingPendingSurface()
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.extraLarge,
@@ -100,7 +104,7 @@ fun PairingScreen(
                                 cameraPermission.launch(Manifest.permission.CAMERA)
                             }
                         },
-                        enabled = !state.connecting && name.isNotBlank(),
+                        enabled = !state.connecting && !pairingPending && name.isNotBlank(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(cadenzaVector(CadenzaIcon.QR), contentDescription = null)
@@ -140,15 +144,49 @@ fun PairingScreen(
                     QrScanner(
                         onCode = { code ->
                             scanning = false
+                            pairingPending = true
                             model.pair(code, name)
                         },
                         onError = { message ->
                             scanning = false
+                            pairingPending = false
                             model.showError("Could not scan QR", message)
                         },
                     )
                     TextButton(onClick = { scanning = false }, modifier = Modifier.align(Alignment.End)) { Text("Cancel") }
                 }
+            }
+        }
+    }
+    LaunchedEffect(state.connected, state.connecting, state.connectionIssue, state.prompt?.id) {
+        if (state.connected || (!state.connecting && state.connectionIssue != null)) pairingPending = false
+    }
+}
+
+@Composable
+private fun PairingPendingSurface() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(28.dp),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                strokeWidth = 3.dp,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Pairing with Cadenza Host", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(
+                    "QR accepted. Connecting on your local network…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
             }
         }
     }

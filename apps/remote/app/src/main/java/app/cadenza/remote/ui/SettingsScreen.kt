@@ -99,7 +99,7 @@ fun SettingsScreen(
                 }
                 Text("Connection transport", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Choose the path this Remote uses for its Host session. Hybrid keeps Wi-Fi and Bluetooth connected together.",
+                    "Wi-Fi pairing is already trusted for Bluetooth. Choose Hybrid after pairing to keep both paths connected; Cadenza can use Bluetooth when Wi-Fi is unavailable.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 ActionButton("Add connection method") {

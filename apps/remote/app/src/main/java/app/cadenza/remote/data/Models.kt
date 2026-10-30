@@ -73,6 +73,7 @@ data class LyricLine(
     val endMs: Long,
     val translation: String?,
     val words: List<LyricWord> = emptyList(),
+    val romanized: String? = null,
 )
 
 data class LyricWord(
@@ -257,6 +258,7 @@ object Wire {
                     it.counter("end_ms"),
                     it.nullableString("translation"),
                     words,
+                    it.nullableString("romanized"),
                 )
             }
         require(

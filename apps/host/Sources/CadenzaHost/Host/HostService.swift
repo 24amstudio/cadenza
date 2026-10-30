@@ -800,8 +800,31 @@ final class HostService {
                 guard let self else { return }
                 defer { if self.lyricOccurrence == current.occurrenceId { self.lyricJob = nil } }
                 do {
-                    try await self.queue.primeLyrics(occurrence: current.occurrenceId)
-                    let document = try await self.lyrics.document(song: current.song, occurrence: current.occurrenceId)
+                    var document: LyricDocument?
+                    var lastError: Error?
+                    for attempt in 0..<6 {
+                        do {
+                            // Disk and provider caches do not require Music's
+                            // Accessibility permission. Check them first so a Host
+                            // restart can restore lyrics immediately.
+                            document = try await self.lyrics.document(
+                                song: current.song, occurrence: current.occurrenceId)
+                            break
+                        } catch let error as CadenzaError where error.code == "lyrics_unavailable" {
+                            lastError = error
+                            guard attempt < 5, self.music.accessibility.permitted else { break }
+                            // Music may not have written its local TTML cache yet.
+                            // Prime it and retry with a bounded backoff instead of
+                            // turning a transient read into a permission warning.
+                            try? await self.queue.primeLyrics(occurrence: current.occurrenceId)
+                            try await Task.sleep(for: .milliseconds(1_000 << min(attempt, 3)))
+                        }
+                    }
+                    guard let document else {
+                        if let lastError { throw lastError }
+                        throw CadenzaError.failure(
+                            "lyrics_unavailable", "Lyrics are unavailable. Try again from the Lyrics pane.")
+                    }
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
                     else { return }
                     self.lyricDocument = document

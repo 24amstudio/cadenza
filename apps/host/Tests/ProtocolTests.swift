@@ -58,7 +58,24 @@ struct ProtocolTests {
         #expect(document.lines[0].startMs == 1_250)
         #expect(document.lines[0].endMs == 3_500)
         #expect(document.lines[0].translation == "English text")
+        #expect(document.lines[0].romanized == nil)
         #expect(document.translationSource == "apple")
+    }
+
+    @Test func timedWordsRepairMissingLineBounds() throws {
+        let xml =
+            #"<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal"><body><p itunes:key="L1"><span begin="1s" end="2s">First</span></p></body></tt>"#
+        let line = try #require(TTMLDocument.parse(Data(xml.utf8), occurrence: id).lines.first)
+        #expect(line.startMs == 1_000)
+        #expect(line.endMs == 2_000)
+    }
+
+    @Test func timedLinesInferMissingEndBounds() throws {
+        let xml =
+            #"<tt><body><p xml:id="L1" begin="1s">First</p><p xml:id="L2" begin="2s">Second</p></body></tt>"#
+        let lines = try TTMLDocument.parse(Data(xml.utf8), occurrence: id).lines
+        #expect(lines[0].endMs == 2_000)
+        #expect(lines[1].endMs == 6_000)
     }
 
     @Test func malformedOrExternalLyricsCannotBecomeATimeline() throws {
@@ -101,6 +118,15 @@ struct ProtocolTests {
         #expect(document.lines[0].words.count == 2)
         #expect(document.lines[0].words[1].startMs == 1_500)
         #expect(document.lines[0].endMs == 3_000)
+    }
+
+    @Test func lrclibLyricsExposeLatinTransliterationForNonLatinText() throws {
+        let record = LRCLIBRecord(
+            trackName: "Example", artistName: "Example Artist", albumName: "Album", duration: 12,
+            instrumental: false, plainLyrics: nil, syncedLyrics: "[00:01.00]こんにちは")
+        let document = try #require(try LRCParser.document(record, occurrence: id))
+        #expect(document.lines[0].romanized?.isEmpty == false)
+        #expect(document.lines[0].romanized != document.lines[0].text)
     }
 
     @Test func lrclibMatchRejectsWrongTrackAndLargeDurationDrift() {

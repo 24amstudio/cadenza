@@ -92,22 +92,22 @@ class SessionNotification(
             val style = Notification.MediaStyle().setMediaSession(mediaToken)
             if (status.canInterrupt) {
                 style.setShowActionsInCompactView(0, 1, 2)
-                builder.addAction(Notification.Action.Builder(actionIcon(), "Previous", action("previous")).build())
+                builder.addAction(Notification.Action.Builder(actionIcon("previous"), "Previous", action("previous")).build())
                 builder.addAction(
                     Notification.Action
                         .Builder(
-                            actionIcon(),
+                            actionIcon(if (status.playing) "pause" else "play"),
                             if (status.playing) "Pause" else "Play",
                             action(if (status.playing) "pause" else "play"),
                         ).build(),
                 )
-                builder.addAction(Notification.Action.Builder(actionIcon(), "Next", action("next")).build())
+                builder.addAction(Notification.Action.Builder(actionIcon("next"), "Next", action("next")).build())
             } else {
                 style.setShowActionsInCompactView(0)
                 builder.addAction(
                     Notification.Action
                         .Builder(
-                            actionIcon(),
+                            actionIcon(if (status.playing) "pause" else "play"),
                             if (status.playing) "Pause" else "Play",
                             action(if (status.playing) "pause" else "play"),
                         ).build(),
@@ -117,7 +117,7 @@ class SessionNotification(
         }
         val unpin = unpinAction()
         if (status.monitoring) {
-            builder.addAction(Notification.Action.Builder(actionIcon(), "Unpin", unpin).build())
+            builder.addAction(Notification.Action.Builder(actionIcon("unpin"), "Unpin", unpin).build())
         }
         manager.notify(ID, builder.build())
         if (Build.VERSION.SDK_INT >= 36 && status.monitoring && status.connected && status.playing &&
@@ -136,7 +136,7 @@ class SessionNotification(
                     .setVisibility(Notification.VISIBILITY_PRIVATE)
                     .setCategory(Notification.CATEGORY_STATUS)
                     .setLocalOnly(true)
-                    .addAction(Notification.Action.Builder(actionIcon(), "Unpin", unpin).build())
+                    .addAction(Notification.Action.Builder(actionIcon("unpin"), "Unpin", unpin).build())
                     .setRequestPromotedOngoing(true)
                     .setShortCriticalText("Music")
                     .build()
@@ -156,7 +156,17 @@ class SessionNotification(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    private fun actionIcon(): Icon = Icon.createWithResource(context, R.drawable.ic_notification)
+    private fun actionIcon(action: String): Icon {
+        val resource =
+            when (action) {
+                "previous" -> android.R.drawable.ic_media_previous
+                "next" -> android.R.drawable.ic_media_next
+                "pause" -> android.R.drawable.ic_media_pause
+                "play" -> android.R.drawable.ic_media_play
+                else -> android.R.drawable.ic_delete
+            }
+        return Icon.createWithResource(context, resource)
+    }
 
     private fun unpinAction(): PendingIntent =
         PendingIntent.getBroadcast(

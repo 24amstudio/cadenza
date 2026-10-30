@@ -242,10 +242,19 @@ class RemoteModel(
     ) {
         try {
             val invite = parsePairingInvitation(payload, name)
+            val firstPairing = mutable.value.profile == null
             invitation = invite
             pairingPin = null
             endpoints.clear()
             remoteName = name.trim()
+            if (firstPairing) {
+                // A QR pairing establishes the certificate used by both LAN and
+                // BLE. Start the first session in hybrid mode so the Remote can
+                // discover the Host's BLE peripheral immediately after pairing.
+                transportMode = "hybrid"
+                preferences.write("transport_mode" to transportMode)
+                mutable.update { it.copy(transportMode = transportMode) }
+            }
             if (invite.certificateDerBase64.isEmpty()) {
                 mutable.update { it.copy(connecting = true, connectionIssue = null) }
                 viewModelScope.loadPairingCertificate(invite, ioDispatcher) { result ->
@@ -613,6 +622,11 @@ class RemoteModel(
                 connectionIssue = null,
                 updateConfiguration = RemoteUpdater.configuration(app),
             )
+        }
+        if (invite != null && transportMode == "hybrid") {
+            val hello = handshake.frame(invite = null, profile = profile)
+            hello.put("request_id", id())
+            connection?.send(hello)
         }
         flushLogOutbox()
         publishStatus()

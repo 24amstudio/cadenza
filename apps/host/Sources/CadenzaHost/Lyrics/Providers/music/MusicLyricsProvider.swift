@@ -11,7 +11,15 @@ struct MusicLyricsProvider: LyricsProvider {
         if let listed = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
         ) {
-            candidates = listed.prefix(2_048)
+            // Prefer the newest cache entries and keep this read small enough
+            // that an unavailable Music cache does not block LRCLIB fallback.
+            candidates = listed.sorted { left, right in
+                let leftDate = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                    ?? .distantPast
+                let rightDate = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                    ?? .distantPast
+                return leftDate > rightDate
+            }.prefix(512)
         } else {
             candidates = [URL]().prefix(0)
         }
@@ -25,7 +33,7 @@ struct MusicLyricsProvider: LyricsProvider {
         var bytes = 0
         for (url, size, _) in files {
             bytes += size
-            if bytes > 33_554_432 { break }
+            if bytes > 8_388_608 { break }
             guard var data = try? Data(contentsOf: url) else { continue }
             while data.last == 0 { data.removeLast() }
             guard data.range(of: Data("ttmlLocalizations".utf8)) != nil,

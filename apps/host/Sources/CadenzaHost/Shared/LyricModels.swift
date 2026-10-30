@@ -12,6 +12,7 @@ struct LyricLine: Codable, Identifiable, Sendable {
     var startMs: Int64
     var endMs: Int64
     var words: [LyricWord] = []
+    var romanized: String? = nil
     var translation: String? = nil
 }
 

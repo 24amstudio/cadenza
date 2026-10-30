@@ -48,8 +48,14 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 "lyrics_unavailable", "Music's lyric document contains missing, repeated, or oversized line identities."
             )
         }
+        for index in lines.indices where lines[index].endMs <= lines[index].startMs {
+            let nextStart = index + 1 < lines.count ? lines[index + 1].startMs : lines[index].startMs + 4_000
+            lines[index].endMs = max(lines[index].startMs + 1, nextStart)
+        }
         for index in lines.indices {
             lines[index].translation = handler.translations[lines[index].id]
+            lines[index].romanized = lines[index].text.applyingTransform(.toLatin, reverse: false)
+                .flatMap { $0 == lines[index].text ? nil : $0 }
         }
         guard !lines.isEmpty else {
             throw CadenzaError.failure("lyrics_unavailable", "No lyric lines were found.")
@@ -145,6 +151,12 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         }
         if name == "p", paragraphDepth == depth, var line = paragraph {
             line.text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !line.words.isEmpty {
+                let wordStart = line.words.map(\.startMs).min() ?? line.startMs
+                let wordEnd = line.words.map(\.endMs).max() ?? line.endMs
+                if line.startMs == 0 { line.startMs = wordStart }
+                if line.endMs <= line.startMs { line.endMs = wordEnd }
+            }
             if !line.text.isEmpty { lines.append(line) }
             paragraph = nil
         }

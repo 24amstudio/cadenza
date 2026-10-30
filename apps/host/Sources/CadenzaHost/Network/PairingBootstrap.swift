@@ -124,7 +124,7 @@ final class PairingBootstrap {
                     contentContext: NWConnection.ContentContext(identifier: identifier()),
                     isComplete: true,
                     completion: .contentProcessed { _ in
-                    connection.cancel()
+                        connection.cancel()
                     })
             }
         }

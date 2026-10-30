@@ -32,6 +32,8 @@ import app.cadenza.remote.network.PathMeasurementService
 import app.cadenza.remote.network.PrioritizedFrameQueue
 import app.cadenza.remote.network.RemoteConnection
 import app.cadenza.remote.network.RemoteStatusPublisher
+import app.cadenza.remote.network.loadPairingCertificate
+import app.cadenza.remote.network.parsePairingInvitation
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -116,13 +118,6 @@ class RemoteModel(
     internal val updateApp get() = app
     internal val updateDispatcher get() = ioDispatcher
     internal val updateScope get() = viewModelScope
-
-    internal data class PendingCommand(
-        val frame: JSONObject,
-        val key: String,
-        val timer: Job,
-        var sentAtElapsedMs: Long = 0,
-    )
 
     init {
         app.unpinSession = ::endSessionStatus
@@ -245,20 +240,35 @@ class RemoteModel(
         name: String,
     ) {
         try {
-            val invite =
-                if (Wire.isCompactInvitation(payload)) {
-                    Wire.invitation(payload)
-                } else {
-                    Wire.invitation(String(payload, Charsets.UTF_8))
-                }
-            require(name.trim().length in 1..80) { "Enter the name that should appear beside your requests." }
-            require(name.none { it.isISOControl() }) { "Use a name without control characters." }
+            val invite = parsePairingInvitation(payload, name)
             invitation = invite
             endpoints.clear()
             remoteName = name.trim()
-            connect()
+            if (invite.certificateDerBase64.isEmpty()) {
+                mutable.update { it.copy(connecting = true, connectionIssue = null) }
+                viewModelScope.loadPairingCertificate(invite, ioDispatcher) { result ->
+                    result
+                        .onSuccess { certificate ->
+                            if (invitation == invite) {
+                                invitation = invite.copy(certificateDerBase64 = certificate)
+                                connect()
+                            }
+                        }.onFailure { error ->
+                            if (invitation == invite) {
+                                invitation = null
+                                val message = error.message ?: "Could not retrieve the Host certificate."
+                                mutable.update { it.copy(connecting = false, connectionIssue = message) }
+                                showError("Could not connect", message)
+                            }
+                        }
+                }
+            } else {
+                connect()
+            }
         } catch (error: Exception) {
-            showError("Could not scan QR", error.message ?: "Scan a current Host QR code.")
+            val message = error.message ?: "Scan a current Host QR code."
+            mutable.update { it.copy(connecting = false, connectionIssue = message) }
+            showError("Could not scan QR", message)
         }
     }
 
@@ -267,7 +277,9 @@ class RemoteModel(
             openConnection()
         } catch (error: Exception) {
             disconnect()
-            showError("Could not connect", error.message ?: "Check pairing details and reconnect.")
+            val message = error.message ?: "Check pairing details and reconnect."
+            mutable.update { it.copy(connectionIssue = message) }
+            showError("Could not connect", message)
         }
     }
 
@@ -681,29 +693,7 @@ class RemoteModel(
         if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }
     }
 
-    private fun enrichArtwork(snapshot: HostSnapshot): HostSnapshot {
-        val known =
-            (
-                mutable.value.favorites + mutable.value.results +
-                    listOfNotNull(
-                        mutable.value.snapshot
-                            ?.current
-                            ?.song,
-                    ) +
-                    mutable.value.snapshot
-                        ?.queue
-                        .orEmpty()
-                        .map { it.song }
-            ).filter { it.artworkUrl != null }
-                .associateBy { it.source + ":" + it.id }
-
-        fun song(value: Song): Song = value.artworkUrl?.let { value } ?: known[value.source + ":" + value.id] ?: value
-        return snapshot.copy(
-            current = snapshot.current?.copy(song = song(snapshot.current.song)),
-            queue = snapshot.queue.map { it.copy(song = song(it.song)) },
-            incoming = snapshot.incoming?.let(::song),
-        )
-    }
+    private fun enrichArtwork(snapshot: HostSnapshot): HostSnapshot = mutable.value.enrichArtwork(snapshot)
 
     private suspend fun applyCredit(frame: JSONObject) {
         val host = mutable.value.profile?.hostId ?: return

@@ -207,10 +207,11 @@ class RemoteUiTest {
     }
 
     @Test
-    fun pairingUsesQrOnly() {
+    fun pairingOffersBluetoothPinAndQrFallback() {
         openApp()
         capture("pairing-tablet")
-        compose.onNodeWithText("Scan pairing QR", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("Pair over Bluetooth", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("Use pairing QR instead", substring = false).assertIsDisplayed()
         compose.onAllNodesWithText("Pairing details").assertCountEquals(0)
         compose.onAllNodesWithText("Paste pairing details").assertCountEquals(0)
         compose.onAllNodesWithText("Pair", substring = false).assertCountEquals(0)
@@ -434,7 +435,7 @@ class RemoteUiTest {
         capture("pairing-phone-large-text")
         compose.onNodeWithText("Pair with Cadenza Host").assertIsDisplayed()
         compose
-            .onNodeWithText("Scan pairing QR", substring = false)
+            .onNodeWithText("Use pairing QR instead", substring = false)
             .performScrollTo()
             .assertIsDisplayed()
         capture("pairing-phone-large-text-bottom")

@@ -46,12 +46,21 @@
     },
     "pair": {
       "type": "object",
-      "required": ["secret", "name"],
+      "required": ["name"],
+      "anyOf": [{ "required": ["secret"] }, { "required": ["pin"] }],
+      "not": {
+        "required": ["secret", "pin"],
+        "properties": { "secret": {}, "pin": {} }
+      },
       "properties": {
         "secret": {
           "type": "string",
           "minLength": 32,
           "maxLength": 128
+        },
+        "pin": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$"
         },
         "name": {
           "type": "string",
@@ -133,6 +142,24 @@
           "type": "string",
           "minLength": 32,
           "maxLength": 128
+        },
+        "host_address": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "host_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "host_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "host_certificate_der_base64": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 8192
         },
         "protocol_major": {
           "const": 1
@@ -529,12 +556,21 @@
         "properties": {
           "pair": {
             "type": "object",
-            "required": ["secret", "name"],
+            "required": ["name"],
+            "anyOf": [{ "required": ["secret"] }, { "required": ["pin"] }],
+            "not": {
+              "required": ["secret", "pin"],
+              "properties": { "secret": {}, "pin": {} }
+            },
             "properties": {
               "secret": {
                 "type": "string",
                 "minLength": 32,
                 "maxLength": 128
+              },
+              "pin": {
+                "type": "string",
+                "pattern": "^[0-9]{4}$"
               },
               "name": {
                 "type": "string",

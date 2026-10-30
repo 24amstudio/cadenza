@@ -10,7 +10,8 @@ struct DeviceAuth: Codable, Sendable {
 }
 
 struct PairRequest: Codable, Sendable {
-    var secret: String
+    var secret: String? = nil
+    var pin: String? = nil
     var name: String
     var heartbeat: Bool? = nil
     var remoteVersion: String? = nil
@@ -24,4 +25,5 @@ struct PairingInvitation: Codable, Sendable {
     var certificateDerBase64: String
     var secret: String
     var hostName: String
+    var pin: String = ""
 }

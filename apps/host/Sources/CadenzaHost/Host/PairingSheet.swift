@@ -20,7 +20,9 @@ struct PairingSheet: View {
     var body: some View {
         VStack(spacing: 20) {
             Text("Pair Cadenza Remote").font(.title.bold())
-            Text("Scan this QR code on your tablet. It is valid for one Remote for five minutes.")
+            Text("Use the QR code or enter the four-digit PIN on your Remote. The PIN expires in seven seconds.")
+            Text("PIN \(invitation.pin)").font(.system(size: 34, weight: .bold, design: .rounded))
+                .monospacedDigit().textSelection(.enabled)
             if let image = qr(pairingData) {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 400, height: 400)
                     .accessibilityLabel("Pairing QR code")

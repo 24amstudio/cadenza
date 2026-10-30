@@ -34,6 +34,15 @@ struct ProtocolTests {
         #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(boolean.utf8)) }
     }
 
+    @Test func sessionAcceptsFourDigitPairingPinAndRejectsAmbiguousCredentials() throws {
+        let valid = #"{"version":1,"type":"pair","pair":{"name":"Phone","pin":"0427"}}"#
+        #expect(try ProtocolValidation.decode(Data(valid.utf8)).pair?.pin == "0427")
+        let both = #"{"version":1,"type":"pair","pair":{"name":"Phone","pin":"0427","secret":"00000000000000000000000000000000"}}"#
+        #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(both.utf8)) }
+        let unicodeDigits = #"{"version":1,"type":"pair","pair":{"name":"Phone","pin":"٠٤٢٧"}}"#
+        #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(unicodeDigits.utf8)) }
+    }
+
     @Test func timedLyricsKeepOriginalTextAndEnglishTranslation() throws {
         let xml = """
             <tt xml:lang="ja" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">

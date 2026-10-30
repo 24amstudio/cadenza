@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,11 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
+import app.cadenza.remote.pairBluetooth
 import app.cadenza.remote.showError
 
 @Composable
@@ -47,6 +51,7 @@ fun PairingScreen(
 ) {
     val context = LocalContext.current
     var name by rememberSaveable { mutableStateOf(state.clientName) }
+    var pin by rememberSaveable { mutableStateOf("") }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var pairingPending by rememberSaveable { mutableStateOf(false) }
     val cameraPermission =
@@ -81,7 +86,7 @@ fun PairingScreen(
                 ) {
                     Text("Connect this Remote", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Give this device a name, then scan the one-time QR code shown by Cadenza Host.",
+                        "Give this device a name, then enter the short PIN shown by Cadenza Host while both devices are nearby.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -94,7 +99,30 @@ fun PairingScreen(
                         supportingText = if (name.isBlank()) ({ Text("Enter a name before scanning.") }) else null,
                         singleLine = true,
                     )
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { value -> pin = value.filter(Char::isDigit).take(4) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Host PIN") },
+                        supportingText = { Text("The PIN expires after seven seconds.") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
                     Button(
+                        onClick = { model.pairBluetooth(pin, name) },
+                        enabled = !state.connecting && name.isNotBlank() && pin.length == 4,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(cadenzaVector(CadenzaIcon.QR), contentDescription = null)
+                        Spacer(Modifier.size(10.dp))
+                        Text(if (state.connecting) "Pairing..." else "Pair over Bluetooth")
+                    }
+                    Text(
+                        "Bluetooth creates the first trusted connection. You can add LAN later for faster artwork and bulk transfers.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
                         onClick = {
                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                                 PackageManager.PERMISSION_GRANTED
@@ -109,7 +137,7 @@ fun PairingScreen(
                     ) {
                         Icon(cadenzaVector(CadenzaIcon.QR), contentDescription = null)
                         Spacer(Modifier.size(10.dp))
-                        Text(if (state.connecting) "Pairing..." else "Scan pairing QR")
+                        Text("Use pairing QR instead")
                     }
                     Text(
                         "Cadenza Host will send this Remote's name with the one-time invitation. Pairing starts as soon as the QR code is recognized.",

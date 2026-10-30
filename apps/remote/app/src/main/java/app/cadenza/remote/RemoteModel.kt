@@ -60,6 +60,7 @@ class RemoteModel(
     private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(application, Dispatchers.IO)
+
     internal val app = application as CadenzaApplication
 
     internal val preferences = app.settings
@@ -851,7 +852,6 @@ class RemoteModel(
             }
         }
     }
-
     fun command(
         action: JSONObject,
         key: String,

@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.RemoteModel
 import app.cadenza.remote.RemoteState
+import app.cadenza.remote.beginPairing
 import app.cadenza.remote.checkUpdates
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.data.TransportMethodRegistry

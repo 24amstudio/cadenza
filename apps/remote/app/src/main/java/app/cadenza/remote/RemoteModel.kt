@@ -996,5 +996,4 @@ class RemoteModel(
         frameQueue.clear()
         frameSignal.close()
     }
-    fun beginPairing() = beginPairingInternal()
 }

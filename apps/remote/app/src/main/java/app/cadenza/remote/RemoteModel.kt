@@ -126,6 +126,7 @@ class RemoteModel(
     internal val updateScope get() = viewModelScope
     internal val recommendationEngine by lazy {
         RecommendationEngine(RecommendationPassportSigner(application.packageName + ".recommendation"))
+
     }
     init {
         app.unpinSession = ::endSessionStatus
@@ -585,6 +586,7 @@ class RemoteModel(
             "error" -> operationErrorInternal(frame)
             "operation.started" -> Unit
             else -> Unit
+
         }
     }
     private suspend fun welcome(value: JSONObject) {
@@ -680,6 +682,7 @@ class RemoteModel(
         }
         if ("recommendations.cree" in mutable.value.capabilities) {
             sendRecommendationPassport()
+
             requestRecommendation()
         }
     }
@@ -740,7 +743,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun prepare(song: Song) {
         preparationId = id()
         val requestId = preparationId
@@ -757,7 +759,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
@@ -778,7 +779,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun savePreferences(
         name: String,
         theme: ThemePreference,

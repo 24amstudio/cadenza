@@ -88,9 +88,10 @@ private fun activeWordIndex(
 private fun LyricText(
     line: app.cadenza.remote.data.LyricLine,
     currentPosition: Long,
-    activeLine: Boolean,
+    distanceFromActive: Int,
     onWordClick: ((Long) -> Unit)? = null,
 ) {
+    val activeLine = distanceFromActive == 0
     val activeWord = if (activeLine) activeWordIndex(line, currentPosition) else -1
     val activeLineColor by animateColorAsState(
         if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -98,17 +99,26 @@ private fun LyricText(
         label = "lyric-line-color",
     )
     val inactiveBlur by animateDpAsState(
-        if (activeLine) 0.dp else 1.dp,
+        when {
+            distanceFromActive == 0 -> 0.dp
+            distanceFromActive == 1 -> 2.dp
+            else -> 4.dp
+        },
         animationSpec = tween(260, easing = FastOutSlowInEasing),
         label = "lyric-line-blur",
     )
     val lineAlpha by animateFloatAsState(
-        if (activeLine) 1f else 0.68f,
+        when (distanceFromActive) {
+            0 -> 1f
+            1 -> 0.72f
+            2 -> 0.48f
+            else -> 0.28f
+        },
         animationSpec = tween(260, easing = FastOutSlowInEasing),
         label = "lyric-line-alpha",
     )
     val lineScale by animateFloatAsState(
-        if (activeLine) 1.02f else 1f,
+        if (activeLine) 1.04f else 1f,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
         label = "lyric-line-scale",
     )
@@ -149,7 +159,7 @@ private fun LyricText(
                 val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
                 Text(
                     word.text,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = if (activeLine) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
                     fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
                     color =
                         lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
@@ -165,7 +175,12 @@ private fun LyricText(
     } else {
         Text(
             text,
-            style = MaterialTheme.typography.headlineMedium,
+            style =
+                when (distanceFromActive) {
+                    0 -> MaterialTheme.typography.headlineLarge
+                    1 -> MaterialTheme.typography.headlineMedium
+                    else -> MaterialTheme.typography.titleLarge
+                },
             fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
             color = activeLineColor,
             modifier =
@@ -306,7 +321,9 @@ private fun LyricsContent(
                 // Wait until the new lyric list has measured before seeking it. Without
                 // this frame, the initial active line can be missed until a manual scroll.
                 withFrameNanos { }
-                list.animateScrollToItem((active - 1).coerceAtLeast(0))
+                val viewport = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
+                val offset = -(viewport / 2).coerceAtLeast(0)
+                list.animateScrollToItem(active, offset)
             }
         }
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -388,7 +405,7 @@ private fun LyricsContent(
                                 LyricText(
                                     line,
                                     currentPosition,
-                                    index == active,
+                                    if (active < 0) 3 else abs(index - active),
                                     onWordClick =
                                         if (canSeek && line.words.isNotEmpty()) {
                                             { time ->
@@ -406,10 +423,17 @@ private fun LyricsContent(
                                         },
                                 )
                                 line.romanized?.takeIf { it.isNotBlank() }?.let {
+                                    val romanizedStyle =
+                                        if (index == active) {
+                                            MaterialTheme.typography.titleLarge
+                                        } else {
+                                            MaterialTheme.typography.titleMedium
+                                        }
                                     Text(
                                         it,
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = romanizedStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.blur(if (index == active) 0.dp else 2.dp),
                                     )
                                 }
                                 line.translation?.let {
@@ -418,14 +442,26 @@ private fun LyricsContent(
                                         animationSpec = tween(260, easing = FastOutSlowInEasing),
                                         label = "lyric-translation-alpha",
                                     )
+                                    val translationStyle =
+                                        if (index == active) {
+                                            MaterialTheme.typography.titleLarge
+                                        } else {
+                                            MaterialTheme.typography.titleMedium
+                                        }
                                     Text(
                                         it,
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = translationStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier =
                                             Modifier
                                                 .graphicsLayer { alpha = translationAlpha }
-                                                .blur(if (index == active) 0.dp else 1.dp),
+                                                .blur(
+                                                    when {
+                                                        index == active -> 0.dp
+                                                        active < 0 || abs(index - active) == 1 -> 2.dp
+                                                        else -> 4.dp
+                                                    },
+                                                ),
                                     )
                                 }
                             }

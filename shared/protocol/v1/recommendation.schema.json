@@ -1,0 +1,366 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:recommendation",
+  "$defs": {
+    "track": {
+      "type": "object",
+      "required": ["source", "id"],
+      "properties": {
+        "source": {
+          "enum": ["catalog", "library"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "artist_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "album_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "version_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "weight",
+        "source",
+        "confidence",
+        "freshness_ms"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/track"
+        },
+        "to": {
+          "$ref": "#/$defs/track"
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "source": {
+          "enum": ["remote", "host", "music", "derived"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "freshness_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "passport": {
+      "type": "object",
+      "required": ["payload_base64", "public_key_base64", "signature_base64"],
+      "properties": {
+        "payload_base64": {
+          "type": "string",
+          "maxLength": 131072
+        },
+        "public_key_base64": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "signature_base64": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "additionalProperties": false
+    },
+    "passport_payload": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "model_version",
+        "sequence",
+        "issued_at_ms",
+        "expires_at_ms",
+        "consent",
+        "disclosure",
+        "affinities",
+        "transitions",
+        "negative_preferences",
+        "recent",
+        "novelty_budget",
+        "privacy_budget",
+        "provenance"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "model_version": {
+          "const": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "issued_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consent": {
+          "enum": ["paused", "balanced", "full"]
+        },
+        "disclosure": {
+          "enum": ["minimal", "balanced", "full_local_network"]
+        },
+        "affinities": {
+          "type": "object",
+          "maxProperties": 256,
+          "additionalProperties": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/transition"
+          }
+        },
+        "negative_preferences": {
+          "type": "object",
+          "maxProperties": 256,
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "recent": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/track"
+          }
+        },
+        "novelty_budget": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "session_intent": {
+          "type": ["string", "null"],
+          "maxLength": 80
+        },
+        "privacy_budget": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "provenance": {
+          "type": "object",
+          "maxProperties": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "object",
+      "required": ["horizon", "filters", "model_version"],
+      "properties": {
+        "intent": {
+          "type": ["string", "null"],
+          "maxLength": 80
+        },
+        "horizon": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "filters": {
+          "type": "object",
+          "required": ["explicit_allowed", "locked"],
+          "properties": {
+            "explicit_allowed": {
+              "type": "boolean"
+            },
+            "locked": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "model_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": ["object", "null"],
+      "properties": {
+        "recommendation_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "plan_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "passport_sequence": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "model_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "candidate": {
+          "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "expires_at_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "provenance": {
+          "enum": ["user", "apple_autoplay", "cadenza", "unknown"]
+        },
+        "mode": {
+          "enum": ["shadow", "planning"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "feedback": {
+      "type": "object",
+      "required": ["recommendation_id", "outcome", "occurred_at_ms"],
+      "properties": {
+        "recommendation_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "outcome": {
+          "enum": [
+            "qualified_play",
+            "early_skip",
+            "late_skip",
+            "replay",
+            "favorite",
+            "manual_replacement",
+            "queue_removal",
+            "interruption"
+          ]
+        },
+        "track": {
+          "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+        },
+        "position_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "duration_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "replacement": {
+          "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+        },
+        "occurred_at_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "plan": {
+      "type": "object",
+      "required": [
+        "plan_id",
+        "recommendation_id",
+        "passport_sequence",
+        "model_version",
+        "expected_revision",
+        "operation"
+      ],
+      "properties": {
+        "plan_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "recommendation_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "passport_sequence": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "model_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_revision": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "operation": {
+          "type": "object",
+          "required": ["kind", "song"],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "shadow_observation": {
+      "type": "object",
+      "required": ["observation_id", "provenance_confidence", "observed_at_ms"],
+      "properties": {
+        "observation_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "apple": {
+          "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+        },
+        "cree": {
+          "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+        },
+        "selected": {
+          "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+        },
+        "provenance_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "outcome": {
+          "type": ["string", "null"],
+          "maxLength": 80
+        },
+        "observed_at_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

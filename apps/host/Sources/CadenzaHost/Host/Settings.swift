@@ -12,6 +12,8 @@ struct HostSettings: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @State private var changelog: String?
     @State private var comparingChanges = false
+    @State private var creeEnabled = true
+    @State private var creeMode = "auto"
     private let cacheLimits: [Int64] = [64, 128, 256, 512, 768, 1_024].map { Int64($0) * 1_048_576 }
 
     var body: some View {
@@ -140,6 +142,31 @@ struct HostSettings: View {
                     "Open Music's Playing Next panel for native queue verification. Open lyrics to populate Music's lyric cache."
                 )
             }
+            Section("CREE recommendations") {
+                Toggle("Enable CREE", isOn: Binding(
+                    get: { creeEnabled },
+                    set: { value in
+                        do {
+                            try model.service?.store.setCREEEnabled(value)
+                            creeEnabled = value
+                        } catch { model.showError("CREE setting could not be saved", error.localizedDescription) }
+                    }))
+                Picker("Mode", selection: Binding(
+                    get: { creeMode },
+                    set: { value in
+                        do {
+                            try model.service?.store.setRecommendationMode(value)
+                            creeMode = value
+                        } catch { model.showError("CREE mode could not be saved", error.localizedDescription) }
+                    })) {
+                    Text("Auto").tag("auto")
+                    Text("Shadow").tag("shadow")
+                    Text("Planning").tag("planning")
+                    Text("Paused").tag("paused")
+                }
+                Text(creeEnabled ? phaseDescription : "Disabled. Learning data is preserved and no queue planning runs.")
+                Text("Cadenza Host owns recommendation weighting, queue policy, native Music mutations, and receipts. Detailed listening history remains on each Remote.")
+            }
             Section("Lyrics providers") {
                 Toggle("Use LRCLIB when Music has no lyrics", isOn: $model.configuration.lyricsProviderEnabled)
                 Text(
@@ -243,7 +270,10 @@ struct HostSettings: View {
                 Button("Close") { changelog = nil }.keyboardShortcut(.cancelAction)
             }.padding(24).frame(width: 560, height: 420)
         }
-        .onAppear { assignments = model.service?.queue.nativeAssignments ?? [:] }
+        .onAppear {
+            assignments = model.service?.queue.nativeAssignments ?? [:]
+            reloadCREE()
+        }
         .translationTask(translationConfiguration) { @concurrent session in
             // The framework runs prepareTranslation off the main actor, so the session stays off it too.
             do {
@@ -272,5 +302,24 @@ struct HostSettings: View {
             let name = try service.store.remoteName(row["requested_by"]?.string)
             return SavedRequest(id: id, label: title + " · " + name)
         }) ?? []
+    }
+
+    private var phaseDescription: String {
+        let phase = model.service.flatMap { try? $0.store.recommendationPhase } ?? "learning"
+        let reason = model.service.flatMap { try? $0.store.recommendationPhaseReason } ?? "Waiting for a valid profile."
+        if creeMode == "auto" { return "Auto · (phase == "ready" ? "Ready to plan" : phase.capitalized). (reason)" }
+        switch creeMode {
+        case "auto": "Learning. Auto mode observes first and plans only after Host readiness gates pass."
+        case "shadow": "Shadow. CREE scores candidates and observes outcomes without changing Music."
+        case "planning": "Planning. CREE may submit one next occurrence under Host queue policy."
+        case "paused": "Paused. The current profile and queue are preserved."
+        default: "CREE is unavailable until its mode is repaired."
+        }
+    }
+
+    private func reloadCREE() {
+        guard let service = model.service else { return }
+        creeEnabled = (try? service.store.creeEnabled) ?? true
+        creeMode = (try? service.store.recommendationMode) ?? "auto"
     }
 }

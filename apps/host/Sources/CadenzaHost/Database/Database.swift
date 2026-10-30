@@ -21,14 +21,17 @@ final class Database {
         else { throw failure() }
         do {
             try execute("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=250;")
-            let version = try query("PRAGMA user_version").first?["user_version"]?.integer ?? 0
+            var version = try query("PRAGMA user_version").first?["user_version"]?.integer ?? 0
             if role == .main {
-                if version == 0 { try migrate("main/000-initial") }
-            } else if role == .logs {
-                if version == 0 { try migrate("system/000-initial") }
+                if version == 0 { try migrate("main/000-initial"); version = 1 }
+                if version == 1 { try migrate("main/001-recommendations"); version = 2 }
+            } else if role == .logs, version == 0 {
+                try migrate("system/000-initial")
+                version = 1
             }
-            let expectedVersion: Int64 = 1
-            guard try query("PRAGMA user_version").first?["user_version"]?.integer == expectedVersion else {
+            let expectedVersion: Int64 = role == .main ? 2 : 1
+            guard version == expectedVersion,
+                try query("PRAGMA user_version").first?["user_version"]?.integer == expectedVersion else {
                 throw CadenzaError.failure("database_version", "The database needs a newer Cadenza Host.")
             }
             try execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")

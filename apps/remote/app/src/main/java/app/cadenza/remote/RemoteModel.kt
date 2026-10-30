@@ -32,6 +32,13 @@ import app.cadenza.remote.network.PathMeasurementService
 import app.cadenza.remote.network.PrioritizedFrameQueue
 import app.cadenza.remote.network.RemoteConnection
 import app.cadenza.remote.network.RemoteStatusPublisher
+import app.cadenza.remote.recommendation.RecommendationEngine
+import app.cadenza.remote.recommendation.RecommendationFeedback
+import app.cadenza.remote.recommendation.RecommendationOutcome
+import app.cadenza.remote.recommendation.RecommendationPassportSigner
+import app.cadenza.remote.recommendation.RecommendationTrack
+import app.cadenza.remote.recommendation.newRecommendationId
+import app.cadenza.remote.recommendation.trackJson
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -55,7 +62,7 @@ class RemoteModel(
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(application, Dispatchers.IO)
 
-    private val app = application as CadenzaApplication
+    internal val app = application as CadenzaApplication
     internal val preferences = app.settings
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
     private val mediaSession = RemoteMediaSession(app, mediaActions::handle)
@@ -110,12 +117,15 @@ class RemoteModel(
     internal val statusChecks = mutableSetOf<String>()
     private val frameQueue = PrioritizedFrameQueue()
     private val frameSignal = Channel<Unit>(Channel.UNLIMITED)
-    private val metadata = mutableSetOf<String>()
+    internal val metadata = mutableSetOf<String>()
     internal val artworkRequests = mutableSetOf<String>()
     internal val mutableState get() = mutable
     internal val updateApp get() = app
     internal val updateDispatcher get() = ioDispatcher
     internal val updateScope get() = viewModelScope
+    internal val recommendationEngine by lazy {
+        RecommendationEngine(RecommendationPassportSigner(application.packageName + ".recommendation"))
+    }
 
     internal data class PendingCommand(
         val frame: JSONObject,
@@ -530,6 +540,7 @@ class RemoteModel(
             "artwork" -> applyArtworkFrame(frame)
             "artwork.unavailable" -> frame.nullableString("artwork_url")?.let(::releaseArtwork)
             "analytics.credit" -> applyCredit(frame)
+            "recommendation.result" -> applyRecommendationResult(frame)
             "lyrics.unavailable" ->
                 if (frame.nullableString("occurrence_id") ==
                     mutable.value.snapshot
@@ -651,6 +662,10 @@ class RemoteModel(
             }
             queryRequest(commandId)
         }
+        if ("recommendations.cree" in mutable.value.capabilities) {
+            sendRecommendationPassport()
+            requestRecommendation()
+        }
     }
 
     private suspend fun applyState(value: JSONObject) {
@@ -663,6 +678,7 @@ class RemoteModel(
         if (changedSong || previous?.revision != snapshot.revision || SystemClock.elapsedRealtime() - lastCachedAt >= 5_000) {
             withContext(ioDispatcher) { app.database.saveState(snapshot.hostId, value) }
             lastCachedAt = SystemClock.elapsedRealtime()
+            requestRecommendation()
         }
         mutable.update {
             it.copy(
@@ -679,41 +695,6 @@ class RemoteModel(
         val songs = snapshot.queue.map { it.song } + listOfNotNull(snapshot.current?.song)
         val new = songs.filter { metadata.add(it.source + ":" + it.id) }
         if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }
-    }
-
-    private fun enrichArtwork(snapshot: HostSnapshot): HostSnapshot {
-        val known =
-            (
-                mutable.value.favorites + mutable.value.results +
-                    listOfNotNull(
-                        mutable.value.snapshot
-                            ?.current
-                            ?.song,
-                    ) +
-                    mutable.value.snapshot
-                        ?.queue
-                        .orEmpty()
-                        .map { it.song }
-            ).filter { it.artworkUrl != null }
-                .associateBy { it.source + ":" + it.id }
-
-        fun song(value: Song): Song = value.artworkUrl?.let { value } ?: known[value.source + ":" + value.id] ?: value
-        return snapshot.copy(
-            current = snapshot.current?.copy(song = song(snapshot.current.song)),
-            queue = snapshot.queue.map { it.copy(song = song(it.song)) },
-            incoming = snapshot.incoming?.let(::song),
-        )
-    }
-
-    private suspend fun applyCredit(frame: JSONObject) {
-        val host = mutable.value.profile?.hostId ?: return
-        val cursor =
-            withContext(ioDispatcher) {
-                frame.optJSONObject("song_metadata")?.let { app.database.remember(host, listOf(Wire.song(it))) }
-                app.database.applyCredit(host, frame)
-            }
-        connection?.send(Wire.frame("analytics.ack").put("sequence", cursor))
-        reloadStatistics()
     }
 
     private fun pingClock() {
@@ -822,12 +803,31 @@ class RemoteModel(
     fun toggleFavorite(song: Song) {
         if (mutable.value.savingFavorite) return
         val saved = mutable.value.favorites.none { it.identity == song.identity }
+        val feedback =
+            RecommendationFeedback(
+                recommendationId = newRecommendationId(),
+                outcome = if (saved) RecommendationOutcome.FAVORITE else RecommendationOutcome.QUEUE_REMOVAL,
+                track = RecommendationTrack(song.source, song.id, song.artist, song.album),
+            )
+        recommendationEngine.recordFeedback(feedback)
+        sendRecommendationFeedback(feedback)
         mutable.update { it.copy(savingFavorite = true) }
         viewModelScope.launch {
             try {
                 val library =
                     withContext(ioDispatcher) {
                         app.library.setFavorite(song, saved)
+                        app.database.saveRecommendationEvent(
+                            eventId = newRecommendationId(),
+                            recommendationId = feedback.recommendationId,
+                            source = song.source,
+                            songId = song.id,
+                            outcome = feedback.outcome.wire,
+                            positionMs = null,
+                            durationMs = song.durationMs,
+                            replacementJson = null,
+                            occurredAtMs = feedback.occurredAtMs,
+                        )
                         app.library.load()
                     }
                 mutable.update {
@@ -849,6 +849,7 @@ class RemoteModel(
         action: JSONObject,
         key: String,
     ) {
+        recordRecommendationCommand(action)
         mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key) }
     }

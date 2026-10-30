@@ -186,6 +186,27 @@ fun PlayingScreen(
                         }
                     }
                 }
+                state.nextRecommendation?.let { recommendation ->
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 1.dp,
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Up next", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                recommendation.title ?: recommendation.songId,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.semantics { contentDescription = "CREE selected next song" },
+                            )
+                            recommendation.artist?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            recommendation.evidence.firstOrNull()?.let {
+                                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

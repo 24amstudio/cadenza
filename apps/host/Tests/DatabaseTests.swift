@@ -42,7 +42,7 @@ struct DatabaseTests {
             "cadenza-test-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try Database(url: directory.appendingPathComponent("test.sqlite"))
-        #expect(try database.query("PRAGMA user_version").first?["user_version"]?.integer == 1)
+        #expect(try database.query("PRAGMA user_version").first?["user_version"]?.integer == 2)
         let id = "00000000-0000-4000-8000-000000000001"
         let name = "Example's tablet; DROP TABLE paired_remotes;"
         try database.run(

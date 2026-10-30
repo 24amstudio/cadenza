@@ -35,7 +35,15 @@
         "remote.configured",
         "transport.configure",
         "transport.configured",
-        "session.status"
+        "session.status",
+        "recommendation.passport",
+        "recommendation.query",
+        "recommendation.result",
+        "recommendation.feedback",
+        "recommendation.plan",
+        "recommendation.shadow_observation",
+        "recommendation.plan.result",
+        "recommendation.passport.accepted"
       ]
     },
     "request_id": {
@@ -229,6 +237,12 @@
       "type": "string",
       "maxLength": 700000
     },
+    "recommendation_passport": { "type": "object" },
+    "recommendation_query": { "type": "object" },
+    "recommendation_result": { "type": ["object", "null"] },
+    "recommendation_feedback": { "type": "object" },
+    "recommendation_plan": { "type": "object" },
+    "recommendation_shadow_observation": { "type": "object" },
     "host_epoch": {
       "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
     },
@@ -917,6 +931,56 @@
             "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "recommendation.passport" } }
+      },
+      "then": {
+        "required": ["recommendation_passport"],
+        "properties": { "recommendation_passport": true }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "recommendation.query" } } },
+      "then": {
+        "required": ["request_id", "recommendation_query"],
+        "properties": { "request_id": true, "recommendation_query": true }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "recommendation.result" } } },
+      "then": {
+        "required": ["recommendation_result"],
+        "properties": { "recommendation_result": true }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "recommendation.feedback" } }
+      },
+      "then": {
+        "required": ["recommendation_feedback"],
+        "properties": { "recommendation_feedback": true }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "recommendation.plan" } } },
+      "then": {
+        "required": ["recommendation_plan"],
+        "properties": { "recommendation_plan": true }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": { "const": "recommendation.shadow_observation" }
+        }
+      },
+      "then": {
+        "required": ["recommendation_shadow_observation"],
+        "properties": { "recommendation_shadow_observation": true }
       }
     }
   ],

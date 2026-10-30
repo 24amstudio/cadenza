@@ -39,4 +39,31 @@ struct Frame: Codable, Sendable {
     var logMessage: String? = nil
     var artworkUrl: String? = nil
     var artworkDataBase64: String? = nil
+    var recommendationPassport: SignedRecommendationPassport? = nil
+    var recommendationQuery: RecommendationQuery? = nil
+    var recommendationResult: RecommendationResult? = nil
+    var recommendationFeedback: RecommendationFeedback? = nil
+    var recommendationPlan: RecommendationPlanEnvelope? = nil
+    var recommendationShadowObservation: RecommendationShadowObservation? = nil
+}
+
+struct RecommendationQuery: Codable, Sendable {
+    var intent: String?
+    var horizon: Int
+    var filters: RecommendationFilters
+    var modelVersion: Int
+}
+
+struct RecommendationFilters: Codable, Sendable {
+    var explicitAllowed: Bool
+    var locked: Bool
+}
+
+struct RecommendationPlanEnvelope: Codable, Sendable {
+    var planId: String
+    var recommendationId: String
+    var passportSequence: Int64
+    var modelVersion: Int
+    var expectedRevision: Int64
+    var operation: CommandAction
 }

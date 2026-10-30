@@ -11,6 +11,7 @@ final class HostService {
     let logger: HostLogger
     let lyrics: Lyrics
     let network = NetworkService()
+    let pairingBootstrap = PairingBootstrap()
     let bluetooth = BluetoothPeripheral()
     let queue: QueueCoordinator
     private(set) var configuration: HostConfiguration
@@ -88,6 +89,7 @@ final class HostService {
         network.onFrame = { [weak self] peer, frame in self?.receive(frame, from: peer) }
         network.onFailure = { [weak self] reason in self?.recoverListener(reason) }
         network.onIssue = { [weak self] message in self?.onIssue?(message) }
+        pairingBootstrap.onRequest = { [weak self] secret in self?.bootstrapCertificate(for: secret) }
         network.onDisconnect = { [weak self] id in
             self?.lastCreditSent.removeValue(forKey: id)
             self?.acknowledgedCredits.removeValue(forKey: id)
@@ -124,12 +126,15 @@ final class HostService {
             self.identity = identity
             try await network.start(
                 identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
+            try await pairingBootstrap.start(controlPort: configuration.port)
             bluetooth.start()
             startStatusReporting()
             await catalog.configure(storefront: configuration.storefront)
             if observationEnabled { startObservation() }
         } catch {
             serviceRunning = false
+            pairingBootstrap.stop()
+            network.stop()
             throw error
         }
     }
@@ -175,6 +180,7 @@ final class HostService {
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
         network.stop()
+        pairingBootstrap.stop()
         bluetooth.stop()
     }
 
@@ -206,6 +212,7 @@ final class HostService {
                         try await self.network.start(
                             identity: identity, port: self.configuration.port, name: self.configuration.name,
                             hostId: self.store.hostId)
+                        try await self.pairingBootstrap.start(controlPort: self.configuration.port)
                         self.onDevicesChanged?()
                         return
                     } catch is CancellationError { return } catch { continue }
@@ -239,6 +246,9 @@ final class HostService {
 
     func createInvitation() throws -> PairingInvitation {
         guard let identity else { throw CadenzaError.failure("network", "Host is still starting.") }
+        guard pairingBootstrap.ready else {
+            throw CadenzaError.failure("network", "Pairing is still starting. Try again in a moment.")
+        }
         let address =
             configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         guard let address else {
@@ -252,6 +262,14 @@ final class HostService {
         self.invitation = invitation
         invitationDeadline = monotonicMs() + 300_000
         return invitation
+    }
+
+    private func bootstrapCertificate(for secret: Data) -> Data? {
+        guard let invitation, let identity,
+            monotonicMs() < invitationDeadline,
+            SecureStore.equal(String(decoding: secret, as: UTF8.self), invitation.secret)
+        else { return nil }
+        return Data(base64Encoded: identity.certificateDerBase64)
     }
 
     func revoke(_ remoteId: String) throws {

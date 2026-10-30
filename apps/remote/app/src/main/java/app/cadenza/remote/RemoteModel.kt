@@ -714,7 +714,6 @@ class RemoteModel(
         val new = songs.filter { metadata.add(it.source + ":" + it.id) }
         if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }
     }
-
     fun search(
         query: String,
         library: Boolean,
@@ -743,7 +742,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun prepare(song: Song) {
         preparationId = id()
         val requestId = preparationId
@@ -760,7 +758,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
@@ -781,7 +778,6 @@ class RemoteModel(
                 }
             }
     }
-
     fun savePreferences(
         name: String,
         theme: ThemePreference,
@@ -851,6 +847,7 @@ class RemoteModel(
                 mutable.update { it.copy(savingFavorite = false) }
             }
         }
+
     }
     fun command(
         action: JSONObject,
@@ -858,6 +855,7 @@ class RemoteModel(
     ) {
         recordRecommendationCommand(action)
         mutable.update { it.copy(sessionActive = true) }
+
         viewModelScope.launch { sendCommand(action, key) }
     }
     private suspend fun sendCommand(
@@ -930,6 +928,7 @@ class RemoteModel(
                 val failedId = createdId
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, failedId) }
             }
+
             showError("Action unavailable", error.message ?: "Reconnect and retry.")
         }
     }
@@ -980,6 +979,7 @@ class RemoteModel(
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
                 pending.remove(commandId)
                 mutable.update { it.copy(pending = it.pending - original.key) }
+
                 showError("Request blocked", frame.optString("message", "The queue changed or Host settings protect this request."))
             }
         }

@@ -250,6 +250,13 @@ private fun NowPlayingCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
+                if (state.snapshot?.mixing == true) {
+                    Text(
+                        state.snapshot.incoming?.let { "AutoMix → ${it.title}" } ?: "AutoMix transition",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
             Icon(
                 cadenzaVector(CadenzaIcon.NEXT),

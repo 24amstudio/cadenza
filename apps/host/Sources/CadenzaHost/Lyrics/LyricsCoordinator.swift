@@ -30,7 +30,9 @@ actor Lyrics {
             cache[key] = known
             return known
         }
-        if let document = try await music.document(song: song, occurrence: occurrence) {
+        // A malformed or temporarily unavailable Music cache should fall
+        // through to LRCLIB instead of preventing a second provider attempt.
+        if let document = try? await music.document(song: song, occurrence: occurrence) {
             if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
             cache[key] = document
             if let data = try? JSONEncoder().encode(document) {
@@ -38,7 +40,8 @@ actor Lyrics {
             }
             return document
         }
-        if let data = try? await disk.data(for: "lyrics-miss:" + key),
+        if fallbackProviders.isEmpty,
+            let data = try? await disk.data(for: "lyrics-miss:" + key),
             let miss = try? JSONDecoder().decode(ProviderMiss.self, from: data),
             wallMs() - miss.checkedAtMs < 900_000
         {

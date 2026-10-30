@@ -1,7 +1,13 @@
 package app.cadenza.remote.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -17,6 +23,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -38,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -58,6 +66,7 @@ import app.cadenza.remote.RemoteState
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.isStale
+import kotlin.math.abs
 
 internal fun activeLyricIndex(
     document: LyricDocument?,
@@ -79,8 +88,24 @@ private fun LyricText(
     line: app.cadenza.remote.data.LyricLine,
     currentPosition: Long,
     activeLine: Boolean,
+    onWordClick: ((Long) -> Unit)? = null,
 ) {
     val activeWord = if (activeLine) activeWordIndex(line, currentPosition) else -1
+    val activeLineColor by animateColorAsState(
+        if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "lyric-line-color",
+    )
+    val inactiveBlur by animateDpAsState(
+        if (activeLine) 0.dp else 2.dp,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-line-blur",
+    )
+    val wordFocus by animateFloatAsState(
+        activeWord.toFloat(),
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        label = "lyric-word-focus",
+    )
     val text: AnnotatedString =
         if (line.words.isEmpty()) {
             AnnotatedString(line.text)
@@ -88,9 +113,10 @@ private fun LyricText(
             buildAnnotatedString {
                 line.words.forEachIndexed { index, word ->
                     if (index > 0) append(" ")
+                    val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
                     val wordColor =
-                        if (index == activeWord) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    val wordAlpha = if (index == activeWord) 1f else 0.62f
+                        lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
+                    val wordAlpha = 0.62f + (0.38f * emphasis)
                     withStyle(
                         SpanStyle(
                             color = wordColor.copy(alpha = wordAlpha),
@@ -100,13 +126,34 @@ private fun LyricText(
                 }
             }
         }
-    Text(
-        text,
-        style = MaterialTheme.typography.headlineMedium,
-        fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
-        color = if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.blur(if (activeLine) 0.dp else 2.dp),
-    )
+    if (line.words.isNotEmpty() && onWordClick != null) {
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            line.words.forEachIndexed { index, word ->
+                val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
+                Text(
+                    word.text + if (index == line.words.lastIndex) "" else " ",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
+                    color =
+                        lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
+                            .copy(alpha = 0.62f + 0.38f * emphasis),
+                    modifier =
+                        Modifier
+                            .blur(inactiveBlur)
+                            .clickable(role = Role.Button) { onWordClick(word.startMs) }
+                            .semantics { contentDescription = "Seek to ${word.text}" },
+                )
+            }
+        }
+    } else {
+        Text(
+            text,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
+            color = activeLineColor,
+            modifier = Modifier.blur(inactiveBlur),
+        )
+    }
 }
 
 @Composable
@@ -297,7 +344,7 @@ private fun LyricsContent(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable(
-                                        enabled = canSeek,
+                                        enabled = canSeek && line.words.isEmpty(),
                                         role = Role.Button,
                                     ) {
                                         model.command(
@@ -315,7 +362,33 @@ private fun LyricsContent(
                                     },
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                LyricText(line, currentPosition, index == active)
+                                LyricText(
+                                    line,
+                                    currentPosition,
+                                    index == active,
+                                    onWordClick =
+                                        if (canSeek && line.words.isNotEmpty()) {
+                                            { time ->
+                                                model.command(
+                                                    org.json
+                                                        .JSONObject()
+                                                        .put("kind", "playback.seek")
+                                                        .put("occurrence_id", occurrence)
+                                                        .put("position_ms", time),
+                                                    "playback.seek",
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                )
+                                line.romanized?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 line.translation?.let {
                                     Text(
                                         it,

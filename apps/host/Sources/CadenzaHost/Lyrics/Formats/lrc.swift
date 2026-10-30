@@ -14,7 +14,7 @@ enum LRCParser {
             return nil
         }
         let lines = plain.split(whereSeparator: \.isNewline).enumerated().map { index, text in
-            LyricLine(
+            Self.line(
                 id: "lrclib-\(index)", text: String(text).trimmingCharacters(in: .whitespaces), startMs: 0, endMs: 0)
         }.filter { !$0.text.isEmpty }
         guard !lines.isEmpty else { return nil }
@@ -55,9 +55,18 @@ enum LRCParser {
             let end = index + 1 < sorted.count ? sorted[index + 1].0 : (durationMs ?? item.0 + 4_000)
             var words = item.2
             if let last = words.indices.last { words[last].endMs = max(words[last].endMs, end) }
-            return LyricLine(
+            return line(
                 id: "lrclib-\(index)", text: item.1, startMs: item.0, endMs: max(item.0, end), words: words)
         }
+    }
+
+    private static func line(
+        id: String, text: String, startMs: Int64, endMs: Int64,
+        words: [LyricWord] = []
+    ) -> LyricLine {
+        let romanized = text.applyingTransform(.toLatin, reverse: false).flatMap { $0 == text ? nil : $0 }
+        return LyricLine(
+            id: id, text: text, startMs: startMs, endMs: endMs, words: words, romanized: romanized)
     }
 
     private static func parseWords(_ text: String, lineStart: Int64) -> [LyricWord] {

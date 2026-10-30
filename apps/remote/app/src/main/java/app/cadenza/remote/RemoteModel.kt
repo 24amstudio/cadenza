@@ -59,8 +59,8 @@ class RemoteModel(
     application: Application,
     private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(application) {
-    constructor(application: Application) : this(application, Dispatchers.IO)
 
+    constructor(application: Application) : this(application, Dispatchers.IO)
     internal val app = application as CadenzaApplication
     internal val preferences = app.settings
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
@@ -742,6 +742,7 @@ class RemoteModel(
                 }
             }
     }
+
     fun prepare(song: Song) {
         preparationId = id()
         val requestId = preparationId
@@ -758,6 +759,7 @@ class RemoteModel(
                 }
             }
     }
+
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
@@ -778,6 +780,7 @@ class RemoteModel(
                 }
             }
     }
+
     fun savePreferences(
         name: String,
         theme: ThemePreference,
@@ -803,6 +806,7 @@ class RemoteModel(
             }
         }
     }
+
     fun toggleFavorite(song: Song) {
         if (mutable.value.savingFavorite) return
         val saved = mutable.value.favorites.none { it.identity == song.identity }
@@ -847,6 +851,7 @@ class RemoteModel(
             }
         }
     }
+
     fun command(
         action: JSONObject,
         key: String,
@@ -855,6 +860,7 @@ class RemoteModel(
         mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key) }
     }
+
     private suspend fun sendCommand(
         action: JSONObject,
         key: String,

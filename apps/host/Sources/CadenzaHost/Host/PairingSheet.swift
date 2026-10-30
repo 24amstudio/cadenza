@@ -78,7 +78,11 @@ private struct PairingQRPayload {
         result.append(UInt8(certificate.count & 0xFF))
         result.append(certificate)
         result.append(contentsOf: fingerprint)
-        return result
+        let encoded = result.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return Data(("CDZP:" + encoded).utf8)
     }
 }
 

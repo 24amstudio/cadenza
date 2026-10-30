@@ -366,8 +366,9 @@ final class HostService {
         {
             let now = monotonicMs()
             let secretValid = pair.secret.map { SecureStore.equal($0, invitation.secret) } ?? false
-            let pinValid = !invitation.pin.isEmpty && invitationPinAttempts < 3
-                && now < invitationPinDeadline && pair.pin == invitation.pin
+            let pinValid =
+                !invitation.pin.isEmpty && invitationPinAttempts < 3 && now < invitationPinDeadline
+                    && pair.pin == invitation.pin
             guard secretValid || pinValid else {
                 if pair.pin != nil { invitationPinAttempts += 1 }
                 throw CadenzaError.failure("authentication", "The pairing PIN is invalid or expired.")
@@ -406,7 +407,8 @@ final class HostService {
         peer.authenticated = true
         lastCreditSent[peer.id] = cursor
         acknowledgedCredits[peer.id] = cursor
-        let welcomeAddress = configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
+        let welcomeAddress =
+            configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         var welcome = Welcome(
             hostId: store.hostId, hostName: configuration.name, hostEpoch: store.epoch,
             remoteId: remoteId, token: token, hostAddress: welcomeAddress,

@@ -553,7 +553,7 @@ final class QueueCoordinator {
         throw CadenzaError.failure("outcome_unknown", "Music's native queue has not confirmed the action.")
     }
 
-    func prepare(_ identity: SongIdentity) async throws {
+    func prepare(_ identity: SongIdentity, metadata: Song? = nil) async throws {
         guard activeCommand == nil, waiting.isEmpty else {
             throw CadenzaError.failure(
                 "busy", "Music is processing a control action. Prepare the song again in a moment.")
@@ -561,14 +561,26 @@ final class QueueCoordinator {
         let token = identifier()
         preparationToken = token
         let song: Song
-        if let known = knownSongs[identity] {
+        if identity.source == "library" {
+            do {
+                song = try await music.resolve(identity)
+            } catch {
+                guard let metadata, metadata.identity == identity else { throw error }
+                let query = "\(metadata.title) \(metadata.artist)".trimmingCharacters(in: .whitespacesAndNewlines)
+                let candidates = try await music.librarySearch(query)
+                guard let replacement = candidates.first(where: {
+                    $0.title.caseInsensitiveCompare(metadata.title) == .orderedSame
+                        && $0.artist.caseInsensitiveCompare(metadata.artist) == .orderedSame
+                }) else { throw error }
+                song = replacement
+            }
+        } else if let known = knownSongs[identity] {
             song = known
-        } else if identity.source == "catalog" {
-            song = try await catalog.resolve(identity)
         } else {
-            song = try await music.resolve(identity)
+            song = try await catalog.resolve(identity)
         }
         remember([song])
+        if song.identity != identity { knownSongs[identity] = song }
         guard preparationToken == token, activeCommand == nil, waiting.isEmpty else {
             throw CadenzaError.failure("busy", "Another Music action took priority. Prepare this song again.")
         }

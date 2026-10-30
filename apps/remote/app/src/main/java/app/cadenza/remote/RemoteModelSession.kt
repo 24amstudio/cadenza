@@ -4,6 +4,7 @@ import android.os.SystemClock
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.data.nullableString
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 internal fun RemoteModel.checkRequestInternal(commandId: String) {
@@ -16,6 +17,55 @@ internal fun RemoteModel.checkRequestInternal(commandId: String) {
 internal fun RemoteModel.queryRequest(commandId: String) {
     if (pending.containsKey(commandId)) {
         connection?.send(Wire.frame("command.status").put("command_id", commandId).put("request_id", id()))
+    }
+}
+
+internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
+    val commandId = frame.getString("command_id")
+    val original = pending[commandId] ?: return
+    if (frame.nullableString("host_epoch") != mutable.value.snapshot?.hostEpoch) return
+    original.timer.cancel()
+    val sentAt = original.sentAtElapsedMs
+    if (sentAt > 0) {
+        mutable.update { it.copy(lastCommandLatencyMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)) }
+    }
+    when (frame.getString("outcome")) {
+        "applied" -> {
+            statusChecks.remove(commandId)
+            val profile = mutable.value.profile
+            if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
+            pending.remove(commandId)
+            mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
+        }
+        "unconfirmed" -> {
+            val showPrompt = statusChecks.remove(commandId)
+            val resolved = frame.optBoolean("resolved", false)
+            if (resolved) {
+                val profile = mutable.value.profile
+                if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
+                pending.remove(commandId)
+                mutable.update { it.copy(pending = it.pending - original.key) }
+            }
+            mutable.update {
+                val message = frame.optString("message", "Check this request after Host reconciles Music.")
+                if (showPrompt || !resolved) {
+                    it.copy(
+                        pending = it.pending - original.key,
+                        prompt = Prompt("Request unconfirmed", message, if (resolved) null else commandId),
+                    )
+                } else {
+                    it.copy(pending = it.pending - original.key, notice = Notice("Request still needs confirmation"))
+                }
+            }
+        }
+        else -> {
+            statusChecks.remove(commandId)
+            val profile = mutable.value.profile
+            if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
+            pending.remove(commandId)
+            mutable.update { it.copy(pending = it.pending - original.key) }
+            showError("Request blocked", frame.optString("message", "The queue changed or Host settings protect this request."))
+        }
     }
 }
 

@@ -573,7 +573,7 @@ class RemoteModel(
                         )
                     }
                 }
-            "command.result" -> commandResult(frame)
+            "command.result" -> commandResultInternal(frame)
             "error" -> operationErrorInternal(frame)
             "operation.started" -> Unit
             else -> Unit
@@ -758,7 +758,23 @@ class RemoteModel(
         val requestId = preparationId
         preparationTimeout?.cancel()
         mutable.update { it.copy(preparing = true, preparedSong = null) }
-        connection?.send(Wire.frame("song.prepare").put("request_id", preparationId).put("song", song.identity.json()))
+        connection?.send(
+            Wire
+                .frame("song.prepare")
+                .put("request_id", preparationId)
+                .put("song", song.identity.json())
+                .put(
+                    "song_metadata",
+                    JSONObject()
+                        .put("source", song.source)
+                        .put("id", song.id)
+                        .put("title", song.title)
+                        .put("artist", song.artist)
+                        .put("album", song.album)
+                        .put("duration_ms", song.durationMs ?: JSONObject.NULL)
+                        .put("artwork_url", song.artworkUrl ?: JSONObject.NULL),
+                ),
+        )
         preparationTimeout =
             viewModelScope.launch {
                 delay(15_000)
@@ -922,58 +938,6 @@ class RemoteModel(
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, failedId) }
             }
             showError("Action unavailable", error.message ?: "Reconnect and retry.")
-        }
-    }
-
-    private suspend fun commandResult(frame: JSONObject) {
-        val commandId = frame.getString("command_id")
-        val original = pending[commandId] ?: return
-        if (frame.nullableString("host_epoch") != mutable.value.snapshot?.hostEpoch) return
-        original.timer.cancel()
-        val sentAt = original.sentAtElapsedMs
-        if (sentAt > 0) {
-            mutable.update { it.copy(lastCommandLatencyMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)) }
-        }
-        when (frame.getString("outcome")) {
-            "applied" -> {
-                statusChecks.remove(commandId)
-                val profile = mutable.value.profile
-                if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
-                pending.remove(commandId)
-                mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
-            }
-            "unconfirmed" -> {
-                val showPrompt = statusChecks.remove(commandId)
-                val resolved = frame.optBoolean("resolved", false)
-                if (resolved) {
-                    val profile = mutable.value.profile
-                    if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
-                    pending.remove(commandId)
-                    mutable.update { it.copy(pending = it.pending - original.key) }
-                }
-                mutable.update {
-                    if (showPrompt) {
-                        it.copy(
-                            prompt =
-                                Prompt(
-                                    "Request unconfirmed",
-                                    frame.optString("message", "Check this request after Host reconciles Music."),
-                                    if (resolved) null else commandId,
-                                ),
-                        )
-                    } else {
-                        it.copy(notice = Notice("Request still needs confirmation"))
-                    }
-                }
-            }
-            else -> {
-                statusChecks.remove(commandId)
-                val profile = mutable.value.profile
-                if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
-                pending.remove(commandId)
-                mutable.update { it.copy(pending = it.pending - original.key) }
-                showError("Request blocked", frame.optString("message", "The queue changed or Host settings protect this request."))
-            }
         }
     }
 

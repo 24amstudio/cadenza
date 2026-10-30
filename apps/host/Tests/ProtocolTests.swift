@@ -44,6 +44,13 @@ struct ProtocolTests {
         #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(unicodeDigits.utf8)) }
     }
 
+    @Test func songPreparationMayCarryFavoriteMetadataForLibraryRecovery() throws {
+        let frame =
+            #"{"version":1,"type":"song.prepare","request_id":"00000000-0000-4000-8000-000000000001","song":{"source":"library","id":"0123456789ABCDEF"},"song_metadata":{"source":"library","id":"0123456789ABCDEF","title":"Saved song","artist":"Artist","album":"Album","duration_ms":120000}}"#
+        let decoded = try ProtocolValidation.decode(Data(frame.utf8))
+        #expect(decoded.songMetadata?.title == "Saved song")
+    }
+
     @Test func timedLyricsKeepOriginalTextAndEnglishTranslation() throws {
         let xml = """
             <tt xml:lang="ja" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">

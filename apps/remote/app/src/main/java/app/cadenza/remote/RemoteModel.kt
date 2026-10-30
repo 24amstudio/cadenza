@@ -303,6 +303,16 @@ class RemoteModel(
         if (mutable.value.connected || mutable.value.connecting) connect()
     }
 
+    fun reconnectWithTransport(mode: String) {
+        require(mode in setOf("lan", "ble", "hybrid")) { "Unsupported transport mode." }
+        if (transportMode != mode) {
+            transportMode = mode
+            preferences.write("transport_mode" to mode)
+            mutable.update { it.copy(transportMode = mode) }
+        }
+        connect()
+    }
+
     fun setTransportPreference(preference: String) {
         require(preference in setOf("latency", "host_efficiency", "remote_efficiency", "reliability", "balanced")) {
             "Unsupported transport preference."
@@ -334,7 +344,7 @@ class RemoteModel(
                     opened = {
                         viewModelScope.launch {
                             if (version != generation) return@launch
-                            sendHandshake(invite, profile, version)
+                            sendHandshakeChecked(invite, profile, version)
                         }
                     },
                     received = { frame ->
@@ -357,7 +367,7 @@ class RemoteModel(
                     opened = {
                         viewModelScope.launch {
                             if (version != generation) return@launch
-                            sendHandshake(invite, profile, version)
+                            sendHandshakeChecked(invite, profile, version)
                         }
                     },
                     received = { frame ->
@@ -379,13 +389,7 @@ class RemoteModel(
                     opened = {
                         viewModelScope.launch {
                             if (version != generation) return@launch
-                            try {
-                                sendHandshake(invite, profile, version)
-                            } catch (error: Exception) {
-                                if (version != generation) return@launch
-                                showError("Pair this Remote again", error.message ?: "The saved credential could not be read.")
-                                disconnect()
-                            }
+                            sendHandshakeChecked(invite, profile, version)
                         }
                     },
                     received = { frame ->
@@ -402,7 +406,7 @@ class RemoteModel(
         connection?.connect()
         clockJob =
             viewModelScope.launch {
-                delay(6_000)
+                delay(if (transportMode == "lan") 6_000 else 20_000)
                 if (version == generation &&
                     !mutable.value.connected
                 ) {
@@ -420,6 +424,20 @@ class RemoteModel(
         if (version != generation) return
         frame.put("request_id", id())
         connection?.send(frame)
+    }
+
+    private suspend fun sendHandshakeChecked(
+        invite: PairingInvitation?,
+        profile: HostProfile?,
+        version: Int,
+    ) {
+        try {
+            sendHandshake(invite, profile, version)
+        } catch (error: Exception) {
+            if (version != generation) return
+            showError("Pair this Remote again", error.message ?: "The saved credential could not be read.")
+            disconnect()
+        }
     }
 
     private fun connectionClosed(
@@ -476,6 +494,8 @@ class RemoteModel(
             it.copy(
                 connected = false,
                 connecting = false,
+                effectiveTransport = null,
+                transportPaths = emptyList(),
                 searching = false,
                 preparing = false,
                 lyricsLoading = false,
@@ -573,7 +593,7 @@ class RemoteModel(
                         )
                     }
                 }
-            "command.result" -> commandResult(frame)
+            "command.result" -> commandResultInternal(frame)
             "error" -> operationErrorInternal(frame)
             "operation.started" -> Unit
             else -> Unit
@@ -758,7 +778,23 @@ class RemoteModel(
         val requestId = preparationId
         preparationTimeout?.cancel()
         mutable.update { it.copy(preparing = true, preparedSong = null) }
-        connection?.send(Wire.frame("song.prepare").put("request_id", preparationId).put("song", song.identity.json()))
+        connection?.send(
+            Wire
+                .frame("song.prepare")
+                .put("request_id", preparationId)
+                .put("song", song.identity.json())
+                .put(
+                    "song_metadata",
+                    JSONObject()
+                        .put("source", song.source)
+                        .put("id", song.id)
+                        .put("title", song.title)
+                        .put("artist", song.artist)
+                        .put("album", song.album)
+                        .put("duration_ms", song.durationMs ?: JSONObject.NULL)
+                        .put("artwork_url", song.artworkUrl ?: JSONObject.NULL),
+                ),
+        )
         preparationTimeout =
             viewModelScope.launch {
                 delay(15_000)
@@ -922,58 +958,6 @@ class RemoteModel(
                 if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, failedId) }
             }
             showError("Action unavailable", error.message ?: "Reconnect and retry.")
-        }
-    }
-
-    private suspend fun commandResult(frame: JSONObject) {
-        val commandId = frame.getString("command_id")
-        val original = pending[commandId] ?: return
-        if (frame.nullableString("host_epoch") != mutable.value.snapshot?.hostEpoch) return
-        original.timer.cancel()
-        val sentAt = original.sentAtElapsedMs
-        if (sentAt > 0) {
-            mutable.update { it.copy(lastCommandLatencyMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)) }
-        }
-        when (frame.getString("outcome")) {
-            "applied" -> {
-                statusChecks.remove(commandId)
-                val profile = mutable.value.profile
-                if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
-                pending.remove(commandId)
-                mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
-            }
-            "unconfirmed" -> {
-                val showPrompt = statusChecks.remove(commandId)
-                val resolved = frame.optBoolean("resolved", false)
-                if (resolved) {
-                    val profile = mutable.value.profile
-                    if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
-                    pending.remove(commandId)
-                    mutable.update { it.copy(pending = it.pending - original.key) }
-                }
-                mutable.update {
-                    if (showPrompt) {
-                        it.copy(
-                            prompt =
-                                Prompt(
-                                    "Request unconfirmed",
-                                    frame.optString("message", "Check this request after Host reconciles Music."),
-                                    if (resolved) null else commandId,
-                                ),
-                        )
-                    } else {
-                        it.copy(notice = Notice("Request still needs confirmation"))
-                    }
-                }
-            }
-            else -> {
-                statusChecks.remove(commandId)
-                val profile = mutable.value.profile
-                if (profile != null) withContext(ioDispatcher) { app.database.finishPending(profile, commandId) }
-                pending.remove(commandId)
-                mutable.update { it.copy(pending = it.pending - original.key) }
-                showError("Request blocked", frame.optString("message", "The queue changed or Host settings protect this request."))
-            }
         }
     }
 

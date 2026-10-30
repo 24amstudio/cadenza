@@ -65,6 +65,7 @@ import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.ui.ConnectionStatus
 import app.cadenza.remote.ui.DebugScreen
 import app.cadenza.remote.ui.LyricsScreen
+import app.cadenza.remote.ui.PlayingScreen
 import app.cadenza.remote.ui.StartupScreen
 import app.cadenza.remote.ui.position
 import app.cadenza.remote.ui.startupBuildLabel
@@ -365,6 +366,7 @@ class RemoteUiTest {
         seedProfile()
         openApp()
         navigate("Settings")
+        capture("settings-revamp-tablet")
         compose.onNodeWithText("Remote name").performTextReplacement("Bedroom tablet")
         compose.onNodeWithText("Dark", substring = false).performClick()
         compose.onNodeWithText("Save preferences").performScrollTo().performClick()
@@ -422,6 +424,7 @@ class RemoteUiTest {
                 .put("incoming", song("Cached incoming song", 180_000)),
         )
         openApp()
+        capture("now-playing-ipad")
         compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("Lossless").assertDoesNotExist()
@@ -514,6 +517,42 @@ class RemoteUiTest {
         compose.onNodeWithText("I sing with you").assertIsNotSelected()
         compose.onNodeWithText("The night awakens").assertIsNotSelected()
         capture("lyrics-tablet")
+    }
+
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Test
+    fun tabletNowPlayingUsesMediaDetailAndLyricsPane() {
+        seedProfile()
+        createModel()
+        val document =
+            LyricDocument(
+                UUID(0, 11).toString(),
+                UUID(0, 21).toString(),
+                "machine",
+                listOf(
+                    LyricLine("first", "A little further to the other side", 0, 25_000, "A little further to the other side"),
+                    LyricLine("second", "We set sail on our dream", 30_000, 45_000, "We set sail on our dream"),
+                    LyricLine("third", "Crossing the night for the day to come", 50_000, 65_000, "Crossing the night for the day to come"),
+                ),
+                null,
+            )
+        compose.setContent {
+            val state by model.state.collectAsStateWithLifecycle()
+            MaterialExpressiveTheme {
+                PlayingScreen(
+                    model,
+                    state.copy(lyrics = document),
+                    wide = true,
+                    restoreLyricsFocus = false,
+                    onLyricsFocusRestored = {},
+                    onOpenLyrics = {},
+                )
+            }
+        }
+        compose.waitUntil(5_000) { model.state.value.loaded }
+        compose.onNodeWithText("A little further to the other side").assertIsDisplayed()
+        compose.onNodeWithText("Current song").assertIsDisplayed()
+        capture("now-playing-ipad-lyrics")
     }
 
     @OptIn(ExperimentalMaterial3ExpressiveApi::class)

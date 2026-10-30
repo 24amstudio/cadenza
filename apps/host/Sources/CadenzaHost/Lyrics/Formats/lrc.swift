@@ -41,7 +41,7 @@ enum LRCParser {
                 words.isEmpty
                 ? content.replacingOccurrences(
                     of: #"<\d{1,3}:\d{2}(?:\.\d{1,3})?>"#, with: "", options: .regularExpression)
-                : words.map(\.text).joined(separator: " ")
+                : words.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
             if !cleaned.isEmpty { parsed.append((start, cleaned, words)) }
             for extra in matches.dropFirst() {
                 guard let extraRange = Range(extra.range, in: line),
@@ -82,7 +82,11 @@ enum LRCParser {
             let end = next ?? start + 500
             let upper =
                 index + 1 < matches.count ? Range(matches[index + 1].range, in: text)!.lowerBound : text.endIndex
-            let value = String(text[timestampRange.upperBound..<upper]).trimmingCharacters(in: .whitespaces)
+            let rawValue = String(text[timestampRange.upperBound..<upper])
+            let hasTrailingSpace = rawValue.last?.isWhitespace == true
+            let value =
+                rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                + (hasTrailingSpace ? " " : "")
             guard !value.isEmpty else { return nil }
             return LyricWord(text: value, startMs: max(lineStart, start), endMs: max(start, end))
         }

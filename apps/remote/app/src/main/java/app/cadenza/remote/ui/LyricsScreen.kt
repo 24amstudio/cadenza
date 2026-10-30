@@ -291,7 +291,7 @@ private fun CompactTrackIdentity(
 }
 
 @Composable
-private fun LyricsContent(
+internal fun LyricsContent(
     model: RemoteModel,
     state: RemoteState,
     document: LyricDocument?,

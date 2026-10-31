@@ -5,8 +5,8 @@ import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
 import app.cadenza.remote.recommendation.RecommendationTrack
 import app.cadenza.remote.recommendation.newRecommendationId
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 fun RemoteModel.toggleFavorite(song: Song) {

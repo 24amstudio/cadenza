@@ -1,9 +1,10 @@
 package app.cadenza.remote
 
 import android.os.SystemClock
+import app.cadenza.remote.data.Wire
 import org.json.JSONObject
 
-private fun pingClock() {
+internal fun RemoteModel.pingClock() {
     lastClockSentAt = SystemClock.elapsedRealtime()
     connection?.send(
         Wire

@@ -126,8 +126,8 @@ class RemoteModel(
     internal val updateScope get() = viewModelScope
     internal val recommendationEngine by lazy {
         RecommendationEngine(RecommendationPassportSigner(application.packageName + ".recommendation"))
-
     }
+
     init {
         app.unpinSession = ::endSessionStatus
         app.mediaAction = mediaActions::handle
@@ -606,9 +606,9 @@ class RemoteModel(
             "error" -> operationErrorInternal(frame)
             "operation.started" -> Unit
             else -> Unit
-
         }
     }
+
     private suspend fun welcome(value: JSONObject) {
         require(value.getInt("protocol_major") == 1) { "Update Host and Remote to compatible versions." }
         val invite = invitation
@@ -706,6 +706,7 @@ class RemoteModel(
             requestRecommendation()
         }
     }
+
     private suspend fun applyState(value: JSONObject) {
         val snapshot = mutable.value.enrichArtwork(Wire.snapshot(value))
         require(snapshot.hostId == mutable.value.profile?.hostId) { "Host identity did not match this pairing." }
@@ -763,6 +764,7 @@ class RemoteModel(
                 }
             }
     }
+
     fun prepare(song: Song) {
         preparationId = id()
         val requestId = preparationId
@@ -795,6 +797,7 @@ class RemoteModel(
                 }
             }
     }
+
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
@@ -815,6 +818,7 @@ class RemoteModel(
                 }
             }
     }
+
     fun savePreferences(
         name: String,
         theme: ThemePreference,
@@ -837,51 +841,6 @@ class RemoteModel(
                 showError("Could not save preferences", error.message ?: "Your previous settings were preserved.")
             } finally {
                 mutable.update { it.copy(savingPreferences = false) }
-            }
-        }
-    }
-
-    fun toggleFavorite(song: Song) {
-        if (mutable.value.savingFavorite) return
-        val saved = mutable.value.favorites.none { it.identity == song.identity }
-        val feedback =
-            RecommendationFeedback(
-                recommendationId = newRecommendationId(),
-                outcome = if (saved) RecommendationOutcome.FAVORITE else RecommendationOutcome.QUEUE_REMOVAL,
-                track = RecommendationTrack(song.source, song.id, song.artist, song.album),
-            )
-        recommendationEngine.recordFeedback(feedback)
-        sendRecommendationFeedback(feedback)
-        mutable.update { it.copy(savingFavorite = true) }
-        viewModelScope.launch {
-            try {
-                val library =
-                    withContext(ioDispatcher) {
-                        app.library.setFavorite(song, saved)
-                        app.database.saveRecommendationEvent(
-                            eventId = newRecommendationId(),
-                            recommendationId = feedback.recommendationId,
-                            source = song.source,
-                            songId = song.id,
-                            outcome = feedback.outcome.wire,
-                            positionMs = null,
-                            durationMs = song.durationMs,
-                            replacementJson = null,
-                            occurredAtMs = feedback.occurredAtMs,
-                        )
-                        app.library.load()
-                    }
-                mutable.update {
-                    it.copy(
-                        favorites = library.songs,
-                        unreadableFavorites = library.unreadable,
-                        notice = Notice(if (saved) "Saved to Favorites" else "Removed from Favorites"),
-                    )
-                }
-            } catch (error: Exception) {
-                showError("Could not update Favorites", error.message ?: "Your saved songs were preserved.")
-            } finally {
-                mutable.update { it.copy(savingFavorite = false) }
             }
         }
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 extension HostService {
-    fileprivate func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
+    func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
         guard let sequence = frame.sequence, sequence >= (acknowledgedCredits[peer.id] ?? 0),
             sequence <= (lastCreditSent[peer.id] ?? 0)
         else {
@@ -12,11 +12,11 @@ extension HostService {
         sendCredits(peer)
     }
 
-    fileprivate func deliverCredits() {
+    func deliverCredits() {
         for peer in network.peers.values where peer.authenticated { sendCredits(peer) }
     }
 
-    fileprivate func sendCredits(_ peer: NetworkService.Peer) {
+    func sendCredits(_ peer: NetworkService.Peer) {
         guard let actor = peer.remoteId else { return }
         let sent = lastCreditSent[peer.id] ?? 0
         let acknowledged = acknowledgedCredits[peer.id] ?? 0

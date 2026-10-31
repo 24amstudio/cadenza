@@ -32,8 +32,8 @@ final class HostService {
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
     private var lyricDocument: LyricDocument?
-    fileprivate var lastCreditSent: [String: Int64] = [:]
-    fileprivate var acknowledgedCredits: [String: Int64] = [:]
+    var lastCreditSent: [String: Int64] = [:]
+    var acknowledgedCredits: [String: Int64] = [:]
     private var lastMaintenance: Int64 = 0
     private var receivedCommands: Set<String> = []
     private var transportDecisions: [String: EffectiveTransportDecision] = [:]

@@ -38,13 +38,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         }
         bufferPool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
         let tapUUID = UUID()
-        var tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
-        tapDescription.uuid = tapUUID
-        tapDescription.name = "Cadenza Sing Music Tap"
-        tapDescription.isPrivate = true
-        tapDescription.isMixdown = true
-        tapDescription.isMono = false
-        tapDescription.muteBehavior = .mutedWhenTapped
+        let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
         var createdTap = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &createdTap)
         guard tapStatus == noErr else { throw audioError("create process tap", status: tapStatus) }
@@ -135,7 +129,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         var device = AudioDeviceID(kAudioObjectUnknown)
         var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
         let deviceStatus = AudioObjectGetPropertyData(
-            kAudioObjectSystemObject, &address, 0, nil, &deviceSize, &device)
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &deviceSize, &device)
         guard deviceStatus == noErr, device != kAudioObjectUnknown else {
             throw SingAudioError.unavailable("The default output device is unavailable.")
         }
@@ -205,13 +199,16 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &address, 0, nil, &size) == noErr else {
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else {
             return nil
         }
         let count = Int(size) / MemoryLayout<AudioObjectID>.size
         var objects = [AudioObjectID](repeating: 0, count: count)
         let readStatus = objects.withUnsafeMutableBufferPointer { buffer in
-            AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nil, &size, buffer.baseAddress)
+            guard let baseAddress = buffer.baseAddress else { return kAudioHardwareBadObjectError }
+            return AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, baseAddress
+            )
         }
         guard readStatus == noErr else {
             return nil
@@ -238,7 +235,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard
             AudioObjectGetPropertyData(
-                kAudioObjectSystemObject, &deviceAddress, 0, nil, &deviceSize, &device
+                AudioObjectID(kAudioObjectSystemObject), &deviceAddress, 0, nil, &deviceSize, &device
             ) == noErr,
             device != kAudioObjectUnknown
         else { return nil }

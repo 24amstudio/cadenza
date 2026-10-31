@@ -27,20 +27,22 @@ struct RecommendationRanker: Sendable {
         let artist = candidate.track.artistId ?? candidate.song.artist
         let personal = profile.affinities[identity] ?? profile.affinities[artist] ?? 0
         let negative = profile.negativePreferences[identity] ?? profile.negativePreferences[artist] ?? 0
-        let transition = profile.transitions
-            .filter {
-                $0.to.source == candidate.track.source && $0.to.id == candidate.track.id
-                    && $0.from == (context.current ?? profile.recent.first)
-            }
-            .map { $0.weight * $0.confidence }
-            .max() ?? 0
+        let transition =
+            profile.transitions
+                .filter {
+                    $0.to.source == candidate.track.source && $0.to.id == candidate.track.id
+                        && $0.from == (context.current ?? profile.recent.first)
+                }
+                .map { $0.weight * $0.confidence }
+                .max() ?? 0
         let familiar = profile.recent.contains(candidate.track) ? 0.14 : 0
         let novelty = profile.noveltyBudget * (profile.recent.contains(candidate.track) ? 0 : 0.12)
         let contextFit = context.intent == profile.sessionIntent && context.intent != nil ? 0.1 : 0
         let apple = (candidate.applePrior ?? 0) * 0.06
-        let fatigue = context.recent.filter {
-            $0.artistId == candidate.track.artistId && candidate.track.artistId != nil
-        }.isEmpty ? 0 : -0.16
+        let fatigue =
+            context.recent.filter {
+                $0.artistId == candidate.track.artistId && candidate.track.artistId != nil
+            }.isEmpty ? 0 : -0.16
         let completeness = candidate.metadataCompleteness * 0.06
         return personal * 0.42 + transition * 0.28 + familiar + novelty + contextFit + apple + completeness
             + candidate.confidence * 0.1 + negative * -0.34 + fatigue

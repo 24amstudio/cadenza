@@ -64,10 +64,11 @@ extension HostStore {
     }
 
     func recommendationProfile(remoteId: String) throws -> RecommendationProfile? {
-        guard let row = try database.query(
-            "SELECT profile_json FROM recommendation_profiles WHERE remote_id=?",
-            [.text(remoteId)]
-        ).first,
+        guard
+            let row = try database.query(
+                "SELECT profile_json FROM recommendation_profiles WHERE remote_id=?",
+                [.text(remoteId)]
+            ).first,
             let json = row["profile_json"]?.string,
             let data = json.data(using: .utf8)
         else { return nil }

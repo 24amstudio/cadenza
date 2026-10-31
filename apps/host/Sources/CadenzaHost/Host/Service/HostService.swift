@@ -402,7 +402,6 @@ final class HostService {
         } catch { fail(error, request: frame, peer: peer) }
     }
 
-
     private func authenticate(_ frame: Frame, peer: NetworkService.Peer) throws {
         var token: String?
         let remoteId: String

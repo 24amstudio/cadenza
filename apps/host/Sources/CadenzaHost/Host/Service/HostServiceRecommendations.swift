@@ -32,9 +32,10 @@ extension HostService {
                 )
             }
         }
-        let previous = try store.database.query(
-            "SELECT passport_sequence FROM recommendation_profiles WHERE remote_id=?", [.text(actor)]
-        ).first?["passport_sequence"]?.integer ?? 0
+        let previous =
+            try store.database.query(
+                "SELECT passport_sequence FROM recommendation_profiles WHERE remote_id=?", [.text(actor)]
+            ).first?["passport_sequence"]?.integer ?? 0
         let passport = try recommendationVerifier.verify(signed, remoteId: actor, previousSequence: previous)
         let profile = try recommendationVerifier.materialize(passport, remoteId: actor)
         if try store.recommendationPublicKey(remoteId: actor) == nil {

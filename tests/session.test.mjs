@@ -163,6 +163,40 @@ test('state preserves unknown quality and durations without presenting invented 
   );
 });
 
+test('Sing state is bounded and exposes failure without carrying audio', () => {
+  const snapshot = {
+    host_id: uuid,
+    host_epoch: uuid,
+    revision: 0,
+    sequence: 1,
+    host_time_ms: 500,
+    allow_cross_remote_edits: false,
+    playing: true,
+    volume: 50,
+    queue: [],
+    quality: 'unknown',
+    synchronized: true,
+    observation_gap: false,
+    sing: {
+      status: 'failed',
+      vocal_percent: 0,
+      latency_ms: 120,
+      backend: 'coreml',
+      issue: 'Audio capture permission is required.',
+    },
+  };
+
+  assert.equal(validateSession({ version: 1, type: 'state', snapshot }), true);
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'state',
+      snapshot: { ...snapshot, sing: { ...snapshot.sing, vocal_percent: 101 } },
+    }),
+    false,
+  );
+});
+
 test('Host artwork requests require bounded URL payloads and cached responses', () => {
   const request = {
     version: 1,

@@ -30,7 +30,10 @@
         { "$ref": "#/$defs/move" },
         { "$ref": "#/$defs/transport" },
         { "$ref": "#/$defs/seek" },
-        { "$ref": "#/$defs/volume" }
+        { "$ref": "#/$defs/volume" },
+        { "$ref": "#/$defs/singEnable" },
+        { "$ref": "#/$defs/singDisable" },
+        { "$ref": "#/$defs/singMix" }
       ]
     }
   },
@@ -123,6 +126,40 @@
       "properties": {
         "kind": { "const": "playback.volume" },
         "percent": { "type": "integer", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "singEnable": {
+      "type": "object",
+      "required": ["kind", "occurrence_id"],
+      "properties": {
+        "kind": { "const": "sing.enable" },
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        }
+      },
+      "additionalProperties": false
+    },
+    "singDisable": {
+      "type": "object",
+      "required": ["kind", "occurrence_id"],
+      "properties": {
+        "kind": { "const": "sing.disable" },
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        }
+      },
+      "additionalProperties": false
+    },
+    "singMix": {
+      "type": "object",
+      "required": ["kind", "occurrence_id", "vocal_percent"],
+      "properties": {
+        "kind": { "const": "sing.mix" },
+        "occurrence_id": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+        },
+        "vocal_percent": { "type": "integer", "minimum": 0, "maximum": 100 }
       },
       "additionalProperties": false
     }

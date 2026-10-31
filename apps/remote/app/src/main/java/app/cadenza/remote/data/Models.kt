@@ -47,6 +47,15 @@ data class CurrentPlayback(
     val sampledAtHostMs: Long,
 )
 
+data class SingSession(
+    val status: String,
+    val vocalPercent: Int,
+    val latencyMs: Long?,
+    val backend: String?,
+    val modelRevision: String?,
+    val issue: String?,
+)
+
 data class HostSnapshot(
     val hostId: String,
     val hostEpoch: String,
@@ -65,6 +74,7 @@ data class HostSnapshot(
     val synchronized: Boolean,
     val issue: String?,
     val observationGap: Boolean,
+    val sing: SingSession? = null,
 )
 
 data class LyricLine(
@@ -213,6 +223,22 @@ object Wire {
                 )
             }
         require(queue.size <= 256) { "The shared queue exceeds its limit." }
+        val sing =
+            value.optJSONObject("sing")?.let {
+                SingSession(
+                    it.getString("status"),
+                    it.getInt("vocal_percent"),
+                    it.nullableLong("latency_ms"),
+                    it.nullableString("backend"),
+                    it.nullableString("model_revision"),
+                    it.nullableString("issue"),
+                ).also { session ->
+                    require(session.status in listOf("unavailable", "preparing", "ready", "active", "failed")) {
+                        "Unknown Sing state."
+                    }
+                    require(session.vocalPercent in 0..100) { "Invalid Sing mix." }
+                }
+            }
         return HostSnapshot(
             value.identifier("host_id"),
             value.identifier("host_epoch"),
@@ -231,6 +257,7 @@ object Wire {
             value.getBoolean("synchronized"),
             value.nullableString("issue"),
             value.optBoolean("observation_gap"),
+            sing,
         ).also {
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos")) {
                 "Invalid playback format or volume."

@@ -51,6 +51,7 @@ struct Frame: Codable, Sendable {
     var logEntries: [LogReportEntry]? = nil
     var artworkUrl: String? = nil
     var artworkDataBase64: String? = nil
+    var sing: SingSession? = nil
     var recommendationPassport: SignedRecommendationPassport? = nil
     var recommendationQuery: RecommendationQuery? = nil
     var recommendationResult: RecommendationResult? = nil

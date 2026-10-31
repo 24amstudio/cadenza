@@ -7,14 +7,15 @@
     <key>CFBundleDisplayName</key><string>Cadenza Host</string>
     <key>CFBundleExecutable</key><string>CadenzaHost</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.0.3</string>
-    <key>CFBundleVersion</key><string>5</string>
+    <key>CFBundleShortVersionString</key><string>0.1.2</string>
+    <key>CFBundleVersion</key><string>7</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSMultipleInstancesProhibited</key><true/>
     <key>NSAppleMusicUsageDescription</key><string>Cadenza detects the storefront for your Apple Music account during setup.</string>
     <key>NSAppleEventsUsageDescription</key><string>Cadenza Host controls Music when you use a paired Cadenza Remote.</string>
     <key>NSLocalNetworkUsageDescription</key><string>Cadenza connects to your paired Remotes on this network.</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Cadenza uses Bluetooth to connect to paired Remotes when you choose Bluetooth transport.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>Cadenza captures Music audio locally to separate vocals for Sing mode.</string>
     <key>NSBonjourServices</key><array><string>_cadence._tcp</string></array>
 </dict>
 </plist>

@@ -35,7 +35,7 @@ struct RecommendationTests {
         let signed = SignedRecommendationPassport(
             payloadBase64: payload.base64EncodedString(),
             publicKeyBase64: key.publicKey.rawRepresentation.base64EncodedString(),
-            signatureBase64: key.signature(for: payload).derRepresentation.base64EncodedString()
+            signatureBase64: try key.signature(for: payload).derRepresentation.base64EncodedString()
         )
         let verifier = RecommendationPassportVerifier()
         #expect(try verifier.verify(signed, remoteId: identifier(), previousSequence: 0).sequence == 1)

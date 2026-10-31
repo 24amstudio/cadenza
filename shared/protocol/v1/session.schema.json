@@ -4,20 +4,12 @@
   "type": "object",
   "required": ["version", "type"],
   "properties": {
-    "version": {
-      "const": 1
-    },
-    "update_action": {
-      "enum": ["check", "install"]
-    },
+    "version": { "const": 1 },
+    "update_action": { "enum": ["check", "install"] },
     "update_state": {
       "enum": ["current", "ready", "installing", "failed", "unavailable"]
     },
-    "update_version": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 40
-    },
+    "update_version": { "type": "string", "minLength": 1, "maxLength": 40 },
     "type": {
       "enum": [
         "pair",
@@ -940,12 +932,7 @@
       "then": {
         "required": ["update_action", "request_id"],
         "properties": {
-          "update_action": {
-            "enum": ["check", "install"]
-          },
-          "request_id": {
-            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
-          }
+          "update_action": { "$ref": "#/properties/update_action" }
         }
       }
     },
@@ -960,21 +947,8 @@
       "then": {
         "required": ["request_id", "update_state"],
         "properties": {
-          "request_id": {
-            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
-          },
-          "update_state": {
-            "enum": ["current", "ready", "installing", "failed", "unavailable"]
-          },
-          "update_version": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 40
-          },
-          "message": {
-            "type": "string",
-            "maxLength": 300
-          }
+          "update_state": { "$ref": "#/properties/update_state" },
+          "message": { "type": "string", "maxLength": 300 }
         }
       }
     },

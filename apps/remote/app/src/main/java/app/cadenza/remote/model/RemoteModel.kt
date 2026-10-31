@@ -42,6 +42,12 @@ import app.cadenza.remote.network.RemoteConnection
 import app.cadenza.remote.network.RemoteStatusPublisher
 import app.cadenza.remote.network.loadPairingCertificate
 import app.cadenza.remote.network.parsePairingInvitation
+import app.cadenza.remote.recommendation.RecommendationEngine
+import app.cadenza.remote.recommendation.RecommendationFeedback
+import app.cadenza.remote.recommendation.RecommendationOutcome
+import app.cadenza.remote.recommendation.RecommendationPassportSigner
+import app.cadenza.remote.recommendation.RecommendationTrack
+import app.cadenza.remote.recommendation.newRecommendationId
 import app.cadenza.remote.search.SearchHistory
 import app.cadenza.remote.search.correctionFor
 import app.cadenza.remote.updates.RemoteUpdater
@@ -201,6 +207,10 @@ class RemoteModel(
     internal val updateDispatcher get() = ioDispatcher
 
     internal val updateScope get() = viewModelScope
+
+    internal val recommendationEngine by lazy {
+        RecommendationEngine(RecommendationPassportSigner(application.packageName + ".recommendation"))
+    }
 
     init {
         app.mediaAction = mediaActions::handle
@@ -592,6 +602,9 @@ class RemoteModel(
     fun toggleFavorite(song: Song) {
         if (mutable.value.savingFavorite) return
         val saved = mutable.value.favorites.none { it.identity == song.identity }
+        val feedback = favoriteRecommendationFeedback(song, saved)
+        recommendationEngine.recordFeedback(feedback)
+        sendRecommendationFeedback(feedback)
         reportLog("info", "favorite.requested", "song=${song.source}:${song.id} saved=$saved")
         mutable.update { it.copy(savingFavorite = true) }
         viewModelScope.launch {
@@ -621,6 +634,7 @@ class RemoteModel(
         key: String,
         song: Song? = null,
     ) {
+        recordRecommendationCommand(action)
         mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key, song) }
     }

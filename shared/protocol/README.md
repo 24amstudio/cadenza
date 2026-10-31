@@ -20,6 +20,8 @@ LAN discovery uses Bonjour/DNS-SD first. Host also joins the local SSDP multicas
 
 Messages are bounded to 1 MiB; command messages to 64 KiB. Counters are nonnegative integers no greater than `2^53 - 1`. IDs use their documented string form. A catalog ID, library persistent ID, queue request ID, playback occurrence ID, and command ID are distinct concepts. Duplicate songs retain separate queue occurrences.
 
+Recommendation messages are defined in `v1/recommendation.schema.json`. A Remote sends a bounded, signed `recommendation.passport`; Host verifies the Remote identity, signing key, sequence, expiry, consent, and resource limits before materializing a per-Remote profile. `recommendation.query`, `recommendation.result`, `recommendation.feedback`, and `recommendation.plan` carry the selected occurrence and its durable plan metadata. Plans are idempotent and use the existing native command receipt path; an inconclusive result is queried by its original plan ID and never replayed as a new mutation.
+
 Unknown mutation fields and message types are rejected. Optional defined fields may be omitted. Protocol-major incompatibility requires an upgrade; no deprecated v1 fields or extension namespace currently exists.
 
 ## Session and timing

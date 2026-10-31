@@ -11,6 +11,10 @@ import app.cadenza.remote.data.nullableString
 import app.cadenza.remote.data.objects
 import app.cadenza.remote.media.SessionStatus
 import app.cadenza.remote.network.PathMeasurement
+import app.cadenza.remote.recommendation.RecommendationFeedback
+import app.cadenza.remote.recommendation.RecommendationOutcome
+import app.cadenza.remote.recommendation.RecommendationTrack
+import app.cadenza.remote.recommendation.newRecommendationId
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,6 +28,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
     lastReceivedAt = SystemClock.elapsedRealtime()
     when (frame.getString("type")) {
         "session.status" -> applySessionStatus(frame.getJSONObject("status"))
+        "recommendation.result" -> applyRecommendationResult(frame)
         "host.update.status" -> applyHostUpdateStatus(frame)
         "heartbeat" -> {
             if (frame.optString("host_epoch") == mutable.value.snapshot?.hostEpoch) {
@@ -200,6 +205,10 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
                 .put("heartbeat", true),
         )
     }
+    if ("recommendations.cree" in mutable.value.capabilities) {
+        sendRecommendationPassport()
+        requestRecommendation()
+    }
     clockJob?.cancel()
     clockJob =
         viewModelScope.launch {
@@ -243,6 +252,7 @@ internal suspend fun RemoteModel.applyState(value: JSONObject) {
     if (changedSong || previous?.revision != snapshot.revision || SystemClock.elapsedRealtime() - lastCachedAt >= 5_000) {
         withContext(ioDispatcher) { app.database.saveState(snapshot.hostId, value) }
         lastCachedAt = SystemClock.elapsedRealtime()
+        requestRecommendation()
     }
     mutable.update {
         it.copy(
@@ -270,6 +280,13 @@ internal fun RemoteModel.enrichArtwork(snapshot: HostSnapshot): HostSnapshot = m
 
 internal suspend fun RemoteModel.applyCredit(frame: JSONObject) {
     val host = mutable.value.profile?.hostId ?: return
+    if (frame.optInt("play_count_delta", 0) == 1) {
+        val song = frame.getJSONObject("song")
+        val track = RecommendationTrack(song.getString("source"), song.getString("id"))
+        val feedback = qualifiedRecommendationFeedback(frame, track)
+        recommendationEngine.recordFeedback(feedback)
+        sendRecommendationFeedback(feedback)
+    }
     val cursor =
         withContext(ioDispatcher) {
             frame.optJSONObject("song_metadata")?.let { app.database.remember(host, listOf(Wire.song(it))) }
@@ -278,3 +295,24 @@ internal suspend fun RemoteModel.applyCredit(frame: JSONObject) {
     connection?.send(Wire.frame("analytics.ack").put("sequence", cursor))
     reloadStatistics()
 }
+
+internal fun favoriteRecommendationFeedback(
+    song: Song,
+    saved: Boolean,
+): RecommendationFeedback =
+    RecommendationFeedback(
+        recommendationId = newRecommendationId(),
+        outcome = if (saved) RecommendationOutcome.FAVORITE else RecommendationOutcome.QUEUE_REMOVAL,
+        track = RecommendationTrack(song.source, song.id, song.artist, song.album),
+    )
+
+private fun qualifiedRecommendationFeedback(
+    frame: JSONObject,
+    track: RecommendationTrack,
+): RecommendationFeedback =
+    RecommendationFeedback(
+        recommendationId = frame.optString("recommendation_id", newRecommendationId()),
+        outcome = RecommendationOutcome.QUALIFIED_PLAY,
+        track = track,
+        positionMs = frame.optLong("played_ms_delta", 0),
+    )

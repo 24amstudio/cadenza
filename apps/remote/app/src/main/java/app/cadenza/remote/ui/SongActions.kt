@@ -104,15 +104,16 @@ fun SongActions(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ActionButton(
                             "Add to queue",
-                            pending = state.preparing || key in state.pending,
                             enabled = canQueue,
                             modifier = Modifier.weight(1f),
                         ) {
-                            model.command(JSONObject().put("kind", "queue.enqueue").put("song", song.identity.json()), key)
+                            model.command(JSONObject().put("kind", "queue.enqueue").put("song", song.identity.json()), key, song)
                         }
                         OutlinedButton(
-                            onClick = { model.command(JSONObject().put("kind", "queue.play_next").put("song", song.identity.json()), key) },
-                            enabled = canQueue && !state.preparing && "queue.play-next" in state.capabilities && key !in state.pending,
+                            onClick = {
+                                model.command(JSONObject().put("kind", "queue.play_next").put("song", song.identity.json()), key, song)
+                            },
+                            enabled = canQueue && "queue.play-next" in state.capabilities,
                             modifier = Modifier.weight(1f).sizeIn(minHeight = 56.dp),
                         ) { Text("Play next", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         FavoriteIconButton(model, state, song)
@@ -128,7 +129,7 @@ fun SongActions(
                                     key,
                                 )
                             },
-                            enabled = canQueue && !state.preparing && mayInterrupt && key !in state.pending,
+                            enabled = canQueue && mayInterrupt,
                             modifier = Modifier.weight(1f).sizeIn(minHeight = 56.dp),
                         ) { Text("Play now", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         if (!prepared) {

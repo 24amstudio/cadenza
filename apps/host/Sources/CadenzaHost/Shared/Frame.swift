@@ -1,5 +1,12 @@
 import Foundation
 
+// One Remote log entry. A log.report frame carries a batch of these under log_entries.
+struct LogReportEntry: Codable, Sendable {
+    var level: String
+    var action: String
+    var message: String
+}
+
 struct Frame: Codable, Sendable {
     var version: Int = 1
     var type: String
@@ -23,6 +30,7 @@ struct Frame: Codable, Sendable {
     var updateState: String? = nil
     var updateVersion: String? = nil
     var songs: [Song]? = nil
+    var terms: [String]? = nil
     var lyrics: LyricDocument? = nil
     var clock: ClockSample? = nil
     var errorCode: String? = nil
@@ -40,6 +48,12 @@ struct Frame: Codable, Sendable {
     var logAction: String? = nil
     var logLevel: String? = nil
     var logMessage: String? = nil
+    var logEntries: [LogReportEntry]? = nil
     var artworkUrl: String? = nil
     var artworkDataBase64: String? = nil
+    var chunkIndex: Int? = nil
+    var chunkCount: Int? = nil
+    var totalBytes: Int? = nil
+    var sha256: String? = nil
+    var dataBase64: String? = nil
 }

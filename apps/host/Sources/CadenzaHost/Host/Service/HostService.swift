@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OSLog
 
@@ -8,6 +9,7 @@ final class HostService {
     let catalog = Catalog()
     let cache: HostCache
     let artwork: ArtworkProvider
+    let motion: MotionProvider
     let logger: HostLogger
     let lyrics: Lyrics
     let network = NetworkService()
@@ -53,7 +55,10 @@ final class HostService {
         let logDatabase = try Database(
             url: directory.appendingPathComponent("database", isDirectory: true)
                 .appendingPathComponent("logs.sqlite"), role: .logs)
+        // Log batches are written in transactions, so the log file need not fsync on every commit.
+        try logDatabase.execute("PRAGMA synchronous=NORMAL")
         self.logger = try HostLogger(database: logDatabase)
+        music.logger = logger
         let cache = try HostCache(
             database: store.database,
             mediaDirectory: directory.appendingPathComponent("database", isDirectory: true)
@@ -61,9 +66,15 @@ final class HostService {
             limitBytes: configuration.cacheLimitBytes)
         self.cache = cache
         self.artwork = ArtworkProvider(cache: cache)
+        self.motion = MotionProvider(catalog: catalog, cache: cache)
         self.lyrics = Lyrics(cache: cache, providerEnabled: configuration.lyricsProviderEnabled)
         logger.log(.info, category: "host.lifecycle", action: "service.initialized", "Host service initialized")
         queue = QueueCoordinator(store: store, music: music, catalog: catalog)
+        queue.logger = logger
+        queue.currentArtwork = { [weak self] occurrenceId in
+            try await self?.currentMusicArtwork(occurrenceId)
+        }
+        network.logger = logger
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             self.onSnapshot?(snapshot)
@@ -217,6 +228,7 @@ final class HostService {
         network.stop()
         pairingBootstrap.stop()
         bluetooth.stop()
+        logger.flush()
     }
 
     private func startStatusReporting() {
@@ -318,9 +330,8 @@ final class HostService {
 
     private func receive(_ frame: Frame, from peer: NetworkService.Peer) {
         let receivedAt = monotonicMs()
-        logger.log(
-            .debug, category: "protocol", action: "frame.received", "Received frame", remoteVersion: peer.remoteVersion,
-            metadata: ["type": frame.type])
+        // Frames are counted per minute rather than written one by one. Each action a frame requests is logged in full.
+        logger.count(frame.type)
         do {
             if !peer.authenticated {
                 try authenticate(frame, peer: peer)
@@ -366,13 +377,7 @@ final class HostService {
                 peer.transportPolicy = policy
                 network.send(
                     Frame(type: "transport.configured", requestId: frame.requestId, transport: policy), to: peer)
-            case "log.report":
-                guard let action = frame.logAction, let level = frame.logLevel,
-                    let message = frame.logMessage, let logLevel = HostLogLevel(rawValue: level)
-                else { throw CadenzaError.failure("invalid_command", "Invalid log report.") }
-                logger.log(
-                    logLevel, category: "remote", action: action, message,
-                    source: "remote", remoteVersion: peer.remoteVersion)
+            case "log.report": try recordRemoteLogs(frame, peer: peer)
             case "artwork.get": loadArtwork(peer: peer, requestId: frame.requestId, url: frame.artworkUrl)
             case "clock": try clock(frame, peer: peer)
             case "state.get": network.send(Frame(type: "state", snapshot: try queue.snapshot()), to: peer)
@@ -383,10 +388,11 @@ final class HostService {
                     receivedCommands.contains(actor + (frame.commandId ?? ""))
                     || queue.commandQueued(frame.commandId ?? "", actor: actor)
                 network.send(try queue.journal.status(frame, actor: actor, queued: queued), to: peer)
-            case "search", "song.prepare": operation(frame, peer: peer)
+            case "search", "search.suggest", "song.prepare": operation(frame, peer: peer)
             case "operation.cancel":
                 if let id = frame.requestId { jobs.removeValue(forKey: peer.id + id)?.cancel() }
             case "lyrics.get": loadLyrics(peer: peer, requestId: frame.requestId)
+            case "motion.get": loadMotion(peer: peer, requestId: frame.requestId, occurrenceId: frame.occurrenceId)
             default: throw CadenzaError.failure("invalid_command", "Unsupported message.")
             }
         } catch { fail(error, request: frame, peer: peer) }
@@ -413,6 +419,9 @@ final class HostService {
                 throw CadenzaError.failure("invalid_command", "Enter a Remote name from 1 to 80 characters.")
             }
             (remoteId, token) = try store.pair(name: name)
+            logger.log(
+                .info, category: "network", action: "remote.paired", "Remote paired with this Host",
+                remoteVersion: pair.remoteVersion, metadata: ["remote_id": remoteId, "name": name])
             peer.supportsHeartbeat = pair.heartbeat == true
             peer.remoteVersion = pair.remoteVersion
             self.invitation = nil
@@ -442,6 +451,9 @@ final class HostService {
         settleCredits()
         peer.remoteId = remoteId
         peer.authenticated = true
+        logger.log(
+            .info, category: "network", action: "remote.authenticated", "Remote connected",
+            remoteVersion: peer.remoteVersion, metadata: ["remote_id": remoteId, "method": frame.type])
         lastCreditSent[peer.id] = cursor
         acknowledgedCredits[peer.id] = cursor
         let welcomeAddress =
@@ -582,6 +594,7 @@ final class HostService {
 
     private func command(_ frame: Frame, peer: NetworkService.Peer, actor: String, receivedAt: Int64) {
         let reservation = actor + (frame.commandId ?? "")
+        logCommand(frame, peer: peer)
         receivedCommands.insert(reservation)
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -596,6 +609,7 @@ final class HostService {
                     + " started=\(startedAt)"
                     + " completed=\(completedAt)"
                 self.latencyLog.debug("\(latencyMessage, privacy: .public)")
+                self.logCommandResult(result, request: frame, peer: peer, receivedAt: receivedAt)
                 self.network.send(result, to: peer)
             } catch { self.fail(error, request: frame, peer: peer) }
         }
@@ -612,8 +626,18 @@ final class HostService {
         jobs[key] = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.jobs.removeValue(forKey: key) }
+            let startedAt = monotonicMs()
             do {
-                if frame.type == "search" {
+                if frame.type == "search.suggest" {
+                    // Suggestions are counted rather than logged one by one: they arrive as the user types.
+                    let suggestions = try await self.catalog.suggest(frame.query ?? "")
+                    try Task.checkCancellation()
+                    self.queue.remember(suggestions.songs)
+                    var reply = Frame(type: "search.suggestions", requestId: requestId, songs: suggestions.songs)
+                    reply.terms = suggestions.terms
+                    self.network.send(reply, to: peer)
+                    self.logger.count("search.suggest")
+                } else if frame.type == "search" {
                     let songs: [Song]
                     if frame.scope == "library" {
                         songs = try await self.music.librarySearch(frame.query ?? "")
@@ -621,6 +645,14 @@ final class HostService {
                         songs = try await self.catalog.search(frame.query ?? "")
                     }
                     try Task.checkCancellation()
+                    self.logger.log(
+                        .info, category: "catalog", action: "search.completed", "Search returned \(songs.count) songs",
+                        remoteVersion: peer.remoteVersion,
+                        metadata: [
+                            "scope": frame.scope ?? "catalog", "query": String((frame.query ?? "").prefix(80)),
+                            "count": String(songs.count), "ms": String(monotonicMs() - startedAt),
+                            "remote_id": peer.remoteId ?? "",
+                        ])
                     self.queue.remember(songs)
                     self.network.send(Frame(type: "search.result", requestId: requestId, songs: songs), to: peer)
                 } else {
@@ -682,6 +714,13 @@ final class HostService {
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
                     else { return }
                     self.lyricDocument = document
+                    self.logger.log(
+                        .info, category: "lyrics", action: "lyrics.loaded",
+                        "Lyrics ready with \(document.lines.count) lines",
+                        metadata: [
+                            "occurrence_id": current.occurrenceId, "source": document.source,
+                            "translation": document.translationSource,
+                        ])
                     self.network.broadcast(Frame(type: "lyrics", lyrics: document))
                     let translated = await self.lyrics.english(document, song: current.song)
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == translated.occurrenceId
@@ -692,6 +731,9 @@ final class HostService {
                     }
                 } catch {
                     if !Task.isCancelled {
+                        self.logger.log(
+                            .warning, category: "lyrics", action: "lyrics.unavailable", error.localizedDescription,
+                            metadata: ["occurrence_id": current.occurrenceId])
                         var unavailable = Frame(type: "lyrics.unavailable")
                         unavailable.occurrenceId = current.occurrenceId
                         unavailable.message = error.localizedDescription
@@ -702,11 +744,26 @@ final class HostService {
         } catch { fail(error, request: Frame(type: "lyrics.get", requestId: requestId), peer: peer) }
     }
 
+    // Music's artwork for the playing track. The caller checks that the occurrence is still current.
+    private func currentMusicArtwork(_ occurrenceId: String) async throws -> String? {
+        guard let data = try await music.currentArtwork() else { return nil }
+        return try artwork.storeMusicArtwork(data, occurrenceId: occurrenceId)
+    }
+
     private func loadArtwork(peer: NetworkService.Peer, requestId: String?, url: String?) {
-        guard let requestId, let url, ArtworkProvider.isAllowedURL(url), jobs.count < 4 else {
+        guard let requestId, let url else {
             fail(
-                CadenzaError.failure("artwork_unavailable", "Artwork request is invalid or Host is busy."),
+                CadenzaError.failure("artwork_unavailable", "Artwork request is invalid."),
                 request: Frame(type: "artwork.get", requestId: requestId), peer: peer)
+            return
+        }
+        // A refusal is answered with artwork.unavailable, which releases the Remote's pending request. An error
+        // frame would leave that request pending, so the artwork would never be asked for again.
+        guard ArtworkProvider.isServableURL(url), jobs.count < 16 else {
+            var refusal = Frame(type: "artwork.unavailable", requestId: requestId)
+            refusal.artworkUrl = url
+            refusal.message = "Artwork is not available from Cadenza Host right now."
+            network.send(refusal, to: peer)
             return
         }
         let key = peer.id + requestId
@@ -732,6 +789,62 @@ final class HostService {
                 }
             }
         }
+    }
+
+    // Animated album art reaches the Remote as bounded chunks of one cached file, with a digest the Remote checks before
+    // playing it. A song change or a refusal is answered with motion.unavailable, which releases the Remote's request.
+    private func loadMotion(peer: NetworkService.Peer, requestId: String?, occurrenceId: String?) {
+        guard let requestId, let occurrenceId else {
+            fail(
+                CadenzaError.failure("motion_unavailable", "Motion request is invalid."),
+                request: Frame(type: "motion.get", requestId: requestId), peer: peer)
+            return
+        }
+        let key = peer.id + requestId
+        jobs[key]?.cancel()
+        jobs[key] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.jobs.removeValue(forKey: key) }
+            var unavailable = Frame(type: "motion.unavailable", requestId: requestId)
+            unavailable.occurrenceId = occurrenceId
+            do {
+                guard let current = try self.queue.snapshot().current, current.occurrenceId == occurrenceId,
+                    let video = try await self.motion.video(album: current.song.album, artist: current.song.artist)
+                else {
+                    self.network.send(unavailable, to: peer)
+                    return
+                }
+                // The song may change during the download. The newer occurrence has its own request.
+                guard try self.queue.snapshot().current?.occurrenceId == occurrenceId else { return }
+                self.sendMotion(video, requestId: requestId, occurrenceId: occurrenceId, to: peer)
+            } catch {
+                if !Task.isCancelled {
+                    unavailable.message = error.localizedDescription
+                    self.network.send(unavailable, to: peer)
+                }
+            }
+        }
+    }
+
+    private static let motionChunkBytes = 480 * 1_024
+
+    private func sendMotion(_ video: Data, requestId: String, occurrenceId: String, to peer: NetworkService.Peer) {
+        let count = (video.count + Self.motionChunkBytes - 1) / Self.motionChunkBytes
+        let digest = SHA256.hash(data: video).map { String(format: "%02x", $0) }.joined()
+        for index in 0..<count {
+            let start = index * Self.motionChunkBytes
+            var frame = Frame(type: "motion.chunk", requestId: requestId)
+            frame.occurrenceId = occurrenceId
+            frame.chunkIndex = index
+            frame.chunkCount = count
+            frame.totalBytes = video.count
+            frame.sha256 = digest
+            frame.dataBase64 = video[start..<min(start + Self.motionChunkBytes, video.count)].base64EncodedString()
+            network.send(frame, to: peer)
+        }
+        logger.log(
+            .info, category: "motion", action: "motion.sent", "Motion artwork sent in \(count) chunks",
+            metadata: ["occurrence_id": occurrenceId, "bytes": String(video.count)])
     }
 
     private func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
@@ -763,11 +876,63 @@ final class HostService {
         } catch { onIssue?(error.localizedDescription) }
     }
 
+    // Every command field a debugging session needs, without the song's full metadata.
+    private func commandMetadata(_ frame: Frame, peer: NetworkService.Peer) -> [String: String] {
+        var metadata = [
+            "command_id": frame.commandId ?? "", "remote_id": peer.remoteId ?? "",
+            "kind": frame.action?.kind ?? "", "expected_revision": frame.expectedRevision.map(String.init) ?? "",
+        ]
+        if let song = frame.action?.song { metadata["song"] = song.source + ":" + song.id }
+        if let entry = frame.action?.entryId { metadata["entry_id"] = entry }
+        if let occurrence = frame.action?.occurrenceId { metadata["occurrence_id"] = occurrence }
+        if let position = frame.action?.positionMs { metadata["position_ms"] = String(position) }
+        if let percent = frame.action?.percent { metadata["percent"] = String(percent) }
+        return metadata
+    }
+
+    private func logCommand(_ frame: Frame, peer: NetworkService.Peer) {
+        logger.log(
+            .info, category: "command", action: "command.received",
+            "Remote requested \(frame.action?.kind ?? "a command")", remoteVersion: peer.remoteVersion,
+            metadata: commandMetadata(frame, peer: peer))
+    }
+
+    private func logCommandResult(_ result: Frame, request: Frame, peer: NetworkService.Peer, receivedAt: Int64) {
+        let outcome = result.outcome ?? "unknown"
+        var metadata = commandMetadata(request, peer: peer)
+        metadata["outcome"] = outcome
+        metadata["error_code"] = result.errorCode ?? ""
+        metadata["ms"] = String(monotonicMs() - receivedAt)
+        logger.log(
+            outcome == "applied" ? .info : .warning, category: "command", action: "command.result",
+            "Command \(outcome)", remoteVersion: peer.remoteVersion, metadata: metadata)
+    }
+
+    // Remote entries keep the Remote's identity, so one debugging session can follow both sides of a request.
+    private func recordRemoteLogs(_ frame: Frame, peer: NetworkService.Peer) throws {
+        let entries =
+            frame.logEntries
+            ?? frame.logAction.map {
+                [LogReportEntry(level: frame.logLevel ?? "", action: $0, message: frame.logMessage ?? "")]
+            } ?? []
+        guard !entries.isEmpty else { throw CadenzaError.failure("invalid_command", "Invalid log report.") }
+        for entry in entries {
+            guard let level = HostLogLevel(rawValue: entry.level) else { continue }
+            logger.log(
+                level, category: "remote", action: entry.action, entry.message, source: "remote",
+                remoteVersion: peer.remoteVersion, metadata: ["remote_id": peer.remoteId ?? ""])
+        }
+    }
+
     private func fail(_ error: Error, request: Frame, peer: NetworkService.Peer) {
         let code = (error as? CadenzaError)?.code ?? "unavailable"
         logger.log(
-            .warning, category: "protocol", action: "request.failed", "Request failed",
-            remoteVersion: peer.remoteVersion, metadata: ["type": request.type, "code": code])
+            .warning, category: "protocol", action: "request.failed", error.localizedDescription,
+            remoteVersion: peer.remoteVersion,
+            metadata: [
+                "type": request.type, "code": code, "remote_id": peer.remoteId ?? "",
+                "command_id": request.commandId ?? "", "request_id": request.requestId ?? "",
+            ])
         if request.type == "command" {
             do {
                 let phase = try store.database.query(

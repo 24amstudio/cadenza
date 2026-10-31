@@ -7,12 +7,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-internal fun RemoteModel.checkRequestInternal(commandId: String) {
-    statusChecks.add(commandId)
-    queryRequest(commandId)
-    dismissPrompt()
-    mutable.update { it.copy(notice = Notice("Checking request status")) }
-}
+internal const val UNCONFIRMED_MESSAGE = "Music may still apply this request. Cadenza is checking."
 
 internal fun RemoteModel.queryRequest(commandId: String) {
     if (pending.containsKey(commandId)) {
@@ -23,57 +18,50 @@ internal fun RemoteModel.queryRequest(commandId: String) {
 internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
     val commandId = frame.getString("command_id")
     val original = pending[commandId] ?: return
-    if (frame.nullableString("host_epoch") != mutable.value.snapshot?.hostEpoch) return
+    if (frame.nullableString("host_epoch") != hostSnapshot?.hostEpoch) return
     original.timer.cancel()
+    reportLog(
+        "info",
+        "command.result",
+        "command_id=$commandId outcome=${frame.optString("outcome")} error=${frame.optString("error_code")}",
+    )
     val sentAt = original.sentAtElapsedMs
     if (sentAt > 0) {
         mutable.update { it.copy(lastCommandLatencyMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)) }
     }
     when (frame.getString("outcome")) {
-        "applied" -> {
-            statusChecks.remove(commandId)
-            val profile = mutable.value.profile
-            if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
-            pending.remove(commandId)
-            mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
-        }
-        "unconfirmed" -> {
-            val askedByUser = statusChecks.remove(commandId)
-            val resolved = frame.optBoolean("resolved", false)
-            if (resolved) {
-                val profile = mutable.value.profile
-                if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
-                pending.remove(commandId)
-                mutable.update { it.copy(pending = it.pending - original.key) }
+        "applied" -> finishCommand(commandId)
+        "unconfirmed" ->
+            if (frame.optBoolean("resolved", false)) {
+                finishCommand(commandId)
+            } else {
+                // Keep the record so a later status answer can still settle it, but stop showing the intent.
+                original.unconfirmed = true
+                publishOptimisticInternal()
+                showWarning(UNCONFIRMED_MESSAGE)
             }
-            mutable.update {
-                val message = frame.optString("message", "Check this request after Host reconciles Music.")
-                when (unconfirmedPresentation(askedByUser, resolved, it.prompt != null)) {
-                    UnconfirmedPresentation.Prompt ->
-                        it.copy(
-                            pending = it.pending - original.key,
-                            prompt = Prompt("Request unconfirmed", message, if (resolved) null else commandId),
-                        )
-                    UnconfirmedPresentation.Quiet -> it.copy(pending = it.pending - original.key)
-                    UnconfirmedPresentation.Notice ->
-                        it.copy(pending = it.pending - original.key, notice = Notice("Request still needs confirmation"))
-                }
-            }
-        }
         else -> {
-            statusChecks.remove(commandId)
-            val profile = mutable.value.profile
-            if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
-            pending.remove(commandId)
-            mutable.update { it.copy(pending = it.pending - original.key) }
-            showError("Request blocked", frame.optString("message", "The queue changed or Host settings protect this request."))
+            finishCommand(commandId)
+            reportFailure(
+                frame.nullableString("error_code"),
+                "Request blocked",
+                frame.optString("message", "The queue changed or Host settings protect this request."),
+            )
         }
     }
+}
+
+private suspend fun RemoteModel.finishCommand(commandId: String) {
+    val profile = mutable.value.profile
+    if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
+    pending.remove(commandId)
+    publishOptimisticInternal()
 }
 
 internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
     val request = frame.nullableString("request_id")
     val message = frame.optString("message", "The operation failed.")
+    val code = frame.nullableString("error_code")
     if (request != null && request == searchId) {
         searchTimeout?.cancel()
         mutable.update { it.copy(searching = false) }
@@ -85,10 +73,10 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
     if (request != null && request == lyricRequestId) {
         lyricsTimeout?.cancel()
         mutable.update { it.copy(lyricsLoading = false, lyricsIssue = message) }
-        if (lyricUserInitiated) showError("Lyrics unavailable", message)
+        if (lyricUserInitiated) reportFailure(code, "Lyrics unavailable", message)
         lyricUserInitiated = false
     } else {
-        showError("Action unavailable", message)
+        reportFailure(code, "Action unavailable", message)
     }
     if (frame.optString("error_code") in listOf("authentication", "revoked")) disconnect()
 }

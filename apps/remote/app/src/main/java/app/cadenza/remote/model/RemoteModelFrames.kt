@@ -56,11 +56,27 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
             )
             mutable.update { it.copy(clockUncertaintyMs = clock.uncertaintyMs.takeIf { clock.ready }) }
         }
-        "search.result" ->
-            if (frame.nullableString("request_id") == searchId) {
-                searchTimeout?.cancel()
-                val songs = frame.getJSONArray("songs").objects().map(Wire::song)
-                mutable.update { it.copy(results = songs, searching = false) }
+        "search.result" -> {
+            val requestId = frame.nullableString("request_id")
+            when {
+                requestId == null -> Unit
+                requestId == searchId -> {
+                    searchTimeout?.cancel()
+                    val songs = frame.getJSONArray("songs").objects().map(Wire::song)
+                    mutable.update { it.copy(results = songs, searching = false) }
+                    correctIfNeeded(songs)
+                }
+                requestId == correctionId -> {
+                    val songs = frame.getJSONArray("songs").objects().map(Wire::song)
+                    mutable.update { it.copy(correctedResults = songs) }
+                }
+            }
+        }
+        "search.suggestions" ->
+            if (frame.nullableString("request_id") == suggestionId) {
+                val terms = frame.optJSONArray("terms")?.let { items -> (0 until items.length()).map { items.getString(it) } }
+                val songs = frame.optJSONArray("songs")?.objects()?.map(Wire::song)
+                mutable.update { it.copy(suggestedTerms = terms.orEmpty(), suggestedSongs = songs.orEmpty()) }
             }
         "song.ready" ->
             if (frame.nullableString("request_id") == preparationId) {
@@ -89,6 +105,8 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
             }
         }
         "artwork" -> applyArtworkFrame(frame)
+        "motion.chunk" -> applyMotionChunk(frame)
+        "motion.unavailable" -> motionUnavailable(frame)
         "artwork.unavailable" -> frame.nullableString("artwork_url")?.let(::releaseArtwork)
         "analytics.credit" -> applyCredit(frame)
         "lyrics.unavailable" ->
@@ -167,8 +185,12 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
         hello.put("request_id", id())
         connection?.send(hello)
     }
-    flushLogOutbox()
+    scheduleLogFlush()
     publishStatus()
+    mutable.value.snapshot
+        ?.current
+        ?.occurrenceId
+        ?.let { requestMotion(it) }
     if ("remote.configure" in mutable.value.capabilities) {
         connection?.send(
             Wire
@@ -204,10 +226,8 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
     val outstanding = withContext(ioDispatcher) { app.database.pending(profile) }
     for ((frame, key) in outstanding) {
         val commandId = frame.getString("command_id")
-        if (!pending.containsKey(commandId)) {
-            pending[commandId] = PendingCommand(frame, key, Job().apply { complete() })
-            mutable.update { it.copy(pending = it.pending + key) }
-        }
+        // A restored seek has no trustworthy Host time, so it waits for the status answer instead of being predicted.
+        if (!pending.containsKey(commandId)) trackPending(frame, key, optimisticIntent(frame, profile.remoteId, null, null))
         queryRequest(commandId)
     }
 }
@@ -215,8 +235,9 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
 internal suspend fun RemoteModel.applyState(value: JSONObject) {
     val snapshot = enrichArtwork(Wire.snapshot(value))
     require(snapshot.hostId == mutable.value.profile?.hostId) { "Host identity did not match this pairing." }
-    val previous = mutable.value.snapshot
+    val previous = hostSnapshot
     if (previous?.hostEpoch == snapshot.hostEpoch && snapshot.sequence <= previous.sequence) return
+    hostSnapshot = snapshot
     if (previous != null && previous.hostEpoch != snapshot.hostEpoch) clock.reset()
     val changedSong = snapshot.current?.occurrenceId != previous?.current?.occurrenceId
     if (changedSong || previous?.revision != snapshot.revision || SystemClock.elapsedRealtime() - lastCachedAt >= 5_000) {
@@ -225,13 +246,15 @@ internal suspend fun RemoteModel.applyState(value: JSONObject) {
     }
     mutable.update {
         it.copy(
-            snapshot = snapshot,
+            snapshot = snapshot.withOptimisticIntents(optimisticIntents()),
             lastStateAt = SystemClock.elapsedRealtime(),
             lyrics = if (changedSong) null else it.lyrics,
             lyricsIssue = if (changedSong) null else it.lyricsIssue,
             lyricsLoading = if (changedSong) false else it.lyricsLoading,
+            motion = if (changedSong) null else it.motion,
         )
     }
+    if (changedSong) snapshot.current?.occurrenceId?.let { requestMotion(it) }
     if (!foreground && !snapshot.playing) {
         endSessionStatus()
     }

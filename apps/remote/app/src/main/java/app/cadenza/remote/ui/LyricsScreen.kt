@@ -1,10 +1,18 @@
 package app.cadenza.remote.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +66,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.lerp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -296,6 +305,56 @@ private fun CompactTrackIdentity(
 }
 
 @Composable
+private fun LyricTranslation(
+    translation: String?,
+    index: Int,
+    active: Int,
+    revealed: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val activeLine = index == active
+    // Lines nearest the active line lead the reveal.
+    val revealDelay = abs(index - active).coerceAtMost(6) * 40
+    val emphasis by animateFloatAsState(
+        if (activeLine) 1f else 0f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-translation-emphasis",
+    )
+    val translationAlpha by animateFloatAsState(
+        if (activeLine) 1f else 0.68f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-translation-alpha",
+    )
+    val translationBlur by animateDpAsState(
+        when {
+            activeLine -> 0.dp
+            active < 0 || abs(index - active) == 1 -> 2.dp
+            else -> 4.dp
+        },
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-translation-blur",
+    )
+    AnimatedVisibility(
+        visible = translation != null && revealed,
+        modifier = modifier,
+        enter =
+            fadeIn(tween(320, delayMillis = revealDelay, easing = FastOutSlowInEasing)) +
+                expandVertically(
+                    tween(320, delayMillis = revealDelay, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Top,
+                ),
+        exit = fadeOut(tween(160)) + shrinkVertically(tween(160)),
+    ) {
+        Text(
+            translation.orEmpty(),
+            style = lerp(MaterialTheme.typography.titleMedium, MaterialTheme.typography.titleLarge, emphasis),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.graphicsLayer { alpha = translationAlpha }.blur(translationBlur),
+        )
+    }
+}
+
+@Composable
 internal fun LyricsContent(
     model: RemoteModel,
     state: RemoteState,
@@ -308,6 +367,10 @@ internal fun LyricsContent(
     key(occurrence) {
         val list = rememberLazyListState()
         var following by rememberSaveable { mutableStateOf(true) }
+        // Translations already in the document reveal together when this song's lyrics first appear.
+        // Later arrivals animate on their own, and lines that scroll into view afterward appear as-is.
+        val translationReveal = remember { MutableTransitionState(false) }
+        LaunchedEffect(document != null) { translationReveal.targetState = document != null }
         val active = activeLyricIndex(document, occurrence, currentPosition, !stale)
         val userScroll =
             remember {
@@ -389,7 +452,7 @@ internal fun LyricsContent(
                         itemsIndexed(document.lines, key = { _, line -> line.id }) { index, line ->
                             val canSeek =
                                 state.connected && !stale && mayInterruptPlayback(state) &&
-                                    line.endMs > line.startMs && "playback.seek" !in state.pending
+                                    line.endMs > line.startMs
                             Column(
                                 Modifier
                                     .fillMaxWidth()
@@ -446,34 +509,12 @@ internal fun LyricsContent(
                                         modifier = Modifier.blur(if (index == active) 0.dp else 2.dp),
                                     )
                                 }
-                                line.translation?.let {
-                                    val translationAlpha by animateFloatAsState(
-                                        if (index == active) 1f else 0.68f,
-                                        animationSpec = tween(260, easing = FastOutSlowInEasing),
-                                        label = "lyric-translation-alpha",
-                                    )
-                                    val translationStyle =
-                                        if (index == active) {
-                                            MaterialTheme.typography.titleLarge
-                                        } else {
-                                            MaterialTheme.typography.titleMedium
-                                        }
-                                    Text(
-                                        it,
-                                        style = translationStyle,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier =
-                                            Modifier
-                                                .graphicsLayer { alpha = translationAlpha }
-                                                .blur(
-                                                    when {
-                                                        index == active -> 0.dp
-                                                        active < 0 || abs(index - active) == 1 -> 2.dp
-                                                        else -> 4.dp
-                                                    },
-                                                ),
-                                    )
-                                }
+                                LyricTranslation(
+                                    translation = line.translation,
+                                    index = index,
+                                    active = active,
+                                    revealed = translationReveal.targetState,
+                                )
                             }
                         }
                     }
@@ -491,7 +532,7 @@ private fun LyricsSource(document: LyricDocument) {
             "apple_music" -> "Apple Music"
             else -> "Host provider"
         }
-    Text(
+    val label =
         "$source · " +
             when (document.translationSource) {
                 "apple" -> "English translation from Apple Music"
@@ -499,8 +540,16 @@ private fun LyricsSource(document: LyricDocument) {
                 "apple_and_machine" -> "English translation from Apple Music and on-device translation"
                 "original" -> "Original lyrics"
                 else -> "Lyrics"
-            },
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+            }
+    AnimatedContent(
+        targetState = label,
+        transitionSpec = { fadeIn(tween(320)) togetherWith fadeOut(tween(160)) },
+        label = "lyrics-source",
+    ) { text ->
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

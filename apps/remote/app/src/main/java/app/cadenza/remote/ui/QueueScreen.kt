@@ -81,7 +81,7 @@ fun QueueScreen(
                                             "queue:" + entry.id,
                                         )
                                     },
-                                    enabled = editable && mayCrossPrevious && "queue:" + entry.id !in state.pending,
+                                    enabled = editable && mayCrossPrevious,
                                 ) { Icon(cadenzaVector(CadenzaIcon.UP), "Move " + entry.song.title + " earlier") }
                                 IconButton(
                                     onClick = {
@@ -93,7 +93,7 @@ fun QueueScreen(
                                             "queue:" + entry.id,
                                         )
                                     },
-                                    enabled = editable && mayCrossNext && "queue:" + entry.id !in state.pending,
+                                    enabled = editable && mayCrossNext,
                                 ) { Icon(cadenzaVector(CadenzaIcon.DOWN), "Move " + entry.song.title + " later") }
                                 TextButton(
                                     onClick = {
@@ -102,8 +102,8 @@ fun QueueScreen(
                                             "queue:" + entry.id,
                                         )
                                     },
-                                    enabled = editable && "queue:" + entry.id !in state.pending,
-                                ) { Text(if ("queue:" + entry.id in state.pending) "Working…" else "Remove") }
+                                    enabled = editable,
+                                ) { Text("Remove") }
                             }
                         }
                     }

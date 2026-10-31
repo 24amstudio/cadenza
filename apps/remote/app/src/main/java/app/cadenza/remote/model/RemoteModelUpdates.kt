@@ -24,6 +24,23 @@ fun RemoteModel.dismissPrompt() {
     mutableState.update { it.copy(prompt = null) }
 }
 
+// Routes a failure by severity: a fatal Host problem interrupts with a modal, anything else is a snackbar.
+internal fun RemoteModel.reportFailure(
+    code: String?,
+    title: String,
+    message: String,
+) {
+    when (failureSeverity(code)) {
+        FailureSeverity.Fatal -> if (mutableState.value.prompt?.message != message) showError(title, message)
+        FailureSeverity.Warning -> showWarning(message)
+    }
+}
+
+internal fun RemoteModel.showWarning(message: String) {
+    reportLog("warning", "ui.warning", message)
+    mutableState.update { it.copy(notice = Notice(message)) }
+}
+
 fun RemoteModel.dismissNotice(id: String) {
     mutableState.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 }

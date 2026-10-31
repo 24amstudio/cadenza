@@ -40,7 +40,10 @@ internal fun SingControls(
     if ("sing.mode" !in state.capabilities) return
     val sing = state.snapshot?.sing ?: return
     val canMix = sing.status == "ready" || sing.status == "active"
-    val pendingKeys = model.pending.values.map { it.key }.toSet()
+    val pendingKeys =
+        model.pending.values
+            .map { it.key }
+            .toSet()
     val pendingEnable = "sing.enable" in pendingKeys
     val pendingDisable = "sing.disable" in pendingKeys
     var vocal by remember(current.occurrenceId) { mutableFloatStateOf(-1f) }

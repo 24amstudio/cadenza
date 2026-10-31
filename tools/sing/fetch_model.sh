@@ -10,7 +10,7 @@ output_directory="${1:-}"
 repository='mlx-community/mel-roformer-kim-vocal-2-mlx'
 revision='64cbfcb004e39430e5f584552c05949440ec39ce'
 model_bytes='456483463'
-model_sha256='312c38e5b698f8dfaa4d6064e8f79010744825828917871a9d22673a43eb7fe'
+model_sha256='312c38e5b698f8dfaa4d6064e8f79010744825828917871a9d22673a43eb7fe5'
 config_bytes='833'
 config_sha256='3300eacac960ab46933ef6df6b838eb35de1f0321db9242c1b06e6d2a6a62b58'
 license_bytes='1500'
@@ -19,6 +19,11 @@ base_url="https://huggingface.co/$repository/resolve/$revision"
 download_query='?download=true'
 temporary_directory="${output_directory}.tmp.$$"
 chunk_bytes=$((16 * 1024 * 1024))
+
+[[ "$model_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+    printf '%s\n' 'The pinned Sing model SHA-256 must contain 64 lowercase hexadecimal characters.' >&2
+    exit 2
+}
 
 matches_pin() {
     local file="$1"

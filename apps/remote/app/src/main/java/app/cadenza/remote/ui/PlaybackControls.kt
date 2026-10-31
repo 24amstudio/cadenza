@@ -65,7 +65,7 @@ internal fun PlaybackTimeline(
                     "playback.seek",
                 )
             },
-            enabled = mayInterruptPlayback(state) && current.song.durationMs != null && "playback.seek" !in state.pending,
+            enabled = mayInterruptPlayback(state) && current.song.durationMs != null,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(duration(if (dragging >= 0) dragging.toLong() else currentPosition))
@@ -96,29 +96,21 @@ internal fun PlaybackTransport(
                     "playback.previous",
                 )
             },
-            enabled = mayInterrupt && "playback.previous" !in state.pending,
+            enabled = mayInterrupt,
         ) {
-            if ("playback.previous" in state.pending) {
-                CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Previous song pending" })
-            } else {
-                Icon(cadenzaVector(CadenzaIcon.PREVIOUS), "Previous song")
-            }
+            Icon(cadenzaVector(CadenzaIcon.PREVIOUS), "Previous song")
         }
         Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         FilledIconButton(
             onClick = { model.command(JSONObject().put("kind", playback).put("occurrence_id", current.occurrenceId), playback) },
-            enabled = state.connected && playback !in state.pending,
+            enabled = state.connected,
             modifier = Modifier.size(if (compact) 56.dp else 72.dp),
         ) {
-            if (playback in state.pending) {
-                CircularProgressIndicator(Modifier.size(28.dp), color = MaterialTheme.colorScheme.onPrimary)
-            } else {
-                Icon(
-                    cadenzaVector(if (snapshot.playing) CadenzaIcon.PAUSE else CadenzaIcon.PLAY),
-                    if (snapshot.playing) "Pause in Cadenza Host" else "Resume in Cadenza Host",
-                    Modifier.size(if (compact) 28.dp else 36.dp),
-                )
-            }
+            Icon(
+                cadenzaVector(if (snapshot.playing) CadenzaIcon.PAUSE else CadenzaIcon.PLAY),
+                if (snapshot.playing) "Pause in Cadenza Host" else "Resume in Cadenza Host",
+                Modifier.size(if (compact) 28.dp else 36.dp),
+            )
         }
         Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
         IconButton(
@@ -128,13 +120,9 @@ internal fun PlaybackTransport(
                     "playback.skip",
                 )
             },
-            enabled = mayInterrupt && "playback.skip" !in state.pending,
+            enabled = mayInterrupt,
         ) {
-            if ("playback.skip" in state.pending) {
-                CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Next song pending" })
-            } else {
-                Icon(cadenzaVector(CadenzaIcon.NEXT), "Next song")
-            }
+            Icon(cadenzaVector(CadenzaIcon.NEXT), "Next song")
         }
     }
 }

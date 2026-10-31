@@ -9,9 +9,12 @@ final class MusicAccessibility {
     private var cachedPane: AXUIElement?
     private var currentPid: pid_t?
     private var readDeadline: Int64 = 0
+    private var lastPermissionPrompt: Int64 = 0
+    var logger: HostLogger?
 
     private func beginRead(deadline: Int64? = nil) {
-        readDeadline = min(deadline ?? monotonicMs() + 200, monotonicMs() + 200)
+        // Callers pass the deadline of the whole operation. Without one, a read gets a short local budget.
+        readDeadline = deadline ?? monotonicMs() + 200
     }
 
     private func finishRead() throws {
@@ -24,6 +27,11 @@ final class MusicAccessibility {
 
     var permitted: Bool { AXIsProcessTrusted() }
 
+    /// Fails with music_permission before a command starts Music work that Accessibility cannot finish.
+    func requireAccess() throws {
+        _ = try root()
+    }
+
     func requestPermission() {
         // Literal value of kAXTrustedCheckOptionPrompt, which Swift 6 rejects as shared mutable state.
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
@@ -32,6 +40,17 @@ final class MusicAccessibility {
 
     private func root() throws -> AXUIElement {
         guard permitted else {
+            // The macOS prompt is shown at most once every ten minutes, so repeated commands do not stack dialogs.
+            logger?.log(
+                .warning, category: "accessibility", action: "permission.denied",
+                "Accessibility access is not granted to Cadenza Host")
+            if monotonicMs() - lastPermissionPrompt > 600_000 {
+                lastPermissionPrompt = monotonicMs()
+                logger?.log(
+                    .info, category: "accessibility", action: "permission.prompted",
+                    "Showed the macOS Accessibility prompt")
+                requestPermission()
+            }
             throw CadenzaError.failure("music_permission", "Allow Cadenza Host in Privacy & Security → Accessibility.")
         }
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first else {
@@ -72,6 +91,8 @@ final class MusicAccessibility {
         return element
     }
 
+    /// Full-subtree walk for small subtrees such as one row. Large views go through `shallow`, because a full walk
+    /// of Music's window reads thousands of elements and cannot finish inside a read budget.
     private func walk(_ root: AXUIElement) -> [AXUIElement] {
         var result: [AXUIElement] = []
         var stack: [(AXUIElement, Int)] = [(root, 0)]
@@ -82,10 +103,52 @@ final class MusicAccessibility {
         return result
     }
 
+    /// Depth- and count-limited search. Subtrees whose roles are in `skipping` are reported but not entered, so
+    /// rows and cells are never descended into unless a caller asks for them.
+    private func shallow(
+        _ start: AXUIElement,
+        maxDepth: Int,
+        maxNodes: Int,
+        skipping: Set<String> = [],
+        matching predicate: (AXUIElement) -> Bool
+    ) -> [AXUIElement] {
+        var found: [AXUIElement] = []
+        var visited = 0
+        var stack: [(AXUIElement, Int)] = [(start, 0)]
+        while let (element, depth) = stack.popLast(), visited < maxNodes, monotonicMs() < readDeadline {
+            visited += 1
+            if predicate(element) { found.append(element) }
+            if depth >= maxDepth || skipping.contains(string(element, kAXRoleAttribute)) { continue }
+            stack.append(contentsOf: children(element).reversed().map { ($0, depth + 1) })
+        }
+        return found
+    }
+
     private func label(_ element: AXUIElement) -> String {
         let values = [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
             .map { string(element, $0) }.filter { !$0.isEmpty }
         return values.joined(separator: " ")
+    }
+
+    private func isQueueHeading(_ element: AXUIElement) -> Bool {
+        string(element, kAXRoleAttribute) == kAXStaticTextRole
+            && ["playing next", "up next"].contains(
+                label(element).trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    /// AutoPlay's label carries a leading attachment character, so it is matched by substring.
+    private func isAutoPlayLabel(_ element: AXUIElement) -> Bool {
+        string(element, kAXRoleAttribute) == kAXStaticTextRole && label(element).lowercased().contains("autoplay")
+    }
+
+    private func scrollArea(enclosing element: AXUIElement) -> AXUIElement? {
+        var ancestor = parent(element)
+        for _ in 0..<12 {
+            guard let current = ancestor else { return nil }
+            if string(current, kAXRoleAttribute) == kAXScrollAreaRole { return current }
+            ancestor = parent(current)
+        }
+        return nil
     }
 
     private func normalized(_ value: String) -> String {
@@ -171,22 +234,17 @@ final class MusicAccessibility {
         {
             return cachedPane
         }
-        let elements = walk(root)
-        for heading in elements where string(heading, kAXRoleAttribute) == kAXStaticTextRole {
-            guard
-                ["playing next", "up next"].contains(
-                    label(heading).trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-            else { continue }
-            var ancestor = parent(heading)
-            for _ in 0..<12 {
-                guard let element = ancestor else { break }
-                if string(element, kAXRoleAttribute) == kAXScrollAreaRole {
-                    try finishRead()
-                    cachedPane = element
-                    return element
-                }
-                ancestor = parent(element)
-            }
+        // Music replaces the Playing Next heading with AutoPlay while the queue is empty.
+        let skipped: Set<String> = [kAXRowRole, kAXCellRole, kAXMenuBarRole, kAXMenuRole]
+        var markers = shallow(root, maxDepth: 24, maxNodes: 4_000, skipping: skipped) { isQueueHeading($0) }
+        if markers.isEmpty {
+            markers = shallow(root, maxDepth: 24, maxNodes: 4_000, skipping: skipped) { isAutoPlayLabel($0) }
+        }
+        for marker in markers {
+            guard let pane = scrollArea(enclosing: marker) else { continue }
+            try finishRead()
+            cachedPane = pane
+            return pane
         }
         throw CadenzaError.failure(
             "native_queue_unavailable",
@@ -202,72 +260,6 @@ final class MusicAccessibility {
         cachedPane = nil
     }
 
-    func searchCatalog(_ song: Song, deadline: Int64) async throws -> Bool {
-        beginRead(deadline: deadline)
-        let root = try root()
-        let textFields = walk(root).filter { element in
-            guard string(element, kAXRoleAttribute) == kAXTextFieldRole else { return false }
-            return attribute(element, "AXHidden") as? Bool != true
-        }
-        let fields = textFields.filter { element in
-            let values = [
-                string(element, kAXIdentifierAttribute), string(element, kAXTitleAttribute),
-                string(element, kAXDescriptionAttribute),
-            ].map { normalized($0) }
-            return values.contains { $0.contains("search") }
-        }
-        guard let field = fields.first ?? (textFields.count == 1 ? textFields.first : nil) else { return false }
-        let query = "\(song.title) \(song.artist)"
-        try click(field, deadline: deadline)
-        guard AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, query as CFTypeRef) == .success else {
-            return false
-        }
-        try returnKey(deadline: deadline)
-        while monotonicMs() < deadline {
-            beginRead(deadline: deadline)
-            let candidates = catalogSearchCandidates(root: root, song: song)
-            if candidates.count == 1, let candidate = candidates.first {
-                try click(candidate, deadline: deadline)
-                return true
-            }
-            try await Task.sleep(for: .milliseconds(120))
-        }
-        return false
-    }
-
-    private func returnKey(deadline: Int64) throws {
-        try requireDeadline(deadline)
-        guard let source = CGEventSource(stateID: .combinedSessionState),
-            let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
-            let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-        else {
-            throw CadenzaError.failure("native_queue_unavailable", "Music's search field could not accept input.")
-        }
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
-    }
-
-    private func catalogSearchCandidates(root: AXUIElement, song: Song) -> [AXUIElement] {
-        let roles = [kAXRowRole, kAXGroupRole, kAXButtonRole, "AXUIElement"]
-        let matches = walk(root).filter { element in
-            guard roles.contains(string(element, kAXRoleAttribute)) else { return false }
-            let nodes = walk(element)
-            let values = nodes.flatMap { node in
-                [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].map { string(node, $0) }
-            }
-            let title = normalized(song.title)
-            let artist = normalized(song.artist)
-            let exactTitle = values.contains { normalized($0) == title }
-            let exactArtist = values.contains { normalized($0) == artist }
-            let songResult = values.contains { normalized($0) == "song" || normalized($0).hasPrefix("song ") }
-            return exactTitle && exactArtist && songResult
-        }
-        // A container group repeats its result row's text, so only the innermost match is the result.
-        return matches.filter { match in
-            !walk(match).dropFirst().contains { node in matches.contains { CFEqual($0, node) } }
-        }
-    }
-
     func showLyrics(deadline: Int64) throws {
         beginRead(deadline: deadline)
         try showPanel(["lyrics", "show lyrics"], deadline: deadline)
@@ -276,7 +268,9 @@ final class MusicAccessibility {
 
     private func showPanel(_ names: [String], deadline: Int64) throws {
         let root = try root()
-        let matches = walk(root).filter { element in
+        let matches = shallow(
+            root, maxDepth: 24, maxNodes: 4_000, skipping: [kAXRowRole, kAXCellRole, kAXMenuBarRole, kAXMenuRole]
+        ) { element in
             let role = string(element, kAXRoleAttribute)
             guard [kAXButtonRole, kAXCheckBoxRole].contains(role),
                 attribute(element, "AXHidden") as? Bool != true
@@ -304,15 +298,13 @@ final class MusicAccessibility {
     func rows(deadline: Int64? = nil) throws -> [NativeQueueRow] {
         beginRead(deadline: deadline)
         let pane = try queuePane()
-        let nodes = walk(pane)
-        let autoplay =
-            nodes.firstIndex {
-                string($0, kAXRoleAttribute) == kAXStaticTextRole && label($0).lowercased() == "autoplay"
-            } ?? nodes.count
-        let result = nodes.prefix(autoplay).filter { string($0, kAXRoleAttribute) == kAXRowRole }.compactMap {
+        // Rows are read only between the Playing Next heading and AutoPlay. Each row's text is read on its own.
+        let nodes = shallow(pane, maxDepth: 10, maxNodes: 1_500, skipping: [kAXRowRole, kAXCellRole]) { _ in true }
+        let start = nodes.firstIndex { isQueueHeading($0) }.map { $0 + 1 } ?? nodes.count
+        let end = nodes[start...].firstIndex { isAutoPlayLabel($0) } ?? nodes.count
+        let result = nodes[start..<end].filter { string($0, kAXRoleAttribute) == kAXRowRole }.compactMap {
             row -> NativeQueueRow? in
-            let text = walk(row).filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
-                .map { string($0, kAXValueAttribute) }.filter { !$0.isEmpty }
+            let text = rowTexts(row)
             guard let title = text.first else { return nil }
             return NativeQueueRow(
                 token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: text.dropFirst().first ?? "",
@@ -323,30 +315,52 @@ final class MusicAccessibility {
         return result
     }
 
+    private func rowTexts(_ row: AXUIElement) -> [String] {
+        shallow(row, maxDepth: 5, maxNodes: 80) { string($0, kAXRoleAttribute) == kAXStaticTextRole }
+            .map { string($0, kAXValueAttribute) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// The track table that contains the requested song. Tables with a selected row come first, because a
+    /// song opened by its link is selected as soon as Music shows its album.
+    private func trackTables(_ root: AXUIElement) -> [AXUIElement] {
+        // Rows and cells hold the sidebar and every list item. A table is found without descending into them.
+        let tables = shallow(
+            root, maxDepth: 24, maxNodes: 1_500, skipping: [kAXMenuBarRole, kAXMenuRole, kAXRowRole, kAXCellRole]
+        ) {
+            string($0, kAXRoleAttribute) == kAXTableRole
+        }
+        return tables.sorted { hasSelectedRow($0) && !hasSelectedRow($1) }
+    }
+
+    private func hasSelectedRow(_ table: AXUIElement) -> Bool {
+        (attribute(table, kAXSelectedRowsAttribute) as? [AXUIElement])?.isEmpty == false
+    }
+
+    private func tableRows(_ table: AXUIElement) -> [AXUIElement] {
+        (attribute(table, kAXRowsAttribute) as? [AXUIElement]) ?? children(table)
+    }
+
+    private func isTrackRow(_ row: AXUIElement, song: Song) -> Bool {
+        let nodes = shallow(row, maxDepth: 5, maxNodes: 80) { _ in true }
+        let values =
+            nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
+            .map { string($0, kAXValueAttribute) }
+            + [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].map { string(row, $0) }
+        let exactTitle = values.contains { normalized($0) == normalized(song.title) }
+        let exactArtist = values.contains { normalized($0) == normalized(song.artist) }
+        // Music's album track rows often omit the artist from their AX text. The deep link already identifies
+        // catalog tracks; the exact title is the remaining identity exposed by Music's native UI.
+        return links(row, descendants: nodes, id: song.id) || (exactTitle && (song.source == "catalog" || exactArtist))
+    }
+
     private func selectedSong(_ song: Song, deadline: Int64) throws -> AXUIElement {
-        // Queued rows are excluded only when Up Next is readable. Preparing a song must not require that panel.
-        let queued = Set((try? rows(deadline: deadline))?.map(\.token) ?? [])
         beginRead(deadline: deadline)
         let root = try root()
-        let elements = walk(root)
-        let rows = elements.filter {
-            string($0, kAXRoleAttribute) == kAXRowRole
-                && !queued.contains("\(currentPid ?? 0)-\(CFHash($0))")
-        }
         var candidates: [AXUIElement] = []
-        for row in rows {
-            let nodes = walk(row)
-            let values =
-                nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
-                .map { string($0, kAXValueAttribute) }
-                + [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].map { string(row, $0) }
-            let exactTitle = values.contains { normalized($0) == normalized(song.title) }
-            let exactArtist = values.contains { normalized($0) == normalized(song.artist) }
-            let linked = links(row, descendants: nodes, id: song.id)
-            // Music's album track rows often omit the artist from their AX text. The
-            // deep link already identifies catalog tracks; the exact title is the
-            // remaining identity exposed by Music's native UI.
-            if linked || (exactTitle && (song.source == "catalog" || exactArtist)) { candidates.append(row) }
+        for table in trackTables(root) {
+            candidates = tableRows(table).prefix(200).filter { isTrackRow($0, song: song) }
+            if !candidates.isEmpty { break }
         }
         try finishRead()
         guard candidates.count == 1, let row = candidates.first else {
@@ -371,7 +385,7 @@ final class MusicAccessibility {
     /// The reason Music does not show the exact song as selected, or nil when it does.
     func preparationIssue(_ song: Song) -> String? {
         do {
-            _ = try selectedSong(song, deadline: monotonicMs() + 200)
+            _ = try selectedSong(song, deadline: monotonicMs() + 800)
             return nil
         } catch {
             return error.localizedDescription
@@ -423,20 +437,34 @@ final class MusicAccessibility {
         let result = AXUIElementPerformAction(element, kAXShowMenuAction as CFString)
         if result != .success {
             guard
-                let button = walk(element).first(where: {
-                    string($0, kAXRoleAttribute) == kAXMenuButtonRole || label($0).lowercased().contains("more")
-                })
+                let button = shallow(
+                    element, maxDepth: 4, maxNodes: 80,
+                    matching: {
+                        string($0, kAXRoleAttribute) == kAXMenuButtonRole || label($0).lowercased().contains("more")
+                    }
+                ).first
             else { throw CadenzaError.failure("native_queue_unavailable", "Music's song menu is unavailable.") }
             try press(button, deadline: deadline)
         }
         guard let root = application else {
             throw CadenzaError.failure("music_unavailable", "Music closed before its menu could be read.")
         }
-        let items = walk(root).filter { string($0, kAXRoleAttribute) == kAXMenuItemRole }
+        // A popup menu is a direct child of the application, so the search stays out of the window's tree.
+        let items = shallow(root, maxDepth: 4, maxNodes: 3_000, skipping: [kAXMenuBarRole, kAXWindowRole]) {
+            string($0, kAXRoleAttribute) == kAXMenuItemRole
+        }
         guard let target = items.first(where: { choices.contains(string($0, kAXTitleAttribute).lowercased()) }) else {
+            // The titles Music actually showed make a missing menu action diagnosable from the log alone.
+            let shown = items.map { string($0, kAXTitleAttribute) }.filter { !$0.isEmpty }.prefix(12)
+            logger?.log(
+                .warning, category: "accessibility", action: "menu.missing",
+                "No matching song menu action",
+                metadata: ["wanted": choices.joined(separator: " | "), "shown": shown.joined(separator: " | ")])
             throw CadenzaError.failure(
                 "native_queue_unavailable", "The required native queue menu action is unavailable.")
         }
+        logger?.log(
+            .info, category: "accessibility", action: "menu.pressed", "Pressed \(string(target, kAXTitleAttribute))")
         try press(target, deadline: deadline)
     }
 
@@ -510,25 +538,26 @@ final class MusicAccessibility {
 
     func quality(currentTitle: String) -> String {
         beginRead()
-        guard !currentTitle.isEmpty else { return "unknown" }
-        guard let root = try? root() else { return "unknown" }
-        for toolbar in walk(root) where string(toolbar, kAXRoleAttribute) == kAXToolbarRole {
-            let nodes = walk(toolbar)
-            guard nodes.contains(where: { label($0).contains(currentTitle) }),
-                nodes.contains(where: { string($0, kAXRoleAttribute) == kAXSliderRole })
-            else { continue }
-            let labels = nodes.filter { string($0, kAXRoleAttribute) == kAXButtonRole }.map(label)
-            if labels.contains(where: { $0.contains("Dolby Atmos") }) { return "dolby_atmos" }
-            if labels.contains(where: { $0.contains("Hi-Res Lossless") }) { return "hi_res_lossless" }
-            if labels.contains(where: { $0 == "Lossless" || $0.hasPrefix("Lossless ") }) { return "lossless" }
-        }
-        return "unknown"
+        guard !currentTitle.isEmpty, let root = try? root() else { return "unknown" }
+        // Music keeps the audio tier in its mini player badge. The toolbar this used to search does not hold it.
+        let badge = shallow(
+            root, maxDepth: 14, maxNodes: 1_500, skipping: [kAXMenuBarRole, kAXMenuRole, kAXRowRole, kAXCellRole]
+        ) {
+            string($0, kAXIdentifierAttribute) == "Music.miniPlayer.audioBadge"
+        }.first
+        guard let badge else { return "unknown" }
+        let text = [kAXDescriptionAttribute, kAXTitleAttribute, kAXValueAttribute].map { string(badge, $0) }
+            .joined(separator: " ")
+        return MusicQuality.tier(forBadge: text)
     }
 
     func mixing(currentTitle: String) -> (active: Bool?, incomingTitle: String?) {
         beginRead()
         guard !currentTitle.isEmpty, let root = try? root() else { return (nil, nil) }
-        for toolbar in walk(root) where string(toolbar, kAXRoleAttribute) == kAXToolbarRole {
+        let toolbars = shallow(root, maxDepth: 12, maxNodes: 1_200, skipping: [kAXMenuBarRole, kAXMenuRole]) {
+            string($0, kAXRoleAttribute) == kAXToolbarRole
+        }
+        for toolbar in toolbars {
             let nodes = walk(toolbar)
             guard nodes.contains(where: { label($0).contains(currentTitle) }) else { continue }
             let active = nodes.contains(where: {

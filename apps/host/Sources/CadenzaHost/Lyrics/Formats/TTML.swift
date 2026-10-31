@@ -75,6 +75,10 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         if text.hasSuffix("s"), let value = Double(text.dropLast()), value.isFinite, value >= 0, value < 86_400 {
             return Int64((value * 1_000).rounded())
         }
+        // Music writes times under one minute as bare seconds ("33.016"), not "0:33.016".
+        if let value = Double(text), value.isFinite, value >= 0, value < 86_400 {
+            return Int64((value * 1_000).rounded())
+        }
         let fields = text.split(separator: ":", omittingEmptySubsequences: false)
         let parts = fields.compactMap { Double($0) }
         guard (2...3).contains(parts.count), fields.count == parts.count,

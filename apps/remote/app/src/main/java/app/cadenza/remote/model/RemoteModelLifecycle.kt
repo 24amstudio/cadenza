@@ -6,8 +6,6 @@ import java.util.UUID
 
 internal fun RemoteModel.id(): String = UUID.randomUUID().toString()
 
-fun RemoteModel.checkRequest(commandId: String) = checkRequestInternal(commandId)
-
 fun RemoteModel.isStale(now: Long = SystemClock.elapsedRealtime()): Boolean = isStaleInternal(now)
 
 fun RemoteModel.position(now: Long): Long = positionInternal(now)
@@ -20,7 +18,7 @@ internal fun RemoteModel.beginPairingInternal() {
     discovery = null
     for (item in pending.values) item.timer.cancel()
     pending.clear()
-    statusChecks.clear()
+    hostSnapshot = null
     invitation = null
-    mutable.update { it.copy(profile = null, snapshot = null, lyrics = null, results = emptyList(), pending = emptySet()) }
+    mutable.update { it.copy(profile = null, snapshot = null, lyrics = null, results = emptyList()) }
 }

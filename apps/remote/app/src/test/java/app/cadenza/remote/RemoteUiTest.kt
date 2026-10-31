@@ -469,6 +469,57 @@ class RemoteUiTest {
     }
 
     @Test
+    fun searchSuggestsKnownSongsAndRanksThemFirst() {
+        showRankedSearch("search-suggestions-tablet")
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h960dp-mdpi")
+    fun searchSuggestionsReflowOnPhone() {
+        showRankedSearch("search-suggestions-phone")
+    }
+
+    @Test
+    fun searchNotesTheCorrectedTitleBesideTheResults() {
+        seedProfile()
+        openApp()
+        val corrected = Song("catalog", "pelukan", "Untuk Perempuan Yang Sedang Di Pelukan", "Payung Teduh", "Single", 301_000)
+        compose.runOnUiThread {
+            model.mutable.value =
+                model.mutable.value.copy(
+                    results = listOf(Song("catalog", "other", "Synthetic", "Synthetic artist")),
+                    correctedQuery = corrected.title,
+                    correctedResults = listOf(corrected),
+                )
+        }
+        navigate("Search")
+        compose.onNodeWithText("Also showing songs for \"${corrected.title}\"").assertIsDisplayed()
+        compose.onNodeWithText("Best match").assertIsDisplayed()
+        capture("search-corrected-tablet")
+    }
+
+    private fun showRankedSearch(evidence: String) {
+        seedProfile()
+        openApp()
+        val favorite = Song("catalog", "akad", "Akad", "Payung Teduh", "Single", 268_000)
+        val cover = Song("catalog", "cover", "Akad", "Another Artist", "Covers", 240_000)
+        compose.runOnUiThread {
+            model.mutable.value =
+                model.mutable.value.copy(
+                    favorites = listOf(favorite),
+                    results = listOf(cover, favorite),
+                    recentSearches = listOf("akad payung"),
+                )
+        }
+        navigate("Search")
+        compose.onNodeWithText("Song, artist, or album").performTextInput("akad")
+        compose.onNodeWithText("Recent search").assertIsDisplayed()
+        compose.onNodeWithText("Akad · Payung Teduh").assertIsDisplayed()
+        compose.onNodeWithText("Best match").assertIsDisplayed()
+        capture(evidence)
+    }
+
+    @Test
     fun analyticsDisplaysCommittedPersonalCountsAndObservedTime() {
         seedProfile()
         app.database.remember(hostId, listOf(Song("catalog", "123", "Personal favorite", "Synthetic artist")))
@@ -526,6 +577,62 @@ class RemoteUiTest {
         compose.onNodeWithText("I sing with you").assertIsNotSelected()
         compose.onNodeWithText("The night awakens").assertIsNotSelected()
         capture("lyrics-tablet")
+    }
+
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Test
+    fun translationArrivingLaterRevealsAroundTheOriginalLine() {
+        seedProfile()
+        createModel()
+        val untranslated =
+            LyricDocument(
+                UUID(0, 11).toString(),
+                UUID(0, 20).toString(),
+                "none",
+                listOf(LyricLine("first", "Tak terasa gelap pun jatuh", 0, 25_000, null)),
+                null,
+            )
+        val translated =
+            untranslated.copy(
+                revision = UUID(0, 21).toString(),
+                translationSource = "machine",
+                lines =
+                    listOf(
+                        LyricLine(
+                            "first",
+                            "Tak terasa gelap pun jatuh",
+                            0,
+                            25_000,
+                            "It is hard to believe that darkness has fallen",
+                        ),
+                    ),
+            )
+        val lyrics = mutableStateOf(untranslated)
+        compose.setContent {
+            val state by model.state.collectAsStateWithLifecycle()
+            MaterialExpressiveTheme { LyricsScreen(model, state.copy(lyrics = lyrics.value)) }
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Tak terasa gelap pun jatuh").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { lyrics.value = translated }
+        // Let the change compose before the clock moves, so the reveal starts at this moment.
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithText("Tak terasa gelap pun jatuh").assertIsDisplayed()
+        capture("lyrics-translation-arrival-120ms")
+        compose.mainClock.advanceTimeBy(240)
+        compose.onNodeWithText("Tak terasa gelap pun jatuh").assertIsDisplayed()
+        capture("lyrics-translation-arrival-360ms")
+        compose.mainClock.autoAdvance = true
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("It is hard to believe that darkness has fallen").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("It is hard to believe that darkness has fallen").assertIsDisplayed()
+        compose.onNodeWithText("Apple Music · English machine translation").assertIsDisplayed()
+        compose.onNodeWithText("Tak terasa gelap pun jatuh").assertIsDisplayed()
+        capture("lyrics-translation-arrived")
     }
 
     @OptIn(ExperimentalMaterial3ExpressiveApi::class)

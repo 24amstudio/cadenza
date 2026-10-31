@@ -38,6 +38,18 @@ function nativeBoundary(persistentId = 'AB1234567890CDEF') {
       },
     ],
     search: (_library, value) => {
+      // Music's scripting dictionary defines these search fields; any other value fails to convert.
+      const searchFields = [
+        'albums',
+        'all',
+        'artists',
+        'composers',
+        'displayed',
+        'names',
+      ];
+
+      if (!searchFields.includes(value.only))
+        throw new Error("Can't convert types.");
       query = value.for;
 
       return [track];

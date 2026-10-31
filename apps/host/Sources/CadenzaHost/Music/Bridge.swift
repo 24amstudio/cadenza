@@ -4,6 +4,9 @@ import Foundation
 @MainActor
 final class MusicBridge {
     let accessibility = MusicAccessibility()
+    var logger: HostLogger? {
+        didSet { accessibility.logger = logger }
+    }
 
     private func script(_ arguments: [String], deadline: Int64? = nil) async throws -> Data {
         if let deadline, monotonicMs() >= deadline {
@@ -14,8 +17,34 @@ final class MusicBridge {
             throw CadenzaError.failure("music_unavailable", "The Music automation script is missing.")
         }
         let timeout = deadline.map { min(0.9, max(0.01, Double($0 - monotonicMs()) / 1_000)) } ?? 2
-        return try await Subprocess.run(
-            "/usr/bin/osascript", ["-l", "JavaScript", url.path] + arguments, timeout: timeout)
+        let started = monotonicMs()
+        do {
+            let data = try await Subprocess.run(
+                "/usr/bin/osascript", ["-l", "JavaScript", url.path] + arguments, timeout: timeout)
+            logScript(arguments, started: started, failure: nil)
+            return data
+        } catch {
+            logScript(arguments, started: started, failure: error)
+            throw error
+        }
+    }
+
+    // Status polls run continuously, so only slow or failed polls are written. Every other Music action is logged.
+    private func logScript(_ arguments: [String], started: Int64, failure: Error?) {
+        let action = arguments.first ?? "unknown"
+        let elapsed = monotonicMs() - started
+        if action == "status", failure == nil, elapsed < 1_000 {
+            logger?.count("music.status")
+            return
+        }
+        let detail = arguments.dropFirst().joined(separator: " ")
+        logger?.log(
+            failure == nil && elapsed < 1_000 ? .info : .warning, category: "music", action: "music." + action,
+            failure?.localizedDescription ?? "Music \(action) finished",
+            metadata: [
+                "ms": String(elapsed), "outcome": failure == nil ? "ok" : "failed",
+                "arguments": String(detail.prefix(160)),
+            ])
     }
 
     func status(deadline: Int64? = nil) async throws -> MusicStatus {
@@ -33,6 +62,22 @@ final class MusicBridge {
         return try await Wire.decode(Song.self, from: script(["resolve", identity.id]))
     }
 
+    // Music's own artwork is the authority for the track it plays, including streams with no catalog match.
+    func currentArtwork() async throws -> Data? {
+        guard
+            let script = HostResources.bundle.url(
+                forResource: "music-artwork", withExtension: "applescript", subdirectory: "Resources")
+        else {
+            throw CadenzaError.failure("music_unavailable", "The Music artwork script is missing.")
+        }
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-artwork-" + identifier() + ".bin")
+        defer { try? FileManager.default.removeItem(at: output) }
+        _ = try await Subprocess.run("/usr/bin/osascript", [script.path, output.path], timeout: 4)
+        guard let data = try? Data(contentsOf: output), !data.isEmpty else { return nil }
+        return data
+    }
+
     func control(_ action: CommandAction, deadline: Int64) async throws {
         let operation = action.kind.replacingOccurrences(of: "playback.", with: "")
         guard ["pause", "resume", "skip", "previous", "stop", "seek", "volume"].contains(operation) else {
@@ -45,6 +90,11 @@ final class MusicBridge {
     }
 
     func prepare(_ song: Song, isCurrent: () -> Bool) async throws {
+        try accessibility.requireAccess()
+        let songDetails = ["song": song.source + ":" + song.id, "artist": song.artist]
+        logger?.log(
+            .info, category: "music", action: "prepare.started", "Preparing \(song.title) in Music",
+            metadata: songDetails)
         if song.source == "library" {
             _ = try await script(["reveal", song.id])
         } else {
@@ -65,31 +115,33 @@ final class MusicBridge {
             NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
                 .first?.activate(options: [.activateAllWindows])
         }
-        let deadline = monotonicMs() + 12_000
+        // The music:// link already opens the album with this track selected, so only the selection is checked here.
+        let started = monotonicMs()
+        let deadline = started + 12_000
         var lastStep: String?
-        if song.source == "catalog" {
-            let searchDeadline = min(deadline - 2_000, monotonicMs() + 6_000)
-            do {
-                let found = try await accessibility.searchCatalog(song, deadline: searchDeadline)
-                if !found { lastStep = "Music's search did not show exactly one matching result." }
-            } catch {
-                lastStep = error.localizedDescription
-            }
-        }
         repeat {
             try Task.checkCancellation()
             guard isCurrent() else {
                 throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.")
             }
-            do {
-                try accessibility.showQueue(deadline: min(deadline, monotonicMs() + 250))
-            } catch {
-                lastStep = error.localizedDescription
+            guard let issue = accessibility.preparationIssue(song) else {
+                logger?.log(
+                    .info, category: "music", action: "prepare.completed", "Prepared \(song.title) in Music",
+                    metadata: songDetails.merging(["ms": String(monotonicMs() - started)]) { $1 })
+                return
             }
-            guard let issue = accessibility.preparationIssue(song) else { return }
+            // Each distinct reason is written once, so a long wait does not repeat the same line every 150 ms.
+            if issue != lastStep {
+                logger?.log(
+                    .debug, category: "music", action: "prepare.waiting", issue, metadata: songDetails)
+            }
             lastStep = issue
             try await Task.sleep(for: .milliseconds(150))
         } while monotonicMs() < deadline
+        logger?.log(
+            .warning, category: "music", action: "prepare.failed",
+            lastStep ?? "Music did not expose the song",
+            metadata: songDetails.merging(["ms": String(monotonicMs() - started)]) { $1 })
         let step = lastStep.map { " Last step: \($0)" } ?? ""
         throw CadenzaError.failure(
             "song_not_ready",

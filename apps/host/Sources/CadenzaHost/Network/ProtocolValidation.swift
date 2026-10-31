@@ -31,8 +31,9 @@ enum ProtocolValidation {
         if frame.type == "command" {
             try validateCommand(frame, raw: data)
         } else if ![
-            "pair", "hello", "clock", "search", "song.prepare", "operation.cancel", "lyrics.get", "analytics.ack",
-            "state.get", "command.status", "remote.configure", "log.report", "artwork.get",
+            "pair", "hello", "clock", "search", "search.suggest", "song.prepare", "operation.cancel", "lyrics.get",
+            "analytics.ack",
+            "state.get", "command.status", "remote.configure", "log.report", "artwork.get", "motion.get",
             "transport.configure", "session.status", "host.update",
             "recommendation.passport", "recommendation.query", "recommendation.feedback", "recommendation.plan",
             "recommendation.shadow_observation",
@@ -50,25 +51,31 @@ enum ProtocolValidation {
     private static func validateSession(_ type: String, object: [String: Any]) throws {
         let required: [String: Set<String>] = [
             "pair": ["pair"], "hello": ["auth"], "clock": ["clock"],
-            "search": ["request_id", "query", "scope"], "song.prepare": ["request_id", "song"],
+            "search": ["request_id", "query", "scope"], "search.suggest": ["request_id", "query"],
+            "song.prepare": ["request_id", "song"],
             "operation.cancel": ["request_id"], "lyrics.get": [], "analytics.ack": ["sequence"],
             "state.get": [], "command.status": ["command_id"],
             "remote.configure": ["name", "heartbeat", "request_id"],
             "transport.configure": ["transport"],
             "session.status": ["status"],
-            "log.report": ["log_action", "log_level", "log_message"],
+            "log.report": [],
             "artwork.get": ["request_id", "artwork_url"],
             "recommendation.passport": ["recommendation_passport"],
             "recommendation.query": ["recommendation_query"],
             "recommendation.feedback": ["recommendation_feedback"],
             "recommendation.plan": ["recommendation_plan"],
             "recommendation.shadow_observation": ["recommendation_shadow_observation"],
+            "motion.get": ["request_id", "occurrence_id"],
             "host.update": ["update_action", "request_id"],
         ]
         guard let fields = required[type] else { throw invalid("Unknown message type.") }
         let keys = Set(object.keys)
+        var optionalFields = Set(["version", "type", "request_id"])
+        if type == "song.prepare" { optionalFields.insert("song_metadata") }
+        // log.report accepts either a batch or the single-entry fields, so the branch below checks which form arrived.
+        if type == "log.report" { optionalFields.formUnion(["log_entries", "log_action", "log_level", "log_message"]) }
         guard keys.isSuperset(of: fields.union(["version", "type"])),
-            keys.isSubset(of: fields.union(["version", "type", "request_id"]))
+            keys.isSubset(of: fields.union(optionalFields))
         else {
             throw invalid("The message contains unexpected or missing fields.")
         }
@@ -77,13 +84,27 @@ enum ProtocolValidation {
                 object["pair"], fields: ["name"], optional: ["secret", "pin", "heartbeat", "remote_version"])
         }
         if type == "log.report" {
-            guard let level = object["log_level"] as? String, ["debug", "info", "warning", "error"].contains(level),
-                let action = object["log_action"] as? String, (1...120).contains(action.count),
-                let message = object["log_message"] as? String, (1...2_000).contains(message.count)
-            else { throw invalid("Invalid log report.") }
+            // A batch is the normal form. The single-entry fields remain accepted for Remotes that predate batching.
+            let levels = ["debug", "info", "warning", "error"]
+            if let batch = object["log_entries"] {
+                guard let items = batch as? [[String: Any]], (1...100).contains(items.count),
+                    items.allSatisfy({ item in
+                        guard let level = item["level"] as? String, levels.contains(level),
+                            let action = item["action"] as? String, (1...120).contains(action.count),
+                            let message = item["message"] as? String, (1...2_000).contains(message.count)
+                        else { return false }
+                        return true
+                    })
+                else { throw invalid("Invalid log report.") }
+            } else {
+                guard let level = object["log_level"] as? String, levels.contains(level),
+                    let action = object["log_action"] as? String, (1...120).contains(action.count),
+                    let message = object["log_message"] as? String, (1...2_000).contains(message.count)
+                else { throw invalid("Invalid log report.") }
+            }
         }
         if type == "artwork.get" {
-            guard let value = object["artwork_url"] as? String, ArtworkProvider.isAllowedURL(value) else {
+            guard let value = object["artwork_url"] as? String, ArtworkProvider.isServableURL(value) else {
                 throw invalid("Invalid artwork address.")
             }
         }

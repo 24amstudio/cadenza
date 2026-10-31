@@ -9,6 +9,10 @@ final class QueueCoordinator {
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onCredits: (() -> Void)?
     var onIssue: ((String) -> Void)?
+    var logger: HostLogger?
+    // Stores Music's artwork for an occurrence and returns its local address, or nil when Music has none.
+    var currentArtwork: ((String) async throws -> String?)?
+    private var loggedIssue: String?
     var connectedRemoteIds: () -> Set<String> = { [] }
     private(set) var nativeRows: [NativeQueueRow] = []
     private var bindings: [String: String] = [:]
@@ -124,6 +128,14 @@ final class QueueCoordinator {
             || (status.positionMs + 1_500 < (lastStatus?.positionMs ?? 0) && !missing.isEmpty)
             || (forcedEntry != nil && missing.contains { bindings[$0.token] == forcedEntry })
         if songChanged {
+            if let song = status.song {
+                logger?.log(
+                    .info, category: "playback", action: "song.changed", "Music is playing \(song.title)",
+                    metadata: [
+                        "song": song.source + ":" + song.id, "artist": song.artist, "state": status.state,
+                        "position_ms": String(status.positionMs),
+                    ])
+            }
             lastQuality = "unknown"
             lastMixing = nil
             observedIncomingTitle = nil
@@ -221,7 +233,13 @@ final class QueueCoordinator {
             issue = unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil
         }
         if now - lastQualityAt > 5_000, let title = status.song?.title {
-            lastQuality = music.accessibility.quality(currentTitle: title)
+            let quality = music.accessibility.quality(currentTitle: title)
+            if quality != lastQuality {
+                logger?.log(
+                    .info, category: "playback", action: "quality.changed", "Music audio quality is \(quality)",
+                    metadata: ["quality": quality, "song": title])
+            }
+            lastQuality = quality
             let mixing = music.accessibility.mixing(currentTitle: title)
             lastMixing = mixing.active
             observedIncomingTitle = mixing.incomingTitle
@@ -236,22 +254,26 @@ final class QueueCoordinator {
     private func requestArtwork(for song: Song, occurrenceId: String) {
         artworkTask?.cancel()
         guard song.artworkUrl == nil else { return }
-        let query = String((song.title + " " + song.artist).prefix(200))
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         artworkTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard
-                let match = try? await catalog.search(query).first(where: {
-                    $0.artworkUrl != nil
-                        && $0.title.compare(song.title, options: .caseInsensitive) == .orderedSame
-                        && $0.artist.compare(song.artist, options: .caseInsensitive) == .orderedSame
-                }),
-                let artworkUrl = match.artworkUrl
-            else { return }
-            guard !Task.isCancelled, current?.occurrenceId == occurrenceId else { return }
+            // Music's artwork is the track that is playing, so it comes first. A catalog match is the fallback.
+            var artworkUrl = try? await currentArtwork?(occurrenceId)
+            if artworkUrl == nil { artworkUrl = await catalogArtwork(for: song) }
+            guard let artworkUrl, !Task.isCancelled, current?.occurrenceId == occurrenceId else { return }
             current?.song.artworkUrl = artworkUrl
             publish()
         }
+    }
+
+    private func catalogArtwork(for song: Song) async -> String? {
+        let query = String((song.title + " " + song.artist).prefix(200))
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let match = try? await catalog.search(query).first(where: {
+            $0.artworkUrl != nil
+                && $0.title.compare(song.title, options: .caseInsensitive) == .orderedSame
+                && $0.artist.compare(song.artist, options: .caseInsensitive) == .orderedSame
+        })
+        return match?.artworkUrl
     }
 
     func snapshot() throws -> HostSnapshot {
@@ -303,6 +325,13 @@ final class QueueCoordinator {
 
     func publish() {
         sequence += 1
+        // Only changes are written. A steady state is already visible in the snapshot the Remotes receive.
+        if issue != loggedIssue {
+            loggedIssue = issue
+            logger?.log(
+                issue == nil ? .info : .warning, category: "queue", action: "queue.state",
+                issue ?? "Queue is synchronized with Music", metadata: ["synchronized": String(synchronized)])
+        }
         do {
             onSnapshot?(try snapshot())
             publishIssueReported = false

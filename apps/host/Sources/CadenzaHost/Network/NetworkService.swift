@@ -58,6 +58,7 @@ final class NetworkService {
     var onDisconnect: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
     var onIssue: ((String) -> Void)?
+    var logger: HostLogger?
     private let queue = DispatchQueue(label: "app.cadenza.network", qos: .userInitiated)
 
     func start(identity: TLSIdentity, port: UInt16, name: String, hostId: String) async throws {
@@ -166,6 +167,9 @@ final class NetworkService {
         let peer = Peer(connection)
         let peerID = peer.id
         peers[peerID] = peer
+        logger?.log(
+            .info, category: "network", action: "peer.connected", "Remote connection opened", metadata: ["peer": peerID]
+        )
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 guard let self else { return }
@@ -372,10 +376,17 @@ final class NetworkService {
         guard let peer = peers.removeValue(forKey: peerId) else { return }
         bluetoothPeers = bluetoothPeers.filter { $0.value != peerId }
         peer.cancelTransport()
+        logger?.log(
+            .info, category: "network", action: "peer.disconnected", "Remote connection closed",
+            remoteVersion: peer.remoteVersion,
+            metadata: ["peer": peerId, "remote_id": peer.remoteId ?? "", "authenticated": String(peer.authenticated)])
         onDisconnect?(peerId)
     }
 
     func revoke(_ remoteId: String) {
+        logger?.log(
+            .warning, category: "network", action: "remote.revoked", "Remote access revoked",
+            metadata: ["remote_id": remoteId])
         let ids = peers.values.filter { $0.remoteId == remoteId }.map(\.id)
         for id in ids { disconnect(id) }
     }

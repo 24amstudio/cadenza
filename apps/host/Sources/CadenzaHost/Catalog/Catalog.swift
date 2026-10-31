@@ -25,7 +25,22 @@ actor Catalog {
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let results = root?["results"] as? [String: Any]
         let songResults = results?["songs"] as? [String: Any]
-        return remember(parse(songResults?["data"] as? [[String: Any]] ?? []))
+        return remember(Self.parseSongs(songResults?["data"] as? [[String: Any]] ?? []))
+    }
+
+    // Apple's completions for the text being typed: terms to search next, and its top song matches.
+    func suggest(_ term: String) async throws -> CatalogSuggestions {
+        let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 200 else { return CatalogSuggestions(terms: [], songs: []) }
+        let data = try await request(
+            path: "search/suggestions",
+            query: [
+                URLQueryItem(name: "term", value: trimmed), URLQueryItem(name: "kinds", value: "terms,topResults"),
+                URLQueryItem(name: "types", value: "songs,artists,albums"), URLQueryItem(name: "limit", value: "8"),
+            ])
+        let suggestions = CatalogSuggestions.parse(data)
+        _ = remember(suggestions.songs)
+        return suggestions
     }
 
     func resolve(_ identity: SongIdentity) async throws -> Song {
@@ -35,7 +50,7 @@ actor Catalog {
         }
         let data = try await request(path: "songs/\(identity.id)", query: [])
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let song = remember(parse(root?["data"] as? [[String: Any]] ?? [])).first else {
+        guard let song = remember(Self.parseSongs(root?["data"] as? [[String: Any]] ?? [])).first else {
             throw CadenzaError.failure("missing_request", "This song is unavailable in the selected storefront.")
         }
         return song
@@ -47,7 +62,7 @@ actor Catalog {
         return found
     }
 
-    private func parse(_ items: [[String: Any]]) -> [Song] {
+    static func parseSongs(_ items: [[String: Any]]) -> [Song] {
         items.compactMap { item in
             guard let id = item["id"] as? String,
                 let attributes = item["attributes"] as? [String: Any],
@@ -68,14 +83,14 @@ actor Catalog {
         }
     }
 
-    private func safeArtwork(_ value: String?) -> String? {
+    private static func safeArtwork(_ value: String?) -> String? {
         guard let value, let url = URL(string: value), url.scheme == "https",
             let host = url.host, host.hasSuffix(".mzstatic.com")
         else { return nil }
         return value
     }
 
-    private func request(path: String, query: [URLQueryItem], retry: Bool = true) async throws -> Data {
+    func request(path: String, query: [URLQueryItem], retry: Bool = true) async throws -> Data {
         let credential = try await developerToken()
         var components = URLComponents(string: "https://amp-api.music.apple.com/v1/catalog/\(storefront)/\(path)")!
         components.queryItems = query

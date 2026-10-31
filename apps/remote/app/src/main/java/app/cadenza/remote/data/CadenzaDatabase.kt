@@ -306,12 +306,12 @@ class CadenzaDatabase(
     }
 
     @Synchronized
-    fun pendingLogs(): List<PendingLog> {
+    fun pendingLogs(limit: Int = 100): List<PendingLog> {
         val result = mutableListOf<PendingLog>()
         readableDatabase
             .rawQuery(
-                "SELECT log_id,level,action,message FROM remote_log_outbox ORDER BY log_id LIMIT 200",
-                null,
+                "SELECT log_id,level,action,message FROM remote_log_outbox ORDER BY log_id LIMIT ?",
+                arrayOf(limit.toString()),
             ).use { cursor ->
                 while (cursor.moveToNext()) {
                     result.add(
@@ -322,9 +322,12 @@ class CadenzaDatabase(
         return result
     }
 
+    // One statement per accepted batch, so a delivered batch costs a single write.
     @Synchronized
-    fun deleteLog(id: Long) {
-        writableDatabase.delete("remote_log_outbox", "log_id=?", arrayOf(id.toString()))
+    fun deleteLogs(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        val placeholders = ids.joinToString(",") { "?" }
+        writableDatabase.delete("remote_log_outbox", "log_id IN ($placeholders)", ids.map { it.toString() }.toTypedArray())
     }
 
     @Synchronized

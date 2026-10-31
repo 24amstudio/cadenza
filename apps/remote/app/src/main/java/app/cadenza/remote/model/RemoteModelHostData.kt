@@ -1,10 +1,14 @@
 package app.cadenza.remote.model
 
 import android.util.Base64
+import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.data.nullableString
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal fun RemoteModel.sendToHost(frame: JSONObject): Boolean = connection?.send(frame) == true
@@ -21,13 +25,30 @@ internal fun RemoteModel.clearArtworkRequests() {
     artworkRequests.clear()
 }
 
+// Entries are written to the local outbox off the main thread and then sent to the Host in batches. A burst of taps
+// costs one frame, and the outbox keeps every entry until the Host accepts it.
 internal fun RemoteModel.reportLog(
     level: String,
     action: String,
     message: String,
 ) {
-    updateApp.database.queueLog(level, action, message)
-    flushLogOutbox()
+    viewModelScope.launch(updateDispatcher) { updateApp.database.queueLog(level, action, message) }
+    scheduleLogFlush()
+}
+
+// Records what the user did, so the Host's log shows the Remote's side of every request.
+fun RemoteModel.recordUserAction(
+    action: String,
+    detail: String,
+) = reportLog("info", action, detail)
+
+internal fun RemoteModel.scheduleLogFlush() {
+    if (logFlush?.isActive == true) return
+    logFlush =
+        viewModelScope.launch {
+            delay(LOG_FLUSH_DELAY_MS)
+            flushLogOutbox()
+        }
 }
 
 internal suspend fun RemoteModel.reloadStatistics() {
@@ -65,15 +86,20 @@ internal fun RemoteModel.applyArtworkFrame(frame: JSONObject) {
         }
 }
 
-internal fun RemoteModel.flushLogOutbox() {
+// Sends the outbox in batches of up to 100 entries. A batch is deleted only after its send succeeds, so a dropped
+// connection never loses entries.
+internal suspend fun RemoteModel.flushLogOutbox() {
     if (!mutableState.value.connected) return
-    for (entry in updateApp.database.pendingLogs()) {
-        val frame =
-            Wire
-                .frame("log.report")
-                .put("log_level", entry.level)
-                .put("log_action", entry.action)
-                .put("log_message", entry.message)
-        if (sendToHost(frame)) updateApp.database.deleteLog(entry.id) else return
+    while (true) {
+        val batch = withContext(updateDispatcher) { updateApp.database.pendingLogs() }
+        if (batch.isEmpty()) return
+        val entries = JSONArray()
+        for (entry in batch) {
+            entries.put(JSONObject().put("level", entry.level).put("action", entry.action).put("message", entry.message))
+        }
+        if (!sendToHost(Wire.frame("log.report").put("log_entries", entries))) return
+        withContext(updateDispatcher) { updateApp.database.deleteLogs(batch.map { it.id }) }
     }
 }
+
+private const val LOG_FLUSH_DELAY_MS = 1_000L

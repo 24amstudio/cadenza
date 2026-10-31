@@ -49,10 +49,10 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.model.RemoteModel
-import app.cadenza.remote.model.checkRequest
 import app.cadenza.remote.model.dismissNotice
 import app.cadenza.remote.model.dismissPrompt
 import app.cadenza.remote.model.id
+import app.cadenza.remote.model.recordUserAction
 import app.cadenza.remote.model.requestArtwork
 
 private data class Destination(
@@ -117,6 +117,7 @@ fun CadenzaApp(
                     model.dismissNotice(it.id)
                 }
             }
+            LaunchedEffect(destination) { model.recordUserAction("screen.opened", "destination=$destination") }
             LaunchedEffect(destination) {
                 if (destination == 3) {
                     destination = 0
@@ -203,19 +204,7 @@ fun CadenzaApp(
                 onDismissRequest = model::dismissPrompt,
                 title = { Text(prompt.title) },
                 text = { Text(prompt.message) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (prompt.commandId != null) model.checkRequest(prompt.commandId) else model.dismissPrompt()
-                    }) {
-                        Text(if (prompt.commandId != null) "Check status" else "OK")
-                    }
-                },
-                dismissButton =
-                    if (prompt.commandId != null) {
-                        { TextButton(onClick = model::dismissPrompt) { Text("Close") } }
-                    } else {
-                        null
-                    },
+                confirmButton = { TextButton(onClick = model::dismissPrompt) { Text("OK") } },
             )
         }
     }

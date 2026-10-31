@@ -30,6 +30,9 @@
         "artwork.get",
         "artwork",
         "artwork.unavailable",
+        "motion.get",
+        "motion.chunk",
+        "motion.unavailable",
         "analytics.ack",
         "command.status",
         "error",
@@ -261,6 +264,11 @@
       "type": "string",
       "maxLength": 700000
     },
+    "chunk_index": { "type": "integer", "minimum": 0, "maximum": 4095 },
+    "chunk_count": { "type": "integer", "minimum": 1, "maximum": 4096 },
+    "total_bytes": { "type": "integer", "minimum": 1, "maximum": 8388608 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "data_base64": { "type": "string", "maxLength": 700000 },
     "host_epoch": {
       "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
     },
@@ -498,56 +506,7 @@
         }
       }
     },
-    {
-      "if": { "properties": { "type": { "const": "artwork.get" } } },
-      "then": {
-        "required": ["request_id", "artwork_url"],
-        "properties": {
-          "request_id": {
-            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
-          },
-          "artwork_url": {
-            "type": "string",
-            "pattern": "^https://",
-            "maxLength": 2048
-          }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "type": { "const": "artwork" } } },
-      "then": {
-        "required": ["request_id", "artwork_url", "artwork_data_base64"],
-        "properties": {
-          "request_id": {
-            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
-          },
-          "artwork_url": {
-            "type": "string",
-            "pattern": "^https://",
-            "maxLength": 2048
-          },
-          "artwork_data_base64": { "type": "string", "maxLength": 700000 }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "type": { "const": "artwork.unavailable" } } },
-      "then": {
-        "required": ["request_id", "artwork_url", "message"],
-        "properties": {
-          "request_id": {
-            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
-          },
-          "artwork_url": {
-            "type": "string",
-            "pattern": "^https://",
-            "maxLength": 2048
-          },
-          "message": { "type": "string", "maxLength": 4000 }
-        }
-      }
-    },
+    { "$ref": "urn:cadence:protocol:v1:media" },
     {
       "if": {
         "properties": {

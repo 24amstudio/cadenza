@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:media",
+  "type": "object",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "artwork.get"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "artwork_url"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "artwork_url": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "artwork"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "artwork_url", "artwork_data_base64"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "artwork_url": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "artwork_data_base64": {
+            "type": "string",
+            "maxLength": 700000
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "motion.get"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "occurrence_id"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "occurrence_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "motion.chunk"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "request_id",
+          "occurrence_id",
+          "chunk_index",
+          "chunk_count",
+          "total_bytes",
+          "sha256",
+          "data_base64"
+        ],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "occurrence_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "chunk_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4095
+          },
+          "chunk_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "total_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8388608
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data_base64": {
+            "type": "string",
+            "maxLength": 700000
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "motion.unavailable"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "occurrence_id"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "occurrence_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "artwork.unavailable"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "artwork_url", "message"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "artwork_url": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        }
+      }
+    }
+  ]
+}

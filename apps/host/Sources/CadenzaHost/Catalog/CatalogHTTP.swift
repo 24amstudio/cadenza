@@ -1,7 +1,9 @@
 import Foundation
 
 final class AppleHTTP: NSObject, URLSessionTaskDelegate, Sendable {
-    private let hosts: Set<String> = ["music.apple.com", "amp-api.music.apple.com", "api.music.apple.com"]
+    private let hosts: Set<String> = [
+        "music.apple.com", "amp-api.music.apple.com", "api.music.apple.com", MotionPlaylist.host,
+    ]
 
     func data(_ request: URLRequest, maximum: Int) async throws -> (Data, HTTPURLResponse) {
         guard let url = request.url, url.scheme == "https", hosts.contains(url.host ?? "") else {

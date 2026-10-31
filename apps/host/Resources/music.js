@@ -84,7 +84,8 @@ function searchLibrary(music, query) {
 
   if (!library) throw new Error('The music library is unavailable');
 
-  const found = music.search(library, { for: query, only: 'songs' });
+  // Music's search fields have no "songs" value. "all" returns tracks, and the loop below keeps library songs only.
+  const found = music.search(library, { for: query, only: 'all' });
   const songs = [];
 
   for (let index = 0; index < Math.min(found.length, 40); index++) {

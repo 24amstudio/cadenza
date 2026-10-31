@@ -23,7 +23,10 @@ interface MusicApplication {
   libraryPlaylists: ArrayLike<MusicLibrary>;
   search(
     library: MusicLibrary,
-    query: { for: string; only: 'songs' },
+    query: {
+      for: string;
+      only: 'albums' | 'all' | 'artists' | 'composers' | 'displayed' | 'names';
+    },
   ): ArrayLike<MusicTrack>;
   reveal(track: MusicTrack): void;
   play(): void;

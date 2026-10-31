@@ -21,6 +21,8 @@ final class QueueCoordinator {
     private var lastObservation: Int64?
     private var sequence: Int64 = 0
     private(set) var synchronized = false
+    // Queue state is trusted only after an explicit read, so a fresh coordinator never reports an unread queue as synced.
+    private var queueVerified = false
     private(set) var issue: String?
     private var publishIssueReported = false
     private var locked = false
@@ -70,7 +72,7 @@ final class QueueCoordinator {
         guard !locked else { return }
         locked = true
         defer { locked = false }
-        do { try await readState() } catch {
+        do { try await readState(includeQueue: false) } catch {
             synchronized = false
             issue = error.localizedDescription
             if current?.requestedBy != nil {
@@ -89,13 +91,19 @@ final class QueueCoordinator {
         let status = try await music.status(deadline: deadline)
         let now = monotonicMs()
         if primingLyrics && status.song?.identity != lastStatus?.song?.identity { primingLyrics = false }
-        if includeQueue, !primingLyrics { try? music.accessibility.showQueue(deadline: now + 250) }
-        let nativeRead: Result<[NativeQueueRow], Error> =
-            if !includeQueue || primingLyrics {
-                .success(nativeRows)
-            } else {
-                Result { try music.accessibility.rows(deadline: deadline) }
+        let nativeRead: Result<[NativeQueueRow], Error>
+        if !includeQueue || primingLyrics {
+            // Background refreshes keep the last queue read. Each edit reads the queue again after it runs and fails if the
+            // result does not match, so a change made in Music while the list is closed cannot be applied silently.
+            nativeRead = .success(nativeRows)
+        } else {
+            do {
+                nativeRead = .success(try await readNativeQueue(deadline: deadline ?? monotonicMs() + 4_000))
+            } catch {
+                nativeRead = .failure(error)
             }
+            queueVerified = (try? nativeRead.get()) != nil
+        }
         let observed = (try? nativeRead.get()) ?? nativeRows
         guard observed.count <= 256, Set(observed.map(\.token)).count == observed.count else {
             throw CadenzaError.failure(
@@ -112,6 +120,18 @@ final class QueueCoordinator {
                     bindings[token] = id
                 }
             }
+        }
+        // Music changes a row's token when it redraws the row. A request whose token disappeared follows its row by title
+        // and artist, so the redraw is not mistaken for a change made outside Cadenza Host.
+        for (token, id) in bindings where !observed.contains(where: { $0.token == token }) {
+            guard let record = try store.entry(id), let title = record["title"]?.string,
+                let artist = record["artist"]?.string,
+                let match = observed.first(where: {
+                    $0.title == title && $0.artist == artist && bindings[$0.token] == nil
+                })
+            else { continue }
+            bindings.removeValue(forKey: token)
+            bindings[match.token] = id
         }
         let missing = nativeRows.filter { old in !observed.contains { $0.token == old.token } }
         for native in observed {
@@ -229,8 +249,13 @@ final class QueueCoordinator {
                 "Music's Playing Next queue changed outside Cadenza Host. "
                 + "Review the queue before requesting another action."
         } else {
-            synchronized = !unresolved
-            issue = unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil
+            synchronized = queueVerified && !unresolved
+            if !queueVerified {
+                issue = "Music's queue has not been read yet. Prepare the song to verify the queue."
+            } else {
+                issue =
+                    unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil
+            }
         }
         if now - lastQualityAt > 5_000, let title = status.song?.title {
             let quality = music.accessibility.quality(currentTitle: title)
@@ -398,10 +423,9 @@ final class QueueCoordinator {
             action.kind.hasPrefix("queue.")
             || action.kind == "playback.skip"
             || action.kind == "playback.previous"
-        try await readState(deadline: deadline, includeQueue: needsQueueRead)
-        if action.kind.hasPrefix("queue.") {
-            try music.accessibility.showQueue(deadline: deadline)
-        }
+        // Queue requests are checked against the cached queue revision, because reading Music's queue before dispatch
+        // would take longer than the Remote's deadline.
+        try await readState(deadline: deadline, includeQueue: needsQueueRead && !action.kind.hasPrefix("queue."))
         let target = action.entryId ?? current?.entryId
         if let occurrence = action.occurrenceId, occurrence != current?.occurrenceId {
             throw CadenzaError.failure("stale_occurrence", "The current song changed.")
@@ -424,6 +448,12 @@ final class QueueCoordinator {
         guard !action.kind.hasPrefix("queue.") || synchronized else {
             throw CadenzaError.failure("native_queue_unavailable", issue ?? "Reconcile Music's native queue first.")
         }
+        if action.kind.hasPrefix("queue.") { try music.accessibility.requireFrontmost() }
+        // Music ignores these requests while no song is loaded, so dispatching one could never be confirmed.
+        if ["queue.enqueue", "queue.play_next"].contains(action.kind), current == nil {
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "Start playback before adding to the queue. Music has no current song.")
+        }
         var plannedEntry: String?
         if ["queue.enqueue", "queue.play_now", "queue.play_next"].contains(action.kind) {
             guard let identity = action.song, let song = knownSongs[identity] else {
@@ -440,7 +470,8 @@ final class QueueCoordinator {
             try journal.prepare(command, actor: actor, plan: nil)
         }
         var dispatched = false
-        let beforeEffect: @MainActor () throws -> Void = {
+        // Dispatch is recorded before the first native input, so a failure after this point is reported as unconfirmed.
+        let beforeEffect: @MainActor () async throws -> Void = {
             guard !dispatched else { return }
             try self.store.authorize(actor: actor, command: command, entryId: target)
             try self.journal.dispatched(command, actor: actor)
@@ -454,16 +485,20 @@ final class QueueCoordinator {
                 }
             }
             try store.authorize(actor: actor, command: command, entryId: target)
+            // The Remote's deadline gates dispatch. Music's queue edits take seconds, so a dispatched edit gets a Host
+            // budget and finishes, instead of being cut off mid-edit. The Remote settles it by querying the command.
+            let nativeDeadline = action.kind.hasPrefix("queue.") ? max(deadline, monotonicMs() + 6_000) : deadline
             if action.kind.hasPrefix("queue.") {
                 try await editQueue(
-                    action, actor: actor, deadline: deadline, plannedEntry: plannedEntry, beforeEffect: beforeEffect)
+                    action, actor: actor, deadline: nativeDeadline, plannedEntry: plannedEntry,
+                    beforeEffect: beforeEffect)
             } else {
                 try flushCredits()
                 lastObservation = nil
-                try beforeEffect()
+                try await beforeEffect()
                 try await music.control(action, deadline: deadline)
             }
-            try await readState(deadline: deadline, includeQueue: needsQueueRead)
+            try await readState(deadline: nativeDeadline, includeQueue: needsQueueRead)
             try verifyPlayback(action, expectedEntry: plannedEntry)
             let result = try journal.result(command, outcome: "applied")
             try journal.finish(command, actor: actor, result: result)
@@ -509,12 +544,11 @@ final class QueueCoordinator {
 
     private func editQueue(
         _ action: CommandAction, actor: String, deadline: Int64, plannedEntry: String?,
-        beforeEffect: @MainActor () throws -> Void
+        beforeEffect: @MainActor () async throws -> Void
     ) async throws {
-        let before = try music.accessibility.rows(deadline: deadline)
-        guard before.map(\.token) == nativeRows.map(\.token) else {
-            throw CadenzaError.failure("stale_revision", "Music's queue changed before dispatch.")
-        }
+        // The request was checked against the cached queue revision. The native queue is read again after the edit, so
+        // a change in Music is still caught before the result is reported.
+        let before = nativeRows
         switch action.kind {
         case "queue.enqueue", "queue.play_now", "queue.play_next":
             guard let identity = action.song, let song = knownSongs[identity] else {
@@ -522,7 +556,7 @@ final class QueueCoordinator {
             }
             let immediate = action.kind == "queue.play_now"
             let insertNext = immediate || action.kind == "queue.play_next"
-            try beforeEffect()
+            try await beforeEffect()
             try music.accessibility.append(song, deadline: deadline, next: insertNext)
             let after = try await waitForQueue(deadline: deadline) { rows in
                 let added = insertNext ? rows.first : rows.last
@@ -552,16 +586,26 @@ final class QueueCoordinator {
                 _ = try await waitForQueue(deadline: deadline) { $0.map(\.token) == before.map(\.token) }
             }
         case "queue.remove":
-            guard let entry = action.entryId, let row = before.first(where: { bindings[$0.token] == entry }) else {
+            guard let entry = action.entryId, try nativeRow(for: entry, in: before) != nil else {
                 throw CadenzaError.failure("missing_request", "The request is no longer in Music's queue.")
             }
-            try beforeEffect()
-            try music.accessibility.remove(row, deadline: deadline)
-            _ = try await waitForQueue(deadline: deadline) {
-                $0.map(\.token) == before.filter { $0.token != row.token }.map(\.token)
+            try await beforeEffect()
+            // Music redraws its list, so the request is found again in a fresh read before it is removed.
+            let fresh = try await readNativeQueue(deadline: deadline)
+            guard let current = try nativeRow(for: entry, in: fresh) else {
+                throw CadenzaError.failure("native_queue_unavailable", "The request is no longer in Music's queue.")
             }
+            do {
+                try music.accessibility.remove(current, deadline: deadline)
+            } catch {
+                // A context menu can open after its wait has ended, so the queue decides whether the removal happened.
+                let after = try await readNativeQueue(deadline: deadline)
+                guard try nativeRow(for: entry, in: after) == nil else { throw error }
+            }
+            let remaining = fresh.filter { $0.token != current.token }.map { "\($0.title)|\($0.artist)" }
+            _ = try await waitForQueue(deadline: deadline) { $0.map { "\($0.title)|\($0.artist)" } == remaining }
             try store.remove(entry)
-            bindings.removeValue(forKey: row.token)
+            bindings = bindings.filter { $0.value != entry }
             try store.bump()
         case "queue.move":
             try await move(action, rows: before, actor: actor, deadline: deadline, beforeEffect: beforeEffect)
@@ -569,14 +613,23 @@ final class QueueCoordinator {
         }
     }
 
+    // A row's token changes when Music redraws it, so a request is matched by its binding, or else by its title and artist.
+    private func nativeRow(for entry: String, in rows: [NativeQueueRow]) throws -> NativeQueueRow? {
+        if let bound = rows.first(where: { bindings[$0.token] == entry }) { return bound }
+        guard let record = try store.entry(entry), let title = record["title"]?.string,
+            let artist = record["artist"]?.string
+        else { return nil }
+        return rows.first { $0.title == title && $0.artist == artist }
+    }
+
     private func move(
         _ action: CommandAction, rows: [NativeQueueRow], actor: String, deadline: Int64,
-        beforeEffect: @MainActor () throws -> Void
+        beforeEffect: @MainActor () async throws -> Void
     ) async throws {
-        guard let entry = action.entryId, let row = rows.first(where: { bindings[$0.token] == entry }) else {
+        guard let entry = action.entryId, let row = try nativeRow(for: entry, in: rows) else {
             throw CadenzaError.failure("missing_request", "The queue request is unavailable.")
         }
-        let anchor = action.beforeEntryId.flatMap { id in rows.first { bindings[$0.token] == id } }
+        let anchor = try action.beforeEntryId.flatMap { try nativeRow(for: $0, in: rows) }
         var desired = rows.filter { $0.token != row.token }
         let index = anchor.flatMap { target in desired.firstIndex { $0.token == target.token } } ?? desired.count
         desired.insert(row, at: index)
@@ -587,13 +640,38 @@ final class QueueCoordinator {
                 throw CadenzaError.failure("forbidden", "This move would cross a protected request.")
             }
         }
-        try beforeEffect()
-        try music.accessibility.move(row, before: anchor, deadline: deadline)
-        let expected = desired.map(\.token)
-        _ = try await waitForQueue(deadline: deadline) { $0.map(\.token) == expected }
-        try store.reorder(desired.compactMap { bindings[$0.token] })
+        try await beforeEffect()
+        // Music redraws its list, so the request and its anchor are found again in a fresh read before the move.
+        let fresh = try await readNativeQueue(deadline: deadline)
+        guard let current = try nativeRow(for: entry, in: fresh) else {
+            throw CadenzaError.failure("native_queue_unavailable", "The request is no longer in Music's queue.")
+        }
+        let freshAnchor = try action.beforeEntryId.flatMap { try nativeRow(for: $0, in: fresh) }
+        var expected = fresh.filter { $0.token != current.token }
+        let freshIndex =
+            freshAnchor.flatMap { target in expected.firstIndex { $0.token == target.token } } ?? expected.count
+        expected.insert(current, at: freshIndex)
+        let expectedKeys = expected.map { "\($0.title)|\($0.artist)" }
+        try music.accessibility.move(current, before: freshAnchor, deadline: deadline)
+        _ = try await waitForQueue(deadline: deadline) { $0.map { "\($0.title)|\($0.artist)" } == expectedKeys }
+        // The read that follows the action rebinds the rows to their requests and keeps the stored order in step.
         try store.bump()
-        nativeRows = desired
+    }
+
+    /// Reads Music's queue on an explicit action. The Playing Next list is opened first when it is closed, and the read
+    /// waits for it only within the deadline. The status poll never reads the queue.
+    private func readNativeQueue(deadline: Int64) async throws -> [NativeQueueRow] {
+        if !music.accessibility.queuePanelOpen() {
+            try music.accessibility.requestQueuePanel()
+        }
+        while true {
+            do {
+                return try music.accessibility.rows(deadline: deadline)
+            } catch {
+                guard monotonicMs() < deadline else { throw error }
+                try await Task.sleep(for: .milliseconds(120))
+            }
+        }
     }
 
     private func waitForQueue(
@@ -641,6 +719,8 @@ final class QueueCoordinator {
             throw CadenzaError.failure("busy", "Another Music action took priority. Prepare this song again.")
         }
         try await music.prepare(song) { [weak self] in self?.preparationToken == token }
+        // Queue controls need the queue read once, so the Remote can enable them as soon as the song is prepared.
+        try? await readState(deadline: monotonicMs() + 4_000, includeQueue: true)
     }
 
     func flushCredits() throws {
@@ -663,13 +743,13 @@ final class QueueCoordinator {
         }
         if primingLyrics {
             defer { primingLyrics = false }
-            try music.accessibility.showQueue(deadline: monotonicMs() + 500)
+            _ = try? await readNativeQueue(deadline: monotonicMs() + 2_000)
         }
     }
 
     func reconcile(_ assignments: [String: String], discardMissing: Bool) throws {
         guard !busy else { throw CadenzaError.failure("busy", "Wait for Music's current action before reconciling.") }
-        let rows = try music.accessibility.rows()
+        let rows = try music.accessibility.rows(deadline: monotonicMs() + 4_000)
         guard Set(assignments.values).count == assignments.count else {
             throw CadenzaError.failure("invalid_state", "Each saved request can be assigned only once.")
         }

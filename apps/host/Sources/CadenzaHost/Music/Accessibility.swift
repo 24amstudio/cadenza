@@ -6,7 +6,10 @@ import Foundation
 final class MusicAccessibility {
     private let maximumElements = 6_000
     private var application: AXUIElement?
-    private var cachedPane: AXUIElement?
+    private var cachedQueueTable: AXUIElement?
+    // An empty queue is the History list directly above AutoPlay. Its row count and AutoPlay row confirm it cheaply.
+    private var emptyQueueMark: (table: AXUIElement, rows: Int, autoPlay: Int, takenAt: Int64)?
+    private var cachedTrackTable: AXUIElement?
     private var currentPid: pid_t?
     private var readDeadline: Int64 = 0
     private var lastPermissionPrompt: Int64 = 0
@@ -53,18 +56,31 @@ final class MusicAccessibility {
             }
             throw CadenzaError.failure("music_permission", "Allow Cadenza Host in Privacy & Security → Accessibility.")
         }
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first else {
-            throw CadenzaError.failure(
-                "music_unavailable",
-                "Music is starting. Retry in a moment while Cadenza Host connects."
-            )
+        guard let app = runningMusic() else {
+            throw CadenzaError.failure("music_unavailable", "Music is not running. Open Music, then try again.")
         }
-        if currentPid != app.processIdentifier { cachedPane = nil }
+        if currentPid != app.processIdentifier {
+            cachedQueueTable = nil
+            cachedTrackTable = nil
+            emptyQueueMark = nil
+        }
         currentPid = app.processIdentifier
         let element = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(element, 0.04)
         application = element
         return element
+    }
+
+    // NSRunningApplication can omit a running Music for about a second after Music changes state, so the lookup retries.
+    private func runningMusic() -> NSRunningApplication? {
+        let deadline = monotonicMs() + 1_000
+        repeat {
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first {
+                return app
+            }
+            usleep(50_000)
+        } while monotonicMs() < deadline
+        return nil
     }
 
     private func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
@@ -130,29 +146,10 @@ final class MusicAccessibility {
         return values.joined(separator: " ")
     }
 
-    private func isQueueHeading(_ element: AXUIElement) -> Bool {
-        string(element, kAXRoleAttribute) == kAXStaticTextRole
-            && ["playing next", "up next"].contains(
-                label(element).trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-    }
-
-    /// AutoPlay's label carries a leading attachment character, so it is matched by substring.
-    private func isAutoPlayLabel(_ element: AXUIElement) -> Bool {
-        string(element, kAXRoleAttribute) == kAXStaticTextRole && label(element).lowercased().contains("autoplay")
-    }
-
-    private func scrollArea(enclosing element: AXUIElement) -> AXUIElement? {
-        var ancestor = parent(element)
-        for _ in 0..<12 {
-            guard let current = ancestor else { return nil }
-            if string(current, kAXRoleAttribute) == kAXScrollAreaRole { return current }
-            ancestor = parent(current)
-        }
-        return nil
-    }
-
     private func normalized(_ value: String) -> String {
+        // Music draws an inline explicit badge as U+FFFC after explicit titles, which the song title does not contain.
         value
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
@@ -195,15 +192,28 @@ final class MusicAccessibility {
     /// reading `isActive` immediately after the request.
     private func bringMusicForward(deadline: Int64, unavailable: String) throws {
         let app = try root()
-        AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        let limit = min(deadline, monotonicMs() + 400)
-        while NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
-            .first?.isActive != true
-        {
+        let limit = min(deadline, monotonicMs() + 1_000)
+        var requested = false
+        while NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.Music" {
             guard monotonicMs() < limit else {
                 throw CadenzaError.failure("native_queue_unavailable", unavailable)
             }
+            // Activation is requested once; repeating it on every poll would keep moving focus back to Music.
+            if !requested {
+                requested = true
+                runningMusic()?.activate()
+                AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+            }
             usleep(20_000)
+        }
+    }
+
+    // Queue edits send clicks and keys to whatever is on screen, so Music must already be frontmost. macOS does not let
+    // this app take focus from the app the user is working in, so the request is refused instead of dispatched.
+    func requireFrontmost() throws {
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.Music" else {
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "Bring Music to the front before changing the queue.")
         }
     }
 
@@ -227,43 +237,163 @@ final class MusicAccessibility {
         }
     }
 
-    private func queuePane() throws -> AXUIElement {
-        let root = try root()
-        if let cachedPane, !string(cachedPane, kAXRoleAttribute).isEmpty,
-            attribute(cachedPane, "AXHidden") as? Bool != true
-        {
-            return cachedPane
+    // Music titles the section by its contents: "Queue" when it holds items, and the empty-state AutoPlay section otherwise.
+    private static let queueHeadings: Set<String> = ["queue", "playing next", "up next"]
+
+    /// Music's View menu titles the list "Hide Playing Next" while it is visible, so the title is the list's state.
+    private func playingNextMenuItem() -> AXUIElement? {
+        guard let application else { return nil }
+        let titles: Set<String> = ["Show Playing Next", "Hide Playing Next", "Show Up Next", "Hide Up Next"]
+        for bar in children(application) where string(bar, kAXRoleAttribute) == kAXMenuBarRole as String {
+            for menuItem in children(bar) where string(menuItem, kAXTitleAttribute) == "View" {
+                for menu in children(menuItem) {
+                    if let item = children(menu).first(where: { titles.contains(string($0, kAXTitleAttribute)) }) {
+                        return item
+                    }
+                }
+            }
         }
-        // Music replaces the Playing Next heading with AutoPlay while the queue is empty.
-        let skipped: Set<String> = [kAXRowRole, kAXCellRole, kAXMenuBarRole, kAXMenuRole]
-        var markers = shallow(root, maxDepth: 24, maxNodes: 4_000, skipping: skipped) { isQueueHeading($0) }
-        if markers.isEmpty {
-            markers = shallow(root, maxDepth: 24, maxNodes: 4_000, skipping: skipped) { isAutoPlayLabel($0) }
-        }
-        for marker in markers {
-            guard let pane = scrollArea(enclosing: marker) else { continue }
-            try finishRead()
-            cachedPane = pane
-            return pane
-        }
-        throw CadenzaError.failure(
-            "native_queue_unavailable",
-            "Open Music's Playing Next panel. Cadenza needs its visible native queue to verify changes."
-        )
+        return nil
     }
 
-    func showQueue(deadline: Int64) throws {
-        beginRead(deadline: deadline)
-        if (try? queuePane()) != nil { return }
-        beginRead(deadline: deadline)
-        try showPanel(["playing next", "up next"], deadline: deadline)
-        cachedPane = nil
+    /// Whether Music is showing its Playing Next list.
+    func queuePanelOpen() -> Bool {
+        beginRead(deadline: monotonicMs() + 500)
+        guard (try? root()) != nil else { return false }
+        return playingNextMenuState()?.open ?? false
+    }
+
+    /// Opens the Playing Next list through Music's View menu. A list that is already visible is left alone. The item
+    /// is pressed only after its title is readable, because pressing it while the list is visible hides the list.
+    func requestQueuePanel() throws {
+        let deadline = monotonicMs() + 1_500
+        var state: (item: AXUIElement, open: Bool)?
+        repeat {
+            beginRead(deadline: deadline)
+            _ = try root()
+            state = playingNextMenuState()
+            if state == nil { usleep(50_000) }
+        } while state == nil && monotonicMs() < deadline
+        guard let state else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's View menu does not offer Playing Next.")
+        }
+        if state.open { return }
+        guard AXUIElementPerformAction(state.item, kAXPressAction as CFString) == .success else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music did not open Playing Next.")
+        }
+    }
+
+    /// The View menu item, and whether Music titles it "Hide" because the list is visible. Nil until Music answers.
+    private func playingNextMenuState() -> (item: AXUIElement, open: Bool)? {
+        guard let item = playingNextMenuItem() else { return nil }
+        let title = string(item, kAXTitleAttribute)
+        guard !title.isEmpty else { return nil }
+        return (item, title.hasPrefix("Hide"))
+    }
+
+    /// The Now Playing list is a table in the window's right-hand pane. That path is short, so the window is never
+    /// walked, and the table is kept until Music replaces it.
+    /// The tables on Music's short paths: window > split group > scroll area > table for the library list, and
+    /// window > split group > group > scroll area > table for the Now Playing list. Neither walks the window.
+    private func pathTables() throws -> [AXUIElement] {
+        let application = try root()
+        var tables: [AXUIElement] = []
+        func collect(_ scroll: AXUIElement) {
+            tables += children(scroll).filter { string($0, kAXRoleAttribute) == kAXTableRole as String }
+        }
+        for window in children(application) where string(window, kAXRoleAttribute) == kAXWindowRole as String {
+            for split in children(window) where string(split, kAXRoleAttribute) == kAXSplitGroupRole as String {
+                for child in children(split) {
+                    switch string(child, kAXRoleAttribute) {
+                    case kAXScrollAreaRole:
+                        collect(child)
+                    case kAXGroupRole:
+                        for scroll in children(child)
+                        where string(scroll, kAXRoleAttribute) == kAXScrollAreaRole as String {
+                            collect(scroll)
+                        }
+                    default:
+                        continue
+                    }
+                }
+            }
+        }
+        return tables
+    }
+
+    private func queueTable() throws -> AXUIElement {
+        if let cachedQueueTable, string(cachedQueueTable, kAXRoleAttribute) == kAXTableRole as String {
+            return cachedQueueTable
+        }
+        cachedQueueTable = nil
+        let tables = try pathTables()
+        // The Now Playing list is the table whose visible rows show its own sections. The library list never does.
+        // With the menu open, the right-most table is the fallback, because the Now Playing list sits there.
+        let panelShown = playingNextMenuItem().map { string($0, kAXTitleAttribute).hasPrefix("Hide") } ?? false
+        guard
+            let table = tables.first(where: showsQueueSections)
+                ?? (panelShown ? tables.max(by: { position($0).x < position($1).x }) : nil)
+        else {
+            throw CadenzaError.failure(
+                "native_queue_unavailable",
+                "Open Music's Playing Next panel. Cadenza needs its visible native queue to verify changes.")
+        }
+        cachedQueueTable = table
+        return table
+    }
+
+    private func showsQueueSections(_ table: AXUIElement) -> Bool {
+        let visible = attribute(table, "AXVisibleRows") as? [AXUIElement] ?? []
+        return visible.contains { row in
+            let text = key(firstText(row))
+            return Self.queueHeadings.contains(text) || text == "history" || isAutoPlayText(text)
+        }
+    }
+
+    private func position(_ element: AXUIElement) -> CGPoint {
+        guard let value = attribute(element, kAXPositionAttribute), CFGetTypeID(value) == AXValueGetTypeID() else {
+            return .zero
+        }
+        var point = CGPoint.zero
+        AXValueGetValue(value as! AXValue, .cgPoint, &point)
+        return point
+    }
+
+    /// The section after the queue: AutoPlay, or "Continue Playing" in newer layouts of Music's Up Next list.
+    private func isAutoPlayText(_ key: String) -> Bool {
+        key.contains("autoplay") || key.contains("continue playing")
+    }
+
+    /// Row text as Music shows it, without the inline explicit badge (U+FFFC) that follows explicit titles.
+    private func displayText(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Row text without Music's attachment glyphs, for comparing section headings.
+    private func key(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// The first text in a row, read through its cells. The walk is direct, because each call is an Accessibility request.
+    private func firstText(_ row: AXUIElement) -> String {
+        for cell in children(row) {
+            for item in children(cell) where string(item, kAXRoleAttribute) == kAXStaticTextRole as String {
+                let value = string(item, kAXValueAttribute)
+                if !value.isEmpty { return value }
+            }
+        }
+        return ""
+    }
+
+    private func requireReadTime() throws {
+        guard monotonicMs() < readDeadline else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's queue is still loading. Try again.")
+        }
     }
 
     func showLyrics(deadline: Int64) throws {
         beginRead(deadline: deadline)
         try showPanel(["lyrics", "show lyrics"], deadline: deadline)
-        cachedPane = nil
     }
 
     private func showPanel(_ names: [String], deadline: Int64) throws {
@@ -295,23 +425,70 @@ final class MusicAccessibility {
         try press(button, deadline: deadline)
     }
 
+    /// The queue is the requests between the Playing Next heading and AutoPlay. Music lists its History above the queue,
+    /// so AutoPlay is found from the end of the table and the heading from AutoPlay backwards. The History heading
+    /// marks an empty queue.
     func rows(deadline: Int64? = nil) throws -> [NativeQueueRow] {
         beginRead(deadline: deadline)
-        let pane = try queuePane()
-        // Rows are read only between the Playing Next heading and AutoPlay. Each row's text is read on its own.
-        let nodes = shallow(pane, maxDepth: 10, maxNodes: 1_500, skipping: [kAXRowRole, kAXCellRole]) { _ in true }
-        let start = nodes.firstIndex { isQueueHeading($0) }.map { $0 + 1 } ?? nodes.count
-        let end = nodes[start...].firstIndex { isAutoPlayLabel($0) } ?? nodes.count
-        let result = nodes[start..<end].filter { string($0, kAXRoleAttribute) == kAXRowRole }.compactMap {
-            row -> NativeQueueRow? in
-            let text = rowTexts(row)
-            guard let title = text.first else { return nil }
-            return NativeQueueRow(
-                token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: text.dropFirst().first ?? "",
-                element: row
-            )
+        let table = try queueTable()
+        let all = tableRows(table)
+        // Music states an empty Up Next list in its visible rows, so a long history never has to be scanned.
+        let visible = attribute(table, "AXVisibleRows") as? [AXUIElement] ?? []
+        if visible.contains(where: { key(firstText($0)).contains("no music in the queue") }) {
+            return []
         }
-        try finishRead()
+        // The mark expires, because a change made in Music can keep the row count and AutoPlay position the same.
+        if let mark = emptyQueueMark, CFEqual(mark.table, table), all.count == mark.rows, mark.autoPlay < all.count,
+            monotonicMs() - mark.takenAt < 15_000, isAutoPlayText(key(firstText(all[mark.autoPlay])))
+        {
+            return []
+        }
+        var end = all.count
+        for index in stride(from: all.count - 1, through: 0, by: -1) {
+            try requireReadTime()
+            if isAutoPlayText(key(firstText(all[index]))) {
+                end = index
+                break
+            }
+        }
+        var start: Int?
+        for index in stride(from: end - 1, through: 0, by: -1) {
+            try requireReadTime()
+            let text = key(firstText(all[index]))
+            if Self.queueHeadings.contains(text) {
+                start = index + 1
+                break
+            }
+            if text == "history" {
+                start = end
+                break
+            }
+        }
+        guard let start else {
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "Music's queue layout was not recognized. Show Playing Next and try again.")
+        }
+        // "Continue Playing" comes before AutoPlay, so the queue ends at the first section marker after it starts.
+        for index in start..<end {
+            try requireReadTime()
+            if isAutoPlayText(key(firstText(all[index]))) {
+                end = index
+                break
+            }
+        }
+        var result: [NativeQueueRow] = []
+        for row in all[start..<end] {
+            try requireReadTime()
+            let text = rowTexts(row).map(displayText)
+            guard let title = text.first else { continue }
+            // The second text reads "Artist — Album" in the Up Next list, so only the artist is kept.
+            let artist = text.dropFirst().first?.components(separatedBy: " — ").first ?? ""
+            result.append(
+                NativeQueueRow(
+                    token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: artist, element: row))
+        }
+        let isEmpty = result.isEmpty && start == end && end < all.count
+        emptyQueueMark = isEmpty ? (table, all.count, end, monotonicMs()) : nil
         return result
     }
 
@@ -341,7 +518,7 @@ final class MusicAccessibility {
         (attribute(table, kAXRowsAttribute) as? [AXUIElement]) ?? children(table)
     }
 
-    private func isTrackRow(_ row: AXUIElement, song: Song) -> Bool {
+    private func isTrackRow(_ row: AXUIElement, song: Song, titleIsEnough: Bool = false) -> Bool {
         let nodes = shallow(row, maxDepth: 5, maxNodes: 80) { _ in true }
         let values =
             nodes.filter { string($0, kAXRoleAttribute) == kAXStaticTextRole }
@@ -351,16 +528,25 @@ final class MusicAccessibility {
         let exactArtist = values.contains { normalized($0) == normalized(song.artist) }
         // Music's album track rows often omit the artist from their AX text. The deep link already identifies
         // catalog tracks; the exact title is the remaining identity exposed by Music's native UI.
-        return links(row, descendants: nodes, id: song.id) || (exactTitle && (song.source == "catalog" || exactArtist))
+        return links(row, descendants: nodes, id: song.id)
+            || (exactTitle && (song.source == "catalog" || exactArtist || titleIsEnough))
     }
 
     private func selectedSong(_ song: Song, deadline: Int64) throws -> AXUIElement {
         beginRead(deadline: deadline)
-        let root = try root()
         var candidates: [AXUIElement] = []
-        for table in trackTables(root) {
-            candidates = tableRows(table).prefix(200).filter { isTrackRow($0, song: song) }
-            if !candidates.isEmpty { break }
+        if let table = cachedTrackTable {
+            candidates = matchingRows(table, song: song)
+        }
+        if candidates.isEmpty {
+            // The short path finds the library list without walking the window. The full walk is only the fallback.
+            for table in try pathTables() + trackTables(try root()) {
+                candidates = matchingRows(table, song: song)
+                if !candidates.isEmpty {
+                    cachedTrackTable = table
+                    break
+                }
+            }
         }
         try finishRead()
         guard candidates.count == 1, let row = candidates.first else {
@@ -382,10 +568,26 @@ final class MusicAccessibility {
         return row
     }
 
+    // Music selects the track it navigated to, so selected rows are checked before the table's other rows.
+    private func matchingRows(_ table: AXUIElement, song: Song) -> [AXUIElement] {
+        let selectedRows = (attribute(table, kAXSelectedRowsAttribute) as? [AXUIElement]) ?? []
+        // Music selects the one track it navigated to. Album rows often omit the artist, so a lone selected row
+        // is matched by title alone.
+        if selectedRows.count == 1, isTrackRow(selectedRows[0], song: song, titleIsEnough: true) {
+            return selectedRows
+        }
+        let selected = selectedRows.filter { isTrackRow($0, song: song) }
+        if !selected.isEmpty { return selected }
+        // The title is compared first, because the full row check costs many Accessibility calls per row.
+        return tableRows(table).prefix(200)
+            .filter { normalized(firstText($0)) == normalized(song.title) }
+            .filter { isTrackRow($0, song: song) }
+    }
+
     /// The reason Music does not show the exact song as selected, or nil when it does.
-    func preparationIssue(_ song: Song) -> String? {
+    func preparationIssue(_ song: Song, deadline: Int64 = monotonicMs() + 800) -> String? {
         do {
-            _ = try selectedSong(song, deadline: monotonicMs() + 800)
+            _ = try selectedSong(song, deadline: deadline)
             return nil
         } catch {
             return error.localizedDescription
@@ -397,11 +599,19 @@ final class MusicAccessibility {
     }
 
     func append(_ song: Song, deadline: Int64, next: Bool = false) throws {
+        emptyQueueMark = nil
         let row = try selectedSong(song, deadline: deadline)
-        beginRead(deadline: deadline)
-        try menu(
-            row, choices: next ? ["play next"] : ["play last", "add to playing next", "play later"], deadline: deadline
-        )
+        // Music enables a track's menu actions only once the row has focus, so the row is clicked before its menu opens.
+        try click(row, deadline: deadline)
+        if try pressSongMenuItem(next ? "play next" : "add to queue", deadline: deadline) { return }
+        // Music disables Add to Queue until the queue has an item. For an empty queue, Play Next is the same position.
+        guard !next else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's Play Next is unavailable for this song.")
+        }
+        try requireEmptyQueue(deadline: deadline)
+        guard try pressSongMenuItem("play next", deadline: deadline) else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's Add to Queue is unavailable for this song.")
+        }
     }
 
     func play(_ row: NativeQueueRow, deadline: Int64) throws {
@@ -427,32 +637,45 @@ final class MusicAccessibility {
     }
 
     func remove(_ row: NativeQueueRow, deadline: Int64) throws {
+        emptyQueueMark = nil
+        try click(row.element, deadline: deadline)
         beginRead(deadline: deadline)
         try menu(
-            row.element, choices: ["remove from playing next", "remove from up next", "remove"], deadline: deadline)
+            row.element,
+            choices: ["remove from queue", "remove from playing next", "remove from up next", "remove"],
+            deadline: deadline)
     }
 
+    private func popupMenu(near element: AXUIElement) -> AXUIElement? {
+        var ancestor: AXUIElement? = element
+        for _ in 0..<6 {
+            guard let current = ancestor else { return nil }
+            if let popup = children(current).first(where: { string($0, kAXRoleAttribute) == kAXMenuRole as String }) {
+                return popup
+            }
+            ancestor = parent(current)
+        }
+        return nil
+    }
+
+    /// Music answers mouse events on a row, while Accessibility actions on its menu are refused. The row's menu is opened
+    /// with a right-click and the matching item is clicked where it is drawn.
     private func menu(_ element: AXUIElement, choices: [String], deadline: Int64) throws {
         try requireDeadline(deadline)
-        let result = AXUIElementPerformAction(element, kAXShowMenuAction as CFString)
-        if result != .success {
-            guard
-                let button = shallow(
-                    element, maxDepth: 4, maxNodes: 80,
-                    matching: {
-                        string($0, kAXRoleAttribute) == kAXMenuButtonRole || label($0).lowercased().contains("more")
-                    }
-                ).first
-            else { throw CadenzaError.failure("native_queue_unavailable", "Music's song menu is unavailable.") }
-            try press(button, deadline: deadline)
+        let frame = try bounds(element)
+        // The pointer stays on the row while the popup is open, so the popup is not dismissed before its item is chosen.
+        try postClick(at: CGPoint(x: frame.midX, y: frame.midY), button: .right, restoresPointer: false)
+        var popup: AXUIElement?
+        repeat {
+            beginRead(deadline: deadline)
+            popup = popupMenu(near: element)
+            if popup == nil { usleep(40_000) }
+        } while popup == nil && monotonicMs() < deadline
+        guard let popup else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's song menu did not open.")
         }
-        guard let root = application else {
-            throw CadenzaError.failure("music_unavailable", "Music closed before its menu could be read.")
-        }
-        // A popup menu is a direct child of the application, so the search stays out of the window's tree.
-        let items = shallow(root, maxDepth: 4, maxNodes: 3_000, skipping: [kAXMenuBarRole, kAXWindowRole]) {
-            string($0, kAXRoleAttribute) == kAXMenuItemRole
-        }
+        beginRead(deadline: deadline)
+        let items = children(popup).filter { string($0, kAXRoleAttribute) == kAXMenuItemRole as String }
         guard let target = items.first(where: { choices.contains(string($0, kAXTitleAttribute).lowercased()) }) else {
             // The titles Music actually showed make a missing menu action diagnosable from the log alone.
             let shown = items.map { string($0, kAXTitleAttribute) }.filter { !$0.isEmpty }.prefix(12)
@@ -460,12 +683,86 @@ final class MusicAccessibility {
                 .warning, category: "accessibility", action: "menu.missing",
                 "No matching song menu action",
                 metadata: ["wanted": choices.joined(separator: " | "), "shown": shown.joined(separator: " | ")])
+            try dismissPopup(near: element)
             throw CadenzaError.failure(
                 "native_queue_unavailable", "The required native queue menu action is unavailable.")
         }
         logger?.log(
             .info, category: "accessibility", action: "menu.pressed", "Pressed \(string(target, kAXTitleAttribute))")
-        try press(target, deadline: deadline)
+        let targetFrame = try bounds(target)
+        try postClick(at: CGPoint(x: targetFrame.midX, y: targetFrame.midY), button: .left)
+    }
+
+    // The Song menu bar acts on the focused track, so the caller must select the row first. Returns false when Music
+    // has the action disabled, since pressing a disabled item does nothing.
+    private func pressSongMenuItem(_ title: String, deadline: Int64) throws -> Bool {
+        try requireDeadline(deadline)
+        beginRead(deadline: deadline)
+        guard
+            let bar = children(try root()).first(where: { string($0, kAXRoleAttribute) == kAXMenuBarRole }),
+            let songMenu = children(bar).first(where: { string($0, kAXTitleAttribute) == "Song" })
+        else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's Song menu is unavailable.")
+        }
+        AXUIElementPerformAction(songMenu, kAXPressAction as CFString)
+        var target: AXUIElement?
+        repeat {
+            beginRead(deadline: deadline)
+            target = children(songMenu).flatMap { children($0) }.first {
+                string($0, kAXTitleAttribute).lowercased() == title
+            }
+            if target == nil { usleep(40_000) }
+        } while target == nil && monotonicMs() < deadline
+        guard let target else {
+            closeMenu(songMenu)
+            throw CadenzaError.failure("native_queue_unavailable", "The Song menu's \(title) action is unavailable.")
+        }
+        guard attribute(target, kAXEnabledAttribute) as? Bool == true else {
+            closeMenu(songMenu)
+            return false
+        }
+        guard AXUIElementPerformAction(target, kAXPressAction as CFString) == .success else {
+            closeMenu(songMenu)
+            throw CadenzaError.failure(
+                "native_queue_unavailable", "Music did not accept the Song menu's \(title) action.")
+        }
+        return true
+    }
+
+    // A posted Escape key does not reliably close Music's menu bar menus, so the open menu is cancelled directly.
+    private func closeMenu(_ menuBarItem: AXUIElement) {
+        for menu in children(menuBarItem) where string(menu, kAXRoleAttribute) == kAXMenuRole {
+            AXUIElementPerformAction(menu, kAXCancelAction as CFString)
+        }
+    }
+
+    private func requireEmptyQueue(deadline: Int64) throws {
+        if !queuePanelOpen() { try requestQueuePanel() }
+        guard try rows(deadline: deadline).isEmpty else {
+            throw CadenzaError.failure("native_queue_unavailable", "Music's Add to Queue is unavailable for this song.")
+        }
+    }
+
+    private func postClick(at point: CGPoint, button: CGMouseButton, restoresPointer: Bool = true) throws {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            throw CadenzaError.failure("native_queue_unavailable", "The native Music input source is unavailable.")
+        }
+        let previous = CGEvent(source: nil)?.location
+        defer { if restoresPointer { restorePointer(previous, source: source) } }
+        let types: [CGEventType] =
+            button == .right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
+        for type in types {
+            CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button)?
+                .post(tap: .cghidEventTap)
+        }
+    }
+
+    // Escape and AX cancel leave Music's popup menus open, and an open popup stalls Music's scripting. A click outside
+    // the popup dismisses it, so the click lands on the blank toolbar of the window that owns the popup.
+    private func dismissPopup(near element: AXUIElement) throws {
+        guard let window = windowAncestor(of: element) else { return }
+        let frame = try bounds(window)
+        try postClick(at: CGPoint(x: frame.midX, y: frame.minY + 12), button: .left)
     }
 
     func move(_ row: NativeQueueRow, before anchor: NativeQueueRow?, deadline: Int64) throws {
@@ -484,8 +781,17 @@ final class MusicAccessibility {
         let previous = CGEvent(source: nil)?.location
         CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?
             .post(tap: .cghidEventTap)
-        CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: end, mouseButton: .left)?
-            .post(tap: .cghidEventTap)
+        // A single jump to the drop point is not recognised as a drag, so the pointer travels along the path.
+        let steps = 12
+        for step in 1...steps {
+            let fraction = CGFloat(step) / CGFloat(steps)
+            let position = CGPoint(
+                x: point.x + (end.x - point.x) * fraction, y: point.y + (end.y - point.y) * fraction)
+            CGEvent(
+                mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: position,
+                mouseButton: .left)?.post(tap: .cghidEventTap)
+            usleep(20_000)
+        }
         CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(
             tap: .cghidEventTap)
         restorePointer(previous, source: source)
@@ -495,6 +801,16 @@ final class MusicAccessibility {
         guard let point else { return }
         CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(
             tap: .cghidEventTap)
+    }
+
+    private func windowAncestor(of element: AXUIElement) -> AXUIElement? {
+        var ancestor: AXUIElement? = element
+        for _ in 0..<12 {
+            guard let current = ancestor else { return nil }
+            if string(current, kAXRoleAttribute) == kAXWindowRole as String { return current }
+            ancestor = parent(current)
+        }
+        return nil
     }
 
     private func bounds(_ element: AXUIElement) throws -> CGRect {
@@ -516,12 +832,11 @@ final class MusicAccessibility {
             throw CadenzaError.failure("native_queue_unavailable", "The native queue row is not visible.")
         }
         let frame = CGRect(origin: point, size: dimensions)
-        guard let window = attribute(element, kAXWindowAttribute), CFGetTypeID(window) == AXUIElementGetTypeID() else {
+        // Rows do not expose AXWindow, so the window is found among the row's ancestors.
+        guard let window = windowAncestor(of: element) else {
             throw CadenzaError.failure("native_queue_unavailable", "The native queue row has no visible window.")
         }
-        // AXWindow returns an AXUIElement, checked by Core Foundation type ID above.
-        let windowElement = window as! AXUIElement
-        guard attribute(windowElement, kAXMinimizedAttribute) as? Bool != true,
+        guard attribute(window, kAXMinimizedAttribute) as? Bool != true,
             NSScreen.screens.contains(where: { screen in
                 let desktopTop = NSScreen.screens.first?.frame.maxY ?? 0
                 let screenBounds = CGRect(
@@ -577,11 +892,16 @@ final class MusicAccessibility {
     }
 
     func diagnostic() throws -> String {
-        beginRead(deadline: monotonicMs() + 200)
-        return try walk(root()).prefix(1_000).map { element in
+        // Attributes are read as each element is visited, so every read must fall inside the deadline.
+        beginRead(deadline: monotonicMs() + 4_000)
+        var lines: [String] = []
+        var stack = [try root()]
+        while let element = stack.popLast(), lines.count < 1_000, monotonicMs() < readDeadline {
             let role = string(element, kAXRoleAttribute)
             let id = string(element, kAXIdentifierAttribute)
-            return "\(role) id=\(id) \(label(element).prefix(200))"
-        }.joined(separator: "\n")
+            lines.append("\(role) id=\(id) \(label(element).prefix(200))")
+            stack.append(contentsOf: children(element).reversed())
+        }
+        return lines.joined(separator: "\n")
     }
 }

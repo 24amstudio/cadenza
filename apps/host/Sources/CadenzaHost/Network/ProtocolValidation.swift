@@ -47,6 +47,9 @@ enum ProtocolValidation {
             throw invalid("Invalid request identifier.")
         }
         if let query = frame.query, query.count > 200 { throw invalid("Search is limited to 200 characters.") }
+        if frame.type == "host.update", !["check", "install"].contains(frame.updateAction) {
+            throw invalid("Unsupported Host update action.")
+        }
         try validateRecommendation(frame)
         return frame
     }

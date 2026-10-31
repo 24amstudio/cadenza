@@ -91,7 +91,12 @@ fun SongActions(
         val spacious = maxWidth >= 500.dp
         val availableWidth = maxWidth
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(if (spacious) 28.dp else 20.dp),
+            // Taps in the bottom gesture area never reach the sheet, so the last actions sit above it.
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(if (spacious) 28.dp else 20.dp)
+                .padding(bottom = 56.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

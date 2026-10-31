@@ -8,7 +8,9 @@ final class MusicBridge {
         didSet { accessibility.logger = logger }
     }
 
-    private func script(_ arguments: [String], deadline: Int64? = nil) async throws -> Data {
+    private func script(
+        _ arguments: [String], deadline: Int64? = nil, timeout limit: TimeInterval = 2
+    ) async throws -> Data {
         if let deadline, monotonicMs() >= deadline {
             throw CadenzaError.failure("expired", "The action expired before dispatch.")
         }
@@ -16,7 +18,7 @@ final class MusicBridge {
         else {
             throw CadenzaError.failure("music_unavailable", "The Music automation script is missing.")
         }
-        let timeout = deadline.map { min(0.9, max(0.01, Double($0 - monotonicMs()) / 1_000)) } ?? 2
+        let timeout = deadline.map { min(0.9, max(0.01, Double($0 - monotonicMs()) / 1_000)) } ?? limit
         let started = monotonicMs()
         do {
             let data = try await Subprocess.run(
@@ -52,7 +54,8 @@ final class MusicBridge {
     }
 
     func librarySearch(_ query: String) async throws -> [Song] {
-        try await Wire.decode([Song].self, from: script(["search", query]))
+        // Broad queries scan the whole library and take over 2 seconds to describe their results.
+        try await Wire.decode([Song].self, from: script(["search", query], timeout: 8))
     }
 
     func resolve(_ identity: SongIdentity) async throws -> Song {
@@ -124,7 +127,7 @@ final class MusicBridge {
             guard isCurrent() else {
                 throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.")
             }
-            guard let issue = accessibility.preparationIssue(song) else {
+            guard let issue = accessibility.preparationIssue(song, deadline: deadline) else {
                 logger?.log(
                     .info, category: "music", action: "prepare.completed", "Prepared \(song.title) in Music",
                     metadata: songDetails.merging(["ms": String(monotonicMs() - started)]) { $1 })

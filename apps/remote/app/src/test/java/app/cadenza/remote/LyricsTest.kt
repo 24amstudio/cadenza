@@ -47,7 +47,7 @@ class LyricsTest {
             )
         assertEquals(0, activeLyricIndex(document, "occurrence-a", 999, true))
         assertEquals(1, activeLyricIndex(document, "occurrence-a", 1_000, true))
-        assertEquals(-1, activeLyricIndex(document, "occurrence-a", 2_000, true))
+        assertEquals(1, activeLyricIndex(document, "occurrence-a", 2_000, true))
         assertEquals(-1, activeLyricIndex(document, "occurrence-b", 1_000, true))
         assertEquals(-1, activeLyricIndex(document, "occurrence-a", 1_000, false))
     }

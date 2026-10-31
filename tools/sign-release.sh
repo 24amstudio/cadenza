@@ -26,6 +26,8 @@ remote_id="$(/usr/bin/unzip -p "$remote" assets/build-identity.txt | head -c 200
 analyzer="${ANDROID_HOME:?Set ANDROID_HOME to the checked Android SDK}/cmdline-tools/latest/bin/apkanalyzer"
 remote_profile="$("$analyzer" manifest print "$remote" | /usr/bin/xmllint --xpath 'string(/manifest/application/meta-data[@*[local-name()="name"]="app.cadenza.BUILD_PROFILE"]/@*[local-name()="value"])' -)"
 remote_package="$("$analyzer" manifest application-id "$remote" | tr -d '\r\n')"
+printf 'Release identities: source=%s host=%s remote=%s profiles=%s/%s package=%s\n' \
+  "$source_id" "$host_id" "$remote_id" "$host_profile" "$remote_profile" "$remote_package"
 [[ "$host_profile" == production && "$remote_profile" == production && "$remote_package" == app.cadence.remote && "$host_id" == "$source_id" && "$remote_id" == "$source_id" ]] || {
   printf '%s\n' 'Both Production artifacts must have been built from this exact source identity. Rebuild before signing.' >&2
   exit 2

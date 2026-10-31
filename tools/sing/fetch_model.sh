@@ -40,17 +40,25 @@ rm -rf "$temporary_directory"
 mkdir -p "$temporary_directory"
 trap 'rm -rf "$temporary_directory"' EXIT
 
-/usr/bin/curl --fail --location --retry 3 --silent --show-error \
-    "$base_url/model.safetensors" --output "$temporary_directory/model.safetensors"
+model_attempt=1
+while (( model_attempt <= 3 )); do
+    rm -f "$temporary_directory/model.safetensors"
+    if /usr/bin/curl --fail --location --retry 3 --silent --show-error \
+        "$base_url/model.safetensors" --output "$temporary_directory/model.safetensors" \
+        && matches_pin "$temporary_directory/model.safetensors" "$model_bytes" "$model_sha256"; then
+        break
+    fi
+    if (( model_attempt == 3 )); then
+        printf '%s\n' 'The pinned Sing model bytes or hash did not match.' >&2
+        exit 1
+    fi
+    model_attempt=$((model_attempt + 1))
+done
 /usr/bin/curl --fail --location --retry 3 --silent --show-error \
     "$base_url/config.json" --output "$temporary_directory/config.json"
 /usr/bin/curl --fail --location --retry 3 --silent --show-error \
     "$base_url/LICENSE" --output "$temporary_directory/LICENSE"
 
-matches_pin "$temporary_directory/model.safetensors" "$model_bytes" "$model_sha256" || {
-    printf '%s\n' 'The pinned Sing model bytes or hash did not match.' >&2
-    exit 1
-}
 matches_pin "$temporary_directory/config.json" "$config_bytes" "$config_sha256" || {
     printf '%s\n' 'The pinned Sing model configuration did not match.' >&2
     exit 1

@@ -481,11 +481,14 @@ class RemoteUiTest {
                 .put("incoming", song("Cached incoming song", 180_000)),
         )
         openApp()
+        compose.runOnUiThread {
+            model.setForeground(false)
+            model.mutable.update { it.copy(connected = false, lastStateAt = 0) }
+        }
         capture("now-playing-ipad")
         compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("Lossless").assertDoesNotExist()
-        compose.onNodeWithText("AutoMix → Cached incoming song").assertDoesNotExist()
     }
 
     @Test

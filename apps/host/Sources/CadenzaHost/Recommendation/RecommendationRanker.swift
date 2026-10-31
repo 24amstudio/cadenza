@@ -29,12 +29,12 @@ struct RecommendationRanker: Sendable {
         let negative = profile.negativePreferences[identity] ?? profile.negativePreferences[artist] ?? 0
         let transition =
             profile.transitions
-                .filter {
-                    $0.to.source == candidate.track.source && $0.to.id == candidate.track.id
-                        && $0.from == (context.current ?? profile.recent.first)
-                }
-                .map { $0.weight * $0.confidence }
-                .max() ?? 0
+            .filter {
+                $0.to.source == candidate.track.source && $0.to.id == candidate.track.id
+                    && $0.from == (context.current ?? profile.recent.first)
+            }
+            .map { $0.weight * $0.confidence }
+            .max() ?? 0
         let familiar = profile.recent.contains(candidate.track) ? 0.14 : 0
         let novelty = profile.noveltyBudget * (profile.recent.contains(candidate.track) ? 0 : 0.12)
         let contextFit = context.intent == profile.sessionIntent && context.intent != nil ? 0.1 : 0

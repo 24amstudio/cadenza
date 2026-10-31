@@ -773,7 +773,7 @@ final class HostService {
         } catch { onIssue?(error.localizedDescription) }
     }
 
-    private func fail(_ error: Error, request: Frame, peer: NetworkService.Peer) {
+    func fail(_ error: Error, request: Frame, peer: NetworkService.Peer) {
         let code = (error as? CadenzaError)?.code ?? "unavailable"
         logger.log(
             .warning, category: "protocol", action: "request.failed", "Request failed",

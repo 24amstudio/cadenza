@@ -55,8 +55,8 @@ extension HostService {
             network.send(
                 Frame(
                     type: "recommendation.result",
-                    recommendationResult: nil,
-                    errorCode: "profile_unavailable"
+                    errorCode: "profile_unavailable",
+                    recommendationResult: nil
                 ),
                 to: peer)
             return
@@ -65,8 +65,8 @@ extension HostService {
             network.send(
                 Frame(
                     type: "recommendation.result",
-                    recommendationResult: nil,
-                    errorCode: "profile_expired"
+                    errorCode: "profile_expired",
+                    recommendationResult: nil
                 ),
                 to: peer)
             return
@@ -181,6 +181,7 @@ extension HostService {
                 network.send(
                     Frame(
                         type: "recommendation.plan.result",
+                        outcome: applied.outcome,
                         recommendationPlan: RecommendationPlanEnvelope(
                             planId: result.planId,
                             recommendationId: result.recommendationId,
@@ -188,8 +189,7 @@ extension HostService {
                             modelVersion: result.modelVersion,
                             expectedRevision: snapshot.revision,
                             operation: operation
-                        ),
-                        outcome: applied.outcome
+                        )
                     ),
                     to: peer)
             }
@@ -244,7 +244,7 @@ extension HostService {
             let data = receipt.data(using: .utf8), let saved = try? Wire.decode(Frame.self, from: data)
         {
             network.send(
-                Frame(type: "recommendation.plan.result", recommendationPlan: envelope, outcome: saved.outcome),
+                Frame(type: "recommendation.plan.result", outcome: saved.outcome, recommendationPlan: envelope),
                 to: peer)
             return
         }
@@ -258,7 +258,7 @@ extension HostService {
             action: envelope.operation)
         let result = try await queue.execute(command, actor: actor)
         network.send(
-            Frame(type: "recommendation.plan.result", recommendationPlan: envelope, outcome: result.outcome),
+            Frame(type: "recommendation.plan.result", outcome: result.outcome, recommendationPlan: envelope),
             to: peer)
     }
 

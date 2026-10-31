@@ -60,6 +60,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricLine
+import app.cadenza.remote.data.SingSession
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.ui.ConnectionStatus
@@ -69,6 +70,7 @@ import app.cadenza.remote.ui.StartupScreen
 import app.cadenza.remote.ui.position
 import app.cadenza.remote.ui.startupBuildLabel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -277,6 +279,52 @@ class RemoteUiTest {
 
     @Test
     @Config(qualifiers = "w360dp-h800dp-mdpi")
+    fun lyricsModeShowsSingControlsWhenHostAdvertisesSing() {
+        seedProfile(sing = true)
+        openApp()
+        compose.runOnUiThread {
+            model.mutable.update { it.copy(capabilities = setOf("sing.mode")) }
+        }
+        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithText("Sing mode").assertIsDisplayed()
+        compose.onNodeWithText("Start").assertIsDisplayed()
+        compose.onNodeWithText("Vocal level 0%").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-mdpi")
+    fun singFailureUsesFocusedRetryDialog() {
+        seedProfile(sing = true)
+        openApp()
+        compose.runOnUiThread {
+            model.mutable.update {
+                it.copy(
+                    capabilities = setOf("sing.mode"),
+                    snapshot =
+                        it.snapshot?.copy(
+                            sing =
+                                SingSession(
+                                    status = "failed",
+                                    vocalPercent = 0,
+                                    latencyMs = null,
+                                    backend = "mlx-mel-roformer",
+                                    modelRevision = "pinned",
+                                    issue = "The audio output route is unavailable.",
+                                ),
+                        ),
+                )
+            }
+        }
+        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("The audio output route is unavailable.").assertIsDisplayed()
+        compose.onNodeWithText("Retry").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-mdpi")
     fun lyricsModeSurvivesStateRestoration() {
         seedProfile()
         createModel()
@@ -424,7 +472,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("Lossless").assertDoesNotExist()
-        compose.onNodeWithText("AutoMix â†’ Cached incoming song").assertDoesNotExist()
+        compose.onNodeWithText("AutoMix → Cached incoming song").assertDoesNotExist()
     }
 
     @Test
@@ -492,7 +540,7 @@ class RemoteUiTest {
                 UUID(0, 20).toString(),
                 "machine",
                 listOf(
-                    LyricLine("first", "La nuit sâ€™Ã©veille", 0, 25_000, "The night awakens"),
+                    LyricLine("first", "La nuit s’éveille", 0, 25_000, "The night awakens"),
                     LyricLine("second", "Je chante avec toi", 30_000, 35_000, "I sing with you"),
                 ),
                 null,
@@ -640,7 +688,10 @@ class RemoteUiTest {
         compose.onNode(isSelectable() and hasClickAction() and (hasText(label) or hasContentDescription(label))).performClick()
     }
 
-    private fun seedProfile(emptyQueue: Boolean = false) {
+    private fun seedProfile(
+        emptyQueue: Boolean = false,
+        sing: Boolean = false,
+    ) {
         val profile =
             HostProfile(
                 hostId,
@@ -652,11 +703,14 @@ class RemoteUiTest {
                 TestCertificate.encoded,
             )
         app.database.saveProfile(profile)
-        app.database.saveState(hostId, snapshot(emptyQueue))
+        app.database.saveState(hostId, snapshot(emptyQueue, sing))
         app.settings.write("active_host" to hostId)
     }
 
-    private fun snapshot(emptyQueue: Boolean): JSONObject {
+    private fun snapshot(
+        emptyQueue: Boolean,
+        sing: Boolean = false,
+    ): JSONObject {
         val queue = JSONArray()
         if (!emptyQueue) {
             queue.put(entry(4, remoteId, "Android Remote", "A long requested song title with several words", 210_000, 150_000))
@@ -685,7 +739,19 @@ class RemoteUiTest {
             ).put("queue", queue)
             .put("total_remaining_ms", if (emptyQueue) 150_000 else 450_000)
             .put("synchronized", true)
-            .put("observation_gap", false)
+            .apply {
+                if (sing) {
+                    put(
+                        "sing",
+                        JSONObject()
+                            .put("status", "ready")
+                            .put("vocal_percent", 0)
+                            .put("latency_ms", 20)
+                            .put("backend", "stereo-center")
+                            .put("model_revision", "dsp-1"),
+                    )
+                }
+            }.put("observation_gap", false)
     }
 
     private fun entry(

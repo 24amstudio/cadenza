@@ -164,6 +164,7 @@ fun LyricsScreen(
                         Spacer(Modifier.weight(1f))
                         PlaybackTimeline(model, state, currentPosition)
                         PlaybackTransport(model, state, compact = true)
+                        SingControls(model, state, current)
                     }
                     LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(0.58f).fillMaxHeight())
                 }
@@ -173,6 +174,7 @@ fun LyricsScreen(
                 if (current != null) {
                     PlaybackTimeline(model, state, currentPosition)
                     PlaybackTransport(model, state, compact = true)
+                    SingControls(model, state, current)
                 }
             }
         }

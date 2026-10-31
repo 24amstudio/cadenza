@@ -15,6 +15,9 @@ enum ProtocolValidation {
         "playback.stop": ["kind", "occurrence_id"],
         "playback.seek": ["kind", "occurrence_id", "position_ms"],
         "playback.volume": ["kind", "percent"],
+        "sing.enable": ["kind", "occurrence_id"],
+        "sing.disable": ["kind", "occurrence_id"],
+        "sing.mix": ["kind", "occurrence_id", "vocal_percent"],
     ]
 
     static func decode(_ data: Data) throws -> Frame {
@@ -188,6 +191,14 @@ enum ProtocolValidation {
             if let anchor = action.beforeEntryId, !Wire.isIdentifier(anchor) { throw invalid("Invalid queue anchor.") }
         case "playback.volume":
             guard let percent = action.percent, (0...100).contains(percent) else { throw invalid("Invalid volume.") }
+        case "sing.mix":
+            guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence),
+                let vocalPercent = action.vocalPercent, (0...100).contains(vocalPercent)
+            else { throw invalid("Invalid Sing mix.") }
+        case "sing.enable", "sing.disable":
+            guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence) else {
+                throw invalid("The Sing action must identify the current playback occurrence.")
+            }
         default:
             guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence) else {
                 throw invalid("The action must identify the current playback occurrence.")

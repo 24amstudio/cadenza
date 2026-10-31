@@ -39,4 +39,5 @@ struct Frame: Codable, Sendable {
     var logMessage: String? = nil
     var artworkUrl: String? = nil
     var artworkDataBase64: String? = nil
+    var sing: SingSession? = nil
 }

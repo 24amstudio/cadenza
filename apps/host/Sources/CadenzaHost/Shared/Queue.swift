@@ -38,4 +38,5 @@ struct HostSnapshot: Codable, Equatable, Sendable {
     var synchronized: Bool = false
     var issue: String? = nil
     var observationGap: Bool = false
+    var sing: SingSession? = nil
 }

@@ -49,6 +49,8 @@ When paused, the queue remains visible with paused status. External changes in M
 
 Open **Playing**, then select **Lyrics** on A and B. Both receive the same lyric document, occurrence, translation revision, and Host timeline. Select **Lyrics** again or use Android Back to return to the player.
 
+On a supported Apple Silicon Host, open **Sing mode** from Playing to lower the lead vocal while Music continues playing. Production Host archives include the MIT Mel-RoFormer vocal-separation model (about 456 MB); development runs without the bundled resource download the pinned model into the Host cache on first use. Processing stays on Host and the Remote receives only Sing state and controls. Sing supports Music's stereo output sample rate and reports a clear failure when audio capture, model loading, or the output route is unavailable.
+
 Each Remote renders highlighting locally. Pause, seek, replay, and song changes use the authoritative occurrence and position. Reconnecting midway requests the current document again. Stale synchronization is marked explicitly.
 
 Scroll lyrics manually to stop automatic following. Select **Follow current line** to resume it. Playback controls remain available in Lyrics mode, subject to the Host's request protections.

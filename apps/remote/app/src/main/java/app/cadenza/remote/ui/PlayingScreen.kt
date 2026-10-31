@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -304,6 +303,7 @@ private fun PlayerDetails(
             },
             enabled = state.connected && "playback.volume" !in state.pending,
         )
+        SingControls(model, state, current)
         OutlinedButton(
             onClick = { if (state.monitoringSong) model.endSessionStatus() else model.monitorSong() },
             enabled = state.connected,

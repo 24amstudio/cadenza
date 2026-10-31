@@ -58,7 +58,6 @@ struct Frame: Codable, Sendable {
     var recommendationFeedback: RecommendationFeedback? = nil
     var recommendationPlan: RecommendationPlanEnvelope? = nil
     var recommendationShadowObservation: RecommendationShadowObservation? = nil
->>>>>>> origin/main
     var chunkIndex: Int? = nil
     var chunkCount: Int? = nil
     var totalBytes: Int? = nil

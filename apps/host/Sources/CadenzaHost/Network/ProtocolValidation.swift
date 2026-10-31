@@ -33,7 +33,7 @@ enum ProtocolValidation {
         } else if ![
             "pair", "hello", "clock", "search", "song.prepare", "operation.cancel", "lyrics.get", "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get",
-            "transport.configure", "session.status",
+            "transport.configure", "session.status", "host.update",
         ].contains(frame.type) {
             throw invalid("Unknown message type.")
         }
@@ -55,6 +55,7 @@ enum ProtocolValidation {
             "session.status": ["status"],
             "log.report": ["log_action", "log_level", "log_message"],
             "artwork.get": ["request_id", "artwork_url"],
+            "host.update": ["update_action", "request_id"],
         ]
         guard let fields = required[type] else { throw invalid("Unknown message type.") }
         let keys = Set(object.keys)
@@ -68,6 +69,9 @@ enum ProtocolValidation {
         if type == "pair" {
             try nested(
                 object["pair"], fields: ["name"], optional: ["secret", "pin", "heartbeat", "remote_version"])
+        }
+        if type == "host.update", !["check", "install"].contains(object["update_action"] as? String ?? "") {
+            throw invalid("Unknown Host update action.")
         }
         if type == "log.report" {
             guard let level = object["log_level"] as? String, ["debug", "info", "warning", "error"].contains(level),

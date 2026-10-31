@@ -7,6 +7,17 @@
     "version": {
       "const": 1
     },
+    "update_action": {
+      "enum": ["check", "install"]
+    },
+    "update_state": {
+      "enum": ["current", "ready", "installing", "failed", "unavailable"]
+    },
+    "update_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
     "type": {
       "enum": [
         "pair",
@@ -35,7 +46,9 @@
         "remote.configured",
         "transport.configure",
         "transport.configured",
-        "session.status"
+        "session.status",
+        "host.update",
+        "host.update.status"
       ]
     },
     "request_id": {
@@ -912,6 +925,55 @@
         "properties": {
           "host_epoch": {
             "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "host.update"
+          }
+        }
+      },
+      "then": {
+        "required": ["update_action", "request_id"],
+        "properties": {
+          "update_action": {
+            "enum": ["check", "install"]
+          },
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "host.update.status"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id", "update_state"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          },
+          "update_state": {
+            "enum": ["current", "ready", "installing", "failed", "unavailable"]
+          },
+          "update_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 300
           }
         }
       }

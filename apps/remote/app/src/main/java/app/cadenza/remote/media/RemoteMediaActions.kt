@@ -1,5 +1,6 @@
-package app.cadenza.remote
+package app.cadenza.remote.media
 
+import app.cadenza.remote.model.RemoteState
 import org.json.JSONObject
 
 class RemoteMediaActions(

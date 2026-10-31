@@ -1,8 +1,10 @@
-package app.cadenza.remote
+package app.cadenza.remote.media
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import app.cadenza.remote.CadenzaApplication
+import app.cadenza.remote.MainActivity
 
 class MediaActionReceiver : BroadcastReceiver() {
     override fun onReceive(

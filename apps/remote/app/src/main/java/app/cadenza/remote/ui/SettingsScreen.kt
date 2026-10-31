@@ -1,7 +1,5 @@
 package app.cadenza.remote.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -37,16 +35,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import app.cadenza.remote.BuildConfig
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
-import app.cadenza.remote.checkUpdates
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.data.TransportMethodRegistry
-import app.cadenza.remote.dismissChangelog
-import app.cadenza.remote.showChangelog
-import app.cadenza.remote.showError
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.checkHostUpdate
+import app.cadenza.remote.model.checkUpdates
+import app.cadenza.remote.model.dismissChangelog
+import app.cadenza.remote.model.hostUpdateMessage
+import app.cadenza.remote.model.installHostUpdate
+import app.cadenza.remote.model.installing
+import app.cadenza.remote.model.showChangelog
+import app.cadenza.remote.model.showError
+import app.cadenza.remote.updates.Changelog
 
 @Composable
 fun SettingsScreen(
@@ -78,25 +80,11 @@ fun SettingsScreen(
         }
 
     fun chooseTransport(mode: String) {
-        val permitted =
-            mode == "lan" ||
-                (
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.BLUETOOTH_SCAN,
-                    ) == PackageManager.PERMISSION_GRANTED &&
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                        ) == PackageManager.PERMISSION_GRANTED
-                )
-        if (permitted) {
+        if (mode == "lan" || nearbyDevicesGranted(context)) {
             model.reconnectWithTransport(mode)
         } else {
             pendingTransport = mode
-            bluetoothPermissions.launch(
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT),
-            )
+            bluetoothPermissions.launch(nearbyDevicePermissions)
         }
     }
 
@@ -287,6 +275,22 @@ private fun HostCard(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionButton("Reconnect", modifier = Modifier.weight(1f), pending = state.connecting, onClick = model::connect)
             TextButton(onClick = model::beginPairing, modifier = Modifier.weight(1f)) { Text("Pair again") }
+        }
+        if ("host.update" in state.capabilities) {
+            hostUpdateMessage(state.hostUpdate)?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionButton(
+                    "Check for Host update",
+                    modifier = Modifier.weight(1f),
+                    pending = state.hostUpdate?.state == "checking",
+                    enabled = state.connected && state.hostUpdate?.state != "installing",
+                ) { model.checkHostUpdate() }
+                if (state.hostUpdate?.state == "ready") {
+                    ActionButton("Update Host", modifier = Modifier.weight(1f)) { model.installHostUpdate() }
+                }
+            }
         }
         Text(
             if (state.snapshot?.allowCrossRemoteEdits == true) {

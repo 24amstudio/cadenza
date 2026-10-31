@@ -14,10 +14,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import app.cadenza.remote.dismissPrompt
-import app.cadenza.remote.installationResult
-import app.cadenza.remote.installing
-import app.cadenza.remote.showError
+import app.cadenza.remote.media.SessionNotification
+import app.cadenza.remote.media.SessionStatus
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.dismissPrompt
+import app.cadenza.remote.model.installationResult
+import app.cadenza.remote.model.installing
+import app.cadenza.remote.model.showError
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.Dispatchers

@@ -39,10 +39,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
-import app.cadenza.remote.pairBluetooth
-import app.cadenza.remote.showError
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.pairBluetooth
+import app.cadenza.remote.model.showError
 
 @Composable
 fun PairingScreen(
@@ -54,6 +54,17 @@ fun PairingScreen(
     var pin by rememberSaveable { mutableStateOf("") }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var pairingPending by rememberSaveable { mutableStateOf(false) }
+    val nearbyDevicesPermission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+            if (granted.values.all { it }) {
+                model.pairBluetooth(pin, name)
+            } else {
+                model.showError(
+                    "Bluetooth permission needed",
+                    "Allow Nearby devices so Cadenza can connect to this Host over Bluetooth.",
+                )
+            }
+        }
     val cameraPermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -109,7 +120,13 @@ fun PairingScreen(
                         singleLine = true,
                     )
                     Button(
-                        onClick = { model.pairBluetooth(pin, name) },
+                        onClick = {
+                            if (nearbyDevicesGranted(context)) {
+                                model.pairBluetooth(pin, name)
+                            } else {
+                                nearbyDevicesPermission.launch(nearbyDevicePermissions)
+                            }
+                        },
                         enabled = !state.connecting && name.isNotBlank() && pin.length == 4,
                         modifier = Modifier.fillMaxWidth(),
                     ) {

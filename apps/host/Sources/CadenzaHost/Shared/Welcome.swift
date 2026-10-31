@@ -17,6 +17,6 @@ struct Welcome: Codable, Sendable {
     var capabilities: [String] = [
         "playback", "library", "catalog.public-web", "queue.native-accessibility",
         "lyrics.music-cache", "lyrics.english-translation", "analytics", "updates.signed", "queue.play-next",
-        "lyrics.lrclib", "artwork.host-cache", "remote.configure", "state.heartbeat",
+        "lyrics.lrclib", "artwork.host-cache", "remote.configure", "state.heartbeat", "host.update",
     ]
 }

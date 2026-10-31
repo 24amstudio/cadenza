@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import android.util.Base64
 import app.cadenza.remote.data.Wire

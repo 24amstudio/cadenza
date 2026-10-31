@@ -1,5 +1,7 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
+import app.cadenza.remote.BuildConfig
+import app.cadenza.remote.CadenzaApplication
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.PairingInvitation
 import app.cadenza.remote.data.Wire

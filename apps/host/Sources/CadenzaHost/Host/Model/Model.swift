@@ -85,6 +85,10 @@ final class HostModel {
                     .warning, category: "storage", action: "database.recreated", "Host database was recreated")
             }
             service.onSnapshot = { [weak self] value in self?.snapshot = value }
+            service.hostUpdate = { [weak self] action in
+                await self?.remoteHostUpdate(action)
+                    ?? HostUpdateReply(state: "unavailable", version: nil, message: "Host updates are not available.")
+            }
             service.onDevicesChanged = { [weak self] in self?.refreshDevices() }
             service.onIssue = { [weak self] value in
                 guard let self else { return }
@@ -234,6 +238,59 @@ final class HostModel {
             try service.queue.flushCredits()
             try updater?.install(configuration: configuration.updates, store: service.store)
         } catch { showError("Update could not be installed", error.localizedDescription) }
+    }
+
+    /// A paired Remote asked for a Host update. The Remote's own button is the confirmation, so this path
+    /// never opens a Host alert or notification. Failures are returned to the Remote instead.
+    func remoteHostUpdate(_ action: String) async -> HostUpdateReply {
+        guard HostBuild.updatesEnabled, let updater, let service else {
+            return HostUpdateReply(state: "unavailable", version: nil, message: "Host updates are not available.")
+        }
+        let updates = configuration.updates
+        switch action {
+        case "check":
+            guard !updateBusy else {
+                return HostUpdateReply(state: "failed", version: nil, message: "Cadenza Host is already checking.")
+            }
+            updateBusy = true
+            defer { updateBusy = false }
+            do {
+                _ = try await updater.check(configuration: updates)
+            } catch {
+                return HostUpdateReply(state: "failed", version: nil, message: error.localizedDescription)
+            }
+            stagedVersion = updater.staged?.1.version
+            if let version = stagedVersion {
+                return HostUpdateReply(state: "ready", version: version, message: nil)
+            }
+            return HostUpdateReply(state: "current", version: nil, message: "Cadenza Host is up to date.")
+        case "install":
+            guard let version = updater.staged?.1.version else {
+                return HostUpdateReply(state: "failed", version: nil, message: "Check for a Host update first.")
+            }
+            guard !service.queue.busy else {
+                return HostUpdateReply(
+                    state: "failed", version: nil, message: "Wait for Music's current request to finish.")
+            }
+            do {
+                try service.queue.flushCredits()
+                _ = try updater.validateInstall(store: service.store)
+            } catch {
+                return HostUpdateReply(state: "failed", version: nil, message: error.localizedDescription)
+            }
+            Task { @MainActor in
+                // Let the reply leave the socket before this process exits.
+                try? await Task.sleep(for: .milliseconds(500))
+                do {
+                    try updater.install(configuration: updates, store: service.store)
+                } catch {
+                    service.logger.log(.error, category: "update", action: "install.failed", error.localizedDescription)
+                }
+            }
+            return HostUpdateReply(state: "installing", version: version, message: nil)
+        default:
+            return HostUpdateReply(state: "failed", version: nil, message: "Unknown Host update action.")
+        }
     }
 
     private func scheduleUpdates() {

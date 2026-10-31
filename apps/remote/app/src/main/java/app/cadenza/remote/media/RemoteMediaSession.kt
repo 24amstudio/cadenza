@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.media
 
 import android.app.PendingIntent
 import android.content.Context
@@ -9,6 +9,7 @@ import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import app.cadenza.remote.MainActivity
 
 data class MediaSessionState(
     val active: Boolean,

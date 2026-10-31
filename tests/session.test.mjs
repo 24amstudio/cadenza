@@ -211,3 +211,60 @@ test('lyric state carries a validated Host provider source', () => {
     true,
   );
 });
+
+test('host update frames accept only the check and install actions', () => {
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'host.update',
+      request_id: uuid,
+      update_action: 'check',
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'host.update',
+      request_id: uuid,
+      update_action: 'install',
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'host.update',
+      request_id: uuid,
+      update_action: 'download',
+    }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'host.update',
+      update_action: 'check',
+    }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'host.update.status',
+      request_id: uuid,
+      update_state: 'ready',
+      update_version: '0.0.4',
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'host.update.status',
+      request_id: uuid,
+      update_state: 'rebooting',
+    }),
+    false,
+  );
+});

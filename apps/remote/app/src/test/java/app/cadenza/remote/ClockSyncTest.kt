@@ -1,6 +1,9 @@
 package app.cadenza.remote
 
 import app.cadenza.remote.data.ClockSync
+import app.cadenza.remote.data.CurrentPlayback
+import app.cadenza.remote.data.HostSnapshot
+import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.data.counter
 import org.json.JSONObject
@@ -13,6 +16,44 @@ import java.nio.ByteBuffer
 import java.util.Base64
 
 class ClockSyncTest {
+    @Test
+    fun positionExtrapolatesAfterFirstSampleBeforeClockIsFullyReady() {
+        val clock = ClockSync()
+        clock.observe(1_000, 1_510, 1_510, 1_020)
+        val snapshot =
+            HostSnapshot(
+                hostId = "host",
+                hostEpoch = "epoch",
+                revision = 1,
+                sequence = 1,
+                hostTimeMs = 1_510,
+                allowCrossRemoteEdits = true,
+                playing = true,
+                volume = 50,
+                current =
+                    CurrentPlayback(
+                        occurrenceId = "occurrence",
+                        entryId = null,
+                        requestedBy = null,
+                        requesterName = "Host",
+                        song = Song("apple_music", "song", "Title", "Artist", durationMs = 60_000),
+                        positionMs = 5_000,
+                        sampledAtHostMs = 1_510,
+                    ),
+                queue = emptyList(),
+                totalRemainingMs = null,
+                quality = "unknown",
+                incoming = null,
+                mixing = null,
+                synchronized = true,
+                issue = null,
+                observationGap = false,
+            )
+
+        assertEquals(5_500L, clock.position(snapshot, 1_510, stale = false))
+        assertFalse(clock.ready)
+    }
+
     @Test
     fun clockNeedsRepeatedSamplesAndUsesTheSmallestMeasuredUncertainty() {
         val clock = ClockSync()

@@ -200,6 +200,8 @@ jobs:
           printf '%s' "$UPDATE_PRIVATE_PEM" > "$RUNNER_TEMP/cadenza-update-private.pem"
           chmod 600 "$RUNNER_TEMP/cadenza-update-private.pem"
       - name: Sign release metadata
+        env:
+          CADENZA_SOURCE_ID: ${{ github.event.workflow_run.head_sha }}
         run: |
           test -x "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
           bash tools/sign-release.sh "$GITHUB_REPOSITORY" "$RUNNER_TEMP/cadenza-update-private.pem"

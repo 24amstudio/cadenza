@@ -1,4 +1,5 @@
 import AVFAudio
+import os
 import XCTest
 @testable import CadenzaHost
 
@@ -99,14 +100,14 @@ private final class SingTestSeparator: SingSeparator, @unchecked Sendable {
 private final class RetryingSingTestSeparator: SingSeparator, @unchecked Sendable {
     let backend = "test-retry"
     let modelRevision = "test-retry-1"
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock(initialState: 0)
     private var attempts = 0
 
     func prepare(format: SingAudioFormat) async throws -> Int64 {
-        lock.lock()
-        attempts += 1
-        let attempt = attempts
-        lock.unlock()
+        let attempt = lock.withLock {
+            attempts += 1
+            return attempts
+        }
         if attempt == 1 { throw SingAudioError.unavailable("temporary model failure") }
         return 0
     }

@@ -2,6 +2,14 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.1.2",
+      "build": 7,
+      "changes": [
+        "Stabilizes production Sing model downloads with verified range assembly.",
+        "Invalidates stale Host build caches when the pinned model fetcher changes."
+      ]
+    },
+    {
       "version": "0.1.1",
       "build": 6,
       "changes": [

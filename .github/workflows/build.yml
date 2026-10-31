@@ -49,7 +49,7 @@ jobs:
         if: matrix.platform == 'host'
         with:
           path: apps/host/.build
-          key: host-build-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift') }}
+          key: host-build-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift', 'tools/sing/fetch_model.sh') }}
           restore-keys: |
             host-build-${{ runner.os }}-
       - name: Resolve CI release identity

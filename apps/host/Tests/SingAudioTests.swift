@@ -104,7 +104,7 @@ private final class RetryingSingTestSeparator: SingSeparator, @unchecked Sendabl
     private var attempts = 0
 
     func prepare(format: SingAudioFormat) async throws -> Int64 {
-        let attempt = lock.withLock {
+        let attempt = lock.withLock { _ in
             attempts += 1
             return attempts
         }

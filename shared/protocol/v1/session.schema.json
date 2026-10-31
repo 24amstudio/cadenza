@@ -7,6 +7,11 @@
     "version": {
       "const": 1
     },
+    "update_action": { "enum": ["check", "install"] },
+    "update_state": {
+      "enum": ["current", "ready", "installing", "failed", "unavailable"]
+    },
+    "update_version": { "type": "string", "minLength": 1, "maxLength": 40 },
     "type": {
       "enum": [
         "pair",
@@ -43,7 +48,9 @@
         "recommendation.plan",
         "recommendation.shadow_observation",
         "recommendation.plan.result",
-        "recommendation.passport.accepted"
+        "recommendation.passport.accepted",
+        "host.update",
+        "host.update.status"
       ]
     },
     "request_id": {
@@ -319,13 +326,7 @@
           "enum": ["host", "remote"]
         },
         "preference": {
-          "enum": [
-            "latency",
-            "host_efficiency",
-            "remote_efficiency",
-            "reliability",
-            "balanced"
-          ]
+          "enum": ["latency", "host_efficiency", "remote_efficiency", "reliability", "balanced"]
         },
         "power": {
           "type": "object",
@@ -445,31 +446,13 @@
             "bulk": { "enum": ["lan", "ble", "auto", null] },
             "reason": { "type": "string", "maxLength": 500 },
             "host_preference": {
-              "enum": [
-                "latency",
-                "host_efficiency",
-                "remote_efficiency",
-                "reliability",
-                "balanced"
-              ]
+              "enum": ["latency", "host_efficiency", "remote_efficiency", "reliability", "balanced"]
             },
             "remote_preference": {
-              "enum": [
-                "latency",
-                "host_efficiency",
-                "remote_efficiency",
-                "reliability",
-                "balanced",
-                null
-              ]
+              "enum": ["latency", "host_efficiency", "remote_efficiency", "reliability", "balanced", null]
             },
             "policy_mode": {
-              "enum": [
-                "host_led",
-                "remote_led",
-                "balanced_negotiation",
-                "manual"
-              ]
+              "enum": ["host_led", "remote_led", "balanced_negotiation", "manual"]
             },
             "confidence": { "enum": ["low", "medium", "high"] }
           },
@@ -789,9 +772,6 @@
           },
           "song": {
             "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
-          },
-          "song_metadata": {
-            "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
           }
         }
       }
@@ -903,6 +883,23 @@
       }
     },
     {
+      "if": { "properties": { "type": { "const": "host.update" } } },
+      "then": {
+        "required": ["update_action", "request_id"],
+        "properties": { "update_action": {} }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "host.update.status" } } },
+      "then": {
+        "required": ["request_id", "update_state"],
+        "properties": {
+          "update_state": {},
+          "message": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    {
       "if": {
         "properties": {
           "type": {
@@ -950,21 +947,21 @@
       },
       "then": {
         "required": ["recommendation_passport"],
-        "properties": { "recommendation_passport": true }
+        "properties": { "recommendation_passport": {} }
       }
     },
     {
       "if": { "properties": { "type": { "const": "recommendation.query" } } },
       "then": {
         "required": ["request_id", "recommendation_query"],
-        "properties": { "request_id": true, "recommendation_query": true }
+        "properties": { "request_id": {}, "recommendation_query": {} }
       }
     },
     {
       "if": { "properties": { "type": { "const": "recommendation.result" } } },
       "then": {
         "required": ["recommendation_result"],
-        "properties": { "recommendation_result": true }
+        "properties": { "recommendation_result": {} }
       }
     },
     {
@@ -973,14 +970,14 @@
       },
       "then": {
         "required": ["recommendation_feedback"],
-        "properties": { "recommendation_feedback": true }
+        "properties": { "recommendation_feedback": {} }
       }
     },
     {
       "if": { "properties": { "type": { "const": "recommendation.plan" } } },
       "then": {
         "required": ["recommendation_plan"],
-        "properties": { "recommendation_plan": true }
+        "properties": { "recommendation_plan": {} }
       }
     },
     {
@@ -991,7 +988,7 @@
       },
       "then": {
         "required": ["recommendation_shadow_observation"],
-        "properties": { "recommendation_shadow_observation": true }
+        "properties": { "recommendation_shadow_observation": {} }
       }
     }
   ],

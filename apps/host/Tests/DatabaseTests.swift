@@ -109,4 +109,34 @@ struct DatabaseTests {
             try reopened.database.query("SELECT observation_gap FROM host_state").first?["observation_gap"]?.integer
                 == 1)
     }
+
+    @Test func hostOriginatedPlaybackCountsOncePerConnectedRemote() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadenza-test-" + UUID().uuidString)
+        let suite = "CadenzaTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let store = try HostStore(directory: directory, defaults: defaults)
+        for remote in ["remote-a", "remote-b", "remote-c"] {
+            try store.database.run(
+                "INSERT INTO paired_remotes(remote_id,display_name,credential_reference,paired_at_ms) VALUES(?,?,?,?)",
+                [.text(remote), .text(remote), .text("reference-" + remote), .integer(0)])
+        }
+        try store.database.run(
+            "INSERT INTO playback_sessions(occurrence_id,entry_id,requested_by,source,song_id) VALUES('occurrence',NULL,NULL,'catalog','100')"
+        )
+        try store.observe(occurrence: "occurrence", milliseconds: 1_000, listeners: ["remote-a", "remote-b"])
+        try store.observe(occurrence: "occurrence", milliseconds: 2_000, listeners: ["remote-a", "remote-c"])
+        let totals = try store.database.query(
+            """
+            SELECT remote_id,sum(play_count_delta) AS plays,sum(played_ms_delta) AS played
+            FROM playback_credit_outbox GROUP BY remote_id ORDER BY remote_id
+            """)
+        #expect(totals.map { $0["remote_id"]?.string } == ["remote-a", "remote-b", "remote-c"])
+        #expect(totals.map { $0["plays"]?.integer } == [1, 1, 1])
+        #expect(totals.map { $0["played"]?.integer } == [3_000, 1_000, 2_000])
+    }
 }

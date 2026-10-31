@@ -28,6 +28,9 @@ object BleTransportIds {
     val clientConfiguration: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 }
 
+private const val MAXIMUM_MTU = 247
+private const val MAXIMUM_CONNECT_ATTEMPTS = 3
+
 private class BleFrameCodec {
     private val input = ByteArrayOutputStream()
     private var expected = -1
@@ -85,6 +88,9 @@ class BleTransport(
     private val frameCodec = BleFrameCodec()
     private val outbound = ArrayDeque<ByteArray>()
     private var gatt: BluetoothGatt? = null
+    private var target: BluetoothDevice? = null
+    private var connectAttempts = 0
+    private var ready = false
     private var writeCharacteristic: BluetoothGattCharacteristic? = null
     private var notifyCharacteristic: BluetoothGattCharacteristic? = null
     private var mtu = 23
@@ -117,20 +123,21 @@ class BleTransport(
                 status: Int,
                 newState: Int,
             ) {
-                if (status != BluetoothGatt.GATT_SUCCESS ||
-                    newState == BluetoothGatt.STATE_DISCONNECTED
-                ) {
-                    close("Bluetooth connection closed.")
-                } else if (newState == BluetoothGatt.STATE_CONNECTED) {
-                    if (!hasConnectPermission()) {
-                        close("Bluetooth permission is unavailable.")
-                        return
+                if (target == null) return
+                if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothGatt.STATE_CONNECTED) {
+                    if (!hasConnectPermission()) return close("Bluetooth permission is unavailable.")
+                    // Discovery runs alone. Starting an MTU request in the same callback can stall it.
+                    if (!gatt.discoverServices()) close("Cadenza Bluetooth services could not be discovered.")
+                } else if (status != BluetoothGatt.GATT_SUCCESS || newState == BluetoothGatt.STATE_DISCONNECTED) {
+                    if (!ready && connectAttempts < MAXIMUM_CONNECT_ATTEMPTS) {
+                        openGatt(checkNotNull(target))
+                    } else {
+                        close("Bluetooth connection closed (GATT status $status).")
                     }
-                    gatt.requestMtu(247)
-                    gatt.discoverServices()
                 }
             }
 
+            @SuppressLint("MissingPermission")
             override fun onMtuChanged(
                 gatt: BluetoothGatt,
                 mtu: Int,
@@ -139,6 +146,7 @@ class BleTransport(
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     this@BleTransport.mtu = mtu
                 }
+                enableNotifications(gatt)
             }
 
             @SuppressLint("MissingPermission")
@@ -154,19 +162,10 @@ class BleTransport(
                         ?: return close("Cadenza Bluetooth service unavailable.")
                 writeCharacteristic = service.getCharacteristic(BleTransportIds.write)
                 notifyCharacteristic = service.getCharacteristic(BleTransportIds.notify)
-                val notify =
-                    notifyCharacteristic
-                        ?: return close("Cadenza Bluetooth notification channel unavailable.")
-                if (!gatt.setCharacteristicNotification(notify, true)) {
-                    return close("Could not enable Cadenza Bluetooth notifications.")
+                if (notifyCharacteristic == null) {
+                    return close("Cadenza Bluetooth notification channel unavailable.")
                 }
-                val descriptor =
-                    notify.getDescriptor(BleTransportIds.clientConfiguration)
-                        ?: return close("Cadenza Bluetooth notification descriptor unavailable.")
-                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                if (!gatt.writeDescriptor(descriptor)) {
-                    return close("Could not enable Bluetooth notifications.")
-                }
+                if (!gatt.requestMtu(MAXIMUM_MTU)) enableNotifications(gatt)
             }
 
             override fun onDescriptorWrite(
@@ -174,7 +173,10 @@ class BleTransport(
                 descriptor: BluetoothGattDescriptor,
                 status: Int,
             ) {
-                if (descriptor.uuid == BleTransportIds.clientConfiguration && status == BluetoothGatt.GATT_SUCCESS) opened()
+                if (descriptor.uuid == BleTransportIds.clientConfiguration && status == BluetoothGatt.GATT_SUCCESS) {
+                    ready = true
+                    opened()
+                }
                 if (descriptor.uuid == BleTransportIds.clientConfiguration && status != BluetoothGatt.GATT_SUCCESS) {
                     close("Could not enable Bluetooth notifications.")
                 }
@@ -238,6 +240,16 @@ class BleTransport(
     @SuppressLint("MissingPermission")
     fun connect(device: BluetoothDevice) {
         stopScan()
+        // Scan results can arrive again before stopScan takes effect. Only the first one starts a link.
+        if (target != null) return
+        target = device
+        connectAttempts = 0
+        openGatt(device)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openGatt(device: BluetoothDevice) {
+        connectAttempts++
         gatt?.close()
         gatt =
             device.connectGatt(
@@ -246,6 +258,23 @@ class BleTransport(
                 callback,
                 BluetoothDevice.TRANSPORT_LE,
             )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableNotifications(gatt: BluetoothGatt) {
+        val notify =
+            notifyCharacteristic
+                ?: return close("Cadenza Bluetooth notification channel unavailable.")
+        if (!gatt.setCharacteristicNotification(notify, true)) {
+            return close("Could not enable Cadenza Bluetooth notifications.")
+        }
+        val descriptor =
+            notify.getDescriptor(BleTransportIds.clientConfiguration)
+                ?: return close("Cadenza Bluetooth notification descriptor unavailable.")
+        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        if (!gatt.writeDescriptor(descriptor)) {
+            return close("Could not enable Bluetooth notifications.")
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -287,6 +316,9 @@ class BleTransport(
         writeCharacteristic = null
         notifyCharacteristic = null
         writing = false
+        ready = false
+        target = null
+        connectAttempts = 0
         gatt?.disconnect()
         gatt?.close()
         gatt = null

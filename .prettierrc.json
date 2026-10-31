@@ -1,5 +1,11 @@
 {
   "singleQuote": true,
   "trailingComma": "all",
-  "proseWrap": "preserve"
+  "proseWrap": "preserve",
+  "overrides": [
+    {
+      "files": ["shared/protocol/v1/session.schema.json"],
+      "options": { "printWidth": 120 }
+    }
+  ]
 }

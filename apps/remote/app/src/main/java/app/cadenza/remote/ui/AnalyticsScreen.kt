@@ -13,19 +13,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.RemoteState
+import app.cadenza.remote.model.RemoteState
 
 @Composable
 fun AnalyticsScreen(state: RemoteState) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ScreenHeader("Your music", state)
-        Text("Play counts and observed playback time for your requests. Stored only on this Remote.")
+        Text(
+            "Play counts and observed playback time for your requests and for playback started on the Host " +
+                "while this Remote was connected. Stored only on this Remote.",
+        )
         if (state.snapshot?.observationGap == true) {
             Text("Some time could not be observed while Host was unavailable. Missing time is excluded.")
         }
         if (state.statistics.isEmpty()) {
             Text("No plays recorded yet", style = MaterialTheme.typography.headlineSmall)
-            Text("A request counts after Music confirms that playback started and progressed.")
+            Text("A play counts after Music confirms that playback started and progressed.")
         }
         val maximum = state.statistics.maxOfOrNull { it.plays }?.coerceAtLeast(1) ?: 1
         LazyColumn(verticalArrangement = Arrangement.spacedBy(24.dp)) {

@@ -28,8 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.DebugLogEntry
-import app.cadenza.remote.RemoteState
+import app.cadenza.remote.model.DebugLogEntry
+import app.cadenza.remote.model.RemoteState
 import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
@@ -185,11 +185,11 @@ private fun directorySize(directory: java.io.File): Long =
         if (file.isDirectory) directorySize(file) else file.length()
     }
 
-private fun formatBytes(bytes: Long): String {
+internal fun formatBytes(bytes: Long): String {
     if (bytes < 1_024) return "$bytes B"
     val units = listOf("KB", "MB", "GB", "TB")
     var value = bytes.toDouble()
-    var unit = 0
+    var unit = -1
     while (value >= 1_024 && unit < units.lastIndex) {
         value /= 1_024
         unit++

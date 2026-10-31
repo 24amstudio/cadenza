@@ -4,6 +4,7 @@ import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.HostSnapshot
 import app.cadenza.remote.data.Song
+import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.ui.mayInterruptPlayback
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

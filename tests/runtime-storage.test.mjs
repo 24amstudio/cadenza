@@ -168,3 +168,29 @@ test('Host automatic maintenance preserves live requests, unresolved commands, a
     ['current-occurrence', 'held-occurrence'],
   );
 });
+
+test('Host maintenance keeps acknowledged play counts while their occurrence is live', (t) => {
+  const database = openDatabase('host');
+
+  t.after(() => database.close());
+  pairRemotes(database);
+  database.exec(`
+    UPDATE host_state SET current_occurrence_id='live-occurrence';
+    INSERT INTO playback_sessions VALUES ('live-occurrence',NULL,NULL,'catalog','100',1);
+    INSERT INTO playback_credit_outbox VALUES ('remote-a',1,'live-event','live-occurrence','catalog','100',1,500,1);
+  `);
+
+  database.exec(
+    readFileSync(
+      new URL('../apps/host/storage/maintenance.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(
+    database
+      .prepare('SELECT event_id FROM playback_credit_outbox')
+      .all()
+      .map((row) => row['event_id']),
+    ['live-event'],
+  );
+});

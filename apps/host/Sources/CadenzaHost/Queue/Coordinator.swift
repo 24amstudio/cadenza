@@ -9,6 +9,7 @@ final class QueueCoordinator {
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onCredits: (() -> Void)?
     var onIssue: ((String) -> Void)?
+    var connectedRemoteIds: () -> Set<String> = { [] }
     private(set) var nativeRows: [NativeQueueRow] = []
     private var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
@@ -615,7 +616,7 @@ final class QueueCoordinator {
 
     func flushCredits() throws {
         guard let occurrence = pendingPlaybackOccurrence, pendingPlaybackMs > 0 else { return }
-        try store.observe(occurrence: occurrence, milliseconds: pendingPlaybackMs)
+        try store.observe(occurrence: occurrence, milliseconds: pendingPlaybackMs, listeners: connectedRemoteIds())
         pendingPlaybackMs = 0
         pendingPlaybackOccurrence = nil
         onCredits?()

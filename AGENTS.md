@@ -92,7 +92,11 @@ Use the existing system Bun by absolute path. Resolve it from the original shell
 | `bash apps/host/Scripts/build.sh`                     | Ad-hoc native app and ZIP, default development profile                                                     |
 | `node tools/build-info.mjs`                           | Immutable commit SHA for a clean Git tree, otherwise a source SHA-256 identity                             |
 
-Run targeted checks for coherent edits and reserve packaging for final validation. The platform-available local gate must pass before commits or pushes; deferred native checks remain explicitly unverified and CI must run both platform suites before merge or release. Do not claim a deferred Host check passed.
+Do not run checks, builds, or formatters after each edit. Worktrees rebuild their own caches and Gradle state, so repeated local runs slow development badly. Batch the edits for a change, verify them by reading, and run a check only when it answers a question that reading cannot. When you do run one, use the narrowest check that covers the files you changed.
+
+Run the full local gates (`node tools/check.mjs`, `apps/remote/check.sh`, `apps/host/Scripts/check.sh`), packaging, and builds once, when the work is ready for a pull request or the user asks for them. CI is the default gate. After opening a PR, watch its Checking runs with the host's PR watch tool, fix failures, and repeat until every check passes, then unwatch the PR.
+
+Report every check you did not run as unverified. Deferred native checks stay explicitly unverified, and CI must run both platform suites before merge or release. Do not claim a deferred Host check passed.
 
 ## Builds, changelogs and updates
 

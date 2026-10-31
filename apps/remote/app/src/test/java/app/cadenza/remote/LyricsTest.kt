@@ -4,6 +4,7 @@ import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricLine
 import app.cadenza.remote.data.LyricWord
 import app.cadenza.remote.data.Wire
+import app.cadenza.remote.model.id
 import app.cadenza.remote.ui.activeLyricIndex
 import org.json.JSONArray
 import org.json.JSONObject

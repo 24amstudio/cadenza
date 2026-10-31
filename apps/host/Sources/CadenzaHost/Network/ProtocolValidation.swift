@@ -1,4 +1,4 @@
-import CoreFoundation
+﻿import CoreFoundation
 import Foundation
 
 enum ProtocolValidation {
@@ -33,7 +33,7 @@ enum ProtocolValidation {
         } else if ![
             "pair", "hello", "clock", "search", "song.prepare", "operation.cancel", "lyrics.get", "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get",
-            "transport.configure", "session.status",
+            "transport.configure", "session.status", "host.update",
             "recommendation.passport", "recommendation.query", "recommendation.feedback", "recommendation.plan",
             "recommendation.shadow_observation",
         ].contains(frame.type) {
@@ -63,13 +63,12 @@ enum ProtocolValidation {
             "recommendation.feedback": ["recommendation_feedback"],
             "recommendation.plan": ["recommendation_plan"],
             "recommendation.shadow_observation": ["recommendation_shadow_observation"],
+            "host.update": ["update_action", "request_id"],
         ]
         guard let fields = required[type] else { throw invalid("Unknown message type.") }
         let keys = Set(object.keys)
-        var optionalFields = Set(["version", "type", "request_id"])
-        if type == "song.prepare" { optionalFields.insert("song_metadata") }
         guard keys.isSuperset(of: fields.union(["version", "type"])),
-            keys.isSubset(of: fields.union(optionalFields))
+            keys.isSubset(of: fields.union(["version", "type", "request_id"]))
         else {
             throw invalid("The message contains unexpected or missing fields.")
         }
@@ -132,23 +131,7 @@ enum ProtocolValidation {
                 }
             }
         }
-        if type == "song.prepare" {
-            try nested(object["song"], fields: ["source", "id"])
-            if let metadata = object["song_metadata"] as? [String: Any] {
-                try nested(
-                    metadata,
-                    fields: ["source", "id", "title", "artist", "album"],
-                    optional: ["duration_ms", "artwork_url", "url"])
-                guard let source = metadata["source"] as? String,
-                    let identity = object["song"] as? [String: Any],
-                    source == identity["source"] as? String,
-                    metadata["id"] as? String == identity["id"] as? String
-                else { throw invalid("Song metadata does not match its identity.") }
-                let data = try JSONSerialization.data(withJSONObject: metadata)
-                let song = try Wire.decode(Song.self, from: data)
-                guard Wire.validate(song) else { throw invalid("Invalid song metadata.") }
-            }
-        }
+        if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")
         }

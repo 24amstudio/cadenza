@@ -6,6 +6,8 @@ import app.cadenza.remote.data.CadenzaDatabase
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SqlStatements
+import app.cadenza.remote.model.id
+import app.cadenza.remote.ui.duration
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals

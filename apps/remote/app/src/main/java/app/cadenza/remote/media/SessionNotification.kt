@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.media
 
 import android.Manifest
 import android.app.Notification
@@ -11,6 +11,9 @@ import android.graphics.drawable.Icon
 import android.media.session.MediaSession
 import android.os.Build
 import androidx.core.content.ContextCompat
+import app.cadenza.remote.MainActivity
+import app.cadenza.remote.R
+import app.cadenza.remote.model.RemoteState
 
 data class SessionStatus(
     val active: Boolean,
@@ -19,21 +22,22 @@ data class SessionStatus(
     val title: String,
     val artist: String,
     val playing: Boolean,
-    val monitoring: Boolean,
+    val pinned: Boolean,
     val occurrenceId: String = "",
     val canInterrupt: Boolean = false,
 ) {
     companion object {
         fun from(state: RemoteState): SessionStatus {
             val current = state.snapshot?.current
+            val playing = state.snapshot?.playing == true
             return SessionStatus(
-                state.sessionActive || (state.connected && state.snapshot?.playing == true && current != null),
+                state.sessionActive || (state.connected && playing && current != null),
                 state.connected,
                 state.profile?.name.orEmpty(),
                 current?.song?.title.orEmpty(),
                 current?.song?.artist.orEmpty(),
-                state.snapshot?.playing == true,
-                state.monitoringSong,
+                playing,
+                state.connected && playing && current != null,
                 current?.occurrenceId.orEmpty(),
                 current?.requestedBy?.let { requester ->
                     requester == state.profile?.remoteId || state.snapshot.allowCrossRemoteEdits
@@ -115,12 +119,8 @@ class SessionNotification(
             }
             builder.setStyle(style)
         }
-        val unpin = unpinAction()
-        if (status.monitoring) {
-            builder.addAction(Notification.Action.Builder(actionIcon("unpin"), "Unpin", unpin).build())
-        }
         manager.notify(ID, builder.build())
-        if (Build.VERSION.SDK_INT >= 36 && status.monitoring && status.connected && status.playing &&
+        if (Build.VERSION.SDK_INT >= 36 && status.pinned && status.connected && status.playing &&
             manager.canPostPromotedNotifications()
         ) {
             val live =
@@ -136,7 +136,6 @@ class SessionNotification(
                     .setVisibility(Notification.VISIBILITY_PRIVATE)
                     .setCategory(Notification.CATEGORY_STATUS)
                     .setLocalOnly(true)
-                    .addAction(Notification.Action.Builder(actionIcon("unpin"), "Unpin", unpin).build())
                     .setRequestPromotedOngoing(true)
                     .setShortCriticalText("Music")
                     .build()
@@ -167,14 +166,6 @@ class SessionNotification(
             }
         return Icon.createWithResource(context, resource)
     }
-
-    private fun unpinAction(): PendingIntent =
-        PendingIntent.getBroadcast(
-            context,
-            43129,
-            Intent(context, SessionUnpinReceiver::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
 
     fun clear() {
         manager.cancel(ID)

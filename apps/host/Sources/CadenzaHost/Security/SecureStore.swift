@@ -49,6 +49,14 @@ enum SecureStore {
         guard status == errSecSuccess || status == errSecItemNotFound else { throw error(status) }
     }
 
+    /// Rewrites an item so its access list trusts the running signature. macOS asks for each item whose list
+    /// still names an older signature, so callers run this once per signing identity.
+    static func reauthorize(_ account: String) throws {
+        guard let value = try read(account) else { return }
+        try delete(account)
+        try write(account, value)
+    }
+
     private static func error(_ status: OSStatus) -> CadenzaError {
         .failure("secure_storage", SecCopyErrorMessageString(status, nil) as String? ?? "Keychain access failed.")
     }

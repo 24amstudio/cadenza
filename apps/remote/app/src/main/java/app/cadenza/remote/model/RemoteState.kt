@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
@@ -36,7 +36,7 @@ data class RemoteState(
     val favorites: List<Song> = emptyList(),
     val capabilities: Set<String> = emptySet(),
     val sessionActive: Boolean = false,
-    val monitoringSong: Boolean = false,
+    val hostUpdate: HostUpdateStatus? = null,
     val unreadableFavorites: Int = 0,
     val savingPreferences: Boolean = false,
     val savingFavorite: Boolean = false,

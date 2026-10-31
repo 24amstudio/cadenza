@@ -2,6 +2,12 @@ import AppKit
 import CadenzaSecurity
 import Foundation
 
+struct HostUpdateReply: Sendable {
+    let state: String
+    let version: String?
+    let message: String?
+}
+
 @MainActor
 final class HostUpdater {
     let directory: URL
@@ -74,7 +80,8 @@ final class HostUpdater {
         return "Cadenza \(manifest.version) is ready to install."
     }
 
-    func install(configuration: UpdateConfiguration, store: HostStore) throws {
+    /// Confirms that the staged update can be installed, without starting the replacement.
+    func validateInstall(store: HostStore) throws -> (archive: URL, executable: URL) {
         guard HostBuild.updatesEnabled else {
             throw CadenzaError.failure("update", "Updates are disabled in this build.")
         }
@@ -87,6 +94,11 @@ final class HostUpdater {
         else {
             throw CadenzaError.failure("update", "Resolve unconfirmed Music actions before restarting Host.")
         }
+        return (archive, executable)
+    }
+
+    func install(configuration: UpdateConfiguration, store: HostStore) throws {
+        let (archive, executable) = try validateInstall(store: store)
         try store.database.backup(to: directory.appendingPathComponent("before-update.sqlite"))
         let request = InstallRequest(
             applicationPath: Bundle.main.bundleURL.path, archivePath: archive.path,

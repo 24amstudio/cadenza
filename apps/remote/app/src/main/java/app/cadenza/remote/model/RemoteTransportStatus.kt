@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import android.os.SystemClock
 import app.cadenza.remote.data.EffectiveTransportDecision

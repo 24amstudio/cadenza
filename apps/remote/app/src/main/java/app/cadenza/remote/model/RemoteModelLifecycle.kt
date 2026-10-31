@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import android.os.SystemClock
 import kotlinx.coroutines.flow.update
@@ -11,8 +11,6 @@ fun RemoteModel.checkRequest(commandId: String) = checkRequestInternal(commandId
 fun RemoteModel.isStale(now: Long = SystemClock.elapsedRealtime()): Boolean = isStaleInternal(now)
 
 fun RemoteModel.position(now: Long): Long = positionInternal(now)
-
-fun RemoteModel.monitorSong() = monitorSongInternal()
 
 fun RemoteModel.endSessionStatus() = endSessionStatusInternal()
 

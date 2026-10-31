@@ -263,38 +263,64 @@ final class HostStore {
         return occurrence
     }
 
-    func observe(occurrence: String, milliseconds: Int64) throws {
+    /// Host-originated playback credits every connected Remote. A Remote's play count is
+    /// recorded once per occurrence, so later credits for it carry only playing time.
+    func observe(occurrence: String, milliseconds: Int64, listeners: Set<String>) throws {
         guard milliseconds > 0, milliseconds <= 60_000 else { return }
         try database.transaction {
             guard
                 let session = try database.query(
                     "SELECT * FROM playback_sessions WHERE occurrence_id=?", [.text(occurrence)]
-                ).first, let owner = session["requested_by"]?.string,
-                let source = session["source"]?.string, let song = session["song_id"]?.string
+                ).first, let source = session["source"]?.string, let song = session["song_id"]?.string
             else { return }
-            guard
-                let remote = try database.query(
-                    "SELECT next_credit_sequence FROM paired_remotes WHERE remote_id=?", [.text(owner)]
-                ).first, let sequence = remote["next_credit_sequence"]?.integer, sequence < Wire.maximumCounter
-            else {
-                throw CadenzaError.failure("storage", "Playback credits need storage maintenance.")
+            if let owner = session["requested_by"]?.string {
+                try appendCredit(
+                    remoteId: owner, occurrence: occurrence, source: source, song: song,
+                    milliseconds: milliseconds, counted: session["counted"]?.integer == 1)
+                try database.run("UPDATE playback_sessions SET counted=1 WHERE occurrence_id=?", [.text(occurrence)])
+            } else {
+                for remoteId in listeners.sorted() {
+                    let counted = try !database.query(
+                        """
+                        SELECT 1 FROM playback_credit_outbox
+                        WHERE remote_id=? AND occurrence_id=? AND play_count_delta=1
+                        """, [.text(remoteId), .text(occurrence)]
+                    ).isEmpty
+                    try appendCredit(
+                        remoteId: remoteId, occurrence: occurrence, source: source, song: song,
+                        milliseconds: milliseconds, counted: counted)
+                }
+                if !listeners.isEmpty {
+                    try database.run(
+                        "UPDATE playback_sessions SET counted=1 WHERE occurrence_id=?", [.text(occurrence)])
+                }
             }
-            let count: Int64 = session["counted"]?.integer == 1 ? 0 : 1
-            try database.run(
-                """
-                INSERT INTO playback_credit_outbox(
-                  remote_id,sequence,event_id,occurrence_id,source,song_id,play_count_delta,played_ms_delta
-                ) VALUES(?,?,?,?,?,?,?,?)
-                """,
-                [
-                    .text(owner), .integer(sequence), .text(identifier()), .text(occurrence), .text(source),
-                    .text(song), .integer(count), .integer(milliseconds),
-                ])
-            try database.run("UPDATE playback_sessions SET counted=1 WHERE occurrence_id=?", [.text(occurrence)])
-            try database.run(
-                "UPDATE paired_remotes SET next_credit_sequence=next_credit_sequence+1 WHERE remote_id=?",
-                [.text(owner)])
         }
+    }
+
+    private func appendCredit(
+        remoteId: String, occurrence: String, source: String, song: String, milliseconds: Int64, counted: Bool
+    ) throws {
+        guard
+            let remote = try database.query(
+                "SELECT next_credit_sequence FROM paired_remotes WHERE remote_id=?", [.text(remoteId)]
+            ).first, let sequence = remote["next_credit_sequence"]?.integer, sequence < Wire.maximumCounter
+        else {
+            throw CadenzaError.failure("storage", "Playback credits need storage maintenance.")
+        }
+        try database.run(
+            """
+            INSERT INTO playback_credit_outbox(
+              remote_id,sequence,event_id,occurrence_id,source,song_id,play_count_delta,played_ms_delta
+            ) VALUES(?,?,?,?,?,?,?,?)
+            """,
+            [
+                .text(remoteId), .integer(sequence), .text(identifier()), .text(occurrence), .text(source),
+                .text(song), .integer(counted ? 0 : 1), .integer(milliseconds),
+            ])
+        try database.run(
+            "UPDATE paired_remotes SET next_credit_sequence=next_credit_sequence+1 WHERE remote_id=?",
+            [.text(remoteId)])
     }
 
     func credits(_ remoteId: String, after sequence: Int64) throws -> [Frame] {

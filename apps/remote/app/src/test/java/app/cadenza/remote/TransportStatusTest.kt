@@ -1,5 +1,6 @@
 package app.cadenza.remote
 
+import app.cadenza.remote.model.parseTransportPaths
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

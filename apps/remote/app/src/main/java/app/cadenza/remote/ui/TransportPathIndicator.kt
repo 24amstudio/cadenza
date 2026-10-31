@@ -18,8 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.RemoteState
 import app.cadenza.remote.data.TransportPathStatus
+import app.cadenza.remote.model.RemoteState
 
 @Composable
 fun TransportPathIndicator(

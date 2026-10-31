@@ -21,7 +21,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
@@ -41,12 +40,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
-import app.cadenza.remote.endSessionStatus
-import app.cadenza.remote.isStale
-import app.cadenza.remote.monitorSong
-import app.cadenza.remote.showError
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.isStale
+import app.cadenza.remote.model.showError
 import org.json.JSONObject
 
 @Composable
@@ -317,13 +314,6 @@ private fun PlayerPanel(
             },
             enabled = state.connected && "playback.volume" !in state.pending,
         )
-        if (!wide) {
-            OutlinedButton(
-                onClick = { if (state.monitoringSong) model.endSessionStatus() else model.monitorSong() },
-                enabled = state.connected,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (state.monitoringSong) "Unpin song status" else "Pin song status") }
-        }
     }
 }
 

@@ -128,13 +128,24 @@ final class MusicAccessibility {
         }
     }
 
-    private func click(_ element: AXUIElement, deadline: Int64, count: Int = 1) throws {
+    /// Music comes forward asynchronously after AX asks for it, so wait briefly rather than
+    /// reading `isActive` immediately after the request.
+    private func bringMusicForward(deadline: Int64, unavailable: String) throws {
         let app = try root()
         AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true
-        else {
-            throw CadenzaError.failure("native_queue_unavailable", "Bring Music to the front before selecting a song.")
+        let limit = min(deadline, monotonicMs() + 400)
+        while NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
+            .first?.isActive != true
+        {
+            guard monotonicMs() < limit else {
+                throw CadenzaError.failure("native_queue_unavailable", unavailable)
+            }
+            usleep(20_000)
         }
+    }
+
+    private func click(_ element: AXUIElement, deadline: Int64, count: Int = 1) throws {
+        try bringMusicForward(deadline: deadline, unavailable: "Bring Music to the front before selecting a song.")
         let frame = try bounds(element)
         try requireDeadline(deadline)
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
@@ -238,7 +249,7 @@ final class MusicAccessibility {
 
     private func catalogSearchCandidates(root: AXUIElement, song: Song) -> [AXUIElement] {
         let roles = [kAXRowRole, kAXGroupRole, kAXButtonRole, "AXUIElement"]
-        return walk(root).filter { element in
+        let matches = walk(root).filter { element in
             guard roles.contains(string(element, kAXRoleAttribute)) else { return false }
             let nodes = walk(element)
             let values = nodes.flatMap { node in
@@ -250,6 +261,10 @@ final class MusicAccessibility {
             let exactArtist = values.contains { normalized($0) == artist }
             let songResult = values.contains { normalized($0) == "song" || normalized($0).hasPrefix("song ") }
             return exactTitle && exactArtist && songResult
+        }
+        // A container group repeats its result row's text, so only the innermost match is the result.
+        return matches.filter { match in
+            !walk(match).dropFirst().contains { node in matches.contains { CFEqual($0, node) } }
         }
     }
 
@@ -309,7 +324,8 @@ final class MusicAccessibility {
     }
 
     private func selectedSong(_ song: Song, deadline: Int64) throws -> AXUIElement {
-        let queued = Set(try rows(deadline: deadline).map(\.token))
+        // Queued rows are excluded only when Up Next is readable. Preparing a song must not require that panel.
+        let queued = Set((try? rows(deadline: deadline))?.map(\.token) ?? [])
         beginRead(deadline: deadline)
         let root = try root()
         let elements = walk(root)
@@ -352,8 +368,18 @@ final class MusicAccessibility {
         return row
     }
 
+    /// The reason Music does not show the exact song as selected, or nil when it does.
+    func preparationIssue(_ song: Song) -> String? {
+        do {
+            _ = try selectedSong(song, deadline: monotonicMs() + 200)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     func isPrepared(_ song: Song) -> Bool {
-        (try? selectedSong(song, deadline: monotonicMs() + 200)) != nil
+        preparationIssue(song) == nil
     }
 
     func append(_ song: Song, deadline: Int64, next: Bool = false) throws {
@@ -366,13 +392,8 @@ final class MusicAccessibility {
 
     func play(_ row: NativeQueueRow, deadline: Int64) throws {
         beginRead(deadline: deadline)
-        let root = try root()
-        AXUIElementSetAttributeValue(root, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true
-        else {
-            throw CadenzaError.failure(
-                "native_queue_unavailable", "Bring Music to the front to start this queued request.")
-        }
+        try bringMusicForward(
+            deadline: deadline, unavailable: "Bring Music to the front to start this queued request.")
         let frame = try bounds(row.element)
         let point = CGPoint(x: frame.midX, y: frame.midY)
         try requireDeadline(deadline)
@@ -421,12 +442,7 @@ final class MusicAccessibility {
 
     func move(_ row: NativeQueueRow, before anchor: NativeQueueRow?, deadline: Int64) throws {
         beginRead(deadline: deadline)
-        let app = try root()
-        AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.isActive == true
-        else {
-            throw CadenzaError.failure("native_queue_unavailable", "Bring Music to the front to rearrange the queue.")
-        }
+        try bringMusicForward(deadline: deadline, unavailable: "Bring Music to the front to rearrange the queue.")
         let queue = try rows(deadline: deadline)
         guard let destination = anchor ?? queue.last else { return }
         let origin = try bounds(row.element)

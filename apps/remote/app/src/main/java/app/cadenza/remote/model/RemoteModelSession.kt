@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import android.os.SystemClock
 import app.cadenza.remote.data.Wire
@@ -38,7 +38,7 @@ internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
             mutable.update { it.copy(pending = it.pending - original.key, notice = Notice("Request applied")) }
         }
         "unconfirmed" -> {
-            val showPrompt = statusChecks.remove(commandId)
+            val askedByUser = statusChecks.remove(commandId)
             val resolved = frame.optBoolean("resolved", false)
             if (resolved) {
                 val profile = mutable.value.profile
@@ -48,13 +48,15 @@ internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
             }
             mutable.update {
                 val message = frame.optString("message", "Check this request after Host reconciles Music.")
-                if (showPrompt || !resolved) {
-                    it.copy(
-                        pending = it.pending - original.key,
-                        prompt = Prompt("Request unconfirmed", message, if (resolved) null else commandId),
-                    )
-                } else {
-                    it.copy(pending = it.pending - original.key, notice = Notice("Request still needs confirmation"))
+                when (unconfirmedPresentation(askedByUser, resolved, it.prompt != null)) {
+                    UnconfirmedPresentation.Prompt ->
+                        it.copy(
+                            pending = it.pending - original.key,
+                            prompt = Prompt("Request unconfirmed", message, if (resolved) null else commandId),
+                        )
+                    UnconfirmedPresentation.Quiet -> it.copy(pending = it.pending - original.key)
+                    UnconfirmedPresentation.Notice ->
+                        it.copy(pending = it.pending - original.key, notice = Notice("Request still needs confirmation"))
                 }
             }
         }
@@ -97,18 +99,8 @@ internal fun RemoteModel.isStaleInternal(now: Long = SystemClock.elapsedRealtime
 internal fun RemoteModel.positionInternal(now: Long): Long =
     mutable.value.snapshot?.let { clock.position(it, now, isStaleInternal(now)) } ?: 0
 
-internal fun RemoteModel.monitorSongInternal() {
-    mutable.update {
-        it.copy(
-            sessionActive = true,
-            monitoringSong = true,
-            notice = Notice("Song status monitoring is on until you unpin it"),
-        )
-    }
-}
-
 internal fun RemoteModel.endSessionStatusInternal() {
-    mutable.update { it.copy(sessionActive = false, monitoringSong = false) }
+    mutable.update { it.copy(sessionActive = false) }
     if (!foreground) {
         networkMonitor.close()
         discovery?.close()
@@ -117,5 +109,5 @@ internal fun RemoteModel.endSessionStatusInternal() {
     }
 }
 
-internal fun RemoteModel.maintainBackgroundSessionInternal() =
-    foreground || mutable.value.monitoringSong || mutable.value.snapshot?.playing == true
+// A playing Host keeps the session pinned automatically, so backgrounding never drops a song that is playing.
+internal fun RemoteModel.maintainBackgroundSessionInternal() = foreground || mutable.value.snapshot?.playing == true

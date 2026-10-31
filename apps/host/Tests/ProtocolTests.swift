@@ -22,6 +22,15 @@ struct ProtocolTests {
         #expect(action["occurrence_id"] is NSNull)
     }
 
+    @Test func hostUpdateRequestsAcceptOnlyCheckAndInstall() throws {
+        let check = #"{"version":1,"type":"host.update","request_id":"\#(id)","update_action":"check"}"#
+        #expect(try ProtocolValidation.decode(Data(check.utf8)).updateAction == "check")
+        let download = check.replacingOccurrences(of: #""check""#, with: #""download""#)
+        #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(download.utf8)) }
+        let withoutRequest = #"{"version":1,"type":"host.update","update_action":"check"}"#
+        #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(withoutRequest.utf8)) }
+    }
+
     @Test func sessionRejectsCallerIdentityInjectionAndFractionalCounters() throws {
         let auth =
             #"{"version":1,"type":"hello","auth":{"remote_id":"00000000-0000-4000-8000-000000000001","token":"00000000000000000000000000000000","last_credit_sequence":0}}"#

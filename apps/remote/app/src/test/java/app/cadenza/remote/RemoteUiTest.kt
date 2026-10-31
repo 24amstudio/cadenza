@@ -2,6 +2,8 @@ package app.cadenza.remote
 
 import android.content.ComponentName
 import android.graphics.Bitmap
+import android.view.View
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
@@ -61,14 +63,21 @@ import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricLine
 import app.cadenza.remote.data.Song
+import app.cadenza.remote.model.DebugLogEntry
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.id
+import app.cadenza.remote.model.maintainBackgroundSessionInternal
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.ui.ConnectionStatus
 import app.cadenza.remote.ui.DebugScreen
 import app.cadenza.remote.ui.LyricsScreen
 import app.cadenza.remote.ui.PlayingScreen
 import app.cadenza.remote.ui.StartupScreen
+import app.cadenza.remote.ui.duration
 import app.cadenza.remote.ui.position
 import app.cadenza.remote.ui.startupBuildLabel
+import app.cadenza.remote.updates.Changelog
 import kotlinx.coroutines.Dispatchers
 import org.json.JSONArray
 import org.json.JSONObject
@@ -632,18 +641,37 @@ class RemoteUiTest {
     }
 
     @Test
-    fun pinnedSongStatusSurvivesTheActivityBackgroundTransition() {
-        createModel()
-        compose.waitUntil(5_000) { model.state.value.loaded }
-        compose.runOnUiThread {
-            model.monitorSong()
-            model.setForeground(false)
+    fun aPlayingHostKeepsTheScreenAwakeOnlyOnNowPlayingAndLyrics() {
+        seedProfile(playing = true)
+        openApp()
+        assertTrue(viewsKeepingScreenOn().isNotEmpty())
+        navigate("Settings")
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Music volume")).fetchSemanticsNodes().size)
+        assertEquals(emptyList<String>(), viewsKeepingScreenOn())
+        navigate("Playing")
+        compose.onNodeWithText("Lyrics").performClick()
+        assertTrue(viewsKeepingScreenOn().isNotEmpty())
+    }
+
+    @Test
+    fun aPlayingHostKeepsTheSessionAliveWhenTheAppIsBackgrounded() {
+        seedProfile(playing = true)
+        openApp()
+        compose.runOnUiThread { model.setForeground(false) }
+        assertTrue(compose.runOnUiThread { model.maintainBackgroundSessionInternal() })
+    }
+
+    private fun viewsKeepingScreenOn(): List<String> {
+        val found = mutableListOf<String>()
+
+        fun visit(view: View) {
+            if (view.keepScreenOn) found += view.javaClass.name
+            (view as? ViewGroup)?.let { group ->
+                for (index in 0 until group.childCount) visit(group.getChildAt(index))
+            }
         }
-        assertTrue(model.state.value.sessionActive)
-        assertTrue(model.state.value.monitoringSong)
-        compose.runOnUiThread { model.endSessionStatus() }
-        assertTrue(!model.state.value.sessionActive)
-        assertTrue(!model.state.value.monitoringSong)
+        compose.runOnUiThread { visit(compose.activity.window.decorView) }
+        return found
     }
 
     private class PageLifecycle : LifecycleOwner {
@@ -680,7 +708,10 @@ class RemoteUiTest {
         compose.onNode(isSelectable() and hasClickAction() and (hasText(label) or hasContentDescription(label))).performClick()
     }
 
-    private fun seedProfile(emptyQueue: Boolean = false) {
+    private fun seedProfile(
+        emptyQueue: Boolean = false,
+        playing: Boolean = false,
+    ) {
         val profile =
             HostProfile(
                 hostId,
@@ -692,11 +723,14 @@ class RemoteUiTest {
                 TestCertificate.encoded,
             )
         app.database.saveProfile(profile)
-        app.database.saveState(hostId, snapshot(emptyQueue))
+        app.database.saveState(hostId, snapshot(emptyQueue, playing))
         app.settings.write("active_host" to hostId)
     }
 
-    private fun snapshot(emptyQueue: Boolean): JSONObject {
+    private fun snapshot(
+        emptyQueue: Boolean,
+        playing: Boolean = false,
+    ): JSONObject {
         val queue = JSONArray()
         if (!emptyQueue) {
             queue.put(entry(4, remoteId, "Android Remote", "A long requested song title with several words", 210_000, 150_000))
@@ -709,7 +743,7 @@ class RemoteUiTest {
             .put("sequence", 1)
             .put("host_time_ms", 1_000)
             .put("allow_cross_remote_edits", false)
-            .put("playing", false)
+            .put("playing", playing)
             .put("volume", 40)
             .put("quality", "unknown")
             .put(

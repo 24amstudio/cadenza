@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.PairingInvitation

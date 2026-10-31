@@ -38,9 +38,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
-import app.cadenza.remote.position
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.position
 import kotlinx.coroutines.delay
 
 @Composable

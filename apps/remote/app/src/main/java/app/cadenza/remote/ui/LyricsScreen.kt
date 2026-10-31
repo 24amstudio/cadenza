@@ -62,11 +62,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
-import app.cadenza.remote.isStale
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.isStale
 import kotlin.math.abs
 
 internal fun activeLyricIndex(
@@ -201,6 +201,7 @@ fun LyricsScreen(
     onExit: () -> Unit = {},
 ) {
     val current = state.snapshot?.current
+    KeepScreenAwake(state.snapshot?.playing == true && current != null)
     val occurrence = current?.occurrenceId
     val document = state.lyrics?.takeIf { it.occurrenceId == occurrence }
     val stale = !state.connected || model.isStale()

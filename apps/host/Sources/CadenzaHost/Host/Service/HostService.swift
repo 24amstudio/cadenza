@@ -44,6 +44,7 @@ final class HostService {
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onDevicesChanged: (() -> Void)?
     var onIssue: ((String) -> Void)?
+    var hostUpdate: ((String) async -> HostUpdateReply)?
 
     init(directory: URL, configuration: HostConfiguration) throws {
         self.configuration = configuration
@@ -88,6 +89,9 @@ final class HostService {
         }
         queue.onCredits = { [weak self] in self?.deliverCredits() }
         queue.onIssue = { [weak self] message in self?.onIssue?(message) }
+        queue.connectedRemoteIds = { [weak self] in
+            Set(self?.network.peers.values.compactMap { $0.authenticated ? $0.remoteId : nil } ?? [])
+        }
         network.onFrame = { [weak self] peer, frame in self?.receive(frame, from: peer) }
         network.onFailure = { [weak self] reason in self?.recoverListener(reason) }
         network.onIssue = { [weak self] message in self?.onIssue?(message) }
@@ -97,9 +101,13 @@ final class HostService {
             self?.acknowledgedCredits.removeValue(forKey: id)
             self?.transportDecisions.removeValue(forKey: id)
             self?.transportDecisionAt.removeValue(forKey: id)
+            self?.settleCredits()
             self?.onDevicesChanged?()
         }
         bluetooth.onIssue = { [weak self] message in self?.onIssue?(message) }
+        bluetooth.onEvent = { [weak self] action, message in
+            self?.logger.log(.info, category: "bluetooth", action: action, message)
+        }
         bluetooth.onSubscribe = { [weak self] centralID in
             guard let self else { return }
             self.network.acceptBluetooth(
@@ -124,6 +132,7 @@ final class HostService {
         if let observing { observationEnabled = observing }
         do {
             try store.beginEpoch()
+            reauthorizeKeychainItemsIfNeeded()
             let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId)
             self.identity = identity
             try await network.start(
@@ -167,10 +176,34 @@ final class HostService {
         }
     }
 
+    /// Items keep the access list of the signature that created them, so an older signature makes macOS ask
+    /// for every item after each update. Rebuild them under the running signature once. Bump the key when the
+    /// signing identity changes. A denied prompt leaves the items as they are and retries on the next launch.
+    private func reauthorizeKeychainItemsIfNeeded() {
+        let key = "keychainAccess.reauthorized.v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            var accounts = ["catalog.public-token", "tls.\(store.hostId)"]
+            accounts += try store.database.query("SELECT credential_reference FROM paired_remotes").compactMap {
+                $0["credential_reference"]?.string
+            }
+            for account in accounts { try SecureStore.reauthorize(account) }
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            logger.log(
+                .warning, category: "security", action: "keychain.reauthorize.deferred",
+                "Keychain access will be updated after the next approval.")
+        }
+    }
+
+    private func settleCredits() {
+        do { try queue.flushCredits() } catch { onIssue?(error.localizedDescription) }
+    }
+
     func stop() {
         serviceRunning = false
         logger.log(.info, category: "host.lifecycle", action: "service.stop", "Host service stopping")
-        do { try queue.flushCredits() } catch { onIssue?(error.localizedDescription) }
+        settleCredits()
         polling?.cancel()
         observation.stop()
         listenerRecovery?.cancel()
@@ -299,6 +332,8 @@ final class HostService {
                 ).first != nil
             else { throw CadenzaError.failure("revoked", "This Remote is no longer paired.") }
             switch frame.type {
+            case "host.update":
+                handleHostUpdate(frame, peer: peer)
             case "remote.configure":
                 guard let name = frame.name?.trimmingCharacters(in: .whitespacesAndNewlines),
                     (1...80).contains(name.count),
@@ -403,6 +438,8 @@ final class HostService {
         } else {
             throw CadenzaError.failure("authentication", "Pairing expired or the device credential is invalid.")
         }
+        // Playing time before this Remote joined belongs to the Remotes already connected.
+        settleCredits()
         peer.remoteId = remoteId
         peer.authenticated = true
         lastCreditSent[peer.id] = cursor
@@ -417,12 +454,28 @@ final class HostService {
             hostTimeMs: monotonicMs(), updates: configuration.updates
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }
+        if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try queue.snapshot()), to: peer)
         Task { @MainActor [weak self] in await self?.queue.refresh() }
         sendCredits(peer)
         onDevicesChanged?()
+    }
+
+    private func handleHostUpdate(_ frame: Frame, peer: NetworkService.Peer) {
+        guard let action = frame.updateAction, let requestId = frame.requestId else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let reply =
+                await self.hostUpdate?(action)
+                ?? HostUpdateReply(state: "unavailable", version: nil, message: "Host updates are not available.")
+            var status = Frame(type: "host.update.status", requestId: requestId)
+            status.updateState = reply.state
+            status.updateVersion = reply.version
+            status.message = reply.message
+            self.network.send(status, to: peer)
+        }
     }
 
     func publishTransportStatus() {

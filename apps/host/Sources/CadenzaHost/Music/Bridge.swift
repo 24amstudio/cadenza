@@ -66,20 +66,33 @@ final class MusicBridge {
                 .first?.activate(options: [.activateAllWindows])
         }
         let deadline = monotonicMs() + 12_000
+        var lastStep: String?
         if song.source == "catalog" {
             let searchDeadline = min(deadline - 2_000, monotonicMs() + 6_000)
-            _ = try? await accessibility.searchCatalog(song, deadline: searchDeadline)
+            do {
+                let found = try await accessibility.searchCatalog(song, deadline: searchDeadline)
+                if !found { lastStep = "Music's search did not show exactly one matching result." }
+            } catch {
+                lastStep = error.localizedDescription
+            }
         }
         repeat {
             try Task.checkCancellation()
             guard isCurrent() else {
                 throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.")
             }
-            try? accessibility.showQueue(deadline: min(deadline, monotonicMs() + 250))
-            if accessibility.isPrepared(song) { return }
+            do {
+                try accessibility.showQueue(deadline: min(deadline, monotonicMs() + 250))
+            } catch {
+                lastStep = error.localizedDescription
+            }
+            guard let issue = accessibility.preparationIssue(song) else { return }
+            lastStep = issue
             try await Task.sleep(for: .milliseconds(150))
         } while monotonicMs() < deadline
+        let step = lastStep.map { " Last step: \($0)" } ?? ""
         throw CadenzaError.failure(
-            "song_not_ready", "Music did not expose the exact song after navigation. Retry the preparation action.")
+            "song_not_ready",
+            "Music did not expose the exact song after navigation.\(step) Retry the preparation action.")
     }
 }

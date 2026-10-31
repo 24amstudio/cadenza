@@ -35,4 +35,4 @@ This document records the UI revision supplied on 26 October 2026. The base prod
 
 The revision is complete only when the working native Remote has evidence for artwork loading and failure, palette readability, Lyrics entry and exit, track changes, manual scroll/follow, stale synchronization, adaptive widths, large text, keyboard/focus, TalkBack, reduced motion, feedback surfaces, and actual phone/tablet screenshots. Robolectric renders and synthetic data document source behavior but do not establish target-device or Host integration conformance.
 
-Android Live Updates remain conditional on OS, permission, channel, and manufacturer eligibility. Cadenza must keep the standard ongoing notification fallback, expose Unpin for explicit monitoring, and never promise promotion on unsupported devices.
+Android Live Updates remain conditional on OS, permission, channel, and manufacturer eligibility. Cadenza must keep the standard ongoing notification fallback, pin automatically while the Host plays, and never promise promotion on unsupported devices.

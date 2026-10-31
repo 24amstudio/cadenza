@@ -12,7 +12,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/ml-explore/mlx-swift.git",
-            exact: "0.21.0"
+            exact: "0.33.0"
         ),
         .package(
             url: "https://github.com/xocialize/mel-roformer-mlx-swift.git",
@@ -57,7 +57,6 @@ let package = Package(
                 .product(name: "SwiftRoFormer", package: "mel-roformer-mlx-swift"),
             ],
             path: "tools/sing",
-            exclude: ["README.md", "benchmark.sh", "convert_waveform_model.py", "fetch_model.sh"],
             sources: ["Benchmark.swift"]
         ),
         .testTarget(

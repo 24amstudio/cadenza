@@ -40,8 +40,9 @@ internal fun SingControls(
     if ("sing.mode" !in state.capabilities) return
     val sing = state.snapshot?.sing ?: return
     val canMix = sing.status == "ready" || sing.status == "active"
-    val pendingEnable = "sing.enable" in state.pending
-    val pendingDisable = "sing.disable" in state.pending
+    val pendingKeys = model.pending.values.map { it.key }.toSet()
+    val pendingEnable = "sing.enable" in pendingKeys
+    val pendingDisable = "sing.disable" in pendingKeys
     var vocal by remember(current.occurrenceId) { mutableFloatStateOf(-1f) }
     val slider = remember(current.occurrenceId) { SliderState(trackRange = 0f..100f) }
     var failureDialogDismissed by rememberSaveable(current.occurrenceId) { mutableStateOf(false) }
@@ -99,7 +100,7 @@ internal fun SingControls(
                 )
             }
         },
-        enabled = state.connected && canMix && "sing.mix" !in state.pending,
+        enabled = state.connected && canMix && "sing.mix" !in pendingKeys,
     )
     Text(
         "Vocal level ${slider.value.toInt()}%",

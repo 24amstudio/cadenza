@@ -167,7 +167,9 @@ class RemoteModel(
 
     internal val frameQueue = PrioritizedFrameQueue()
 
-    internal val frameSignal = Channel<Unit>(Channel.UNLIMITED)
+    // State frames are coalesced by PrioritizedFrameQueue. A conflated wakeup
+    // avoids retaining one signal per network frame during transport bursts.
+    internal val frameSignal = Channel<Unit>(Channel.CONFLATED)
 
     internal val metadata = mutableSetOf<String>()
 
@@ -195,24 +197,26 @@ class RemoteModel(
         }
         viewModelScope.launch {
             for (ignored in frameSignal) {
-                val item = frameQueue.poll() ?: continue
-                val version = item.version
-                if (version == generation) {
-                    receiveJob =
-                        launch {
-                            try {
-                                receive(item.frame)
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (error: Exception) {
-                                if (version == generation) {
-                                    showError("Could not apply Host data", error.message ?: "Reconnect and retry.")
-                                    disconnect()
+                while (true) {
+                    val item = frameQueue.poll() ?: break
+                    val version = item.version
+                    if (version == generation) {
+                        receiveJob =
+                            launch {
+                                try {
+                                    receive(item.frame)
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    if (version == generation) {
+                                        showError("Could not apply Host data", error.message ?: "Reconnect and retry.")
+                                        disconnect()
+                                    }
                                 }
                             }
-                        }
-                    receiveJob?.join()
-                    receiveJob = null
+                        receiveJob?.join()
+                        receiveJob = null
+                    }
                 }
             }
         }

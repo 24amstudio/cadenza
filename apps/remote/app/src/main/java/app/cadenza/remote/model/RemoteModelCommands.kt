@@ -26,6 +26,10 @@ internal suspend fun RemoteModel.sendCommand(
         createdProfile = profile
         val snapshot = requireNotNull(mutable.value.snapshot) { "Wait for Host state." }
         check(mutable.value.connected && !isStale()) { "Reconnect and wait for current Host state." }
+        // A lyric syllable can be tapped again while Music is still applying
+        // the previous seek. Keep the original command authoritative and
+        // ignore the duplicate tap instead of opening a blocking error dialog.
+        if (key == "playback.seek" && (key in mutable.value.pending || pending.values.any { it.key == key })) return
         check(key !in mutable.value.pending && pending.values.none { it.key == key }) {
             "This request is still pending. Check its original outcome before retrying."
         }
@@ -46,15 +50,19 @@ internal suspend fun RemoteModel.sendCommand(
                 delay(1_000)
                 if (session == generation && foreground && pending.containsKey(commandId)) {
                     mutable.update {
-                        it.copy(
-                            pending = it.pending - key,
-                            prompt =
-                                Prompt(
-                                    "Request unconfirmed",
-                                    "Host did not confirm this request within one second. Check the original request before retrying.",
-                                    commandId,
-                                ),
-                        )
+                        if (key == "playback.seek") {
+                            it.copy(pending = it.pending - key, notice = Notice("Seek still pending"))
+                        } else {
+                            it.copy(
+                                pending = it.pending - key,
+                                prompt =
+                                    Prompt(
+                                        "Request unconfirmed",
+                                        "Host did not confirm this request within one second. Check the original request before retrying.",
+                                        commandId,
+                                    ),
+                            )
+                        }
                     }
                     queryRequest(commandId)
                     connection?.send(Wire.frame("state.get").put("request_id", id()))

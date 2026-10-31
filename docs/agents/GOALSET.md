@@ -185,7 +185,7 @@ Implement two clearly separated CI pipelines.
 
 ### Checking CI
 
-Runs on every relevant commit/push and pull request, across branches, with a six-minute limit per job.
+Runs on every relevant commit/push and pull request, across branches. Remote jobs use a six-minute limit; Host jobs use a fifteen-minute limit for the native MLX build.
 
 For branch and pull-request runs it performs the fast static gates applicable to each project:
 
@@ -200,7 +200,7 @@ Use the project's supported tools and add missing configuration where necessary.
 
 ### Build CI
 
-Build CI may execute only on the `main` branch, and only after Checking CI has completed successfully for the relevant revision. Each Build job has a six-minute limit.
+Build CI may execute only on the `main` branch, and only after Checking CI has completed successfully for the relevant revision. Remote jobs use a six-minute limit; Host jobs use a fifteen-minute limit for the native MLX archive.
 
 It must:
 

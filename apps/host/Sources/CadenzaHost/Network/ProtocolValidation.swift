@@ -15,6 +15,9 @@ enum ProtocolValidation {
         "playback.stop": ["kind", "occurrence_id"],
         "playback.seek": ["kind", "occurrence_id", "position_ms"],
         "playback.volume": ["kind", "percent"],
+        "sing.enable": ["kind", "occurrence_id"],
+        "sing.disable": ["kind", "occurrence_id"],
+        "sing.mix": ["kind", "occurrence_id", "vocal_percent"],
     ]
 
     static func decode(_ data: Data) throws -> Frame {
@@ -35,6 +38,8 @@ enum ProtocolValidation {
             "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get", "motion.get",
             "transport.configure", "session.status", "host.update",
+            "recommendation.passport", "recommendation.query", "recommendation.feedback", "recommendation.plan",
+            "recommendation.shadow_observation",
         ].contains(frame.type) {
             throw invalid("Unknown message type.")
         }
@@ -42,6 +47,10 @@ enum ProtocolValidation {
             throw invalid("Invalid request identifier.")
         }
         if let query = frame.query, query.count > 200 { throw invalid("Search is limited to 200 characters.") }
+        if frame.type == "host.update", !["check", "install"].contains(frame.updateAction) {
+            throw invalid("Unsupported Host update action.")
+        }
+        try validateRecommendation(frame)
         return frame
     }
 
@@ -57,6 +66,11 @@ enum ProtocolValidation {
             "session.status": ["status"],
             "log.report": [],
             "artwork.get": ["request_id", "artwork_url"],
+            "recommendation.passport": ["recommendation_passport"],
+            "recommendation.query": ["recommendation_query"],
+            "recommendation.feedback": ["recommendation_feedback"],
+            "recommendation.plan": ["recommendation_plan"],
+            "recommendation.shadow_observation": ["recommendation_shadow_observation"],
             "motion.get": ["request_id", "occurrence_id"],
             "host.update": ["update_action", "request_id"],
         ]
@@ -74,9 +88,6 @@ enum ProtocolValidation {
         if type == "pair" {
             try nested(
                 object["pair"], fields: ["name"], optional: ["secret", "pin", "heartbeat", "remote_version"])
-        }
-        if type == "host.update", !["check", "install"].contains(object["update_action"] as? String ?? "") {
-            throw invalid("Unknown Host update action.")
         }
         if type == "log.report" {
             // A batch is the normal form. The single-entry fields remain accepted for Remotes that predate batching.
@@ -147,23 +158,7 @@ enum ProtocolValidation {
                 }
             }
         }
-        if type == "song.prepare" {
-            try nested(object["song"], fields: ["source", "id"])
-            if let metadata = object["song_metadata"] as? [String: Any] {
-                try nested(
-                    metadata,
-                    fields: ["source", "id", "title", "artist", "album"],
-                    optional: ["duration_ms", "artwork_url", "url"])
-                guard let source = metadata["source"] as? String,
-                    let identity = object["song"] as? [String: Any],
-                    source == identity["source"] as? String,
-                    metadata["id"] as? String == identity["id"] as? String
-                else { throw invalid("Song metadata does not match its identity.") }
-                let data = try JSONSerialization.data(withJSONObject: metadata)
-                let song = try Wire.decode(Song.self, from: data)
-                guard Wire.validate(song) else { throw invalid("Invalid song metadata.") }
-            }
-        }
+        if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")
         }
@@ -192,6 +187,9 @@ enum ProtocolValidation {
             guard let id = object["command_id"] as? String, Wire.isIdentifier(id) else {
                 throw invalid("Invalid command identifier.")
             }
+        }
+        if type.hasPrefix("recommendation.") {
+            guard keys.count <= 5 else { throw invalid("The recommendation message contains unexpected fields.") }
         }
     }
 
@@ -238,6 +236,14 @@ enum ProtocolValidation {
             if let anchor = action.beforeEntryId, !Wire.isIdentifier(anchor) { throw invalid("Invalid queue anchor.") }
         case "playback.volume":
             guard let percent = action.percent, (0...100).contains(percent) else { throw invalid("Invalid volume.") }
+        case "sing.mix":
+            guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence),
+                let vocalPercent = action.vocalPercent, (0...100).contains(vocalPercent)
+            else { throw invalid("Invalid Sing mix.") }
+        case "sing.enable", "sing.disable":
+            guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence) else {
+                throw invalid("The Sing action must identify the current playback occurrence.")
+            }
         default:
             guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence) else {
                 throw invalid("The action must identify the current playback occurrence.")
@@ -247,6 +253,44 @@ enum ProtocolValidation {
                     throw invalid("Invalid playback position.")
                 }
             }
+        }
+    }
+
+    private static func validateRecommendation(_ frame: Frame) throws {
+        switch frame.type {
+        case "recommendation.passport":
+            guard let passport = frame.recommendationPassport,
+                passport.payloadBase64.count <= CREEConstants.maximumPayloadBytes * 2,
+                passport.publicKeyBase64.count <= 512, passport.signatureBase64.count <= 512
+            else { throw invalid("Invalid recommendation passport.") }
+        case "recommendation.query":
+            guard
+                let query = frame.recommendationQuery,
+                (1...CREEConstants.maximumPlanHorizon).contains(query.horizon),
+                query.modelVersion > 0
+            else { throw invalid("Invalid recommendation query.") }
+        case "recommendation.feedback":
+            guard let feedback = frame.recommendationFeedback,
+                Wire.isIdentifier(feedback.recommendationId), feedback.occurredAtMs >= 0
+            else { throw invalid("Invalid recommendation feedback.") }
+        case "recommendation.plan":
+            guard let plan = frame.recommendationPlan,
+                Wire.isIdentifier(plan.planId), Wire.isIdentifier(plan.recommendationId),
+                plan.passportSequence > 0, plan.modelVersion > 0,
+                (0...Wire.maximumCounter).contains(plan.expectedRevision),
+                plan.operation.kind == "queue.play_next", let song = plan.operation.song, Wire.validate(song),
+                plan.operation.entryId == nil, plan.operation.beforeEntryId == nil,
+                plan.operation.occurrenceId == nil
+            else { throw invalid("Invalid recommendation plan.") }
+        case "recommendation.shadow_observation":
+            guard
+                let observation = frame.recommendationShadowObservation,
+                Wire.isIdentifier(observation.observationId),
+                observation.provenanceConfidence.isFinite,
+                (0...1).contains(observation.provenanceConfidence),
+                observation.observedAtMs >= 0
+            else { throw invalid("Invalid recommendation shadow observation.") }
+        default: break
         }
     }
 

@@ -68,17 +68,17 @@ jobs:
 
   host:
     runs-on: macos-26
-    timeout-minutes: 6
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: apps/host/.build/module-cache
-          key: host-modules-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift') }}
+          path: apps/host/.build
+          key: host-build-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift') }}
           restore-keys: |
-            host-modules-${{ runner.os }}-
+            host-build-${{ runner.os }}-
       - name: Run Host static checks
         env:
           CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/apps/host/.build/module-cache
@@ -87,3 +87,4 @@ jobs:
           cd apps/host
           /usr/bin/swift format lint --strict --recursive Package.swift Sources Tests
           /usr/bin/swift build -c debug --arch arm64 -Xswiftc -warnings-as-errors
+          /usr/bin/swift test -Xswiftc -warnings-as-errors

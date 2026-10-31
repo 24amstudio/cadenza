@@ -10,7 +10,18 @@ Host source is componentized under `Sources/CadenzaHost`: Host UI and lifecycle 
 
 See [building](../../docs/BUILDING.md), [setup](../../docs/SETUP.md), and [usage](../../docs/USAGE.md). From the monorepo root on a supported Apple silicon macOS system with a compatible existing toolchain, use the check and build scripts under Scripts.
 
-The package has no external Swift dependency. CadenzaSecurity provides release verification and safe archive inspection; CadenzaUpdater installs a staged update; CadenzaRelease creates signing identities and signed metadata. Paid Apple Developer membership is not required by this design. Its ad-hoc update and privacy-permission behavior needs an actual target-system test.
+The Host-owned karaoke route and the model contract for Sing are documented in [SING.md](../../docs/SING.md). Native capture, separation, and output remain on Host; Remote never receives PCM audio or model data.
+
+The package pins the MIT-licensed `mel-roformer-mlx-swift` Swift package for
+Apple Silicon Sing inference. Production archives bundle the MIT-licensed
+`mel-roformer-kim-vocal-2-mlx` checkpoint at its pinned model commit after a
+size and SHA-256 check. Development runs without that archive resource use the
+same pinned local model cache. CadenzaSecurity provides release
+verification and safe archive inspection; CadenzaUpdater installs a staged
+update; CadenzaRelease creates signing identities and signed metadata. Paid
+Apple Developer membership is not required by this design. Its ad-hoc update,
+model loading, and privacy-permission behavior needs an actual target-system
+test.
 
 Transport and library metadata use the fixed owned JXA resource. Native queue effects use Accessibility with bounded reads, exact selected-song matching, durable intents, and native readback. Catalog search and Music lyric extraction remain isolated adapters. When enabled, Host falls back to LRCLIB for a validated LRC document, caches the normalized result, and serves cached artwork and lyrics to authenticated Remotes.
 

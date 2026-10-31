@@ -23,7 +23,7 @@ Back up the private update key and APK keystore securely before publishing a bas
 
 ## Configure automatic Build CI publishing
 
-The `Build` workflow runs after a successful static `Checking` push to `main`. It repeats those checks, builds both apps with the `production` profile, signs the release metadata, and creates a unique stable release for every checked revision. Each CI job has a six-minute limit. CI derives a release version such as `0.0.3_20261029.1001-eb751fa0730d` from the checked-in semantic version, the Checking run number, the UTC commit date, and the commit hash. The GitHub title is shown as `Cadenza 0.0.3_20261029.1001 (eb751fa0730d)`. No manual version bump or tag is required for ordinary builds.
+The `Build` workflow runs after a successful static `Checking` push to `main`. It repeats those checks, builds both apps with the `production` profile, signs the release metadata, and creates a unique stable release for every checked revision. Remote jobs have a six-minute limit; Host jobs have a fifteen-minute limit for the MLX dependency and native archive. CI derives a release version such as `0.1.2_20261031.260-e7ba37dcd30e` from the checked-in semantic version, the Checking run number, the UTC commit date, and the commit hash. The GitHub title is shown as `Cadenza 0.1.2_20261031.260 (e7ba37dcd30e)`. No manual version bump or tag is required for ordinary builds.
 
 Generate the Android release keystore on a trusted machine with JDK `keytool`; never use the disposable debug keystore:
 

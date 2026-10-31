@@ -2,6 +2,14 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.1.3",
+      "build": 8,
+      "changes": [
+        "Fixes Build CI release signing by preserving the exact checked source identity.",
+        "Keeps the pinned Sing model verification and production artifact checks deterministic."
+      ]
+    },
+    {
       "version": "0.1.2",
       "build": 7,
       "changes": [

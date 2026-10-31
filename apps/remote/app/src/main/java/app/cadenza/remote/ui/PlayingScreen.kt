@@ -331,6 +331,7 @@ private fun PlayerPanel(
             },
             enabled = state.connected,
         )
+        SingControls(model, state, current)
     }
 }
 

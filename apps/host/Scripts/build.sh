@@ -41,6 +41,17 @@ mkdir -p "$project_root/dist" "$host_root/.build/staging"
 cd "$host_root"
 /usr/bin/swift build -c release --arch arm64 -Xswiftc -warnings-as-errors
 binary_root="$(/usr/bin/swift build -c release --arch arm64 --show-bin-path)"
+if [[ "$profile" == production ]]; then
+  sing_model_directory="$host_root/.build/sing-model"
+  /bin/bash "$project_root/tools/sing/fetch_model.sh" "$sing_model_directory" >/dev/null
+  sing_resource_directory="$binary_root/CadenzaHost_CadenzaHost.bundle/Resources/SingModel"
+  mkdir -p "$sing_resource_directory"
+  cp "$sing_model_directory/model.safetensors" "$sing_resource_directory/model.safetensors"
+  cp "$sing_model_directory/config.json" "$sing_resource_directory/config.json"
+  cp "$sing_model_directory/LICENSE" "$sing_resource_directory/LICENSE"
+else
+  rm -rf "$binary_root/CadenzaHost_CadenzaHost.bundle/Resources/SingModel"
+fi
 stage="$(mktemp -d "$host_root/.build/staging/package.XXXXXX")"
 application="$stage/Cadenza Host.app"
 mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"

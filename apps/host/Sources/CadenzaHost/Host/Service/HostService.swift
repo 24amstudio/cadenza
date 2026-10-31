@@ -12,6 +12,7 @@ final class HostService {
     let motion: MotionProvider
     let logger: HostLogger
     let lyrics: Lyrics
+    let sing: SingCoordinator
     let network = NetworkService()
     let pairingBootstrap = PairingBootstrap()
     let bluetooth = BluetoothPeripheral()
@@ -31,8 +32,8 @@ final class HostService {
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
     private var lyricDocument: LyricDocument?
-    private var lastCreditSent: [String: Int64] = [:]
-    private var acknowledgedCredits: [String: Int64] = [:]
+    var lastCreditSent: [String: Int64] = [:]
+    var acknowledgedCredits: [String: Int64] = [:]
     private var lastMaintenance: Int64 = 0
     private var receivedCommands: Set<String> = []
     private var transportDecisions: [String: EffectiveTransportDecision] = [:]
@@ -73,8 +74,10 @@ final class HostService {
         self.artwork = ArtworkProvider(cache: cache)
         self.motion = MotionProvider(catalog: catalog, cache: cache)
         self.lyrics = Lyrics(cache: cache, providerEnabled: configuration.lyricsProviderEnabled)
+        self.sing = SingCoordinator()
         logger.log(.info, category: "host.lifecycle", action: "service.initialized", "Host service initialized")
         queue = QueueCoordinator(store: store, music: music, catalog: catalog)
+        sing.onSessionChanged = { [weak self] in self?.queue.publish() }
         queue.logger = logger
         queue.currentArtwork = { [weak self] occurrenceId in
             try await self?.currentMusicArtwork(occurrenceId)
@@ -82,22 +85,27 @@ final class HostService {
         network.logger = logger
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
-            self.onSnapshot?(snapshot)
+            var published = snapshot
+            if self.sing.currentOccurrence != published.current?.occurrenceId {
+                self.sing.invalidate()
+            }
+            published.sing = self.sing.session
+            self.onSnapshot?(published)
             if !self.network.peers.isEmpty {
-                let unchanged = self.lastPublished.map { snapshot.permitsHeartbeat(comparedTo: $0) } ?? false
+                let unchanged = self.lastPublished.map { published.permitsHeartbeat(comparedTo: $0) } ?? false
                 if unchanged {
-                    self.network.broadcast(Frame(type: "heartbeat", hostEpoch: snapshot.hostEpoch))
+                    self.network.broadcast(Frame(type: "heartbeat", hostEpoch: published.hostEpoch))
                     for peer in self.network.peers.values where peer.authenticated && !peer.supportsHeartbeat {
-                        self.network.send(Frame(type: "state", snapshot: snapshot), to: peer)
+                        self.network.send(Frame(type: "state", snapshot: published), to: peer)
                     }
                 } else {
-                    self.network.broadcast(Frame(type: "state", snapshot: snapshot))
+                    self.network.broadcast(Frame(type: "state", snapshot: published))
                 }
-                self.lastPublished = snapshot
+                self.lastPublished = published
             }
-            if snapshot.current?.occurrenceId != self.lyricDocument?.occurrenceId {
+            if published.current?.occurrenceId != self.lyricDocument?.occurrenceId {
                 self.lyricDocument = nil
-                if self.lyricOccurrence != snapshot.current?.occurrenceId {
+                if self.lyricOccurrence != published.current?.occurrenceId {
                     self.lyricJob?.cancel()
                     self.lyricJob = nil
                 }
@@ -228,6 +236,7 @@ final class HostService {
         lyricJob = nil
         lyricOccurrence = nil
         lyricDocument = nil
+        sing.stop()
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
         network.stop()
@@ -385,7 +394,7 @@ final class HostService {
             case "log.report": try recordRemoteLogs(frame, peer: peer)
             case "artwork.get": loadArtwork(peer: peer, requestId: frame.requestId, url: frame.artworkUrl)
             case "clock": try clock(frame, peer: peer)
-            case "state.get": network.send(Frame(type: "state", snapshot: try queue.snapshot()), to: peer)
+            case "state.get": network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
             case "analytics.ack": try acknowledge(frame, peer: peer, actor: actor)
             case "command": command(frame, peer: peer, actor: actor, receivedAt: receivedAt)
             case "command.status":
@@ -476,10 +485,11 @@ final class HostService {
             hostTimeMs: monotonicMs(), updates: configuration.updates
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }
+        if sing.capabilityAvailable { welcome.capabilities.append("sing.mode") }
         if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
-        network.send(Frame(type: "state", snapshot: try queue.snapshot()), to: peer)
+        network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
         Task { @MainActor [weak self] in await self?.queue.refresh() }
         sendCredits(peer)
         onDevicesChanged?()
@@ -611,7 +621,7 @@ final class HostService {
             defer { self.receivedCommands.remove(reservation) }
             do {
                 let startedAt = monotonicMs()
-                let result = try await self.queue.execute(frame, actor: actor)
+                let result = try await self.executeCommand(frame, actor: actor)
                 let completedAt = monotonicMs()
                 let latencyMessage =
                     "command_id=\(frame.commandId ?? "unknown")"
@@ -622,6 +632,56 @@ final class HostService {
                 self.logCommandResult(result, request: frame, peer: peer, receivedAt: receivedAt)
                 self.network.send(result, to: peer)
             } catch { self.fail(error, request: frame, peer: peer) }
+        }
+    }
+
+    private func snapshot() throws -> HostSnapshot {
+        var value = try queue.snapshot()
+        value.sing = sing.session
+        return value
+    }
+
+    private func executeCommand(_ frame: Frame, actor: String) async throws -> Frame {
+        guard frame.action?.kind.hasPrefix("sing.") == true else {
+            return try await queue.execute(frame, actor: actor)
+        }
+        guard let action = frame.action, let occurrence = action.occurrenceId else {
+            throw CadenzaError.failure("invalid_command", "Sing requires the current playback occurrence.")
+        }
+        if let previous = try queue.journal.previous(frame, actor: actor) { return previous }
+        guard try snapshot().current?.occurrenceId == occurrence else {
+            throw CadenzaError.failure("stale_occurrence", "The current song changed.")
+        }
+        try queue.journal.prepare(frame, actor: actor, plan: nil)
+        do {
+            guard sing.capabilityAvailable else {
+                throw CadenzaError.failure(
+                    "sing_unavailable", "Sing is unavailable on this Host configuration.")
+            }
+            if action.kind == "sing.enable",
+                sing.currentOccurrence != occurrence || sing.session.status == "failed"
+                    || sing.session.status == "unavailable"
+            {
+                await sing.prepare(for: occurrence)
+            }
+            switch action.kind {
+            case "sing.enable": try await sing.enable(for: occurrence)
+            case "sing.disable": try sing.disable(for: occurrence)
+            case "sing.mix": try sing.setVocalPercent(action.vocalPercent ?? -1, for: occurrence)
+            default: throw CadenzaError.failure("invalid_command", "Unknown Sing action.")
+            }
+            try queue.journal.dispatched(frame, actor: actor)
+            let result = try queue.journal.result(frame, outcome: "applied")
+            try queue.journal.finish(frame, actor: actor, result: result)
+            queue.publish()
+            return result
+        } catch {
+            let code = (error as? CadenzaError)?.code ?? "sing_unavailable"
+            let result = try queue.journal.result(
+                frame, outcome: "rejected", code: code, message: error.localizedDescription)
+            try queue.journal.finish(frame, actor: actor, result: result)
+            queue.publish()
+            return result
         }
     }
 
@@ -855,35 +915,6 @@ final class HostService {
         logger.log(
             .info, category: "motion", action: "motion.sent", "Motion artwork sent in \(count) chunks",
             metadata: ["occurrence_id": occurrenceId, "bytes": String(video.count)])
-    }
-
-    private func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
-        guard let sequence = frame.sequence, sequence >= (acknowledgedCredits[peer.id] ?? 0),
-            sequence <= (lastCreditSent[peer.id] ?? 0)
-        else {
-            throw CadenzaError.failure("invalid_command", "Invalid analytics acknowledgment.")
-        }
-        try store.acknowledge(actor, through: sequence)
-        acknowledgedCredits[peer.id] = sequence
-        sendCredits(peer)
-    }
-
-    private func deliverCredits() {
-        for peer in network.peers.values where peer.authenticated { sendCredits(peer) }
-    }
-
-    private func sendCredits(_ peer: NetworkService.Peer) {
-        guard let actor = peer.remoteId else { return }
-        let sent = lastCreditSent[peer.id] ?? 0
-        let acknowledged = acknowledgedCredits[peer.id] ?? 0
-        guard sent - acknowledged < 8 else { return }
-        do {
-            let available = 8 - Int(sent - acknowledged)
-            for frame in try store.credits(actor, after: sent).prefix(available) {
-                network.send(frame, to: peer)
-                lastCreditSent[peer.id] = frame.sequence
-            }
-        } catch { onIssue?(error.localizedDescription) }
     }
 
     // Every command field a debugging session needs, without the song's full metadata.

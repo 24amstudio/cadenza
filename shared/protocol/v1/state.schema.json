@@ -126,7 +126,8 @@
         "mixing": { "type": "boolean" },
         "synchronized": { "type": "boolean" },
         "issue": { "type": "string", "maxLength": 4000 },
-        "observation_gap": { "type": "boolean" }
+        "observation_gap": { "type": "boolean" },
+        "sing": { "$ref": "#/$defs/sing" }
       },
       "additionalProperties": false
     },
@@ -187,6 +188,23 @@
           "maxItems": 2000,
           "items": { "$ref": "#/$defs/line" }
         },
+        "issue": { "type": "string", "maxLength": 4000 }
+      },
+      "additionalProperties": false
+    },
+    "sing": {
+      "type": "object",
+      "required": ["status", "vocal_percent"],
+      "properties": {
+        "status": {
+          "enum": ["unavailable", "preparing", "ready", "active", "failed"]
+        },
+        "vocal_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "latency_ms": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "backend": { "type": "string", "maxLength": 80 },
+        "model_revision": { "type": "string", "maxLength": 128 },
         "issue": { "type": "string", "maxLength": 4000 }
       },
       "additionalProperties": false

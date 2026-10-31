@@ -114,6 +114,44 @@ test('unsafe counters, invalid volume, missing boot identity, and unguarded tran
   );
 });
 
+test('Sing controls are occurrence-bound and keep audio local to Host', () => {
+  const enable = {
+    ...base,
+    action: { kind: 'sing.enable', occurrence_id: occurrence },
+  };
+
+  assert.equal(validateCommand(enable), true);
+  assert.equal(
+    validateCommand({
+      ...base,
+      action: {
+        kind: 'sing.mix',
+        occurrence_id: occurrence,
+        vocal_percent: 35,
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    validateCommand({
+      ...base,
+      action: {
+        kind: 'sing.mix',
+        occurrence_id: occurrence,
+        vocal_percent: 101,
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    validateCommand({
+      ...base,
+      action: { kind: 'sing.enable', occurrence_id: occurrence, audio: 'pcm' },
+    }),
+    false,
+  );
+});
+
 test('results distinguish confirmed completion from uncertainty and deadline failure', () => {
   const response = {
     version: 1,

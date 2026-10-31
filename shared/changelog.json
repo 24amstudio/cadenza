@@ -2,6 +2,14 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.1.1",
+      "build": 6,
+      "changes": [
+        "Adds Host-owned Sing mode with local vocal mixing controls in the Player and Lyrics views.",
+        "Adds occurrence-bound audio commands, Core Audio capture, bounded processing, and pinned Apple Silicon MLX Mel-RoFormer separation."
+      ]
+    },
+    {
       "version": "0.0.3",
       "build": 5,
       "changes": [

@@ -9,12 +9,31 @@ let package = Package(
         .executable(name: "CadenzaUpdater", targets: ["CadenzaUpdater"]),
         .executable(name: "CadenzaRelease", targets: ["CadenzaRelease"]),
     ],
+    dependencies: [
+        .package(
+            url: "https://github.com/ml-explore/mlx-swift.git",
+            exact: "0.33.0"
+        ),
+        .package(
+            url: "https://github.com/xocialize/mel-roformer-mlx-swift.git",
+            revision: "22162f8fd5cd8cc09abc47a87c1ecddf3baf5ee3"
+        ),
+        .package(
+            url: "https://github.com/huggingface/swift-transformers.git",
+            revision: "573e5c9036c2f136b3a8a071da8e8907322403d0"
+        ),
+    ],
     targets: [
         .systemLibrary(name: "CSQLite", path: "Sources/CSQLite"),
         .target(name: "CadenzaSecurity", path: "Sources/CadenzaSecurity"),
         .executableTarget(
             name: "CadenzaHost",
-            dependencies: ["CSQLite", "CadenzaSecurity"],
+            dependencies: [
+                "CSQLite", "CadenzaSecurity",
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "SwiftRoFormer", package: "mel-roformer-mlx-swift"),
+                .product(name: "Hub", package: "swift-transformers"),
+            ],
             path: ".",
             exclude: [
                 "Sources/CSQLite", "Sources/CadenzaSecurity", "Sources/CadenzaUpdater",
@@ -30,6 +49,15 @@ let package = Package(
         .executableTarget(
             name: "CadenzaRelease", dependencies: ["CadenzaSecurity"],
             path: "Sources/CadenzaRelease"
+        ),
+        .executableTarget(
+            name: "CadenzaSingBenchmark",
+            dependencies: [
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "SwiftRoFormer", package: "mel-roformer-mlx-swift"),
+            ],
+            path: "tools/sing",
+            sources: ["Benchmark.swift"]
         ),
         .testTarget(
             name: "CadenzaHostTests",

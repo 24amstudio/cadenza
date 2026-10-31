@@ -44,5 +44,5 @@ struct RecommendationPlanner: Sendable {
 }
 
 extension Double {
-    func sigmoid() -> Double { 1 / (1 + exp(-self)) }
+    func sigmoid() -> Double { 1 / (1 + Foundation.exp(-self)) }
 }

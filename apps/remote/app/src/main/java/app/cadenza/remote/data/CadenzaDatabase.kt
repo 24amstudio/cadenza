@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 class CadenzaDatabase(
     private val context: Context,
-) : SQLiteOpenHelper(context, "cadence.sqlite", null, 1) {
+) : SQLiteOpenHelper(context, "cadence.sqlite", null, 2) {
     data class PendingLog(
         val id: Long,
         val level: String,
@@ -37,7 +37,8 @@ class CadenzaDatabase(
         oldVersion: Int,
         newVersion: Int,
     ) {
-        error("Unsupported database version. Your existing data was preserved.")
+        if (oldVersion < 2) migrate(db, "001-recommendations.sql")
+        if (newVersion > 2) error("Unsupported database version. Your existing data was preserved.")
     }
 
     override fun onDowngrade(
@@ -327,5 +328,72 @@ class CadenzaDatabase(
         if (ids.isEmpty()) return
         val placeholders = ids.joinToString(",") { "?" }
         writableDatabase.delete("remote_log_outbox", "log_id IN ($placeholders)", ids.map { it.toString() }.toTypedArray())
+    }
+
+    @Synchronized
+    fun saveRecommendationEvent(
+        eventId: String,
+        recommendationId: String?,
+        source: String,
+        songId: String,
+        outcome: String,
+        positionMs: Long?,
+        durationMs: Long?,
+        replacementJson: String?,
+        occurredAtMs: Long,
+    ) {
+        require(source == "catalog" || source == "library")
+        require(
+            outcome in
+                setOf(
+                    "qualified_play",
+                    "early_skip",
+                    "late_skip",
+                    "replay",
+                    "favorite",
+                    "manual_replacement",
+                    "queue_removal",
+                    "interruption",
+                ),
+        )
+        val values =
+            ContentValues().apply {
+                put("event_id", eventId)
+                recommendationId?.let { put("recommendation_id", it) }
+                put("source", source)
+                put("song_id", songId)
+                put("outcome", outcome)
+                positionMs?.let { put("position_ms", it) }
+                durationMs?.let { put("duration_ms", it) }
+                replacementJson?.let { put("replacement_json", it) }
+                put("occurred_at_ms", occurredAtMs)
+            }
+        writableDatabase.insertOrThrow("recommendation_events", null, values)
+        writableDatabase.execSQL(
+            "DELETE FROM recommendation_events WHERE event_id NOT IN (SELECT event_id FROM recommendation_events ORDER BY occurred_at_ms DESC LIMIT 5000)",
+        )
+    }
+
+    @Synchronized
+    fun saveRecommendationPassport(
+        sequence: Long,
+        payload: String,
+        publicKey: String,
+        signature: String,
+        createdAtMs: Long,
+    ) {
+        require(sequence > 0 && payload.length <= 131_072 && publicKey.length <= 1_024 && signature.length <= 1_024)
+        val values =
+            ContentValues().apply {
+                put("sequence", sequence)
+                put("payload_base64", payload)
+                put("public_key_base64", publicKey)
+                put("signature_base64", signature)
+                put("created_at_ms", createdAtMs)
+            }
+        writableDatabase.insertOrThrow("recommendation_passports", null, values)
+        writableDatabase.execSQL(
+            "DELETE FROM recommendation_passports WHERE sequence < (SELECT max(sequence) - 2 FROM recommendation_passports)",
+        )
     }
 }

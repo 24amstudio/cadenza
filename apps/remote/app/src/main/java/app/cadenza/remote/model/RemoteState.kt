@@ -12,6 +12,18 @@ import app.cadenza.remote.data.UpdateConfiguration
 import java.io.File
 import java.util.UUID
 
+data class RecommendationItem(
+    val recommendationId: String,
+    val planId: String,
+    val source: String,
+    val songId: String,
+    val title: String? = null,
+    val artist: String? = null,
+    val confidence: Double,
+    val evidence: List<String>,
+    val expiresAtMs: Long,
+)
+
 data class Prompt(
     val title: String,
     val message: String,
@@ -82,4 +94,6 @@ data class RemoteState(
     val changelog: String? = null,
     val comparingChanges: Boolean = false,
     val debugLog: List<DebugLogEntry> = emptyList(),
+    val creeMode: String = "disabled",
+    val nextRecommendation: RecommendationItem? = null,
 )

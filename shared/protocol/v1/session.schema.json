@@ -4,7 +4,9 @@
   "type": "object",
   "required": ["version", "type"],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "update_action": { "enum": ["check", "install"] },
     "update_state": {
       "enum": ["current", "ready", "installing", "failed", "unavailable"]
@@ -42,6 +44,14 @@
         "transport.configure",
         "transport.configured",
         "session.status",
+        "recommendation.passport",
+        "recommendation.query",
+        "recommendation.result",
+        "recommendation.feedback",
+        "recommendation.plan",
+        "recommendation.shadow_observation",
+        "recommendation.plan.result",
+        "recommendation.passport.accepted",
         "host.update",
         "host.update.status"
       ]
@@ -264,6 +274,12 @@
       "type": "string",
       "maxLength": 700000
     },
+    "recommendation_passport": { "type": "object" },
+    "recommendation_query": { "type": "object" },
+    "recommendation_result": { "type": ["object", "null"] },
+    "recommendation_feedback": { "type": "object" },
+    "recommendation_plan": { "type": "object" },
+    "recommendation_shadow_observation": { "type": "object" },
     "chunk_index": { "type": "integer", "minimum": 0, "maximum": 4095 },
     "chunk_count": { "type": "integer", "minimum": 1, "maximum": 4096 },
     "total_bytes": { "type": "integer", "minimum": 1, "maximum": 8388608 },
@@ -318,13 +334,7 @@
           "enum": ["host", "remote"]
         },
         "preference": {
-          "enum": [
-            "latency",
-            "host_efficiency",
-            "remote_efficiency",
-            "reliability",
-            "balanced"
-          ]
+          "enum": ["latency", "host_efficiency", "remote_efficiency", "reliability", "balanced"]
         },
         "power": {
           "type": "object",
@@ -444,31 +454,13 @@
             "bulk": { "enum": ["lan", "ble", "auto", null] },
             "reason": { "type": "string", "maxLength": 500 },
             "host_preference": {
-              "enum": [
-                "latency",
-                "host_efficiency",
-                "remote_efficiency",
-                "reliability",
-                "balanced"
-              ]
+              "enum": ["latency", "host_efficiency", "remote_efficiency", "reliability", "balanced"]
             },
             "remote_preference": {
-              "enum": [
-                "latency",
-                "host_efficiency",
-                "remote_efficiency",
-                "reliability",
-                "balanced",
-                null
-              ]
+              "enum": ["latency", "host_efficiency", "remote_efficiency", "reliability", "balanced", null]
             },
             "policy_mode": {
-              "enum": [
-                "host_led",
-                "remote_led",
-                "balanced_negotiation",
-                "manual"
-              ]
+              "enum": ["host_led", "remote_led", "balanced_negotiation", "manual"]
             },
             "confidence": { "enum": ["low", "medium", "high"] }
           },
@@ -518,35 +510,7 @@
       "then": {
         "required": ["pair"],
         "properties": {
-          "pair": {
-            "type": "object",
-            "required": ["name"],
-            "anyOf": [{ "required": ["secret"] }, { "required": ["pin"] }],
-            "not": {
-              "required": ["secret", "pin"],
-              "properties": { "secret": {}, "pin": {} }
-            },
-            "properties": {
-              "secret": {
-                "type": "string",
-                "minLength": 32,
-                "maxLength": 128
-              },
-              "pin": {
-                "type": "string",
-                "pattern": "^[0-9]{4}$"
-              },
-              "name": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 80
-              },
-              "heartbeat": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": false
-          }
+          "pair": { "$ref": "#/properties/pair" }
         }
       }
     },
@@ -767,9 +731,6 @@
           },
           "song": {
             "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
-          },
-          "song_metadata": {
-            "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
           }
         }
       }
@@ -881,32 +842,18 @@
       }
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "host.update"
-          }
-        }
-      },
+      "if": { "properties": { "type": { "const": "host.update" } } },
       "then": {
         "required": ["update_action", "request_id"],
-        "properties": {
-          "update_action": { "$ref": "#/properties/update_action" }
-        }
+        "properties": { "update_action": {} }
       }
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "host.update.status"
-          }
-        }
-      },
+      "if": { "properties": { "type": { "const": "host.update.status" } } },
       "then": {
         "required": ["request_id", "update_state"],
         "properties": {
-          "update_state": { "$ref": "#/properties/update_state" },
+          "update_state": {},
           "message": { "type": "string", "maxLength": 300 }
         }
       }
@@ -951,6 +898,56 @@
             "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "recommendation.passport" } }
+      },
+      "then": {
+        "required": ["recommendation_passport"],
+        "properties": { "recommendation_passport": {} }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "recommendation.query" } } },
+      "then": {
+        "required": ["request_id", "recommendation_query"],
+        "properties": { "request_id": {}, "recommendation_query": {} }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "recommendation.result" } } },
+      "then": {
+        "required": ["recommendation_result"],
+        "properties": { "recommendation_result": {} }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "recommendation.feedback" } }
+      },
+      "then": {
+        "required": ["recommendation_feedback"],
+        "properties": { "recommendation_feedback": {} }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "recommendation.plan" } } },
+      "then": {
+        "required": ["recommendation_plan"],
+        "properties": { "recommendation_plan": {} }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": { "const": "recommendation.shadow_observation" }
+        }
+      },
+      "then": {
+        "required": ["recommendation_shadow_observation"],
+        "properties": { "recommendation_shadow_observation": {} }
       }
     }
   ],

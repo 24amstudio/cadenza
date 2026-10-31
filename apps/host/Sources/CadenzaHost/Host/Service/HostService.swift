@@ -40,6 +40,11 @@ final class HostService {
     private var transportDecisionAt: [String: Int64] = [:]
     private var observationEnabled = false
     private let observation = MusicObservation()
+    let recommendationVerifier = RecommendationPassportVerifier()
+    let recommendationRanker = RecommendationRanker()
+    let recommendationPlanner = RecommendationPlanner()
+    let recommendationRetriever = RecommendationCandidateRetriever()
+    let recommendationFeedbackModel = RecommendationFeedbackModel()
     private var listenerRecovery: Task<Void, Never>?
     private var serviceRunning = false
     private var lastPublished: HostSnapshot?
@@ -398,6 +403,11 @@ final class HostService {
                     || queue.commandQueued(frame.commandId ?? "", actor: actor)
                 network.send(try queue.journal.status(frame, actor: actor, queued: queued), to: peer)
             case "search", "search.suggest", "song.prepare": operation(frame, peer: peer)
+            case "recommendation.passport": try receiveRecommendationPassport(frame, actor: actor, peer: peer)
+            case "recommendation.query": startRecommendationQuery(frame, actor: actor, peer: peer)
+            case "recommendation.feedback": try receiveRecommendationFeedback(frame, actor: actor)
+            case "recommendation.plan": startRecommendationPlan(frame, actor: actor, peer: peer)
+            case "recommendation.shadow_observation": try receiveRecommendationShadowObservation(frame, actor: actor)
             case "operation.cancel":
                 if let id = frame.requestId { jobs.removeValue(forKey: peer.id + id)?.cancel() }
             case "lyrics.get": loadLyrics(peer: peer, requestId: frame.requestId)
@@ -907,17 +917,6 @@ final class HostService {
             metadata: ["occurrence_id": occurrenceId, "bytes": String(video.count)])
     }
 
-    private func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
-        guard let sequence = frame.sequence, sequence >= (acknowledgedCredits[peer.id] ?? 0),
-            sequence <= (lastCreditSent[peer.id] ?? 0)
-        else {
-            throw CadenzaError.failure("invalid_command", "Invalid analytics acknowledgment.")
-        }
-        try store.acknowledge(actor, through: sequence)
-        acknowledgedCredits[peer.id] = sequence
-        sendCredits(peer)
-    }
-
     // Every command field a debugging session needs, without the song's full metadata.
     private func commandMetadata(_ frame: Frame, peer: NetworkService.Peer) -> [String: String] {
         var metadata = [
@@ -966,7 +965,7 @@ final class HostService {
         }
     }
 
-    private func fail(_ error: Error, request: Frame, peer: NetworkService.Peer) {
+    func fail(_ error: Error, request: Frame, peer: NetworkService.Peer) {
         let code = (error as? CadenzaError)?.code ?? "unavailable"
         logger.log(
             .warning, category: "protocol", action: "request.failed", error.localizedDescription,

@@ -1,6 +1,17 @@
 import Foundation
 
 extension HostService {
+    fileprivate func acknowledge(_ frame: Frame, peer: NetworkService.Peer, actor: String) throws {
+        guard let sequence = frame.sequence, sequence >= (acknowledgedCredits[peer.id] ?? 0),
+            sequence <= (lastCreditSent[peer.id] ?? 0)
+        else {
+            throw CadenzaError.failure("invalid_command", "Invalid analytics acknowledgment.")
+        }
+        try store.acknowledge(actor, through: sequence)
+        acknowledgedCredits[peer.id] = sequence
+        sendCredits(peer)
+    }
+
     fileprivate func deliverCredits() {
         for peer in network.peers.values where peer.authenticated { sendCredits(peer) }
     }

@@ -117,7 +117,9 @@ final class CoreMLSingSeparator: SingStreamingSeparator, @unchecked Sendable {
                 vocalPercent: vocalPercent)
             let left = blendedPrefix(stems.left, overlap: overlapLeft, count: step)
             let right = blendedPrefix(stems.right, overlap: overlapRight, count: step)
-            output.append(try makeBuffer(left: left, right: right, format: input.samples.format, singFormat: input.format))
+            output.append(
+                try makeBuffer(
+                    left: left, right: right, format: input.samples.format, singFormat: input.format))
             overlapLeft = Array(stems.left.dropFirst(step))
             overlapRight = Array(stems.right.dropFirst(step))
             windowLeft = Array(windowLeft.dropFirst(step))

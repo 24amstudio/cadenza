@@ -91,7 +91,8 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
             commonFormat: .pcmFormatFloat32,
             sampleRate: format.sampleRate,
             channels: AVAudioChannelCount(format.channelCount),
-            interleaved: false)
+            interleaved: false
+        )
         else {
             throw SingAudioError.unavailable("The Music output format could not be created.")
         }

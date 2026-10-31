@@ -4,11 +4,6 @@ import Foundation
 struct SingAudioFormat: Equatable, Sendable {
     let sampleRate: Double
     let channelCount: Int
-
-    init(sampleRate: Double, channelCount: Int) {
-        self.sampleRate = sampleRate
-        self.channelCount = channelCount
-    }
 }
 
 struct SingAudioBuffer: @unchecked Sendable {
@@ -165,11 +160,11 @@ final class SingCoordinator {
     var currentOccurrence: String? { occurrenceId }
     var capabilityAvailable: Bool {
         guard separator.backend != "none" else { return false }
-#if !arch(arm64)
-        if separator.backend == "mlx-mel-roformer" {
-            return false
-        }
-#endif
+        #if !arch(arm64)
+            if separator.backend == "mlx-mel-roformer" {
+                return false
+            }
+        #endif
         return HostBuild.profile != "production"
             || ["coreml-waveform", "mlx-mel-roformer"].contains(separator.backend)
     }

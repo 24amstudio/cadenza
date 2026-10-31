@@ -1,6 +1,6 @@
+import AVFAudio
 import AppKit
 import CoreAudio
-import AVFAudio
 import Foundation
 
 /// Owns the macOS process-tap and private aggregate-device lifetime.
@@ -58,10 +58,12 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
                 kAudioAggregateDeviceIsStackedKey: false,
                 kAudioAggregateDeviceTapAutoStartKey: true,
                 kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
-                kAudioAggregateDeviceTapListKey: [[
-                    kAudioSubTapUIDKey: tapUUID.uuidString,
-                    kAudioSubTapDriftCompensationKey: true,
-                ]],
+                kAudioAggregateDeviceTapListKey: [
+                    [
+                        kAudioSubTapUIDKey: tapUUID.uuidString,
+                        kAudioSubTapDriftCompensationKey: true,
+                    ]
+                ],
                 kAudioAggregateDeviceIsPrivateKey: true,
             ]
             var createdAggregate = kAudioObjectUnknown
@@ -194,7 +196,8 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
 
     private func musicProcessObjectID() -> AudioObjectID? {
         guard let music = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.apple.Music").first
+            withBundleIdentifier: "com.apple.Music"
+        ).first
         else { return nil }
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -233,7 +236,8 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         var device = AudioDeviceID(kAudioObjectUnknown)
         var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(
-            kAudioObjectSystemObject, &deviceAddress, 0, nil, &deviceSize, &device) == noErr,
+            kAudioObjectSystemObject, &deviceAddress, 0, nil, &deviceSize, &device
+        ) == noErr,
             device != kAudioObjectUnknown
         else { return nil }
 
@@ -244,7 +248,8 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         var description = AudioStreamBasicDescription()
         var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         guard AudioObjectGetPropertyData(
-            device, &formatAddress, 0, nil, &formatSize, &description) == noErr,
+            device, &formatAddress, 0, nil, &formatSize, &description
+        ) == noErr,
             description.mSampleRate > 0,
             description.mChannelsPerFrame >= 2
         else { return nil }

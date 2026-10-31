@@ -127,7 +127,10 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         enum CodingKeys: String, CodingKey {
             case checkpointFamily = "checkpoint_family"
             case sampleRate = "sample_rate"
-            case dim, depth, heads, dimHead = "dim_head"
+            case dim
+            case depth
+            case heads
+            case dimHead = "dim_head"
             case numBands = "num_bands"
             case nFFT = "n_fft"
             case hopLength = "hop_length"
@@ -206,11 +209,12 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
             let outputRight = mix(
                 sourceVocalsRight, source: sourceRight, overlap: overlapRight,
                 count: sourceStep, vocalPercent: vocalPercent)
-            result.append(try makeBuffer(
-                left: outputLeft,
-                right: outputRight,
-                format: input.samples.format,
-                singFormat: input.format))
+            result.append(
+                try makeBuffer(
+                    left: outputLeft,
+                    right: outputRight,
+                    format: input.samples.format,
+                    singFormat: input.format))
             overlapLeft = Array(sourceVocalsLeft.dropFirst(sourceStep))
             overlapRight = Array(sourceVocalsRight.dropFirst(sourceStep))
             left.removeFirst(sourceStep)
@@ -260,8 +264,9 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         }
         let finalLeft = firstLeft + remainingLeft
         let finalRight = firstRight + remainingRight
-        output.append(try makeBuffer(
-            left: finalLeft, right: finalRight, format: format, singFormat: singFormat))
+        output.append(
+            try makeBuffer(
+                left: finalLeft, right: finalRight, format: format, singFormat: singFormat))
         resetStream()
         return output
     }
@@ -274,9 +279,12 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
     private func infer(
         model: MelRoFormer, left: [Float], right: [Float]
     ) throws -> (left: [Float], right: [Float]) {
-        let audio = stacked([
-            MLXArray(left), MLXArray(right),
-        ], axis: 0).expandedDimensions(axis: 0)
+        let audio = stacked(
+            [
+                MLXArray(left), MLXArray(right),
+            ],
+            axis: 0
+        ).expandedDimensions(axis: 0)
         let separated = model(audio)
         MLX.eval(separated)
         let outputLeft = separated[0, 0, 0..<left.count].asArray(Float.self)

@@ -56,7 +56,7 @@ final class SSDPResponder {
         guard requestMatches(data),
             hostId.range(of: "^[0-9a-f-]{36}$", options: .regularExpression) != nil,
             location.hasPrefix("https://"),
-            location.unicodeScalars.allSatisfy { $0.value >= 0x20 }
+            (location.unicodeScalars.allSatisfy { $0.value >= 0x20 })
         else { return nil }
         let lines = [
             "HTTP/1.1 200 OK",

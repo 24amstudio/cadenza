@@ -8,25 +8,44 @@ struct RecommendationCandidateRetriever: Sendable {
         var candidates: [RecommendationCandidate] = []
         for transition in profile.transitions where transition.from == context.current {
             if let song = knownSongs[transition.to.identity] {
-                candidates.append(RecommendationCandidate(
-                    track: transition.to, song: song, source: transition.source,
-                    confidence: transition.confidence, evidence: ["kept after this song"], applePrior: nil,
-                    metadataCompleteness: completeness(song), availability: true))
+                candidates.append(
+                    RecommendationCandidate(
+                        track: transition.to,
+                        song: song,
+                        source: transition.source,
+                        confidence: transition.confidence,
+                        evidence: ["kept after this song"],
+                        applePrior: nil,
+                        metadataCompleteness: completeness(song),
+                        availability: true
+                    )
+                )
             }
         }
         for track in profile.recent {
             guard let song = knownSongs[track.identity] else { continue }
-            candidates.append(RecommendationCandidate(
-                track: track, song: song, source: "cadenza", confidence: 0.45,
-                evidence: ["recent listening"], applePrior: nil, metadataCompleteness: completeness(song), availability: true))
+            candidates.append(
+                RecommendationCandidate(
+                    track: track,
+                    song: song,
+                    source: "cadenza",
+                    confidence: 0.45,
+                    evidence: ["recent listening"],
+                    applePrior: nil,
+                    metadataCompleteness: completeness(song),
+                    availability: true
+                )
+            )
         }
-        candidates.append(contentsOf: appleCandidates.map { candidate in
-            var copy = candidate
-            copy.applePrior = copy.applePrior ?? 0.5
-            copy.source = "apple_autoplay"
-            copy.evidence = Array(Set(copy.evidence + ["Apple AutoPlay prior"]))
-            return copy
-        })
+        candidates.append(
+            contentsOf: appleCandidates.map { candidate in
+                var copy = candidate
+                copy.applePrior = copy.applePrior ?? 0.5
+                copy.source = "apple_autoplay"
+                copy.evidence = Array(Set(copy.evidence + ["Apple AutoPlay prior"]))
+                return copy
+            }
+        )
         return candidates
     }
 

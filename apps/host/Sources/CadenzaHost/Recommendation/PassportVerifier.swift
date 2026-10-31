@@ -34,20 +34,26 @@ struct RecommendationPassportVerifier {
         guard signed.payloadBase64.count <= CREEConstants.maximumPayloadBytes * 2 else {
             throw RecommendationPassportError.malformed("The recommendation passport is too large.")
         }
-        guard let payload = Data(base64Encoded: signed.payloadBase64), payload.count <= CREEConstants.maximumPayloadBytes,
+        guard
+            let payload = Data(base64Encoded: signed.payloadBase64),
+            payload.count <= CREEConstants.maximumPayloadBytes,
             let keyData = Data(base64Encoded: signed.publicKeyBase64),
             let signature = Data(base64Encoded: signed.signatureBase64)
         else { throw RecommendationPassportError.malformed("The recommendation passport encoding is invalid.") }
         let key: P256.Signing.PublicKey
-        do { key = try P256.Signing.PublicKey(rawRepresentation: keyData) }
-        catch { throw RecommendationPassportError.malformed("The recommendation passport key is invalid.") }
-        guard let ecdsaSignature = try? P256.Signing.ECDSASignature(derRepresentation: signature),
-            key.isValidSignature(ecdsaSignature, for: payload) else {
+        do { key = try P256.Signing.PublicKey(rawRepresentation: keyData) } catch {
+            throw RecommendationPassportError.malformed("The recommendation passport key is invalid.")
+        }
+        guard
+            let ecdsaSignature = try? P256.Signing.ECDSASignature(derRepresentation: signature),
+            key.isValidSignature(ecdsaSignature, for: payload)
+        else {
             throw RecommendationPassportError.unauthorized
         }
         let passport: RecommendationPassport
-        do { passport = try decoder.decode(RecommendationPassport.self, from: payload) }
-        catch { throw RecommendationPassportError.malformed("The recommendation passport payload is invalid.") }
+        do { passport = try decoder.decode(RecommendationPassport.self, from: payload) } catch {
+            throw RecommendationPassportError.malformed("The recommendation passport payload is invalid.")
+        }
         try validate(passport, remoteId: remoteId, previousSequence: previousSequence, nowMs: nowMs)
         return passport
     }
@@ -93,7 +99,10 @@ struct RecommendationPassportVerifier {
             guard transition.weight.isFinite, transition.weight >= 0, transition.weight <= 1,
                 transition.confidence.isFinite, (0...1).contains(transition.confidence),
                 ["remote", "host", "music", "derived"].contains(transition.source)
-            else { throw RecommendationPassportError.malformed("The recommendation passport contains an invalid transition.") }
+            else {
+                throw RecommendationPassportError.malformed(
+                    "The recommendation passport contains an invalid transition.")
+            }
         }
         _ = remoteId
     }

@@ -26,11 +26,20 @@ struct RecommendationPlanner: Sendable {
         let confidence = max(0, min(1, candidate.score.sigmoid()))
         guard confidence >= 0.18 else { return (.noCandidate, nil) }
         let plan = identifier()
-        return (.allowed, RecommendationResult(
-            recommendationId: identifier(), planId: plan, passportSequence: profile.passportSequence,
-            modelVersion: CREEConstants.modelVersion, candidate: candidate.track, confidence: confidence,
-            evidence: candidate.evidence.prefix(8).map { $0 }, expiresAtMs: nowMs + 60_000,
-            provenance: candidate.source == "apple_autoplay" ? "apple_autoplay" : "cadenza"))
+        return (
+            .allowed,
+            RecommendationResult(
+                recommendationId: identifier(),
+                planId: plan,
+                passportSequence: profile.passportSequence,
+                modelVersion: CREEConstants.modelVersion,
+                candidate: candidate.track,
+                confidence: confidence,
+                evidence: candidate.evidence.prefix(8).map { $0 },
+                expiresAtMs: nowMs + 60_000,
+                provenance: candidate.source == "apple_autoplay" ? "apple_autoplay" : "cadenza"
+            )
+        )
     }
 }
 

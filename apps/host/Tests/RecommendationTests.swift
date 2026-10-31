@@ -33,8 +33,10 @@ struct RecommendationTests {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let payload = try encoder.encode(passport)
         let signed = SignedRecommendationPassport(
-            payloadBase64: payload.base64EncodedString(), publicKeyBase64: key.publicKey.rawRepresentation.base64EncodedString(),
-            signatureBase64: key.signature(for: payload).derRepresentation.base64EncodedString())
+            payloadBase64: payload.base64EncodedString(),
+            publicKeyBase64: key.publicKey.rawRepresentation.base64EncodedString(),
+            signatureBase64: key.signature(for: payload).derRepresentation.base64EncodedString()
+        )
         let verifier = RecommendationPassportVerifier()
         #expect(try verifier.verify(signed, remoteId: identifier(), previousSequence: 0).sequence == 1)
         #expect(throws: RecommendationPassportError.self) {

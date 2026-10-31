@@ -14,7 +14,9 @@ extension HostStore {
 
     var recommendationMode: String {
         get throws {
-            try database.query("SELECT recommendation_mode FROM host_state").first?["recommendation_mode"]?.string ?? "auto"
+            try database.query(
+                "SELECT recommendation_mode FROM host_state"
+            ).first?["recommendation_mode"]?.string ?? "auto"
         }
     }
 
@@ -23,19 +25,31 @@ extension HostStore {
             throw CadenzaError.failure("invalid_command", "Unknown recommendation mode.")
         }
         try database.run("UPDATE host_state SET recommendation_mode=?", [.text(mode)])
-        let phase = mode == "planning" ? "planning" : (mode == "shadow" || mode == "paused" ? "fallback" : "learning")
-        try database.run("UPDATE host_state SET recommendation_phase=?, recommendation_phase_reason=?", [
-            .text(phase), .text(mode == "planning" ? "Planning was enabled by the Host operator." : "Waiting for Auto readiness gates.")
-        ])
+        let phase =
+            mode == "planning" ? "planning" : (mode == "shadow" || mode == "paused" ? "fallback" : "learning")
+        let phaseReason =
+            mode == "planning" ? "Planning was enabled by the Host operator." : "Waiting for Auto readiness gates."
+        try database.run(
+            "UPDATE host_state SET recommendation_phase=?, recommendation_phase_reason=?",
+            [
+                .text(phase),
+                .text(phaseReason),
+            ])
     }
 
     var recommendationPhase: String {
-        get throws { try database.query("SELECT recommendation_phase FROM host_state").first?["recommendation_phase"]?.string ?? "learning" }
+        get throws {
+            try database.query(
+                "SELECT recommendation_phase FROM host_state"
+            ).first?["recommendation_phase"]?.string ?? "learning"
+        }
     }
 
     var recommendationPhaseReason: String {
         get throws {
-            try database.query("SELECT recommendation_phase_reason FROM host_state").first?["recommendation_phase_reason"]?.string
+            try database.query(
+                "SELECT recommendation_phase_reason FROM host_state"
+            ).first?["recommendation_phase_reason"]?.string
                 ?? "Waiting for a valid profile."
         }
     }
@@ -44,12 +58,16 @@ extension HostStore {
         guard ["learning", "ready", "planning", "fallback"].contains(phase), reason.count <= 240 else {
             throw CadenzaError.failure("invalid_command", "Invalid recommendation readiness state.")
         }
-        try database.run("UPDATE host_state SET recommendation_phase=?, recommendation_phase_reason=?", [.text(phase), .text(reason)])
+        try database.run(
+            "UPDATE host_state SET recommendation_phase=?, recommendation_phase_reason=?",
+            [.text(phase), .text(reason)])
     }
 
     func recommendationProfile(remoteId: String) throws -> RecommendationProfile? {
         guard let row = try database.query(
-            "SELECT profile_json FROM recommendation_profiles WHERE remote_id=?", [.text(remoteId)]).first,
+            "SELECT profile_json FROM recommendation_profiles WHERE remote_id=?",
+            [.text(remoteId)]
+        ).first,
             let json = row["profile_json"]?.string,
             let data = json.data(using: .utf8)
         else { return nil }
@@ -100,7 +118,8 @@ extension HostStore {
                     """,
                     [
                         .text(profile.remoteId), .text(transition.from.key), .text(transition.to.key),
-                        .text(String(transition.weight)), .text(String(transition.confidence)), .text(transition.source),
+                        .text(String(transition.weight)), .text(String(transition.confidence)),
+                        .text(transition.source),
                         .integer(transition.freshnessMs),
                     ])
             }
@@ -138,7 +157,8 @@ extension HostStore {
             ON CONFLICT(remote_id,plan_id) DO UPDATE SET phase=excluded.phase,operation_json=excluded.operation_json
             """,
             [
-                .text(remoteId), .text(result.planId), .text(result.recommendationId), .integer(result.passportSequence),
+                .text(remoteId), .text(result.planId), .text(result.recommendationId),
+                .integer(result.passportSequence),
                 .integer(Int64(result.modelVersion)), .integer(expectedRevision), .text(operation), .text(phase),
                 .integer(wallMs()),
             ])
@@ -146,7 +166,9 @@ extension HostStore {
 
     func recommendationPlan(remoteId: String, planId: String) throws -> SQLRow? {
         try database.query(
-            "SELECT * FROM recommendation_plans WHERE remote_id=? AND plan_id=?", [.text(remoteId), .text(planId)]).first
+            "SELECT * FROM recommendation_plans WHERE remote_id=? AND plan_id=?",
+            [.text(remoteId), .text(planId)]
+        ).first
     }
 
     func finishRecommendationPlan(remoteId: String, planId: String, outcome: String, receipt: Frame) throws {

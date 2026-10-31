@@ -1,4 +1,4 @@
-﻿import CoreFoundation
+import CoreFoundation
 import Foundation
 
 enum ProtocolValidation {
@@ -229,8 +229,11 @@ enum ProtocolValidation {
                 passport.publicKeyBase64.count <= 512, passport.signatureBase64.count <= 512
             else { throw invalid("Invalid recommendation passport.") }
         case "recommendation.query":
-            guard let query = frame.recommendationQuery, (1...CREEConstants.maximumPlanHorizon).contains(query.horizon),
-                query.modelVersion > 0 else { throw invalid("Invalid recommendation query.") }
+            guard
+                let query = frame.recommendationQuery,
+                (1...CREEConstants.maximumPlanHorizon).contains(query.horizon),
+                query.modelVersion > 0
+            else { throw invalid("Invalid recommendation query.") }
         case "recommendation.feedback":
             guard let feedback = frame.recommendationFeedback,
                 Wire.isIdentifier(feedback.recommendationId), feedback.occurredAtMs >= 0
@@ -245,9 +248,12 @@ enum ProtocolValidation {
                 plan.operation.occurrenceId == nil
             else { throw invalid("Invalid recommendation plan.") }
         case "recommendation.shadow_observation":
-            guard let observation = frame.recommendationShadowObservation,
-                Wire.isIdentifier(observation.observationId), observation.provenanceConfidence.isFinite,
-                (0...1).contains(observation.provenanceConfidence), observation.observedAtMs >= 0
+            guard
+                let observation = frame.recommendationShadowObservation,
+                Wire.isIdentifier(observation.observationId),
+                observation.provenanceConfidence.isFinite,
+                (0...1).contains(observation.provenanceConfidence),
+                observation.observedAtMs >= 0
             else { throw invalid("Invalid recommendation shadow observation.") }
         default: break
         }

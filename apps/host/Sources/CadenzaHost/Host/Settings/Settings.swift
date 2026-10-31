@@ -143,29 +143,44 @@ struct HostSettings: View {
                 )
             }
             Section("CREE recommendations") {
-                Toggle("Enable CREE", isOn: Binding(
-                    get: { creeEnabled },
-                    set: { value in
-                        do {
-                            try model.service?.store.setCREEEnabled(value)
-                            creeEnabled = value
-                        } catch { model.showError("CREE setting could not be saved", error.localizedDescription) }
-                    }))
-                Picker("Mode", selection: Binding(
-                    get: { creeMode },
-                    set: { value in
-                        do {
-                            try model.service?.store.setRecommendationMode(value)
-                            creeMode = value
-                        } catch { model.showError("CREE mode could not be saved", error.localizedDescription) }
-                    })) {
+                Toggle(
+                    "Enable CREE",
+                    isOn: Binding(
+                        get: { creeEnabled },
+                        set: { value in
+                            do {
+                                try model.service?.store.setCREEEnabled(value)
+                                creeEnabled = value
+                            } catch {
+                                model.showError("CREE setting could not be saved", error.localizedDescription)
+                            }
+                        })
+                )
+                Picker(
+                    "Mode",
+                    selection: Binding(
+                        get: { creeMode },
+                        set: { value in
+                            do {
+                                try model.service?.store.setRecommendationMode(value)
+                                creeMode = value
+                            } catch {
+                                model.showError("CREE mode could not be saved", error.localizedDescription)
+                            }
+                        })
+                ) {
                     Text("Auto").tag("auto")
                     Text("Shadow").tag("shadow")
                     Text("Planning").tag("planning")
                     Text("Paused").tag("paused")
                 }
-                Text(creeEnabled ? phaseDescription : "Disabled. Learning data is preserved and no queue planning runs.")
-                Text("Cadenza Host owns recommendation weighting, queue policy, native Music mutations, and receipts. Detailed listening history remains on each Remote.")
+                Text(
+                    creeEnabled ? phaseDescription : "Disabled. Learning data is preserved and no queue planning runs."
+                )
+                Text(
+                    "Cadenza Host owns recommendation weighting, queue policy, native Music mutations, and receipts. "
+                        + "Detailed listening history remains on each Remote."
+                )
             }
             Section("Lyrics providers") {
                 Toggle("Use LRCLIB when Music has no lyrics", isOn: $model.configuration.lyricsProviderEnabled)
@@ -306,8 +321,8 @@ struct HostSettings: View {
 
     private var phaseDescription: String {
         let phase = model.service.flatMap { try? $0.store.recommendationPhase } ?? "learning"
-        let reason = model.service.flatMap { try? $0.store.recommendationPhaseReason }
-            ?? "Waiting for a valid profile."
+        let reason =
+            model.service.flatMap { try? $0.store.recommendationPhaseReason } ?? "Waiting for a valid profile."
         if creeMode == "auto" {
             let label = phase == "ready" ? "Ready to plan" : phase.capitalized
             return "Auto · \(label). \(reason)"
@@ -320,6 +335,7 @@ struct HostSettings: View {
         default: "CREE is unavailable until its mode is repaired."
         }
     }
+
     private func reloadCREE() {
         guard let service = model.service else { return }
         creeEnabled = (try? service.store.creeEnabled) ?? true

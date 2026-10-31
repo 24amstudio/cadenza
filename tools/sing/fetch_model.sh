@@ -44,7 +44,8 @@ trap 'rm -rf "$temporary_directory"' EXIT
 model_attempt=1
 while (( model_attempt <= 3 )); do
     rm -f "$temporary_directory/model.safetensors"
-    if /usr/bin/curl --fail --location --retry 3 --retry-all-errors --retry-delay 2 --silent --show-error \
+    if /usr/bin/curl --fail --location --http1.1 --header 'Accept-Encoding: identity' \
+        --retry 3 --retry-all-errors --retry-delay 2 --silent --show-error \
         "$base_url/model.safetensors$download_query" --output "$temporary_directory/model.safetensors" \
         && matches_pin "$temporary_directory/model.safetensors" "$model_bytes" "$model_sha256"; then
         break
@@ -55,9 +56,11 @@ while (( model_attempt <= 3 )); do
     fi
     model_attempt=$((model_attempt + 1))
 done
-/usr/bin/curl --fail --location --retry 3 --retry-all-errors --retry-delay 2 --silent --show-error \
+/usr/bin/curl --fail --location --http1.1 --header 'Accept-Encoding: identity' \
+    --retry 3 --retry-all-errors --retry-delay 2 --silent --show-error \
     "$base_url/config.json$download_query" --output "$temporary_directory/config.json"
-/usr/bin/curl --fail --location --retry 3 --retry-all-errors --retry-delay 2 --silent --show-error \
+/usr/bin/curl --fail --location --http1.1 --header 'Accept-Encoding: identity' \
+    --retry 3 --retry-all-errors --retry-delay 2 --silent --show-error \
     "$base_url/LICENSE$download_query" --output "$temporary_directory/LICENSE"
 
 matches_pin "$temporary_directory/config.json" "$config_bytes" "$config_sha256" || {

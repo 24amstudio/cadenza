@@ -9,6 +9,7 @@ final class QueueCoordinator {
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onCredits: (() -> Void)?
     var onIssue: ((String) -> Void)?
+    var connectedRemoteIds: () -> Set<String> = { [] }
     private(set) var nativeRows: [NativeQueueRow] = []
     private var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
@@ -31,6 +32,7 @@ final class QueueCoordinator {
     private var pendingPlaybackMs: Int64 = 0
     private var pendingPlaybackOccurrence: String?
     private var preparationToken: String?
+    private var artworkTask: Task<Void, Never>?
     private(set) var knownSongs: [SongIdentity: Song] = [:]
 
     private struct QueuedCommand {
@@ -141,6 +143,7 @@ final class QueueCoordinator {
                     requesterName: try store.remoteName(row["requested_by"]?.string), song: store.song(row),
                     positionMs: status.positionMs, sampledAtHostMs: now
                 )
+                if let current { requestArtwork(for: current.song, occurrenceId: occurrence) }
             }
         }
         if let song = status.song, status.state != "stopped", current == nil || songChanged {
@@ -162,6 +165,7 @@ final class QueueCoordinator {
             try store.database.run("UPDATE host_state SET current_native_id=?", [.text(song.id)])
             lastObservation = nil
             forcedEntry = nil
+            requestArtwork(for: actual, occurrenceId: occurrence)
         }
         if status.song == nil || status.state == "stopped" {
             if current != nil {
@@ -227,6 +231,27 @@ final class QueueCoordinator {
         current?.sampledAtHostMs = now
         lastStatus = status
         lastObservation = now
+    }
+
+    private func requestArtwork(for song: Song, occurrenceId: String) {
+        artworkTask?.cancel()
+        guard song.artworkUrl == nil else { return }
+        let query = String((song.title + " " + song.artist).prefix(200))
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        artworkTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard
+                let match = try? await catalog.search(query).first(where: {
+                    $0.artworkUrl != nil
+                        && $0.title.compare(song.title, options: .caseInsensitive) == .orderedSame
+                        && $0.artist.compare(song.artist, options: .caseInsensitive) == .orderedSame
+                }),
+                let artworkUrl = match.artworkUrl
+            else { return }
+            guard !Task.isCancelled, current?.occurrenceId == occurrenceId else { return }
+            current?.song.artworkUrl = artworkUrl
+            publish()
+        }
     }
 
     func snapshot() throws -> HostSnapshot {
@@ -553,7 +578,7 @@ final class QueueCoordinator {
         throw CadenzaError.failure("outcome_unknown", "Music's native queue has not confirmed the action.")
     }
 
-    func prepare(_ identity: SongIdentity) async throws {
+    func prepare(_ identity: SongIdentity, metadata: Song? = nil) async throws {
         guard activeCommand == nil, waiting.isEmpty else {
             throw CadenzaError.failure(
                 "busy", "Music is processing a control action. Prepare the song again in a moment.")
@@ -561,14 +586,28 @@ final class QueueCoordinator {
         let token = identifier()
         preparationToken = token
         let song: Song
-        if let known = knownSongs[identity] {
+        if identity.source == "library" {
+            do {
+                song = try await music.resolve(identity)
+            } catch {
+                guard let metadata, metadata.identity == identity else { throw error }
+                let query = "\(metadata.title) \(metadata.artist)".trimmingCharacters(in: .whitespacesAndNewlines)
+                let candidates = try await music.librarySearch(query)
+                guard
+                    let replacement = candidates.first(where: {
+                        $0.title.caseInsensitiveCompare(metadata.title) == .orderedSame
+                            && $0.artist.caseInsensitiveCompare(metadata.artist) == .orderedSame
+                    })
+                else { throw error }
+                song = replacement
+            }
+        } else if let known = knownSongs[identity] {
             song = known
-        } else if identity.source == "catalog" {
-            song = try await catalog.resolve(identity)
         } else {
-            song = try await music.resolve(identity)
+            song = try await catalog.resolve(identity)
         }
         remember([song])
+        if song.identity != identity { knownSongs[identity] = song }
         guard preparationToken == token, activeCommand == nil, waiting.isEmpty else {
             throw CadenzaError.failure("busy", "Another Music action took priority. Prepare this song again.")
         }
@@ -577,7 +616,7 @@ final class QueueCoordinator {
 
     func flushCredits() throws {
         guard let occurrence = pendingPlaybackOccurrence, pendingPlaybackMs > 0 else { return }
-        try store.observe(occurrence: occurrence, milliseconds: pendingPlaybackMs)
+        try store.observe(occurrence: occurrence, milliseconds: pendingPlaybackMs, listeners: connectedRemoteIds())
         pendingPlaybackMs = 0
         pendingPlaybackOccurrence = nil
         onCredits?()

@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import development from '../package.json' with { type: 'json' };
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+const dependenciesRoot =
+  process.env['CADENZA_NODE_MODULES'] ?? join(root, 'node_modules');
+
 const temporaryDirectory = join(root, '.cache', 'tmp');
 const staticOnly = process.argv.includes('--static');
 
@@ -38,7 +42,7 @@ for (const [name, version] of Object.entries({
   ...development.overrides,
 })) {
   const installed = JSON.parse(
-    readFileSync(join(root, 'node_modules', name, 'package.json'), 'utf8'),
+    readFileSync(join(dependenciesRoot, name, 'package.json'), 'utf8'),
   );
 
   if (installed.version !== version)
@@ -95,13 +99,13 @@ for (const file of files) {
 }
 
 run(process.execPath, [
-  join(root, 'node_modules/typescript/bin/tsc'),
+  join(dependenciesRoot, 'typescript/bin/tsc'),
   '--project',
   'tsconfig.json',
 ]);
 
 run(process.execPath, [
-  join(root, 'node_modules/oxlint/bin/oxlint'),
+  join(dependenciesRoot, 'oxlint/bin/oxlint'),
   '--deny-warnings',
   'tools',
   'tests',
@@ -110,7 +114,7 @@ run(process.execPath, [
 ]);
 
 run(process.execPath, [
-  join(root, 'node_modules/prettier/bin/prettier.cjs'),
+  join(dependenciesRoot, 'prettier/bin/prettier.cjs'),
   '--check',
   ...files.filter((file) => formatExtensions.test(file)),
 ]);

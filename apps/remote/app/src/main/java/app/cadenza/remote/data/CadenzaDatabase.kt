@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.core.database.sqlite.transaction
+import app.cadenza.remote.model.id
 import org.json.JSONObject
 
 class CadenzaDatabase(

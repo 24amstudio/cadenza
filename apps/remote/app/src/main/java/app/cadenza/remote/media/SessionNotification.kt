@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.media
 
 import android.Manifest
 import android.app.Notification
@@ -11,6 +11,9 @@ import android.graphics.drawable.Icon
 import android.media.session.MediaSession
 import android.os.Build
 import androidx.core.content.ContextCompat
+import app.cadenza.remote.MainActivity
+import app.cadenza.remote.R
+import app.cadenza.remote.model.RemoteState
 
 data class SessionStatus(
     val active: Boolean,
@@ -19,21 +22,22 @@ data class SessionStatus(
     val title: String,
     val artist: String,
     val playing: Boolean,
-    val monitoring: Boolean,
+    val pinned: Boolean,
     val occurrenceId: String = "",
     val canInterrupt: Boolean = false,
 ) {
     companion object {
         fun from(state: RemoteState): SessionStatus {
             val current = state.snapshot?.current
+            val playing = state.snapshot?.playing == true
             return SessionStatus(
-                state.sessionActive || (state.connected && state.snapshot?.playing == true && current != null),
+                state.sessionActive || (state.connected && playing && current != null),
                 state.connected,
                 state.profile?.name.orEmpty(),
                 current?.song?.title.orEmpty(),
                 current?.song?.artist.orEmpty(),
-                state.snapshot?.playing == true,
-                state.monitoringSong,
+                playing,
+                state.connected && playing && current != null,
                 current?.occurrenceId.orEmpty(),
                 current?.requestedBy?.let { requester ->
                     requester == state.profile?.remoteId || state.snapshot.allowCrossRemoteEdits
@@ -92,22 +96,22 @@ class SessionNotification(
             val style = Notification.MediaStyle().setMediaSession(mediaToken)
             if (status.canInterrupt) {
                 style.setShowActionsInCompactView(0, 1, 2)
-                builder.addAction(Notification.Action.Builder(actionIcon(), "Previous", action("previous")).build())
+                builder.addAction(Notification.Action.Builder(actionIcon("previous"), "Previous", action("previous")).build())
                 builder.addAction(
                     Notification.Action
                         .Builder(
-                            actionIcon(),
+                            actionIcon(if (status.playing) "pause" else "play"),
                             if (status.playing) "Pause" else "Play",
                             action(if (status.playing) "pause" else "play"),
                         ).build(),
                 )
-                builder.addAction(Notification.Action.Builder(actionIcon(), "Next", action("next")).build())
+                builder.addAction(Notification.Action.Builder(actionIcon("next"), "Next", action("next")).build())
             } else {
                 style.setShowActionsInCompactView(0)
                 builder.addAction(
                     Notification.Action
                         .Builder(
-                            actionIcon(),
+                            actionIcon(if (status.playing) "pause" else "play"),
                             if (status.playing) "Pause" else "Play",
                             action(if (status.playing) "pause" else "play"),
                         ).build(),
@@ -115,12 +119,8 @@ class SessionNotification(
             }
             builder.setStyle(style)
         }
-        val unpin = unpinAction()
-        if (status.monitoring) {
-            builder.addAction(Notification.Action.Builder(actionIcon(), "Unpin", unpin).build())
-        }
         manager.notify(ID, builder.build())
-        if (Build.VERSION.SDK_INT >= 36 && status.monitoring && status.connected && status.playing &&
+        if (Build.VERSION.SDK_INT >= 36 && status.pinned && status.connected && status.playing &&
             manager.canPostPromotedNotifications()
         ) {
             val live =
@@ -136,7 +136,6 @@ class SessionNotification(
                     .setVisibility(Notification.VISIBILITY_PRIVATE)
                     .setCategory(Notification.CATEGORY_STATUS)
                     .setLocalOnly(true)
-                    .addAction(Notification.Action.Builder(actionIcon(), "Unpin", unpin).build())
                     .setRequestPromotedOngoing(true)
                     .setShortCriticalText("Music")
                     .build()
@@ -156,15 +155,17 @@ class SessionNotification(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    private fun actionIcon(): Icon = Icon.createWithResource(context, R.drawable.ic_notification)
-
-    private fun unpinAction(): PendingIntent =
-        PendingIntent.getBroadcast(
-            context,
-            43129,
-            Intent(context, SessionUnpinReceiver::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+    private fun actionIcon(action: String): Icon {
+        val resource =
+            when (action) {
+                "previous" -> android.R.drawable.ic_media_previous
+                "next" -> android.R.drawable.ic_media_next
+                "pause" -> android.R.drawable.ic_media_pause
+                "play" -> android.R.drawable.ic_media_play
+                else -> android.R.drawable.ic_delete
+            }
+        return Icon.createWithResource(context, resource)
+    }
 
     fun clear() {
         manager.cancel(ID)

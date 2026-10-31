@@ -29,6 +29,7 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     var onSubscribe: ((UUID) -> Void)?
     var onUnsubscribe: ((UUID) -> Void)?
     var onIssue: ((String) -> Void)?
+    var onEvent: ((String, String) -> Void)?
 
     override init() {
         super.init()
@@ -84,9 +85,18 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     }
 
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+        onEvent?("bluetooth.state", String(describing: peripheral.state))
         guard started else { return }
         if peripheral.state == .poweredOn { publish() }
         if peripheral.state == .unauthorized { onIssue?("Bluetooth permission is unavailable.") }
+    }
+
+    func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
+        if let error {
+            onIssue?("Cadenza Host could not advertise over Bluetooth: \(error.localizedDescription)")
+        } else {
+            onEvent?("advertising.started", "Cadenza Host is advertising over Bluetooth.")
+        }
     }
 
     func peripheralManager(
@@ -139,6 +149,7 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
         else { return }
         subscribed.append(central)
         inbound[central.identifier] = BluetoothFrameCodec()
+        onEvent?("central.subscribed", "A Remote connected over Bluetooth.")
         onSubscribe?(central.identifier)
     }
 
@@ -149,6 +160,7 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     ) {
         guard characteristic.uuid == Self.notifyUUID else { return }
         let centralID = central.identifier
+        onEvent?("central.unsubscribed", "A Remote disconnected from Bluetooth.")
         subscribed.removeAll { $0.identifier == centralID }
         inbound.removeValue(forKey: centralID)
         if let pending = outbound.removeValue(forKey: centralID) {

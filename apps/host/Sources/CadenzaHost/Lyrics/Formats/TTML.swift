@@ -48,8 +48,14 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 "lyrics_unavailable", "Music's lyric document contains missing, repeated, or oversized line identities."
             )
         }
+        for index in lines.indices where lines[index].endMs <= lines[index].startMs {
+            let nextStart = index + 1 < lines.count ? lines[index + 1].startMs : lines[index].startMs + 4_000
+            lines[index].endMs = max(lines[index].startMs + 1, nextStart)
+        }
         for index in lines.indices {
             lines[index].translation = handler.translations[lines[index].id]
+            lines[index].romanized = lines[index].text.applyingTransform(.toLatin, reverse: false)
+                .flatMap { $0 == lines[index].text ? nil : $0 }
         }
         guard !lines.isEmpty else {
             throw CadenzaError.failure("lyrics_unavailable", "No lyric lines were found.")
@@ -126,6 +132,12 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         if translationTarget != nil { translationText += string }
         if paragraph != nil { paragraph?.text += string }
         if !wordCaptures.isEmpty { wordCaptures[wordCaptures.count - 1].text += string }
+        if wordCaptures.isEmpty, string.allSatisfy(\.isWhitespace), var line = paragraph,
+            let last = line.words.indices.last
+        {
+            line.words[last].text += " "
+            paragraph = line
+        }
         if (paragraph?.text.utf8.count ?? 0) > 20_000 || translationText.utf8.count > 20_000 {
             failure = "A lyric line is too large."
             parser.abortParsing()
@@ -138,13 +150,24 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         let name = elementName.split(separator: ":").last.map(String.init) ?? elementName
         if name == "span", let capture = wordCaptures.last, capture.depth == depth {
             wordCaptures.removeLast()
+            let hasTrailingSpace = capture.text.last?.isWhitespace == true
             let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
-                paragraph?.words.append(LyricWord(text: text, startMs: capture.startMs, endMs: capture.endMs))
+                paragraph?.words.append(
+                    LyricWord(
+                        text: text + (hasTrailingSpace ? " " : ""),
+                        startMs: capture.startMs,
+                        endMs: capture.endMs))
             }
         }
         if name == "p", paragraphDepth == depth, var line = paragraph {
             line.text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !line.words.isEmpty {
+                let wordStart = line.words.map(\.startMs).min() ?? line.startMs
+                let wordEnd = line.words.map(\.endMs).max() ?? line.endMs
+                if line.startMs == 0 { line.startMs = wordStart }
+                if line.endMs <= line.startMs { line.endMs = wordEnd }
+            }
             if !line.text.isEmpty { lines.append(line) }
             paragraph = nil
         }

@@ -18,6 +18,7 @@ class HybridConnection(
     private var lanReady = false
     private var bleReady = false
     private var openedOnce = false
+    private var pendingPair: JSONObject? = null
     private var handshake: JSONObject? = null
     private val lan =
         HostConnection(host, port, fingerprint, certificateDerBase64, ::lanOpened, received) {
@@ -33,6 +34,9 @@ class HybridConnection(
     private fun lanOpened() {
         lanReady = true
         openedOnce = true
+        pendingPair?.let { pair ->
+            if (lan.send(pair)) pendingPair = null
+        }
         handshake?.let { lan.send(it) }
         onOpened()
     }
@@ -54,7 +58,11 @@ class HybridConnection(
     override fun send(frame: JSONObject): Boolean {
         val type = frame.optString("type")
         if (type == "pair") {
-            return lanReady && lan.send(frame)
+            pendingPair = frame
+            if (!lanReady) return false
+            val sent = lan.send(frame)
+            if (sent) pendingPair = null
+            return sent
         }
         if (type == "hello") {
             handshake = frame

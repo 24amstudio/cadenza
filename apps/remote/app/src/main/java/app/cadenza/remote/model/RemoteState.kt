@@ -1,4 +1,4 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
 import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
@@ -7,6 +7,7 @@ import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.data.TransportPathStatus
 import app.cadenza.remote.data.UpdateConfiguration
 import java.util.UUID
 
@@ -35,7 +36,7 @@ data class RemoteState(
     val favorites: List<Song> = emptyList(),
     val capabilities: Set<String> = emptySet(),
     val sessionActive: Boolean = false,
-    val monitoringSong: Boolean = false,
+    val hostUpdate: HostUpdateStatus? = null,
     val unreadableFavorites: Int = 0,
     val savingPreferences: Boolean = false,
     val savingFavorite: Boolean = false,
@@ -43,6 +44,7 @@ data class RemoteState(
     val connected: Boolean = false,
     val connecting: Boolean = false,
     val effectiveTransport: EffectiveTransportDecision? = null,
+    val transportPaths: List<TransportPathStatus> = emptyList(),
     val transportPreference: String = "balanced",
     val transportMode: String = "lan",
     val connectionIssue: String? = null,

@@ -1,10 +1,16 @@
 package app.cadenza.remote.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -38,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -53,11 +61,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
-import app.cadenza.remote.isStale
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.isStale
+import kotlin.math.abs
 
 internal fun activeLyricIndex(
     document: LyricDocument?,
@@ -66,7 +75,10 @@ internal fun activeLyricIndex(
     synchronized: Boolean,
 ): Int {
     if (!synchronized || occurrence == null || document?.occurrenceId != occurrence) return -1
-    return document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs && positionMs < it.endMs }
+    // Provider end markers can leave short gaps between lines. Keep the most
+    // recently started line active through those gaps so highlighting and
+    // following stay aligned with the playback timeline.
+    return document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
 }
 
 private fun activeWordIndex(
@@ -78,19 +90,55 @@ private fun activeWordIndex(
 private fun LyricText(
     line: app.cadenza.remote.data.LyricLine,
     currentPosition: Long,
-    activeLine: Boolean,
+    distanceFromActive: Int,
+    onWordClick: ((Long) -> Unit)? = null,
 ) {
+    val activeLine = distanceFromActive == 0
     val activeWord = if (activeLine) activeWordIndex(line, currentPosition) else -1
+    val activeLineColor by animateColorAsState(
+        if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "lyric-line-color",
+    )
+    val inactiveBlur by animateDpAsState(
+        when {
+            distanceFromActive == 0 -> 0.dp
+            distanceFromActive == 1 -> 2.dp
+            else -> 4.dp
+        },
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-line-blur",
+    )
+    val lineAlpha by animateFloatAsState(
+        when (distanceFromActive) {
+            0 -> 1f
+            1 -> 0.72f
+            2 -> 0.48f
+            else -> 0.28f
+        },
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-line-alpha",
+    )
+    val lineScale by animateFloatAsState(
+        if (activeLine) 1.04f else 1f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "lyric-line-scale",
+    )
+    val wordFocus by animateFloatAsState(
+        activeWord.toFloat(),
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        label = "lyric-word-focus",
+    )
     val text: AnnotatedString =
         if (line.words.isEmpty()) {
             AnnotatedString(line.text)
         } else {
             buildAnnotatedString {
                 line.words.forEachIndexed { index, word ->
-                    if (index > 0) append(" ")
+                    val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
                     val wordColor =
-                        if (index == activeWord) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    val wordAlpha = if (index == activeWord) 1f else 0.62f
+                        lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
+                    val wordAlpha = 0.62f + (0.38f * emphasis)
                     withStyle(
                         SpanStyle(
                             color = wordColor.copy(alpha = wordAlpha),
@@ -100,13 +148,54 @@ private fun LyricText(
                 }
             }
         }
-    Text(
-        text,
-        style = MaterialTheme.typography.headlineMedium,
-        fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
-        color = if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.blur(if (activeLine) 0.dp else 2.dp),
-    )
+    if (line.words.isNotEmpty() && onWordClick != null) {
+        FlowRow(
+            Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    alpha = lineAlpha
+                    scaleX = lineScale
+                    scaleY = lineScale
+                },
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            line.words.forEachIndexed { index, word ->
+                val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
+                Text(
+                    word.text,
+                    style = if (activeLine) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
+                    fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
+                    color =
+                        lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
+                            .copy(alpha = 0.62f + 0.38f * emphasis),
+                    modifier =
+                        Modifier
+                            .blur(inactiveBlur)
+                            .clickable(role = Role.Button) { onWordClick(word.startMs) }
+                            .semantics { contentDescription = "Seek to ${word.text.trim()}" },
+                )
+            }
+        }
+    } else {
+        Text(
+            text,
+            style =
+                when (distanceFromActive) {
+                    0 -> MaterialTheme.typography.headlineLarge
+                    1 -> MaterialTheme.typography.headlineMedium
+                    else -> MaterialTheme.typography.titleLarge
+                },
+            fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
+            color = activeLineColor,
+            modifier =
+                Modifier
+                    .graphicsLayer {
+                        alpha = lineAlpha
+                        scaleX = lineScale
+                        scaleY = lineScale
+                    }.blur(inactiveBlur),
+        )
+    }
 }
 
 @Composable
@@ -116,6 +205,7 @@ fun LyricsScreen(
     onExit: () -> Unit = {},
 ) {
     val current = state.snapshot?.current
+    KeepScreenAwake(state.snapshot?.playing == true && current != null)
     val occurrence = current?.occurrenceId
     val document = state.lyrics?.takeIf { it.occurrenceId == occurrence }
     val stale = !state.connected || model.isStale()
@@ -208,7 +298,7 @@ private fun CompactTrackIdentity(
 }
 
 @Composable
-private fun LyricsContent(
+internal fun LyricsContent(
     model: RemoteModel,
     state: RemoteState,
     document: LyricDocument?,
@@ -235,10 +325,17 @@ private fun LyricsContent(
             }
         LaunchedEffect(active, document?.revision, following) {
             if (following && active >= 0) {
-                // Wait until the new lyric list has measured before seeking it. Without
-                // this frame, the initial active line can be missed until a manual scroll.
-                withFrameNanos { }
-                list.animateScrollToItem((active - 1).coerceAtLeast(0))
+                // Wait for the lazy list to report a real viewport before seeking it.
+                // A single frame is not enough when artwork and lyrics enter together;
+                // otherwise the first active line can be missed until a manual scroll.
+                repeat(3) {
+                    withFrameNanos { }
+                }
+                val viewport = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
+                if (viewport > 0) {
+                    val offset = -(viewport / 2).coerceAtLeast(0)
+                    list.animateScrollToItem(active, offset)
+                }
             }
         }
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -299,7 +396,7 @@ private fun LyricsContent(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable(
-                                        enabled = canSeek,
+                                        enabled = canSeek && line.words.isEmpty(),
                                         role = Role.Button,
                                     ) {
                                         model.command(
@@ -317,13 +414,66 @@ private fun LyricsContent(
                                     },
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                LyricText(line, currentPosition, index == active)
-                                line.translation?.let {
+                                LyricText(
+                                    line,
+                                    currentPosition,
+                                    if (active < 0) 3 else abs(index - active),
+                                    onWordClick =
+                                        if (canSeek && line.words.isNotEmpty()) {
+                                            { time ->
+                                                model.command(
+                                                    org.json
+                                                        .JSONObject()
+                                                        .put("kind", "playback.seek")
+                                                        .put("occurrence_id", occurrence)
+                                                        .put("position_ms", time),
+                                                    "playback.seek",
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                )
+                                line.romanized?.takeIf { it.isNotBlank() }?.let {
+                                    val romanizedStyle =
+                                        if (index == active) {
+                                            MaterialTheme.typography.titleLarge
+                                        } else {
+                                            MaterialTheme.typography.titleMedium
+                                        }
                                     Text(
                                         it,
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = romanizedStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.blur(if (index == active) 0.dp else 1.5.dp),
+                                        modifier = Modifier.blur(if (index == active) 0.dp else 2.dp),
+                                    )
+                                }
+                                line.translation?.let {
+                                    val translationAlpha by animateFloatAsState(
+                                        if (index == active) 1f else 0.68f,
+                                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                        label = "lyric-translation-alpha",
+                                    )
+                                    val translationStyle =
+                                        if (index == active) {
+                                            MaterialTheme.typography.titleLarge
+                                        } else {
+                                            MaterialTheme.typography.titleMedium
+                                        }
+                                    Text(
+                                        it,
+                                        style = translationStyle,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier =
+                                            Modifier
+                                                .graphicsLayer { alpha = translationAlpha }
+                                                .blur(
+                                                    when {
+                                                        index == active -> 0.dp
+                                                        active < 0 || abs(index - active) == 1 -> 2.dp
+                                                        else -> 4.dp
+                                                    },
+                                                ),
                                     )
                                 }
                             }

@@ -20,7 +20,9 @@ struct PairingSheet: View {
     var body: some View {
         VStack(spacing: 20) {
             Text("Pair Cadenza Remote").font(.title.bold())
-            Text("Scan this QR code on your tablet. It is valid for one Remote for five minutes.")
+            Text("Use the QR code or enter the four-digit PIN on your Remote. The PIN expires in seven seconds.")
+            Text("PIN \(invitation.pin)").font(.system(size: 34, weight: .bold, design: .rounded))
+                .monospacedDigit().textSelection(.enabled)
             if let image = qr(pairingData) {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 400, height: 400)
                     .accessibilityLabel("Pairing QR code")
@@ -62,21 +64,18 @@ private struct PairingQRPayload {
     var encoded: Data {
         let address = Data(invitation.host.utf8)
         let secret = Data(invitation.secret.utf8)
-        let certificate = Data(base64Encoded: invitation.certificateDerBase64) ?? Data()
         let fingerprintCharacters = Array(invitation.fingerprint)
         let fingerprint = stride(from: 0, to: fingerprintCharacters.count, by: 2).compactMap {
             UInt8(String(fingerprintCharacters[$0...($0 + 1)]), radix: 16)
         }
-        var result = Data([0x43, 0x44, 0x5A, 0x50, UInt8(invitation.version)])
+        guard fingerprint.count == 32 else { return Data() }
+        var result = Data([0x43, 0x44, 0x5A, 0x50, 2])
         result.append(UInt8(address.count))
         result.append(address)
         result.append(UInt8((invitation.port >> 8) & 0xFF))
         result.append(UInt8(invitation.port & 0xFF))
         result.append(UInt8(secret.count))
         result.append(secret)
-        result.append(UInt8((certificate.count >> 8) & 0xFF))
-        result.append(UInt8(certificate.count & 0xFF))
-        result.append(certificate)
         result.append(contentsOf: fingerprint)
         let encoded = result.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")

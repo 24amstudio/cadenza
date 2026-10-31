@@ -19,6 +19,9 @@ struct Frame: Codable, Sendable {
     var snapshot: HostSnapshot? = nil
     var query: String? = nil
     var scope: String? = nil
+    var updateAction: String? = nil
+    var updateState: String? = nil
+    var updateVersion: String? = nil
     var songs: [Song]? = nil
     var lyrics: LyricDocument? = nil
     var clock: ClockSample? = nil

@@ -1,5 +1,7 @@
 package app.cadenza.remote.updates
 
+import app.cadenza.remote.data.json
+import app.cadenza.remote.data.objects
 import app.cadenza.remote.data.readBounded
 import java.io.File
 import java.net.URL

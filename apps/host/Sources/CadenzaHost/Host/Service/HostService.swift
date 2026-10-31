@@ -12,6 +12,7 @@ final class HostService {
     let lyrics: Lyrics
     let sing: SingCoordinator
     let network = NetworkService()
+    let pairingBootstrap = PairingBootstrap()
     let bluetooth = BluetoothPeripheral()
     let queue: QueueCoordinator
     private(set) var configuration: HostConfiguration
@@ -20,6 +21,8 @@ final class HostService {
     var remoteTransportManualPaths: [String: String] = [:]
     private(set) var invitation: PairingInvitation?
     private var invitationDeadline: Int64 = 0
+    private var invitationPinDeadline: Int64 = 0
+    private var invitationPinAttempts = 0
     private var identity: TLSIdentity?
     private var polling: Task<Void, Never>?
     private var statusReporting: Task<Void, Never>?
@@ -42,6 +45,7 @@ final class HostService {
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onDevicesChanged: (() -> Void)?
     var onIssue: ((String) -> Void)?
+    var hostUpdate: ((String) async -> HostUpdateReply)?
 
     init(directory: URL, configuration: HostConfiguration) throws {
         self.configuration = configuration
@@ -93,17 +97,25 @@ final class HostService {
         }
         queue.onCredits = { [weak self] in self?.deliverCredits() }
         queue.onIssue = { [weak self] message in self?.onIssue?(message) }
+        queue.connectedRemoteIds = { [weak self] in
+            Set(self?.network.peers.values.compactMap { $0.authenticated ? $0.remoteId : nil } ?? [])
+        }
         network.onFrame = { [weak self] peer, frame in self?.receive(frame, from: peer) }
         network.onFailure = { [weak self] reason in self?.recoverListener(reason) }
         network.onIssue = { [weak self] message in self?.onIssue?(message) }
+        pairingBootstrap.onRequest = { [weak self] secret in self?.bootstrapCertificate(for: secret) }
         network.onDisconnect = { [weak self] id in
             self?.lastCreditSent.removeValue(forKey: id)
             self?.acknowledgedCredits.removeValue(forKey: id)
             self?.transportDecisions.removeValue(forKey: id)
             self?.transportDecisionAt.removeValue(forKey: id)
+            self?.settleCredits()
             self?.onDevicesChanged?()
         }
         bluetooth.onIssue = { [weak self] message in self?.onIssue?(message) }
+        bluetooth.onEvent = { [weak self] action, message in
+            self?.logger.log(.info, category: "bluetooth", action: action, message)
+        }
         bluetooth.onSubscribe = { [weak self] centralID in
             guard let self else { return }
             self.network.acceptBluetooth(
@@ -128,16 +140,20 @@ final class HostService {
         if let observing { observationEnabled = observing }
         do {
             try store.beginEpoch()
+            reauthorizeKeychainItemsIfNeeded()
             let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId)
             self.identity = identity
             try await network.start(
                 identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
+            try await pairingBootstrap.start(controlPort: configuration.port)
             bluetooth.start()
             startStatusReporting()
             await catalog.configure(storefront: configuration.storefront)
             if observationEnabled { startObservation() }
         } catch {
             serviceRunning = false
+            pairingBootstrap.stop()
+            network.stop()
             throw error
         }
     }
@@ -168,10 +184,34 @@ final class HostService {
         }
     }
 
+    /// Items keep the access list of the signature that created them, so an older signature makes macOS ask
+    /// for every item after each update. Rebuild them under the running signature once. Bump the key when the
+    /// signing identity changes. A denied prompt leaves the items as they are and retries on the next launch.
+    private func reauthorizeKeychainItemsIfNeeded() {
+        let key = "keychainAccess.reauthorized.v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            var accounts = ["catalog.public-token", "tls.\(store.hostId)"]
+            accounts += try store.database.query("SELECT credential_reference FROM paired_remotes").compactMap {
+                $0["credential_reference"]?.string
+            }
+            for account in accounts { try SecureStore.reauthorize(account) }
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            logger.log(
+                .warning, category: "security", action: "keychain.reauthorize.deferred",
+                "Keychain access will be updated after the next approval.")
+        }
+    }
+
+    private func settleCredits() {
+        do { try queue.flushCredits() } catch { onIssue?(error.localizedDescription) }
+    }
+
     func stop() {
         serviceRunning = false
         logger.log(.info, category: "host.lifecycle", action: "service.stop", "Host service stopping")
-        do { try queue.flushCredits() } catch { onIssue?(error.localizedDescription) }
+        settleCredits()
         polling?.cancel()
         observation.stop()
         listenerRecovery?.cancel()
@@ -184,6 +224,7 @@ final class HostService {
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
         network.stop()
+        pairingBootstrap.stop()
         bluetooth.stop()
     }
 
@@ -215,6 +256,7 @@ final class HostService {
                         try await self.network.start(
                             identity: identity, port: self.configuration.port, name: self.configuration.name,
                             hostId: self.store.hostId)
+                        try await self.pairingBootstrap.start(controlPort: self.configuration.port)
                         self.onDevicesChanged?()
                         return
                     } catch is CancellationError { return } catch { continue }
@@ -248,6 +290,9 @@ final class HostService {
 
     func createInvitation() throws -> PairingInvitation {
         guard let identity else { throw CadenzaError.failure("network", "Host is still starting.") }
+        guard pairingBootstrap.ready else {
+            throw CadenzaError.failure("network", "Pairing is still starting. Try again in a moment.")
+        }
         let address =
             configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         guard let address else {
@@ -256,11 +301,22 @@ final class HostService {
         let invitation = PairingInvitation(
             host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
             certificateDerBase64: identity.certificateDerBase64,
-            secret: try SecureStore.randomToken(), hostName: configuration.name
+            secret: try SecureStore.randomToken(), hostName: configuration.name,
+            pin: String(format: "%04d", Int.random(in: 0...9_999))
         )
         self.invitation = invitation
         invitationDeadline = monotonicMs() + 300_000
+        invitationPinDeadline = monotonicMs() + 7_000
+        invitationPinAttempts = 0
         return invitation
+    }
+
+    private func bootstrapCertificate(for secret: Data) -> Data? {
+        guard let invitation, let identity,
+            monotonicMs() < invitationDeadline,
+            SecureStore.equal(String(decoding: secret, as: UTF8.self), invitation.secret)
+        else { return nil }
+        return Data(base64Encoded: identity.certificateDerBase64)
     }
 
     func revoke(_ remoteId: String) throws {
@@ -285,6 +341,8 @@ final class HostService {
                 ).first != nil
             else { throw CadenzaError.failure("revoked", "This Remote is no longer paired.") }
             switch frame.type {
+            case "host.update":
+                handleHostUpdate(frame, peer: peer)
             case "remote.configure":
                 guard let name = frame.name?.trimmingCharacters(in: .whitespacesAndNewlines),
                     (1...80).contains(name.count),
@@ -348,9 +406,17 @@ final class HostService {
         let remoteId: String
         var cursor: Int64 = 0
         if frame.type == "pair", let pair = frame.pair, let invitation,
-            monotonicMs() < invitationDeadline, pair.secret.count <= 128,
-            SecureStore.equal(pair.secret, invitation.secret)
+            monotonicMs() < invitationDeadline
         {
+            let now = monotonicMs()
+            let secretValid = pair.secret.map { SecureStore.equal($0, invitation.secret) } ?? false
+            let pinValid =
+                !invitation.pin.isEmpty && invitationPinAttempts < 3 && now < invitationPinDeadline
+                && pair.pin == invitation.pin
+            guard secretValid || pinValid else {
+                if pair.pin != nil { invitationPinAttempts += 1 }
+                throw CadenzaError.failure("authentication", "The pairing PIN is invalid or expired.")
+            }
             let name = pair.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard (1...80).contains(name.count) else {
                 throw CadenzaError.failure("invalid_command", "Enter a Remote name from 1 to 80 characters.")
@@ -359,6 +425,8 @@ final class HostService {
             peer.supportsHeartbeat = pair.heartbeat == true
             peer.remoteVersion = pair.remoteVersion
             self.invitation = nil
+            invitationPinDeadline = 0
+            invitationPinAttempts = 3
         } else if frame.type == "hello", let auth = frame.auth, try store.authenticate(auth) {
             remoteId = auth.remoteId
             peer.remoteVersion = auth.remoteVersion
@@ -379,22 +447,45 @@ final class HostService {
         } else {
             throw CadenzaError.failure("authentication", "Pairing expired or the device credential is invalid.")
         }
+        // Playing time before this Remote joined belongs to the Remotes already connected.
+        settleCredits()
         peer.remoteId = remoteId
         peer.authenticated = true
         lastCreditSent[peer.id] = cursor
         acknowledgedCredits[peer.id] = cursor
+        let welcomeAddress =
+            configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         var welcome = Welcome(
             hostId: store.hostId, hostName: configuration.name, hostEpoch: store.epoch,
-            remoteId: remoteId, token: token, hostTimeMs: monotonicMs(), updates: configuration.updates
+            remoteId: remoteId, token: token, hostAddress: welcomeAddress,
+            hostPort: Int(configuration.port), hostFingerprint: identity?.fingerprint,
+            hostCertificateDerBase64: identity?.certificateDerBase64,
+            hostTimeMs: monotonicMs(), updates: configuration.updates
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }
         if sing.capabilityAvailable { welcome.capabilities.append("sing.mode") }
+        if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
         Task { @MainActor [weak self] in await self?.queue.refresh() }
         sendCredits(peer)
         onDevicesChanged?()
+    }
+
+    private func handleHostUpdate(_ frame: Frame, peer: NetworkService.Peer) {
+        guard let action = frame.updateAction, let requestId = frame.requestId else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let reply =
+                await self.hostUpdate?(action)
+                ?? HostUpdateReply(state: "unavailable", version: nil, message: "Host updates are not available.")
+            var status = Frame(type: "host.update.status", requestId: requestId)
+            status.updateState = reply.state
+            status.updateVersion = reply.version
+            status.message = reply.message
+            self.network.send(status, to: peer)
+        }
     }
 
     func publishTransportStatus() {
@@ -596,7 +687,7 @@ final class HostService {
                     guard let song = frame.song, Wire.validate(song) else {
                         throw CadenzaError.failure("invalid_command", "Invalid song identity.")
                     }
-                    try await self.queue.prepare(song)
+                    try await self.queue.prepare(song, metadata: frame.songMetadata)
                     try Task.checkCancellation()
                     self.network.send(Frame(type: "song.ready", requestId: requestId, song: song), to: peer)
                 }
@@ -623,8 +714,31 @@ final class HostService {
                 guard let self else { return }
                 defer { if self.lyricOccurrence == current.occurrenceId { self.lyricJob = nil } }
                 do {
-                    try await self.queue.primeLyrics(occurrence: current.occurrenceId)
-                    let document = try await self.lyrics.document(song: current.song, occurrence: current.occurrenceId)
+                    var document: LyricDocument?
+                    var lastError: Error?
+                    for attempt in 0..<6 {
+                        do {
+                            // Disk and provider caches do not require Music's
+                            // Accessibility permission. Check them first so a Host
+                            // restart can restore lyrics immediately.
+                            document = try await self.lyrics.document(
+                                song: current.song, occurrence: current.occurrenceId)
+                            break
+                        } catch let error as CadenzaError where error.code == "lyrics_unavailable" {
+                            lastError = error
+                            guard attempt < 5, self.music.accessibility.permitted else { break }
+                            // Music may not have written its local TTML cache yet.
+                            // Prime it and retry with a bounded backoff instead of
+                            // turning a transient read into a permission warning.
+                            try? await self.queue.primeLyrics(occurrence: current.occurrenceId)
+                            try await Task.sleep(for: .milliseconds(1_000 << min(attempt, 3)))
+                        }
+                    }
+                    guard let document else {
+                        if let lastError { throw lastError }
+                        throw CadenzaError.failure(
+                            "lyrics_unavailable", "Lyrics are unavailable. Try again from the Lyrics pane.")
+                    }
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
                     else { return }
                     self.lyricDocument = document

@@ -4,6 +4,7 @@ import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricLine
 import app.cadenza.remote.data.LyricWord
 import app.cadenza.remote.data.Wire
+import app.cadenza.remote.model.id
 import app.cadenza.remote.ui.activeLyricIndex
 import org.json.JSONArray
 import org.json.JSONObject
@@ -46,7 +47,7 @@ class LyricsTest {
             )
         assertEquals(0, activeLyricIndex(document, "occurrence-a", 999, true))
         assertEquals(1, activeLyricIndex(document, "occurrence-a", 1_000, true))
-        assertEquals(-1, activeLyricIndex(document, "occurrence-a", 2_000, true))
+        assertEquals(1, activeLyricIndex(document, "occurrence-a", 2_000, true))
         assertEquals(-1, activeLyricIndex(document, "occurrence-b", 1_000, true))
         assertEquals(-1, activeLyricIndex(document, "occurrence-a", 1_000, false))
     }
@@ -65,11 +66,14 @@ class LyricsTest {
         ) = JSONObject()
             .put("id", id)
             .put("text", "Original lyric")
+            .put("romanized", "Original lyric")
             .put("translation", "English text")
             .put("start_ms", start)
             .put("end_ms", start + 1_000)
         document.put("lines", JSONArray().put(line("L1", 0)).put(line("L2", 1_000)))
         assertEquals(listOf("L1", "L2"), Wire.lyrics(document).lines.map { it.id })
+        val decoded = Wire.lyrics(document)
+        assertEquals("Original lyric", decoded.lines.first().romanized)
         document.put("lines", JSONArray().put(line("L1", 0)).put(line("L1", 1_000)))
         assertThrows(IllegalArgumentException::class.java) { Wire.lyrics(document) }
     }

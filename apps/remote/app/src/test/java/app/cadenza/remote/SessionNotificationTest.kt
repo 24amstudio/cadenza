@@ -3,6 +3,8 @@ package app.cadenza.remote
 import android.app.Notification
 import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
+import app.cadenza.remote.media.SessionNotification
+import app.cadenza.remote.media.SessionStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,24 +39,22 @@ class SessionNotificationTest {
                 .notification.extras
                 .getString(Notification.EXTRA_TEXT),
         )
-        assertEquals(
-            "Unpin",
+        assertTrue(
             manager.activeNotifications
                 .single()
                 .notification
                 .actions
-                .single()
-                .title,
+                .orEmpty()
+                .isEmpty(),
         )
         notifications.update(status.copy(playing = false))
-        assertEquals(
-            "Unpin",
+        assertTrue(
             manager.activeNotifications
                 .single()
                 .notification
                 .actions
-                .single()
-                .title,
+                .orEmpty()
+                .isEmpty(),
         )
         notifications.update(status.copy(active = false))
         assertTrue(manager.activeNotifications.isEmpty())

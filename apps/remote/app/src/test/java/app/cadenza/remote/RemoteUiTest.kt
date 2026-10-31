@@ -2,6 +2,8 @@ package app.cadenza.remote
 
 import android.content.ComponentName
 import android.graphics.Bitmap
+import android.view.View
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
@@ -62,13 +64,21 @@ import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricLine
 import app.cadenza.remote.data.SingSession
 import app.cadenza.remote.data.Song
+import app.cadenza.remote.model.DebugLogEntry
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.id
+import app.cadenza.remote.model.maintainBackgroundSessionInternal
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.ui.ConnectionStatus
 import app.cadenza.remote.ui.DebugScreen
 import app.cadenza.remote.ui.LyricsScreen
+import app.cadenza.remote.ui.PlayingScreen
 import app.cadenza.remote.ui.StartupScreen
+import app.cadenza.remote.ui.duration
 import app.cadenza.remote.ui.position
 import app.cadenza.remote.ui.startupBuildLabel
+import app.cadenza.remote.updates.Changelog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import org.json.JSONArray
@@ -209,10 +219,11 @@ class RemoteUiTest {
     }
 
     @Test
-    fun pairingUsesQrOnly() {
+    fun pairingOffersBluetoothPinAndQrFallback() {
         openApp()
         capture("pairing-tablet")
-        compose.onNodeWithText("Scan pairing QR", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("Pair over Bluetooth", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("Use pairing QR instead", substring = false).assertIsDisplayed()
         compose.onAllNodesWithText("Pairing details").assertCountEquals(0)
         compose.onAllNodesWithText("Paste pairing details").assertCountEquals(0)
         compose.onAllNodesWithText("Pair", substring = false).assertCountEquals(0)
@@ -412,6 +423,7 @@ class RemoteUiTest {
         seedProfile()
         openApp()
         navigate("Settings")
+        capture("settings-revamp-tablet")
         compose.onNodeWithText("Remote name").performTextReplacement("Bedroom tablet")
         compose.onNodeWithText("Dark", substring = false).performClick()
         compose.onNodeWithText("Save preferences").performScrollTo().performClick()
@@ -469,6 +481,7 @@ class RemoteUiTest {
                 .put("incoming", song("Cached incoming song", 180_000)),
         )
         openApp()
+        capture("now-playing-ipad")
         compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
         compose.onNodeWithText("Lossless").assertDoesNotExist()
@@ -482,7 +495,7 @@ class RemoteUiTest {
         capture("pairing-phone-large-text")
         compose.onNodeWithText("Pair with Cadenza Host").assertIsDisplayed()
         compose
-            .onNodeWithText("Scan pairing QR", substring = false)
+            .onNodeWithText("Use pairing QR instead", substring = false)
             .performScrollTo()
             .assertIsDisplayed()
         capture("pairing-phone-large-text-bottom")
@@ -565,6 +578,42 @@ class RemoteUiTest {
 
     @OptIn(ExperimentalMaterial3ExpressiveApi::class)
     @Test
+    fun tabletNowPlayingUsesMediaDetailAndLyricsPane() {
+        seedProfile()
+        createModel()
+        val document =
+            LyricDocument(
+                UUID(0, 11).toString(),
+                UUID(0, 21).toString(),
+                "machine",
+                listOf(
+                    LyricLine("first", "A little further to the other side", 0, 25_000, "A little further to the other side"),
+                    LyricLine("second", "We set sail on our dream", 30_000, 45_000, "We set sail on our dream"),
+                    LyricLine("third", "Crossing the night for the day to come", 50_000, 65_000, "Crossing the night for the day to come"),
+                ),
+                null,
+            )
+        compose.setContent {
+            val state by model.state.collectAsStateWithLifecycle()
+            MaterialExpressiveTheme {
+                PlayingScreen(
+                    model,
+                    state.copy(lyrics = document),
+                    wide = true,
+                    restoreLyricsFocus = false,
+                    onLyricsFocusRestored = {},
+                    onOpenLyrics = {},
+                )
+            }
+        }
+        compose.waitUntil(5_000) { model.state.value.loaded }
+        compose.onNodeWithText("A little further to the other side").assertIsDisplayed()
+        compose.onNodeWithText("Current song").assertIsDisplayed()
+        capture("now-playing-ipad-lyrics")
+    }
+
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Test
     fun scrollingLyricsCanResumeFollowing() {
         seedProfile()
         createModel()
@@ -640,18 +689,37 @@ class RemoteUiTest {
     }
 
     @Test
-    fun pinnedSongStatusSurvivesTheActivityBackgroundTransition() {
-        createModel()
-        compose.waitUntil(5_000) { model.state.value.loaded }
-        compose.runOnUiThread {
-            model.monitorSong()
-            model.setForeground(false)
+    fun aPlayingHostKeepsTheScreenAwakeOnlyOnNowPlayingAndLyrics() {
+        seedProfile(playing = true)
+        openApp()
+        assertTrue(viewsKeepingScreenOn().isNotEmpty())
+        navigate("Settings")
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Music volume")).fetchSemanticsNodes().size)
+        assertEquals(emptyList<String>(), viewsKeepingScreenOn())
+        navigate("Playing")
+        compose.onNodeWithText("Lyrics").performClick()
+        assertTrue(viewsKeepingScreenOn().isNotEmpty())
+    }
+
+    @Test
+    fun aPlayingHostKeepsTheSessionAliveWhenTheAppIsBackgrounded() {
+        seedProfile(playing = true)
+        openApp()
+        compose.runOnUiThread { model.setForeground(false) }
+        assertTrue(compose.runOnUiThread { model.maintainBackgroundSessionInternal() })
+    }
+
+    private fun viewsKeepingScreenOn(): List<String> {
+        val found = mutableListOf<String>()
+
+        fun visit(view: View) {
+            if (view.keepScreenOn) found += view.javaClass.name
+            (view as? ViewGroup)?.let { group ->
+                for (index in 0 until group.childCount) visit(group.getChildAt(index))
+            }
         }
-        assertTrue(model.state.value.sessionActive)
-        assertTrue(model.state.value.monitoringSong)
-        compose.runOnUiThread { model.endSessionStatus() }
-        assertTrue(!model.state.value.sessionActive)
-        assertTrue(!model.state.value.monitoringSong)
+        compose.runOnUiThread { visit(compose.activity.window.decorView) }
+        return found
     }
 
     private class PageLifecycle : LifecycleOwner {
@@ -691,6 +759,7 @@ class RemoteUiTest {
     private fun seedProfile(
         emptyQueue: Boolean = false,
         sing: Boolean = false,
+        playing: Boolean = false,
     ) {
         val profile =
             HostProfile(
@@ -703,12 +772,13 @@ class RemoteUiTest {
                 TestCertificate.encoded,
             )
         app.database.saveProfile(profile)
-        app.database.saveState(hostId, snapshot(emptyQueue, sing))
+        app.database.saveState(hostId, snapshot(emptyQueue, playing, sing))
         app.settings.write("active_host" to hostId)
     }
 
     private fun snapshot(
         emptyQueue: Boolean,
+        playing: Boolean = false,
         sing: Boolean = false,
     ): JSONObject {
         val queue = JSONArray()
@@ -723,7 +793,7 @@ class RemoteUiTest {
             .put("sequence", 1)
             .put("host_time_ms", 1_000)
             .put("allow_cross_remote_edits", false)
-            .put("playing", false)
+            .put("playing", playing)
             .put("volume", 40)
             .put("quality", "unknown")
             .put(

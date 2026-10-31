@@ -14,7 +14,7 @@ enum LRCParser {
             return nil
         }
         let lines = plain.split(whereSeparator: \.isNewline).enumerated().map { index, text in
-            LyricLine(
+            Self.line(
                 id: "lrclib-\(index)", text: String(text).trimmingCharacters(in: .whitespaces), startMs: 0, endMs: 0)
         }.filter { !$0.text.isEmpty }
         guard !lines.isEmpty else { return nil }
@@ -41,7 +41,7 @@ enum LRCParser {
                 words.isEmpty
                 ? content.replacingOccurrences(
                     of: #"<\d{1,3}:\d{2}(?:\.\d{1,3})?>"#, with: "", options: .regularExpression)
-                : words.map(\.text).joined(separator: " ")
+                : words.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
             if !cleaned.isEmpty { parsed.append((start, cleaned, words)) }
             for extra in matches.dropFirst() {
                 guard let extraRange = Range(extra.range, in: line),
@@ -55,9 +55,18 @@ enum LRCParser {
             let end = index + 1 < sorted.count ? sorted[index + 1].0 : (durationMs ?? item.0 + 4_000)
             var words = item.2
             if let last = words.indices.last { words[last].endMs = max(words[last].endMs, end) }
-            return LyricLine(
+            return line(
                 id: "lrclib-\(index)", text: item.1, startMs: item.0, endMs: max(item.0, end), words: words)
         }
+    }
+
+    private static func line(
+        id: String, text: String, startMs: Int64, endMs: Int64,
+        words: [LyricWord] = []
+    ) -> LyricLine {
+        let romanized = text.applyingTransform(.toLatin, reverse: false).flatMap { $0 == text ? nil : $0 }
+        return LyricLine(
+            id: id, text: text, startMs: startMs, endMs: endMs, words: words, romanized: romanized)
     }
 
     private static func parseWords(_ text: String, lineStart: Int64) -> [LyricWord] {
@@ -73,7 +82,11 @@ enum LRCParser {
             let end = next ?? start + 500
             let upper =
                 index + 1 < matches.count ? Range(matches[index + 1].range, in: text)!.lowerBound : text.endIndex
-            let value = String(text[timestampRange.upperBound..<upper]).trimmingCharacters(in: .whitespaces)
+            let rawValue = String(text[timestampRange.upperBound..<upper])
+            let hasTrailingSpace = rawValue.last?.isWhitespace == true
+            let value =
+                rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                + (hasTrailingSpace ? " " : "")
             guard !value.isEmpty else { return nil }
             return LyricWord(text: value, startMs: max(lineStart, start), endMs: max(start, end))
         }

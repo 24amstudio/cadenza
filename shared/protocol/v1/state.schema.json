@@ -137,6 +137,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 256 },
         "text": { "type": "string", "maxLength": 20000 },
+        "romanized": { "type": "string", "maxLength": 20000 },
         "start_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
         "end_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
         "translation": { "type": "string", "maxLength": 20000 },

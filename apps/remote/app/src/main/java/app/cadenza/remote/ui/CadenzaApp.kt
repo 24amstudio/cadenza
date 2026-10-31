@@ -47,12 +47,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.checkRequest
 import app.cadenza.remote.data.ThemePreference
-import app.cadenza.remote.dismissNotice
-import app.cadenza.remote.dismissPrompt
-import app.cadenza.remote.requestArtwork
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.checkRequest
+import app.cadenza.remote.model.dismissNotice
+import app.cadenza.remote.model.dismissPrompt
+import app.cadenza.remote.model.id
+import app.cadenza.remote.model.requestArtwork
 
 private data class Destination(
     val id: Int,

@@ -1,5 +1,7 @@
-package app.cadenza.remote
+package app.cadenza.remote.model
 
+import app.cadenza.remote.BuildConfig
+import app.cadenza.remote.CadenzaApplication
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.PairingInvitation
 import app.cadenza.remote.data.Wire
@@ -15,14 +17,14 @@ class RemoteHandshake(
     suspend fun frame(
         invite: PairingInvitation?,
         profile: HostProfile?,
+        pin: String? = null,
     ): JSONObject =
-        if (invite != null) {
+        if (invite != null || pin != null) {
+            val pair = JSONObject().put("name", name())
+            if (pin != null) pair.put("pin", pin) else pair.put("secret", requireNotNull(invite).secret)
             Wire.frame("pair").put(
                 "pair",
-                JSONObject()
-                    .put("name", name())
-                    .put("secret", invite.secret)
-                    .put("remote_version", BuildConfig.VERSION_NAME),
+                pair.put("remote_version", BuildConfig.VERSION_NAME),
             )
         } else {
             val stored = requireNotNull(profile)

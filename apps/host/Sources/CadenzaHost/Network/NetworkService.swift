@@ -235,7 +235,7 @@ final class NetworkService {
         peers[peer.id] = peer
         bluetoothPeers[centralID] = peer.id
         Task { @MainActor [weak self, weak peer] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(20))
             guard let self, let peer, self.peers[peer.id]?.authenticated == false else { return }
             self.disconnect(peer.id)
         }

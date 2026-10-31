@@ -7,7 +7,15 @@ project_root="$(cd -- "$host_root/../.." && pwd)"
 profile="${CADENZA_BUILD_PROFILE:-development}"
 case "$profile" in development|ci|production) ;; *) printf '%s\n' 'Unknown build profile.' >&2; exit 2 ;; esac
 [[ "$profile" != production || "${CI:-false}" != true ]] || { printf '%s\n' 'CI must not enable Production updates.' >&2; exit 2; }
-signing_identity="${CADENZA_MACOS_SIGNING_IDENTITY:--}"
+# A stable identity keeps Keychain access across local builds; ad-hoc builds look like a new app to macOS.
+local_signing_identity="Cadenza Host Local Signing"
+if [[ -z "${CADENZA_MACOS_SIGNING_IDENTITY:-}" ]] &&
+  /usr/bin/security find-identity -p codesigning 2>/dev/null | grep -qF "\"$local_signing_identity\""; then
+  signing_identity="$local_signing_identity"
+else
+  signing_identity="${CADENZA_MACOS_SIGNING_IDENTITY:--}"
+fi
+printf 'Signing Host with %s\n' "$signing_identity"
 if [[ "$profile" == production && "$signing_identity" == "-" ]]; then
   printf '%s\n' 'Production Host builds require CADENZA_MACOS_SIGNING_IDENTITY; ad-hoc signing would re-prompt for Keychain access after updates.' >&2
   exit 2

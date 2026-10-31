@@ -36,7 +36,7 @@ enum ProtocolValidation {
         } else if ![
             "pair", "hello", "clock", "search", "song.prepare", "operation.cancel", "lyrics.get", "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get",
-            "transport.configure", "session.status",
+            "transport.configure", "session.status", "host.update",
         ].contains(frame.type) {
             throw invalid("Unknown message type.")
         }
@@ -58,16 +58,23 @@ enum ProtocolValidation {
             "session.status": ["status"],
             "log.report": ["log_action", "log_level", "log_message"],
             "artwork.get": ["request_id", "artwork_url"],
+            "host.update": ["update_action", "request_id"],
         ]
         guard let fields = required[type] else { throw invalid("Unknown message type.") }
         let keys = Set(object.keys)
+        var optionalFields = Set(["version", "type", "request_id"])
+        if type == "song.prepare" { optionalFields.insert("song_metadata") }
         guard keys.isSuperset(of: fields.union(["version", "type"])),
-            keys.isSubset(of: fields.union(["version", "type", "request_id"]))
+            keys.isSubset(of: fields.union(optionalFields))
         else {
             throw invalid("The message contains unexpected or missing fields.")
         }
         if type == "pair" {
-            try nested(object["pair"], fields: ["name", "secret"], optional: ["heartbeat", "remote_version"])
+            try nested(
+                object["pair"], fields: ["name"], optional: ["secret", "pin", "heartbeat", "remote_version"])
+        }
+        if type == "host.update", !["check", "install"].contains(object["update_action"] as? String ?? "") {
+            throw invalid("Unknown Host update action.")
         }
         if type == "log.report" {
             guard let level = object["log_level"] as? String, ["debug", "info", "warning", "error"].contains(level),
@@ -124,7 +131,23 @@ enum ProtocolValidation {
                 }
             }
         }
-        if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
+        if type == "song.prepare" {
+            try nested(object["song"], fields: ["source", "id"])
+            if let metadata = object["song_metadata"] as? [String: Any] {
+                try nested(
+                    metadata,
+                    fields: ["source", "id", "title", "artist", "album"],
+                    optional: ["duration_ms", "artwork_url", "url"])
+                guard let source = metadata["source"] as? String,
+                    let identity = object["song"] as? [String: Any],
+                    source == identity["source"] as? String,
+                    metadata["id"] as? String == identity["id"] as? String
+                else { throw invalid("Song metadata does not match its identity.") }
+                let data = try JSONSerialization.data(withJSONObject: metadata)
+                let song = try Wire.decode(Song.self, from: data)
+                guard Wire.validate(song) else { throw invalid("Invalid song metadata.") }
+            }
+        }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")
         }
@@ -135,9 +158,17 @@ enum ProtocolValidation {
             try counter(auth["last_credit_sequence"])
         }
         if let pair = object["pair"] as? [String: Any] {
-            guard let secret = pair["secret"] as? String, (32...128).contains(secret.count),
-                let name = pair["name"] as? String, (1...80).contains(name.count)
+            guard let name = pair["name"] as? String, (1...80).contains(name.count),
+                (pair["secret"] == nil) != (pair["pin"] == nil)
             else { throw invalid("Invalid pairing details.") }
+            if let secret = pair["secret"] as? String, !(32...128).contains(secret.count) {
+                throw invalid("Invalid pairing secret.")
+            }
+            if let pin = pair["pin"] as? String,
+                pin.count != 4 || !pin.unicodeScalars.allSatisfy({ (48...57).contains($0.value) })
+            {
+                throw invalid("Invalid pairing PIN.")
+            }
         }
         if let clock = object["clock"] as? [String: Any] { try counter(clock["sent_at_remote_ms"]) }
         if type == "analytics.ack" { try counter(object["sequence"]) }

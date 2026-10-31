@@ -26,4 +26,9 @@ enum Wire {
         return ["catalog", "library"].contains(identity.source)
             && identity.id.range(of: pattern, options: .regularExpression) != nil
     }
+
+    static func validate(_ song: Song) -> Bool {
+        validate(song.identity) && (1...500).contains(song.title.count) && (1...500).contains(song.artist.count)
+            && song.album.count <= 500
+    }
 }

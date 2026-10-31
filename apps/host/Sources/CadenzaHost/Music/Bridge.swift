@@ -60,18 +60,39 @@ final class MusicBridge {
             guard let url = components.url, NSWorkspace.shared.open(url) else {
                 throw CadenzaError.failure("music_unavailable", "Music could not open this song.")
             }
+            // Opening a music:// URL can leave Music behind another app. Bring its
+            // document window forward so Accessibility can select the exact track.
+            NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
+                .first?.activate(options: [.activateAllWindows])
         }
-        let deadline = monotonicMs() + 8_000
+        let deadline = monotonicMs() + 12_000
+        var lastStep: String?
+        if song.source == "catalog" {
+            let searchDeadline = min(deadline - 2_000, monotonicMs() + 6_000)
+            do {
+                let found = try await accessibility.searchCatalog(song, deadline: searchDeadline)
+                if !found { lastStep = "Music's search did not show exactly one matching result." }
+            } catch {
+                lastStep = error.localizedDescription
+            }
+        }
         repeat {
             try Task.checkCancellation()
             guard isCurrent() else {
                 throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.")
             }
-            try? accessibility.showQueue(deadline: min(deadline, monotonicMs() + 250))
-            if accessibility.isPrepared(song) { return }
+            do {
+                try accessibility.showQueue(deadline: min(deadline, monotonicMs() + 250))
+            } catch {
+                lastStep = error.localizedDescription
+            }
+            guard let issue = accessibility.preparationIssue(song) else { return }
+            lastStep = issue
             try await Task.sleep(for: .milliseconds(150))
         } while monotonicMs() < deadline
+        let step = lastStep.map { " Last step: \($0)" } ?? ""
         throw CadenzaError.failure(
-            "song_not_ready", "Music has not exposed the exact song. Select this song in Music, then prepare it again.")
+            "song_not_ready",
+            "Music did not expose the exact song after navigation.\(step) Retry the preparation action.")
     }
 }

@@ -1,6 +1,6 @@
 import AVFAudio
-import os
 import XCTest
+import os
 @testable import CadenzaHost
 
 final class SingAudioTests: XCTestCase {

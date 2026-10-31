@@ -8,8 +8,8 @@ enum SingStemMixer {
     }
 }
 
-fileprivate extension Int {
-    func clamped(to range: ClosedRange<Int>) -> Int {
+extension Int {
+    fileprivate func clamped(to range: ClosedRange<Int>) -> Int {
         min(range.upperBound, max(range.lowerBound, self))
     }
 }

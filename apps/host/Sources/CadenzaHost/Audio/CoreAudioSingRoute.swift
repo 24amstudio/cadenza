@@ -195,9 +195,10 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
     }
 
     private func musicProcessObjectID() -> AudioObjectID? {
-        guard let music = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.apple.Music"
-        ).first
+        guard
+            let music = NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.apple.Music"
+            ).first
         else { return nil }
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -235,9 +236,10 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             mElement: kAudioObjectPropertyElementMain)
         var device = AudioDeviceID(kAudioObjectUnknown)
         var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(
-            kAudioObjectSystemObject, &deviceAddress, 0, nil, &deviceSize, &device
-        ) == noErr,
+        guard
+            AudioObjectGetPropertyData(
+                kAudioObjectSystemObject, &deviceAddress, 0, nil, &deviceSize, &device
+            ) == noErr,
             device != kAudioObjectUnknown
         else { return nil }
 
@@ -247,9 +249,10 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             mElement: 0)
         var description = AudioStreamBasicDescription()
         var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        guard AudioObjectGetPropertyData(
-            device, &formatAddress, 0, nil, &formatSize, &description
-        ) == noErr,
+        guard
+            AudioObjectGetPropertyData(
+                device, &formatAddress, 0, nil, &formatSize, &description
+            ) == noErr,
             description.mSampleRate > 0,
             description.mChannelsPerFrame >= 2
         else { return nil }

@@ -241,14 +241,16 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         let sourceVocalsRight = resample(vocals.right, to: sourceWindow)
         let firstCount = min(sourceStep, residualCount)
         let firstLeft = (0..<firstCount).map { index in
-            let vocal = overlapLeft.isEmpty
+            let vocal =
+                overlapLeft.isEmpty
                 ? sourceVocalsLeft[index]
                 : (overlapLeft[index] + sourceVocalsLeft[index]) * 0.5
             return SingStemMixer.render(
                 mix: left[index], vocal: vocal, vocalPercent: lastVocalPercent)
         }
         let firstRight = (0..<firstCount).map { index in
-            let vocal = overlapRight.isEmpty
+            let vocal =
+                overlapRight.isEmpty
                 ? sourceVocalsRight[index]
                 : (overlapRight[index] + sourceVocalsRight[index]) * 0.5
             return SingStemMixer.render(

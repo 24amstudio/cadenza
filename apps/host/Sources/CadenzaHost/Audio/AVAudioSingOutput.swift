@@ -87,12 +87,13 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
     }
 
     private func makeFormat(_ format: SingAudioFormat) throws -> AVAudioFormat {
-        guard let value = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: format.sampleRate,
-            channels: AVAudioChannelCount(format.channelCount),
-            interleaved: false
-        )
+        guard
+            let value = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: format.sampleRate,
+                channels: AVAudioChannelCount(format.channelCount),
+                interleaved: false
+            )
         else {
             throw SingAudioError.unavailable("The Music output format could not be created.")
         }

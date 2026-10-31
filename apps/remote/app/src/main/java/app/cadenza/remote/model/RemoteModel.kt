@@ -26,6 +26,8 @@ import app.cadenza.remote.media.RemoteMediaActions
 import app.cadenza.remote.media.RemoteMediaSession
 import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
+import app.cadenza.remote.motion.MotionAssembly
+import app.cadenza.remote.motion.MotionStore
 import app.cadenza.remote.network.BleConnection
 import app.cadenza.remote.network.EndpointPool
 import app.cadenza.remote.network.HostConnection
@@ -40,6 +42,8 @@ import app.cadenza.remote.network.RemoteConnection
 import app.cadenza.remote.network.RemoteStatusPublisher
 import app.cadenza.remote.network.loadPairingCertificate
 import app.cadenza.remote.network.parsePairingInvitation
+import app.cadenza.remote.search.SearchHistory
+import app.cadenza.remote.search.correctionFor
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -55,7 +59,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
+
+private const val SUGGEST_DELAY_MS = 180L
 
 class RemoteModel(
     application: Application,
@@ -113,6 +120,18 @@ class RemoteModel(
 
     internal var searchId: String? = null
 
+    internal var correctionId: String? = null
+
+    internal var searchedQuery = ""
+
+    internal var searchedScope = "catalog"
+
+    internal var motionRequestId: String? = null
+
+    internal var motionAssembly: MotionAssembly? = null
+
+    internal val motionStore by lazy { MotionStore(File(app.filesDir, "motion")) }
+
     internal var preparationId: String? = null
 
     internal var searchTimeout: Job? = null
@@ -155,9 +174,15 @@ class RemoteModel(
 
     internal var lastCachedAt = 0L
 
+    internal var logFlush: Job? = null
+
+    internal var suggestJob: Job? = null
+    internal var suggestionId: String? = null
+
     internal val pending = mutableMapOf<String, PendingCommand>()
 
-    internal val statusChecks = mutableSetOf<String>()
+    // The Host's last snapshot. The published snapshot is this one with unanswered command intents applied.
+    internal var hostSnapshot: HostSnapshot? = null
 
     internal val frameQueue = PrioritizedFrameQueue()
 
@@ -221,11 +246,13 @@ class RemoteModel(
                 remoteName = preferences.getString("client_name", null)?.takeIf { it.isNotBlank() && it.length <= 80 } ?: remoteName
                 val theme =
                     ThemePreference.entries.firstOrNull { it.name == preferences.getString("theme", null) } ?: ThemePreference.SYSTEM
+                hostSnapshot = cached
                 mutable.update {
                     it.copy(
                         loaded = true,
                         clientName = remoteName,
                         transportMode = preferences.getString("transport_mode", "lan") ?: "lan",
+                        recentSearches = SearchHistory.decode(preferences.getString("recent_searches", null)),
                         transportPreference = preferences.getString("transport_preference", "balanced") ?: "balanced",
                         theme = theme,
                         favorites = library.songs,
@@ -414,8 +441,16 @@ class RemoteModel(
         library: Boolean,
     ) {
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before searching.")
+        reportLog("info", "search.requested", "scope=${if (library) "library" else "catalog"} chars=${query.length}")
+        val recent = SearchHistory.add(mutable.value.recentSearches, query)
+        mutable.update { it.copy(recentSearches = recent, correctedQuery = null, correctedResults = emptyList()) }
+        viewModelScope.launch(ioDispatcher) { preferences.write("recent_searches" to SearchHistory.encode(recent)) }
         searchId?.let { connection?.send(Wire.frame("operation.cancel").put("request_id", it)) }
+        correctionId?.let { connection?.send(Wire.frame("operation.cancel").put("request_id", it)) }
+        correctionId = null
         searchId = id()
+        searchedQuery = query.take(200)
+        searchedScope = if (library) "library" else "catalog"
         val requestId = searchId
         searchTimeout?.cancel()
         mutable.update { it.copy(searching = true) }
@@ -424,8 +459,8 @@ class RemoteModel(
                 .frame(
                     "search",
                 ).put("request_id", searchId)
-                .put("query", query.take(200))
-                .put("scope", if (library) "library" else "catalog"),
+                .put("query", searchedQuery)
+                .put("scope", searchedScope),
         )
         searchTimeout =
             viewModelScope.launch {
@@ -438,7 +473,42 @@ class RemoteModel(
             }
     }
 
+    // A search that finds no real match is retried with the known title it most likely meant, so the user sees both
+    // without first tapping a suggestion.
+    internal fun correctIfNeeded(songs: List<Song>) {
+        val correction = correctionFor(searchedQuery, songs, knownTerms()) ?: return
+        correctionId = id()
+        mutable.update { it.copy(correctedQuery = correction) }
+        connection?.send(
+            Wire
+                .frame("search")
+                .put("request_id", correctionId)
+                .put("query", correction.take(200))
+                .put("scope", searchedScope),
+        )
+    }
+
+    private fun knownTerms(): List<String> {
+        val state = mutable.value
+        return state.recentSearches + state.favorites.map { it.title } + state.statistics.map { it.title } + state.suggestedTerms
+    }
+
+    // Asks the Host for Apple's completions once typing pauses. Earlier answers are ignored by request identifier, so a
+    // slow reply cannot replace the suggestions for what the user typed last.
+    fun suggest(query: String) {
+        val text = query.trim().take(200)
+        suggestJob?.cancel()
+        if (text.isEmpty() || !mutable.value.connected || "search.suggest" !in mutable.value.capabilities) return
+        suggestJob =
+            viewModelScope.launch {
+                delay(SUGGEST_DELAY_MS)
+                suggestionId = id()
+                connection?.send(Wire.frame("search.suggest").put("request_id", suggestionId).put("query", text))
+            }
+    }
+
     fun prepare(song: Song) {
+        reportLog("info", "prepare.requested", "song=${song.source}:${song.id}")
         preparationId = id()
         val requestId = preparationId
         preparationTimeout?.cancel()
@@ -474,6 +544,7 @@ class RemoteModel(
     fun loadLyrics(userInitiated: Boolean = true) {
         if (mutable.value.lyricsLoading) return
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
+        reportLog("info", "lyrics.requested", "user=$userInitiated")
         lyricRequestId = id()
         val requestId = lyricRequestId
         lyricsTimeout?.cancel()
@@ -521,6 +592,7 @@ class RemoteModel(
     fun toggleFavorite(song: Song) {
         if (mutable.value.savingFavorite) return
         val saved = mutable.value.favorites.none { it.identity == song.identity }
+        reportLog("info", "favorite.requested", "song=${song.source}:${song.id} saved=$saved")
         mutable.update { it.copy(savingFavorite = true) }
         viewModelScope.launch {
             try {
@@ -547,9 +619,10 @@ class RemoteModel(
     fun command(
         action: JSONObject,
         key: String,
+        song: Song? = null,
     ) {
         mutable.update { it.copy(sessionActive = true) }
-        viewModelScope.launch { sendCommand(action, key) }
+        viewModelScope.launch { sendCommand(action, key, song) }
     }
 
     override fun onCleared() {

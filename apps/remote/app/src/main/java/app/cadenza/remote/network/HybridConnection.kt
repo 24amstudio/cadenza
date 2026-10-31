@@ -70,7 +70,7 @@ class HybridConnection(
             val bleSent = bleReady && ble.send(frame)
             return lanSent || bleSent
         }
-        val bulk = type == "artwork.get" || type == "lyrics.get" || type == "search" || type == "song.prepare"
+        val bulk = type == "artwork.get" || type == "lyrics.get" || type == "search" || type == "search.suggest" || type == "song.prepare"
         val preferred = if (bulk) ble else lan
         val fallback = if (bulk) lan else ble
         return (if (if (bulk) bleReady else lanReady) preferred.send(frame) else false) ||

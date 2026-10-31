@@ -220,14 +220,19 @@ private fun PlayerPanel(
         verticalArrangement = Arrangement.spacedBy(if (wide) 14.dp else 16.dp),
         horizontalAlignment = if (wide) Alignment.CenterHorizontally else Alignment.Start,
     ) {
-        Artwork(
-            artwork,
+        val coverModifier =
             Modifier
                 .widthIn(max = if (wide) 300.dp else 280.dp)
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .align(Alignment.CenterHorizontally),
-        )
+                .align(Alignment.CenterHorizontally)
+        MotionArtwork(
+            video = state.motion?.takeIf { it.occurrenceId == current.occurrenceId }?.file,
+            playing = snapshot.playing,
+            modifier = coverModifier,
+        ) {
+            Artwork(artwork, Modifier.fillMaxSize())
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(current.song.title, style = if (wide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
@@ -292,16 +297,7 @@ private fun PlayerPanel(
         PlaybackTransport(model, state, Modifier.fillMaxWidth(), compact = true)
         HorizontalDivider()
         if (!wide) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Music volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                Box(Modifier.size(24.dp)) {
-                    if ("playback.volume" in state.pending) {
-                        CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Volume change pending" })
-                    }
-                }
-            }
-        } else if ("playback.volume" in state.pending) {
-            CircularProgressIndicator(Modifier.size(24.dp).semantics { contentDescription = "Volume change pending" })
+            Text("Music volume", style = MaterialTheme.typography.labelLarge)
         }
         Slider(
             state = volumeSlider,
@@ -312,7 +308,7 @@ private fun PlayerPanel(
                 volume = -1f
                 model.command(JSONObject().put("kind", "playback.volume").put("percent", target), "playback.volume")
             },
-            enabled = state.connected && "playback.volume" !in state.pending,
+            enabled = state.connected,
         )
         SingControls(model, state, current)
     }

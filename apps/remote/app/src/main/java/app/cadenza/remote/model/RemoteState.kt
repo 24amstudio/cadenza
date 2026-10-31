@@ -9,12 +9,12 @@ import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.data.TransportPathStatus
 import app.cadenza.remote.data.UpdateConfiguration
+import java.io.File
 import java.util.UUID
 
 data class Prompt(
     val title: String,
     val message: String,
-    val commandId: String? = null,
     val id: String = UUID.randomUUID().toString(),
 )
 
@@ -27,6 +27,11 @@ data class DebugLogEntry(
     val timestampMs: Long,
     val title: String,
     val message: String,
+)
+
+data class MotionVideo(
+    val occurrenceId: String,
+    val file: File,
 )
 
 data class RemoteState(
@@ -55,10 +60,15 @@ data class RemoteState(
     val lyricsLoading: Boolean = false,
     val lyricsIssue: String? = null,
     val results: List<Song> = emptyList(),
+    val recentSearches: List<String> = emptyList(),
+    val suggestedTerms: List<String> = emptyList(),
+    val suggestedSongs: List<Song> = emptyList(),
+    val correctedQuery: String? = null,
+    val correctedResults: List<Song> = emptyList(),
+    val motion: MotionVideo? = null,
     val searching: Boolean = false,
     val preparing: Boolean = false,
     val preparedSong: String? = null,
-    val pending: Set<String> = emptySet(),
     val lastCommandLatencyMs: Long? = null,
     val clockUncertaintyMs: Long? = null,
     val statistics: List<SongStatistic> = emptyList(),

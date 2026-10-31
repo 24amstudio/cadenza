@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import common from '../shared/protocol/v1/common.schema.json' with { type: 'json' };
 import state from '../shared/protocol/v1/state.schema.json' with { type: 'json' };
+import media from '../shared/protocol/v1/media.schema.json' with { type: 'json' };
 import session from '../shared/protocol/v1/session.schema.json' with { type: 'json' };
 import command from '../shared/protocol/v1/command.schema.json' with { type: 'json' };
 
@@ -11,6 +12,8 @@ const ajv = new Ajv2020({ strict: true, allErrors: true });
 ajv.addSchema(common);
 
 ajv.addSchema(state);
+
+ajv.addSchema(media);
 
 const validateSession = ajv.compile(session);
 const validateCommand = ajv.compile(command);

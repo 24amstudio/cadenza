@@ -199,7 +199,9 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else {
+        guard
+            AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr
+        else {
             return nil
         }
         let count = Int(size) / MemoryLayout<AudioObjectID>.size

@@ -26,9 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import app.cadenza.remote.RemoteModel
-import app.cadenza.remote.RemoteState
 import app.cadenza.remote.data.CurrentPlayback
+import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.RemoteState
 import org.json.JSONObject
 
 @Composable

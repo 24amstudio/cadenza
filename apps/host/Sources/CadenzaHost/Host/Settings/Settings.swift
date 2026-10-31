@@ -328,11 +328,11 @@ struct HostSettings: View {
             return "Auto · \(label). \(reason)"
         }
         switch creeMode {
-        case "auto": "Learning. Auto mode observes first and plans only after Host readiness gates pass."
-        case "shadow": "Shadow. CREE scores candidates and observes outcomes without changing Music."
-        case "planning": "Planning. CREE may submit one next occurrence under Host queue policy."
-        case "paused": "Paused. The current profile and queue are preserved."
-        default: "CREE is unavailable until its mode is repaired."
+        case "auto": return "Learning. Auto mode observes first and plans only after Host readiness gates pass."
+        case "shadow": return "Shadow. CREE scores candidates and observes outcomes without changing Music."
+        case "planning": return "Planning. CREE may submit one next occurrence under Host queue policy."
+        case "paused": return "Paused. The current profile and queue are preserved."
+        default: return "CREE is unavailable until its mode is repaired."
         }
     }
 

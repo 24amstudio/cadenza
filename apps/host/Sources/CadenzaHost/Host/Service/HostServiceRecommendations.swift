@@ -181,7 +181,7 @@ extension HostService {
                 network.send(
                     Frame(
                         type: "recommendation.plan.result",
-                        plan: RecommendationPlanEnvelope(
+                        recommendationPlan: RecommendationPlanEnvelope(
                             planId: result.planId,
                             recommendationId: result.recommendationId,
                             passportSequence: result.passportSequence,
@@ -243,7 +243,9 @@ extension HostService {
             let receipt = existing["receipt_json"]?.string,
             let data = receipt.data(using: .utf8), let saved = try? Wire.decode(Frame.self, from: data)
         {
-            network.send(Frame(type: "recommendation.plan.result", plan: envelope, outcome: saved.outcome), to: peer)
+            network.send(
+                Frame(type: "recommendation.plan.result", recommendationPlan: envelope, outcome: saved.outcome),
+                to: peer)
             return
         }
         guard let saved = try store.recommendationPlan(remoteId: actor, planId: envelope.planId),
@@ -255,7 +257,9 @@ extension HostService {
             expiresAtHostMs: monotonicMs() + 1_000, expectedRevision: envelope.expectedRevision,
             action: envelope.operation)
         let result = try await queue.execute(command, actor: actor)
-        network.send(Frame(type: "recommendation.plan.result", plan: envelope, outcome: result.outcome), to: peer)
+        network.send(
+            Frame(type: "recommendation.plan.result", recommendationPlan: envelope, outcome: result.outcome),
+            to: peer)
     }
 
 }

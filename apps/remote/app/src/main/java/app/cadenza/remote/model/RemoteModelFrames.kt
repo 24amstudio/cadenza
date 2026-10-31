@@ -235,6 +235,9 @@ internal suspend fun RemoteModel.applyState(value: JSONObject) {
     if (!foreground && !snapshot.playing) {
         endSessionStatus()
     }
+    // This set only prevents duplicate catalog writes during one session. Keep
+    // it bounded so a long-running Remote does not retain every song ever seen.
+    if (metadata.size > 512) metadata.clear()
     val songs = snapshot.queue.map { it.song } + listOfNotNull(snapshot.current?.song)
     val new = songs.filter { metadata.add(it.source + ":" + it.id) }
     if (new.isNotEmpty()) withContext(ioDispatcher) { app.database.remember(snapshot.hostId, new) }

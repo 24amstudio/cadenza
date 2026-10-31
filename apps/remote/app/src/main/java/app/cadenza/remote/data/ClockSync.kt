@@ -14,6 +14,8 @@ class ClockSync {
     var uncertaintyMs: Long = Long.MAX_VALUE
         private set
 
+    private val hasSample: Boolean get() = samples.isNotEmpty()
+
     val ready: Boolean get() = samples.size >= 3 && uncertaintyMs <= 100
 
     fun reset() {
@@ -54,7 +56,7 @@ class ClockSync {
     ): Long {
         val current = snapshot.current ?: return 0
         val elapsed =
-            if (snapshot.playing && ready) {
+            if (snapshot.playing && hasSample) {
                 (hostTime(remoteNow) - current.sampledAtHostMs).coerceIn(0, if (stale) 2_500 else Long.MAX_VALUE)
             } else {
                 0

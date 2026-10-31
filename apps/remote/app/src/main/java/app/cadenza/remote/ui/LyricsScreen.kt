@@ -7,10 +7,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -76,7 +75,10 @@ internal fun activeLyricIndex(
     synchronized: Boolean,
 ): Int {
     if (!synchronized || occurrence == null || document?.occurrenceId != occurrence) return -1
-    return document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs && positionMs < it.endMs }
+    // Provider end markers can leave short gaps between lines. Keep the most
+    // recently started line active through those gaps so highlighting and
+    // following stay aligned with the playback timeline.
+    return document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
 }
 
 private fun activeWordIndex(
@@ -147,13 +149,15 @@ private fun LyricText(
             }
         }
     if (line.words.isNotEmpty() && onWordClick != null) {
-        Row(
+        FlowRow(
             Modifier
+                .fillMaxWidth()
                 .graphicsLayer {
                     alpha = lineAlpha
                     scaleX = lineScale
                     scaleY = lineScale
-                }.horizontalScroll(rememberScrollState()),
+                },
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             line.words.forEachIndexed { index, word ->
                 val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
@@ -319,12 +323,17 @@ internal fun LyricsContent(
             }
         LaunchedEffect(active, document?.revision, following) {
             if (following && active >= 0) {
-                // Wait until the new lyric list has measured before seeking it. Without
-                // this frame, the initial active line can be missed until a manual scroll.
-                withFrameNanos { }
+                // Wait for the lazy list to report a real viewport before seeking it.
+                // A single frame is not enough when artwork and lyrics enter together;
+                // otherwise the first active line can be missed until a manual scroll.
+                repeat(3) {
+                    withFrameNanos { }
+                }
                 val viewport = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
-                val offset = -(viewport / 2).coerceAtLeast(0)
-                list.animateScrollToItem(active, offset)
+                if (viewport > 0) {
+                    val offset = -(viewport / 2).coerceAtLeast(0)
+                    list.animateScrollToItem(active, offset)
+                }
             }
         }
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {

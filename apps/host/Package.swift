@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "CadenzaHost", targets: ["CadenzaHost"]),
+        .executable(name: "CadenzaWatchdog", targets: ["CadenzaWatchdog"]),
         .executable(name: "CadenzaUpdater", targets: ["CadenzaUpdater"]),
         .executable(name: "CadenzaRelease", targets: ["CadenzaRelease"]),
     ],
@@ -45,6 +46,10 @@ let package = Package(
         .executableTarget(
             name: "CadenzaUpdater", dependencies: ["CadenzaSecurity"],
             path: "Sources/CadenzaUpdater"
+        ),
+        .executableTarget(
+            name: "CadenzaWatchdog", dependencies: ["CSQLite"],
+            path: "Sources/CadenzaWatchdog"
         ),
         .executableTarget(
             name: "CadenzaRelease", dependencies: ["CadenzaSecurity"],

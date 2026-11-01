@@ -1,5 +1,7 @@
 # Troubleshoot Cadenza
 
+If Sing causes Host to exit before it can return a command result, the bundled CadenzaWatchdog records `host.crash.detected` in `logs.sqlite` and relaunches Host. Recovery is bounded to three restarts in one minute; the marker is marked clean on a normal quit. Sing startup also records preparation and route-failure events so the watchdog row can be correlated with the last safe phase.
+
 ## Host cannot be reached
 
 Confirm Host is running and Remote is on a reachable local network. Check the advertised address and port in Host settings.

@@ -47,6 +47,7 @@ final class HostModel {
     private var updater: HostUpdater?
     private var updateScheduler: NSBackgroundActivityScheduler?
     private var toastTask: Task<Void, Never>?
+    private var watchdog: HostWatchdog?
 
     func saveTransportPolicy() {
         if let data = try? JSONEncoder().encode(hostTransportPolicy) {
@@ -69,6 +70,8 @@ final class HostModel {
         guard !starting, !saving, !running else { return }
         starting = true
         defer { starting = false }
+        if watchdog == nil { watchdog = try? HostWatchdog() }
+        watchdog?.start()
         service?.stop()
         do {
             let directory = try FileManager.default.url(
@@ -114,6 +117,8 @@ final class HostModel {
             showError("Host could not start", error.localizedDescription)
         }
     }
+
+    func markCleanShutdown() { watchdog?.markCleanShutdown() }
 
     func refreshDevices() {
         let connected: [String: SessionStatus?] = Dictionary(

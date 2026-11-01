@@ -8,6 +8,7 @@ struct HostLaunchBridge: View {
 
     var body: some View {
         Color.clear.onAppear {
+            delegate.terminate = { model.markCleanShutdown() }
             delegate.reopen = {
                 model.selectedTab = 2
                 openWindow(id: "host")

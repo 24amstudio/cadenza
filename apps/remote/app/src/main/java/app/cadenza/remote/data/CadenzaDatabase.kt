@@ -278,6 +278,19 @@ class CadenzaDatabase(
     }
 
     @Synchronized
+    fun removeStatistic(
+        hostId: String,
+        source: String,
+        songId: String,
+    ) {
+        writableDatabase.delete(
+            "song_statistics",
+            "host_id=? AND source=? AND song_id=?",
+            arrayOf(hostId, source, songId),
+        )
+    }
+
+    @Synchronized
     fun maintain() {
         val db = writableDatabase
         db.delete("playback_credits", null, null)

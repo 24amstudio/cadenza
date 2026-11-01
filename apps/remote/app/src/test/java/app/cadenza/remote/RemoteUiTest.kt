@@ -248,7 +248,7 @@ class RemoteUiTest {
                 ?.queue
                 ?.map { it.id }
         compose.onAllNodesWithText("Sing along").assertCountEquals(0)
-        navigate("Playing")
+        navigate("Home")
         compose.onRoot().performKeyInput { pressKey(Key.Tab) }
         compose.onNodeWithText("Lyrics").performSemanticsAction(SemanticsActions.RequestFocus)
         compose
@@ -413,7 +413,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Offline favorite").performClick()
         compose.onNodeWithContentDescription("Remove from Favorites").assertIsDisplayed()
         navigate("Settings")
-        navigate("Playing")
+        navigate("Home")
         compose.onNodeWithContentDescription("Remove from Favorites").assertIsDisplayed()
         capture("favorites-phone")
     }
@@ -589,7 +589,7 @@ class RemoteUiTest {
         openApp()
         navigate("Analytics")
         // Waiting on rendered semantics also drains main-looper continuations after SQLite IO.
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Your music").fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("My Cadenza History").fetchSemanticsNodes().size == 1 }
         assertEquals(1, model.state.value.statistics.size)
         compose.onNodeWithText("Personal favorite").assertIsDisplayed()
         compose.onAllNodesWithText("0:08", substring = true).apply {
@@ -809,7 +809,7 @@ class RemoteUiTest {
         navigate("Settings")
         assertEquals(0, compose.onAllNodes(hasContentDescription("Music volume")).fetchSemanticsNodes().size)
         assertEquals(emptyList<String>(), viewsKeepingScreenOn())
-        navigate("Playing")
+        navigate("Home")
         compose.onNodeWithText("Lyrics").performClick()
         assertTrue(viewsKeepingScreenOn().isNotEmpty())
     }

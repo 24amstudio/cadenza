@@ -406,8 +406,8 @@ internal fun LyricsContent(
                 val viewport = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
                 if (viewport > 0) {
                     // Keep one previous line visible while leaving most of the viewport
-                    // for upcoming lyrics. A positive offset places the active row below
-                    // the top edge instead of centering it in the pane.
+                    // for upcoming lyrics. A negative offset keeps the active row below
+                    // the top edge instead of pinning it against the container boundary.
                     val offset = -(viewport * 0.18f).toInt()
                     list.animateScrollToItem(active, offset)
                 }
@@ -538,7 +538,9 @@ internal fun LyricsContent(
     }
 }
 
-internal const val LYRIC_VISUAL_LEAD_MS = 120L
+// The Host sample and the next Compose frame arrive after the audible cue on real devices.
+// Keep word emphasis ahead of that boundary so it does not visibly trail the singer.
+internal const val LYRIC_VISUAL_LEAD_MS = 280L
 
 @Composable
 private fun LyricsSource(document: LyricDocument) {

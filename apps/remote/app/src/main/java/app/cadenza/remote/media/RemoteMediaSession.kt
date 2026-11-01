@@ -3,6 +3,7 @@ package app.cadenza.remote.media
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -18,6 +19,7 @@ data class MediaSessionState(
     val artist: String,
     val album: String,
     val artworkUrl: String?,
+    val artworkBytes: ByteArray?,
     val occurrenceId: String,
     val positionMs: Long,
     val durationMs: Long?,
@@ -77,8 +79,12 @@ class RemoteMediaSession(
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, state.artist)
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, state.album)
                 .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, state.occurrenceId)
-                .apply { state.artworkUrl?.let { putString(MediaMetadata.METADATA_KEY_ART_URI, it) } }
-                .apply { state.durationMs?.let { putLong(MediaMetadata.METADATA_KEY_DURATION, it) } }
+                .apply {
+                    state.artworkUrl?.let { putString(MediaMetadata.METADATA_KEY_ART_URI, it) }
+                    state.artworkBytes?.let { bytes ->
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) }
+                    }
+                }.apply { state.durationMs?.let { putLong(MediaMetadata.METADATA_KEY_DURATION, it) } }
                 .build()
         val actions =
             PlaybackState.ACTION_PLAY or

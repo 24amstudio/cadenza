@@ -136,6 +136,8 @@ Configure and push the repository before relying on the CI workflows. CI runners
 
 Workflow validation uses `actionlint` 1.7.12. Install the official platform binary into `.tools/actionlint-1.7.12` or set `CADENZA_ACTIONLINT` to its absolute executable path. The Windows amd64 ZIP SHA-256 is `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`; the Apple silicon macOS tarball SHA-256 is `aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f`. Both come from the official `rhysd/actionlint` v1.7.12 release. Keep local tooling under D:/Dev; root checks never download tools themselves. CI bootstraps the pinned Linux binary with its SHA-256 check.
 
+Worktrees share the repository's Git common directory. Keep the verified `node_modules` and `.tools/actionlint-1.7.12` under that shared repository root so every worktree can use the same dependencies. `tools/check.mjs` searches the current worktree first and then the shared root automatically.
+
 Node is development tooling only. After installing the development dependencies, run the portable checks from the repository root:
 
 ```powershell

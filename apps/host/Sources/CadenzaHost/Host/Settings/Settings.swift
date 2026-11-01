@@ -264,9 +264,10 @@ struct HostSettings: View {
                 Toggle("Check and install updates automatically", isOn: $model.configuration.automaticUpdates).disabled(
                     !HostBuild.updatesEnabled)
                 HStack {
-                    Button(model.updateBusy ? "Checking…" : "Check for updates") { model.checkUpdates() }.disabled(
+                    Button(model.updateBusy ? "Checking…" : (model.stagedVersion == nil ? "Check and install updates" : "Install update")) {
+                        if model.stagedVersion == nil { model.checkUpdates() } else { model.installUpdate() }
+                    }.disabled(
                         model.updateBusy || !HostBuild.updatesEnabled)
-                    if let version = model.stagedVersion { Button("Install \(version)") { model.installUpdate() } }
                 }
                 if model.updateBusy { ProgressView(value: model.updateProgress) }
                 Text(
@@ -276,6 +277,12 @@ struct HostSettings: View {
             }
         }
         .formStyle(.grouped)
+        .navigationTitle("Settings")
+        .toolbar {
+            ToolbarItem {
+                Button("Save settings", action: model.save).disabled(model.saving)
+            }
+        }
         .sheet(isPresented: Binding(get: { changelog != nil }, set: { if !$0 { changelog = nil } })) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Changelog").font(.title.bold())

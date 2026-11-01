@@ -59,7 +59,7 @@ internal suspend fun RemoteModel.reloadStatistics() {
 
 internal fun RemoteModel.requestArtwork(url: String) {
     val state = mutableState.value
-    if (!state.connected || "artwork.host-cache" !in state.capabilities ||
+    if (!state.connected ||
         url.isBlank() || state.artwork.containsKey(url) || !reserveArtwork(url)
     ) {
         return

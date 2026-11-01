@@ -149,4 +149,8 @@ Use only the skill that owns the problem. Read a performance skill's matching `r
 
 ## Known validation boundaries
 
+### Host native UI requirements
+
+Host UI changes must use AppKit and SwiftUI platform conventions as the primary design system. Prefer native window chrome, toolbar items, sidebars, `Form` settings sections, menus, sheets, alerts, keyboard commands, and system materials over custom card stacks or web-like controls. Match macOS control sizing, spacing, focus behavior, vibrancy, dark/light appearance, Dynamic Type equivalents, and VoiceOver labels. Use SF Symbols with meaningful accessibility labels, preserve standard menu-bar behavior, and keep destructive or permission-sensitive actions in native confirmation alerts. Review each Host surface against Apple's Human Interface Guidelines before handoff and verify both light and dark appearances on representative window sizes.
+
 Read the current validation record before reporting completion. macOS compilation, real Music queue/cache/translation adapters, ad-hoc update installation, target-device notification behavior, independent multi-Remote latency/lyric sync, VoiceOver/TalkBack and hardware resource measurements need target evidence. Catalog/AX/cache adapters are conditional integrations, not documented Apple session-control APIs. No repository URL, release key, signing identity or published baseline may be invented. No subagents are requested for this implementation: continue solo unless the user changes that instruction.

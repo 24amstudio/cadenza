@@ -93,7 +93,7 @@ internal fun activeLyricIndex(
 private fun activeWordIndex(
     line: app.cadenza.remote.data.LyricLine,
     positionMs: Long,
-): Int = line.words.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs && positionMs < it.endMs }
+): Int = line.words.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
 
 @Composable
 private fun LyricText(
@@ -144,14 +144,15 @@ private fun LyricText(
         } else {
             buildAnnotatedString {
                 line.words.forEachIndexed { index, word ->
-                    val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
+                    val passed = activeWord >= 0 && index <= activeWord
+                    val emphasis = if (passed) 1f else (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
                     val wordColor =
                         lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
-                    val wordAlpha = 0.62f + (0.38f * emphasis)
+                    val wordAlpha = if (passed) 1f else 0.62f + (0.38f * emphasis)
                     withStyle(
                         SpanStyle(
                             color = wordColor.copy(alpha = wordAlpha),
-                            fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (index <= activeWord) FontWeight.Bold else FontWeight.Normal,
                         ),
                     ) { append(word.text) }
                 }
@@ -169,14 +170,20 @@ private fun LyricText(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             line.words.forEachIndexed { index, word ->
-                val emphasis = (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
+                val passed = activeWord >= 0 && index <= activeWord
+                val emphasisTarget = if (passed) 1f else (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
+                val emphasis by animateFloatAsState(
+                    emphasisTarget,
+                    animationSpec = tween(180, easing = FastOutSlowInEasing),
+                    label = "lyric-word-emphasis-$index",
+                )
                 Text(
                     word.text,
                     style = if (activeLine) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
-                    fontWeight = if (index == activeWord) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (index <= activeWord) FontWeight.Bold else FontWeight.Normal,
                     color =
                         lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
-                            .copy(alpha = 0.62f + 0.38f * emphasis),
+                            .copy(alpha = if (passed) 1f else 0.62f + 0.38f * emphasis),
                     modifier =
                         Modifier
                             .blur(inactiveBlur)
@@ -218,7 +225,9 @@ fun LyricsScreen(
     val occurrence = current?.occurrenceId
     val document = state.lyrics?.takeIf { it.occurrenceId == occurrence }
     val stale = !state.connected || model.isStale()
-    val currentPosition = position(model, 100)
+    // A small lead compensates for the Host sample and Compose frame boundary so the
+    // highlighted line changes when the performer hears the cue instead of after it.
+    val currentPosition = (position(model, 100) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
     val artwork = rememberArtwork(current?.song?.artworkUrl)
     val backdrop =
         artwork?.accent?.let {
@@ -396,7 +405,10 @@ internal fun LyricsContent(
                 }
                 val viewport = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
                 if (viewport > 0) {
-                    val offset = -(viewport / 2).coerceAtLeast(0)
+                    // Keep one previous line visible while leaving most of the viewport
+                    // for upcoming lyrics. A positive offset places the active row below
+                    // the top edge instead of centering it in the pane.
+                    val offset = (viewport * 0.18f).toInt().coerceAtLeast(0)
                     list.animateScrollToItem(active, offset)
                 }
             }
@@ -525,6 +537,8 @@ internal fun LyricsContent(
         }
     }
 }
+
+internal const val LYRIC_VISUAL_LEAD_MS = 120L
 
 @Composable
 private fun LyricsSource(document: LyricDocument) {

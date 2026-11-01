@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
@@ -127,9 +126,10 @@ fun CadenzaApp(
             BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
             Scaffold(
                 bottomBar = {
-                    // Reserve feedback space so a notice cannot cover or move a control, including after scrolling.
-                    Box(Modifier.fillMaxWidth().height(64.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))) {
-                        SnackbarHost(snackbar, Modifier.align(Alignment.Center))
+                    // Reserve feedback space only while a toast is visible. An always-present
+                    // spacer left an empty strip below the app on phones and landscape tablets.
+                    if (snackbar.currentSnackbarData != null) {
+                        SnackbarHost(snackbar)
                     }
                 },
             ) { outerPadding ->
@@ -170,7 +170,7 @@ fun CadenzaApp(
                                                     )
                                                 1 -> SearchScreen(model, state)
                                                 2 -> QueueScreen(model, state)
-                                                4 -> AnalyticsScreen(state)
+                                                4 -> AnalyticsScreen(model, state)
                                                 else -> SettingsScreen(model, state, installUpdate)
                                             }
                                         }

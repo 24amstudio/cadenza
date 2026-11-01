@@ -167,7 +167,7 @@ final class SingCoordinator {
             }
         #endif
         return HostBuild.profile != "production"
-            || ["coreml-waveform", "mlx-mel-roformer"].contains(separator.backend)
+            || ["coreml-waveform", "mlx-mel-roformer", "stereo-center"].contains(separator.backend)
     }
 
     init(
@@ -188,6 +188,12 @@ final class SingCoordinator {
         occurrenceId = occurrence
         session = SingSession(status: "preparing", backend: separator.backend, modelRevision: separator.modelRevision)
         mixState.set(session.vocalPercent)
+        onLifecycle?(
+            .info,
+            "sing.backend.selected",
+            "Sing backend selected",
+            ["occurrence_id": occurrence, "backend": separator.backend, "model_revision": separator.modelRevision]
+        )
         onSessionChanged?()
         guard route.isAvailable, let format = route.format else {
             fail("Audio capture is unavailable. Grant system audio access and choose a supported output.")

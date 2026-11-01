@@ -7,17 +7,23 @@ struct HostMenu: View {
 
     var body: some View {
         if let current = model.snapshot?.current {
+            Text("Now Playing").font(.headline)
             Text(current.song.title)
-            Text(current.song.artist)
+            Text(current.song.artist).foregroundStyle(.secondary)
             Button(model.snapshot?.playing == true ? "Pause" : "Resume") {
                 model.control(model.snapshot?.playing == true ? "playback.pause" : "playback.resume")
             }.disabled(model.controlling)
+        } else {
+            Text("Nothing is playing").foregroundStyle(.secondary)
         }
+        Divider()
         if !model.running {
-            Button(model.starting ? "Starting Host…" : "Start Host") { Task { await model.start() } }
+            Button(model.starting ? "Starting Host..." : "Start Host") { Task { await model.start() } }
                 .disabled(model.starting || model.saving)
+        } else {
+            Label("Host is running", systemImage: "circle.fill").foregroundStyle(.green)
         }
-        Button("Settings…") {
+        Button("Settings...") {
             model.selectedTab = 2
             openWindow(id: "host")
             NSApplication.shared.activate()

@@ -50,14 +50,21 @@ actor Lyrics {
             throw unavailable()
         }
         for provider in fallbackProviders {
-            if let document = try await provider.document(song: song, occurrence: occurrence) {
-                if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
-                cache[key] = document
-                if let data = try? JSONEncoder().encode(document) {
-                    try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+            do {
+                if let document = try await provider.document(song: song, occurrence: occurrence) {
+                    if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
+                    cache[key] = document
+                    if let data = try? JSONEncoder().encode(document) {
+                        try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+                    }
+                    try? await disk.remove("lyrics-miss:" + key)
+                    return document
                 }
-                try? await disk.remove("lyrics-miss:" + key)
-                return document
+            } catch {
+                // Provider outages are recoverable. Continue to the next source
+                // and let the caller retry Music's local cache before surfacing a
+                // user-facing failure.
+                continue
             }
         }
         if !fallbackProviders.isEmpty,

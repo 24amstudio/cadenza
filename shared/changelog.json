@@ -2,6 +2,14 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.1.4",
+      "build": 9,
+      "changes": [
+        "Improves Remote lyrics timing, playback controls, artwork and adaptive layout.",
+        "Adds graceful lyric provider recovery and Host and Remote crash recovery improvements."
+      ]
+    },
+    {
       "version": "0.1.3",
       "build": 8,
       "changes": [

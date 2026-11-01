@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -27,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,7 +37,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.data.ThemePreference
-import app.cadenza.remote.data.TransportMethodRegistry
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.checkHostUpdate
@@ -59,19 +58,15 @@ fun SettingsScreen(
     var name by rememberSaveable(state.clientName) { mutableStateOf(state.clientName) }
     var theme by rememberSaveable(state.theme) { mutableStateOf(state.theme) }
     var debugOpen by rememberSaveable { mutableStateOf(false) }
-    var pendingTransport by rememberSaveable { mutableStateOf<String?>(null) }
-    var showTransportDialog by rememberSaveable { mutableStateOf(false) }
-    var draftTransportMethods by rememberSaveable { mutableStateOf(TransportMethodRegistry.selectedFor(state.transportMode)) }
     val context = LocalContext.current
     val bluetoothPermissions =
         rememberLauncherForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions(),
         ) { permissions ->
-            val mode = pendingTransport
-            pendingTransport = null
-            if (mode != null && permissions.values.all { it }) {
+            val mode = state.transportMode
+            if (mode == "lan" || permissions.values.all { it }) {
                 model.reconnectWithTransport(mode)
-            } else if (mode != null) {
+            } else {
                 model.showError(
                     "Bluetooth permission needed",
                     "Allow Nearby devices so Cadenza can connect to this Host over Bluetooth.",
@@ -83,7 +78,6 @@ fun SettingsScreen(
         if (mode == "lan" || nearbyDevicesGranted(context)) {
             model.reconnectWithTransport(mode)
         } else {
-            pendingTransport = mode
             bluetoothPermissions.launch(nearbyDevicePermissions)
         }
     }
@@ -139,10 +133,6 @@ fun SettingsScreen(
                     model = model,
                     state = state,
                     chooseTransport = ::chooseTransport,
-                    openTransportDialog = {
-                        draftTransportMethods = TransportMethodRegistry.selectedFor(state.transportMode)
-                        showTransportDialog = true
-                    },
                 )
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
@@ -155,50 +145,6 @@ fun SettingsScreen(
             title = { Text("Changelog") },
             text = { Text(notes, Modifier.verticalScroll(rememberScrollState())) },
             confirmButton = { TextButton(onClick = model::dismissChangelog) { Text("Close") } },
-        )
-    }
-    if (showTransportDialog) {
-        AlertDialog(
-            onDismissRequest = { showTransportDialog = false },
-            title = { Text("Choose connection paths") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "Choose which paths to connect now. Bluetooth scans for the nearby Cadenza Host " +
-                            "and uses this Remote's saved pairing.",
-                    )
-                    TransportMethodRegistry.available.forEach { option ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = option.id in draftTransportMethods,
-                                onCheckedChange = { checked ->
-                                    draftTransportMethods =
-                                        if (checked) draftTransportMethods + option.id else draftTransportMethods - option.id
-                                },
-                            )
-                            Column {
-                                Text(option.label)
-                                Text(option.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val mode = TransportMethodRegistry.modeFor(draftTransportMethods)
-                    if (mode == null) {
-                        model.showError("Choose a connection method", "Select at least one supported connection method.")
-                    } else {
-                        chooseTransport(mode)
-                        showTransportDialog = false
-                    }
-                }) { Text("Connect") }
-            },
-            dismissButton = { TextButton(onClick = { showTransportDialog = false }) { Text("Cancel") } },
         )
     }
 }
@@ -282,13 +228,12 @@ private fun HostCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionButton(
-                    "Check for Host update",
-                    modifier = Modifier.weight(1f),
-                    pending = state.hostUpdate?.state == "checking",
+                    if (state.hostUpdate?.state == "ready") "Install Host update" else "Check and install Host update",
+                    modifier = Modifier.fillMaxWidth(),
+                    pending = state.hostUpdate?.state == "checking" || state.hostUpdate?.state == "requesting" || state.hostUpdate?.state == "installing",
                     enabled = state.connected && state.hostUpdate?.state != "installing",
-                ) { model.checkHostUpdate() }
-                if (state.hostUpdate?.state == "ready") {
-                    ActionButton("Update Host", modifier = Modifier.weight(1f)) { model.installHostUpdate() }
+                ) {
+                    if (state.hostUpdate?.state == "ready") model.installHostUpdate() else model.checkHostUpdate()
                 }
             }
         }
@@ -310,7 +255,6 @@ private fun TransportCard(
     model: RemoteModel,
     state: RemoteState,
     chooseTransport: (String) -> Unit,
-    openTransportDialog: () -> Unit,
 ) {
     SettingsCard(
         icon = CadenzaIcon.WIFI,
@@ -318,7 +262,7 @@ private fun TransportCard(
         supporting = "Choose the path this Remote uses to reach Cadenza Host.",
     ) {
         Text(
-            "Wi-Fi pairing also authorizes Bluetooth. Use Bluetooth nearby, or choose Hybrid to keep both paths ready.",
+            "Choose one connection mode. Hybrid keeps Wi-Fi and Bluetooth available and selects the healthier path automatically.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         TransportPathIndicator(state)
@@ -328,16 +272,13 @@ private fun TransportCard(
             selected = state.transportMode,
             onSelected = chooseTransport,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ActionButton(
-                "Connect Bluetooth",
-                modifier = Modifier.weight(1f),
-                pending = state.connecting && state.transportMode == "ble",
-                enabled = state.profile != null,
-                onClick = { chooseTransport("ble") },
-            )
-            TextButton(onClick = openTransportDialog, modifier = Modifier.weight(1f)) { Text("Choose paths") }
-        }
+        ActionButton(
+            "Reconnect using ${transportModeLabel(state.transportMode)}",
+            modifier = Modifier.fillMaxWidth(),
+            pending = state.connecting,
+            enabled = state.profile != null,
+            onClick = { chooseTransport(state.transportMode) },
+        )
         HorizontalDivider()
         Text("Transport preference", style = MaterialTheme.typography.labelLarge)
         Text(
@@ -376,6 +317,13 @@ private fun TransportCard(
     }
 }
 
+private fun transportModeLabel(mode: String): String =
+    when (mode) {
+        "ble" -> "Bluetooth"
+        "hybrid" -> "Hybrid"
+        else -> "Wi-Fi / LAN"
+    }
+
 @Composable
 private fun SupportUpdatesCard(
     model: RemoteModel,
@@ -383,6 +331,13 @@ private fun SupportUpdatesCard(
     installUpdate: (String) -> Unit,
     onOpenDebug: () -> Unit,
 ) {
+    var installAfterCheck by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.updateBusy, state.stagedUpdate) {
+        if (installAfterCheck && !state.updateBusy) {
+            installAfterCheck = false
+            state.stagedUpdate?.let(installUpdate)
+        }
+    }
     SettingsCard(
         icon = CadenzaIcon.ANALYTICS,
         title = "Support and updates",
@@ -414,19 +369,20 @@ private fun SupportUpdatesCard(
                 ) { Text("Compare published changes") }
             }
             ActionButton(
-                "Check for updates",
+                if (state.stagedUpdate == null) "Check and install updates" else "Install update",
                 modifier = Modifier.fillMaxWidth(),
-                pending = state.updateBusy,
+                pending = state.updateBusy || state.installationBusy,
                 enabled = BuildConfig.AUTOMATIC_UPDATES,
-                onClick = { model.checkUpdates() },
+                onClick = {
+                    state.stagedUpdate?.let(installUpdate)
+                        ?: run {
+                            installAfterCheck = true
+                            model.checkUpdates()
+                        }
+                },
             )
             if (!BuildConfig.AUTOMATIC_UPDATES) {
                 Text("Automatic updates are disabled in this build.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            state.stagedUpdate?.let { path ->
-                ActionButton("Install prepared update", modifier = Modifier.fillMaxWidth(), pending = state.installationBusy) {
-                    installUpdate(path)
-                }
             }
         }
     }

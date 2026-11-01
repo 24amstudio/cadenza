@@ -12,17 +12,14 @@ struct PairingSheetItem: Identifiable {
 struct PairingSheet: View {
     let invitation: PairingInvitation
     @Environment(\.dismiss) private var dismiss
-    @State private var copied = false
     @State private var showingLargeCode = false
-    private var json: String { (try? String(decoding: Wire.encode(invitation), as: UTF8.self)) ?? "" }
     private var pairingData: Data { PairingQRPayload(invitation: invitation).encoded }
 
     var body: some View {
         VStack(spacing: 20) {
             Text("Pair Cadenza Remote").font(.title.bold())
-            Text("Use the QR code or enter the four-digit PIN on your Remote. The PIN expires in seven seconds.")
-            Text("PIN \(invitation.pin)").font(.system(size: 34, weight: .bold, design: .rounded))
-                .monospacedDigit().textSelection(.enabled)
+            Text("Open Cadenza Remote and scan this code. Pairing starts automatically after a valid scan.")
+                .foregroundStyle(.secondary)
             if let image = qr(pairingData) {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 400, height: 400)
                     .accessibilityLabel("Pairing QR code")
@@ -30,11 +27,6 @@ struct PairingSheet: View {
             Text("\(invitation.host):\(invitation.port)").textSelection(.enabled)
             HStack {
                 Button("Show larger QR") { showingLargeCode = true }
-                Button(copied ? "Copied" : "Copy pairing details") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(json, forType: .string)
-                    copied = true
-                }
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }

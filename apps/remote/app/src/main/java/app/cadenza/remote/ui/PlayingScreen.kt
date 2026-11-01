@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -65,7 +66,7 @@ fun PlayingScreen(
         }
     }
     val current = state.snapshot?.current
-    val currentPosition = position(model, 100)
+    val currentPosition = (position(model, 100) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
     val artwork = rememberArtwork(current?.song?.artworkUrl)
     val backdrop =
         artwork?.accent?.let {
@@ -75,6 +76,8 @@ fun PlayingScreen(
         } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.colorScheme.surface))
     val lyrics = state.lyrics?.takeIf { it.occurrenceId == current?.occurrenceId && it.level > 0 }
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
+    var showLyrics by rememberSaveable { mutableStateOf(lyricsMayBeAvailable) }
+    var showQueue by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(current?.occurrenceId, state.connected) {
         if (current != null && state.connected && lyrics == null && !state.lyricsLoading) {
             model.loadLyrics(userInitiated = false)
@@ -88,10 +91,10 @@ fun PlayingScreen(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(if (wide) 20.dp else 16.dp),
         ) {
-            PlayerHeader(state, lyricsMayBeAvailable, onOpenLyrics, lyricsFocusRequester)
+            PlayerHeader(state, lyricsMayBeAvailable, showLyrics, showQueue, { showLyrics = it }, { showQueue = it })
             if (current == null) {
                 EmptyPlayerSurface()
-            } else if (tablet) {
+            } else if (showLyrics && tablet) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 520.dp, max = 640.dp),
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -128,8 +131,24 @@ fun PlayingScreen(
                     color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.88f),
                     tonalElevation = 2.dp,
                 ) {
-                    PlayerPanel(model, state, artwork, currentPosition, false)
+                    PlayerPanel(model, state, artwork, currentPosition, tablet)
                 }
+                if (showLyrics) {
+                    if (!tablet) {
+                        Surface(
+                            Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 520.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.54f),
+                        ) {
+                            LyricsContent(
+                                model, state, lyrics, currentPosition,
+                                !state.connected || model.isStale(),
+                                Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+                            )
+                        }
+                    }
+                }
+                if (showQueue) QueuePreview(state)
                 state.nextRecommendation?.let { recommendation ->
                     Surface(
                         Modifier.fillMaxWidth(),
@@ -160,8 +179,10 @@ fun PlayingScreen(
 private fun PlayerHeader(
     state: RemoteState,
     lyricsMayBeAvailable: Boolean,
-    onOpenLyrics: () -> Unit,
-    lyricsFocusRequester: FocusRequester,
+    showLyrics: Boolean,
+    showQueue: Boolean,
+    onLyricsChanged: (Boolean) -> Unit,
+    onQueueChanged: (Boolean) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth(),
@@ -174,12 +195,39 @@ private fun PlayerHeader(
         }
         if (lyricsMayBeAvailable) {
             FilterChip(
-                selected = false,
-                onClick = onOpenLyrics,
+                selected = showLyrics,
+                onClick = { onLyricsChanged(!showLyrics) },
                 label = { Text("Lyrics") },
                 leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
-                modifier = Modifier.focusRequester(lyricsFocusRequester),
             )
+        }
+        FilterChip(selected = showQueue, onClick = { onQueueChanged(!showQueue) }, label = { Text("Queue") })
+    }
+}
+
+@Composable
+private fun QueuePreview(state: RemoteState) {
+    val entries = state.snapshot?.queue.orEmpty().take(8)
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Up next", style = MaterialTheme.typography.titleLarge)
+            if (entries.isEmpty()) {
+                Text("Queue is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                entries.forEachIndexed { index, entry ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("${index + 1}", color = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f)) {
+                            Text(entry.song.title, style = MaterialTheme.typography.titleMedium)
+                            Text(entry.song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
         }
     }
 }

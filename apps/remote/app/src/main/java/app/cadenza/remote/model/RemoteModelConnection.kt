@@ -174,16 +174,7 @@ internal fun RemoteModel.connectionClosed(
         showError("Could not connect over Bluetooth", message)
         return
     }
-    if (maintainBackgroundSessionInternal() && mutable.value.profile != null) {
-        startDiscovery()
-        reconnect?.cancel()
-        reconnect =
-            viewModelScope.launch {
-                delay(retryDelay)
-                retryDelay = (retryDelay * 2).coerceAtMost(30_000)
-                connect()
-            }
-    }
+    watchdogHostUnavailable(message, wasConnected)
 }
 
 internal fun RemoteModel.pingClock() {

@@ -37,7 +37,14 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             throw SingAudioError.unavailable("The Music output format could not be prepared.")
         }
         bufferPool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
-        let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
+        let tapUUID = UUID()
+        var tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
+        tapDescription.uuid = tapUUID
+        tapDescription.name = "Cadenza Sing Music Tap"
+        tapDescription.isPrivate = true
+        tapDescription.isMixdown = true
+        tapDescription.isMono = false
+        tapDescription.muteBehavior = .mutedWhenTapped
         var createdTap = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &createdTap)
         guard tapStatus == noErr else { throw audioError("create process tap", status: tapStatus) }
@@ -53,7 +60,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
                 kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
                 kAudioAggregateDeviceTapListKey: [
                     [
-                        kAudioSubTapUIDKey: tapDescription.uuid.uuidString,
+                        kAudioSubTapUIDKey: tapUUID.uuidString,
                         kAudioSubTapDriftCompensationKey: true,
                     ]
                 ],

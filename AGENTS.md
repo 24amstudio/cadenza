@@ -78,7 +78,7 @@ Android control sockets, discovery, status notifications and animation stop when
 
 ## Local setup and checks
 
-Windows work, toolchains, caches, temporary files and outputs belong under `D:/Dev`. Do not install Android Studio, an emulator, or large tools without the user's authorization. Android command-line tools and their build dependencies on D:/Dev are authorized. In Command Prompt, `call tools\windows-env.cmd` configures D:/Dev paths; PowerShell execution policy need not be changed. Always invoke the Gradle wrapper by its explicit path.
+Windows work, toolchains, caches, temporary files and outputs belong under `H:/Dev`. Do not install Android Studio, an emulator, or large tools without the user's authorization. Android command-line tools and their build dependencies on H:/Dev are authorized. In Command Prompt, `call tools\windows-env.cmd` configures H:/Dev paths; PowerShell execution policy need not be changed. Always invoke the Gradle wrapper by its explicit path.
 
 Use the existing system Bun by absolute path. Resolve it from the original shell PATH before a Bun-launched script: PowerShell `$env:SYSTEM_BUN=(Get-Command bun -CommandType Application).Source`, or POSIX `export SYSTEM_BUN="$(command -v bun)"`. Never use a temporary `bun-node-*` shim. Native app packages contain neither Bun nor Node.
 

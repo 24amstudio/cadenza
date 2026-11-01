@@ -62,7 +62,7 @@ private data class Destination(
 
 private val destinations =
     listOf(
-        Destination(0, "Playing", CadenzaIcon.MUSIC),
+        Destination(0, "Home", CadenzaIcon.HOME),
         Destination(1, "Search", CadenzaIcon.SEARCH),
         Destination(2, "Queue", CadenzaIcon.QUEUE),
         Destination(4, "Analytics", CadenzaIcon.ANALYTICS),
@@ -80,6 +80,7 @@ fun CadenzaApp(
     var destination by rememberSaveable { mutableIntStateOf(0) }
     var lyricsMode by rememberSaveable { mutableStateOf(false) }
     var restoreLyricsFocus by remember { mutableStateOf(false) }
+    var nowPlayingOpen by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
 
     fun closeLyrics() {
@@ -124,6 +125,7 @@ fun CadenzaApp(
                 }
             }
             BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
+            BackHandler(enabled = nowPlayingOpen && !lyricsMode && state.profile != null) { nowPlayingOpen = false }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth >= 720.dp
                 val compactNavigation = maxWidth < 400.dp || LocalDensity.current.fontScale >= 1.5f
@@ -133,12 +135,18 @@ fun CadenzaApp(
                             if (snackbar.currentSnackbarData != null) {
                                 SnackbarHost(snackbar)
                             }
-                            if (!wide && state.profile != null && !lyricsMode) {
+                            if (state.profile != null && !lyricsMode && !nowPlayingOpen && state.snapshot?.current != null) {
+                                MiniPlayerBar(model, state, onOpen = { nowPlayingOpen = true })
+                            }
+                            if (!wide && state.profile != null && !lyricsMode && !nowPlayingOpen) {
                                 NavigationBar {
                                     destinations.forEach { item ->
                                         NavigationBarItem(
                                             selected = destination == item.id,
-                                            onClick = { destination = item.id },
+                                            onClick = {
+                                                destination = item.id
+                                                nowPlayingOpen = false
+                                            },
                                             icon = {
                                                 Icon(
                                                     cadenzaVector(item.icon),
@@ -156,6 +164,15 @@ fun CadenzaApp(
                     Box(Modifier.fillMaxSize().padding(outerPadding)) {
                         if (lyricsMode && state.profile != null) {
                             LyricsScreen(model, state, onExit = ::closeLyrics)
+                        } else if (nowPlayingOpen && state.profile != null) {
+                            PlayingScreen(
+                                model,
+                                state,
+                                wide,
+                                restoreLyricsFocus,
+                                onLyricsFocusRestored = { restoreLyricsFocus = false },
+                                onOpenLyrics = { lyricsMode = true },
+                            )
                         } else {
                             Column(Modifier.fillMaxSize()) {
                                 Row(Modifier.weight(1f)) {
@@ -164,7 +181,10 @@ fun CadenzaApp(
                                             destinations.forEach { item ->
                                                 NavigationRailItem(
                                                     selected = destination == item.id,
-                                                    onClick = { destination = item.id },
+                                                    onClick = {
+                                                        destination = item.id
+                                                        nowPlayingOpen = false
+                                                    },
                                                     icon = { Icon(cadenzaVector(item.icon), contentDescription = null) },
                                                     label = { Text(item.label) },
                                                 )

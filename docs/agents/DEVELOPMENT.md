@@ -20,18 +20,18 @@ Host source is organized by feature and responsibility. Each provider has its ow
 
 ## Local tooling and storage
 
-The Windows root is `D:\Dev`. Use `tools\windows-env.cmd` from Command Prompt, or the equivalent PowerShell script when local policy permits. Caches, temporary files, SDK paths, downloaded distributions, and build output stay under D:/Dev. No execution-policy bypass is needed.
+The Windows root is `H:\Dev`. Use `tools\windows-env.cmd` from Command Prompt, or the equivalent PowerShell script when local policy permits. Caches, temporary files, SDK paths, downloaded distributions, and build output stay under H:/Dev. No execution-policy bypass is needed.
 
 The existing Node 22.23.3 and Bun 1.4.4 installations are development tools. Node's built-in SQLite requires Node 22.13+. Its experimental warning is expected.
 
-With the user's approval, JDK 17, Android command-line tools and SDK packages, Gradle, and native build dependencies were installed under D:/Dev. Android Studio, an emulator, and a Swift toolchain were not installed. The Gradle wrapper and distribution are verified against upstream SHA-256 checksums. Development dependency versions and the patched `fast-uri` override are pinned. Lint-plugin provenance is in [tools/vendor/README.md](../../tools/vendor/README.md).
+With the user's approval, JDK 17, Android command-line tools and SDK packages, Gradle, and native build dependencies were installed under H:/Dev. Android Studio, an emulator, and a Swift toolchain were not installed. The Gradle wrapper and distribution are verified against upstream SHA-256 checksums. Development dependency versions and the patched `fast-uri` override are pinned. Lint-plugin provenance is in [tools/vendor/README.md](../../tools/vendor/README.md).
 
 For an allowed future development-dependency install:
 
 ```powershell
 $env:SYSTEM_BUN = (Get-Command bun -CommandType Application).Source
 & $env:SYSTEM_BUN --version
-$env:BUN_INSTALL_CACHE_DIR = 'D:\Dev\.cache\bun'
+$env:BUN_INSTALL_CACHE_DIR = 'H:\Dev\.cache\bun'
 & $env:SYSTEM_BUN install --frozen-lockfile --ignore-scripts
 ```
 

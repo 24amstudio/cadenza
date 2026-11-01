@@ -1,5 +1,6 @@
 package app.cadenza.remote.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,14 +10,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -25,13 +30,19 @@ import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.reloadStatistics
+import app.cadenza.remote.model.removeHistory
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(
     model: RemoteModel,
     state: RemoteState,
 ) {
+    LaunchedEffect(Unit) { model.reloadStatistics() }
     var sortByTime by rememberSaveable { mutableStateOf(false) }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<SongStatistic?>(null) }
     val totalPlays = state.statistics.sumOf { it.plays }
     val totalTime = state.statistics.sumOf { it.playedMs }
     val ordered =
@@ -39,13 +50,13 @@ fun AnalyticsScreen(
             state.statistics.sortedWith(compareByDescending<SongStatistic> { it.playedMs }.thenBy { it.title })
         } else {
             state.statistics.sortedWith(compareByDescending<SongStatistic> { it.plays }.thenBy { it.title })
-        }
+        }.filter { item -> !favoritesOnly || state.favorites.any { it.source == item.source && it.id == item.songId } }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         contentPadding = PaddingValues(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { ScreenHeader("Your music", state) }
+        item { ScreenHeader("My Cadenza History", state) }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard("Plays", totalPlays.toString(), Modifier.weight(1f))
@@ -56,6 +67,11 @@ fun AnalyticsScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !sortByTime, onClick = { sortByTime = false }, label = { Text("Most played") })
                 FilterChip(selected = sortByTime, onClick = { sortByTime = true }, label = { Text("Most time") })
+                FilterChip(
+                    selected = favoritesOnly,
+                    onClick = { favoritesOnly = !favoritesOnly },
+                    label = { Text("Favorites") },
+                )
             }
         }
         if (state.snapshot?.observationGap == true) {
@@ -85,8 +101,21 @@ fun AnalyticsScreen(
         } else {
             item { Text("Songs", style = MaterialTheme.typography.titleLarge) }
             items(ordered, key = { it.source + ":" + it.songId }) { item ->
-                StatisticCard(model, state, item, ordered.maxOf { it.plays }.coerceAtLeast(1))
+                StatisticCard(model, state, item, ordered.maxOf { it.plays }.coerceAtLeast(1), onClick = { selected = item })
             }
+        }
+    }
+    selected?.let { item ->
+        val song = Song(source = item.source, id = item.songId, title = item.title, artist = item.artist)
+        ModalBottomSheet(onDismissRequest = { selected = null }) {
+            SongActions(model, state, song, Modifier.fillMaxWidth())
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    model.removeHistory(item)
+                    selected = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Remove from history") }
         }
     }
 }
@@ -118,11 +147,12 @@ private fun StatisticCard(
     state: RemoteState,
     item: SongStatistic,
     maximumPlays: Long,
+    onClick: () -> Unit,
 ) {
     val song = Song(source = item.source, id = item.songId, title = item.title, artist = item.artist)
     val saved = state.favorites.any { it.identity == song.identity }
     Surface(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {

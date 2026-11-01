@@ -39,6 +39,12 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         bufferPool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
         let tapUUID = UUID()
         let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
+        tapDescription.uuid = tapUUID
+        tapDescription.name = "Cadenza Sing Music Tap"
+        tapDescription.isPrivate = true
+        tapDescription.isMixdown = true
+        tapDescription.isMono = false
+        tapDescription.muteBehavior = .mutedWhenTapped
         var createdTap = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &createdTap)
         guard tapStatus == noErr else { throw audioError("create process tap", status: tapStatus) }

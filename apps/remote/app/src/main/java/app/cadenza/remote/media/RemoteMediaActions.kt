@@ -18,6 +18,7 @@ class RemoteMediaActions(
             artist = current?.song?.artist.orEmpty(),
             album = current?.song?.album.orEmpty(),
             artworkUrl = current?.song?.artworkUrl,
+            artworkBytes = current?.song?.artworkUrl?.let { value.artwork[it] },
             occurrenceId = current?.occurrenceId.orEmpty(),
             positionMs = current?.positionMs ?: 0,
             durationMs = current?.song?.durationMs,

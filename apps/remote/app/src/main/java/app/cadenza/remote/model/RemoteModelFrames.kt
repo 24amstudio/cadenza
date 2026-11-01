@@ -266,6 +266,10 @@ internal suspend fun RemoteModel.applyState(value: JSONObject) {
             motion = if (changedSong) null else it.motion,
         )
     }
+    snapshot.current
+        ?.song
+        ?.artworkUrl
+        ?.let(::requestArtwork)
     if (changedSong) snapshot.current?.occurrenceId?.let { requestMotion(it) }
     if (!foreground && !snapshot.playing) {
         endSessionStatus()

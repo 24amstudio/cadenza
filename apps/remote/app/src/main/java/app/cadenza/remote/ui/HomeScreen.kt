@@ -105,9 +105,6 @@ fun HomeScreen(
                             label = { Text("Favorites · ${state.favorites.size}") },
                         )
                     }
-                    if (state.snapshot?.current != null) {
-                        NowPlayingCard(state, Modifier.fillMaxWidth().clickable { select("playing", null) })
-                    }
                     if (favorites && state.unreadableFavorites > 0) {
                         UnreadableFavoritesCard(state.unreadableFavorites)
                     }
@@ -211,57 +208,6 @@ private fun LibraryHeading(state: RemoteState) {
                 Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
-}
-
-@Composable
-private fun NowPlayingCard(
-    state: RemoteState,
-    modifier: Modifier,
-) {
-    val current = state.snapshot?.current
-    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)) {
-                Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-                    Icon(
-                        cadenzaVector(CadenzaIcon.MUSIC),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(27.dp),
-                    )
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Now playing", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text(
-                    current?.song?.title ?: "Nothing is playing",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                Text(
-                    current?.song?.artist ?: "Start a song in Music from Cadenza Host",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                if (state.snapshot?.mixing == true) {
-                    Text(
-                        state.snapshot.incoming?.let { "AutoMix → ${it.title}" } ?: "AutoMix transition",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            }
-            Icon(
-                cadenzaVector(CadenzaIcon.NEXT),
-                contentDescription = "Open current song",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }

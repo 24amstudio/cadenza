@@ -58,6 +58,14 @@ internal suspend fun RemoteModel.reloadStatistics() {
     mutableState.update { it.copy(statistics = statistics) }
 }
 
+fun RemoteModel.removeHistory(item: app.cadenza.remote.data.SongStatistic) {
+    val host = mutableState.value.profile?.hostId ?: return
+    viewModelScope.launch(updateDispatcher) {
+        updateApp.database.removeStatistic(host, item.source, item.songId)
+        reloadStatistics()
+    }
+}
+
 internal fun RemoteModel.requestArtwork(url: String) {
     val state = mutableState.value
     if (!state.connected ||

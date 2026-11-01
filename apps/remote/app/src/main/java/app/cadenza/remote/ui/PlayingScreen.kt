@@ -79,6 +79,13 @@ fun PlayingScreen(
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
     var showLyrics by rememberSaveable { mutableStateOf(lyricsMayBeAvailable) }
     var showQueue by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(current?.occurrenceId) {
+        showLyrics = false
+        showQueue = false
+    }
+    LaunchedEffect(current?.occurrenceId, lyrics != null) {
+        if (lyrics != null) showLyrics = true
+    }
     LaunchedEffect(current?.occurrenceId, state.connected) {
         if (current != null && state.connected && lyrics == null && !state.lyricsLoading) {
             model.loadLyrics(userInitiated = false)

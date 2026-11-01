@@ -27,9 +27,9 @@ Capture uses a small reusable buffer pool. A full pool drops a device block and
 the bounded worker queue releases every accepted buffer after processing. It
 never allocates an unbounded backlog on the real-time callback.
 
-## Production backend
+## MLX backend (quarantined)
 
-The production backend uses the MIT-licensed
+The intended production backend uses the MIT-licensed
 [`mlx-community/mel-roformer-kim-vocal-2-mlx`](https://huggingface.co/mlx-community/mel-roformer-kim-vocal-2-mlx)
 checkpoint through the pinned MIT-licensed
 [`mel-roformer-mlx-swift`](https://github.com/xocialize/mel-roformer-mlx-swift)
@@ -77,11 +77,11 @@ references are recorded in [`docs/credits.md`](credits.md). The other reviewed
 karaoke projects remain inspiration and reference material; Cadenza does not
 copy their source, model weights, or device-specific integrations.
 
-The production backend must be benchmarked on a supported Apple Silicon Host
-with the release build. Record real-time factor, end-to-end latency, CPU,
-resident memory, dropped buffers, model download behavior, and recovery after
-output-device changes. Portable tests cannot establish these native audio
-properties.
+Before the MLX backend can be re-enabled, it must be benchmarked on a
+supported Apple Silicon Host with the release build. Record real-time factor,
+end-to-end latency, CPU, resident memory, dropped buffers, model download
+behavior, and recovery after output-device changes. Portable tests cannot
+establish these native audio properties.
 
 ## Optional Core ML backend
 

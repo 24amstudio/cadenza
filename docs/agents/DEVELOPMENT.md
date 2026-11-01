@@ -47,7 +47,7 @@ node tools/check.mjs
 
 The portable command runs strict TypeScript analysis of maintained JavaScript/JXA, Oxlint with warnings denied and the generic anti-slop rules, formatting, physical file caps, shell syntax, PowerShell static parsing on Windows, and real SQL/JXA/protocol behavior tests. The `--portable --static` variant performs the same static checks without behavioral tests and is the fast mode used by Checking CI.
 
-The complete command adds the native checks available on the current platform. macOS runs Swift Host checks and Android Remote checks; Windows and Linux run the Remote checks and report Host as deferred. `.githooks/pre-commit` and `.githooks/pre-push` run the fast `--portable --static` gate; Checking CI always runs the portable job and selects the separate Host and Remote native jobs from changed paths. App-only changes run only their app's native job; shared protocol, tooling, workflow, and root configuration changes run both.
+The complete command adds the native checks available on the current platform. macOS runs Swift Host checks and Android Remote checks; Windows and Linux run the Remote checks and report Host as deferred. `.githooks/pre-commit` and `.githooks/pre-push` run the fast `--portable --static` gate; CI runs the separate Host and Remote jobs for native validation.
 
 Run dependency and scoped secret scans locally. Device, integration, security, accessibility, performance, and update-installation evidence is tracked in [VALIDATION.md](VALIDATION.md). The local hooks are intentionally limited to fast static checks; run the complete platform-aware command when local native validation is useful. Build CI repeats the static checks on `main` before packaging.
 

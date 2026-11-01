@@ -230,7 +230,10 @@ private fun HostCard(
                 ActionButton(
                     if (state.hostUpdate?.state == "ready") "Install Host update" else "Check and install Host update",
                     modifier = Modifier.fillMaxWidth(),
-                    pending = state.hostUpdate?.state == "checking" || state.hostUpdate?.state == "requesting" || state.hostUpdate?.state == "installing",
+                    pending =
+                        state.hostUpdate?.state == "checking" ||
+                            state.hostUpdate?.state == "requesting" ||
+                            state.hostUpdate?.state == "installing",
                     enabled = state.connected && state.hostUpdate?.state != "installing",
                 ) {
                     if (state.hostUpdate?.state == "ready") model.installHostUpdate() else model.checkHostUpdate()

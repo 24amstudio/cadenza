@@ -20,7 +20,10 @@ struct HostOnboarding: View {
         NavigationSplitView {
             List {
                 Section("Setup") {
-                    ForEach(Array(["Welcome", "Apple Music", "Permissions", "Pair Remote"].enumerated()), id: \.offset) { index, label in
+                    ForEach(
+                        Array(["Welcome", "Apple Music", "Permissions", "Pair Remote"].enumerated()),
+                        id: \.offset
+                    ) { index, label in
                         Label(label, systemImage: index == step ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(index == step ? .primary : .secondary)
                             .contentShape(Rectangle())

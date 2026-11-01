@@ -32,9 +32,10 @@ internal fun RemoteModel.watchdogHostUnavailable(
     }
     startDiscovery()
     reconnect?.cancel()
-    return viewModelScope.launch {
-        delay(retryDelay)
-        retryDelay = (retryDelay * 2).coerceAtMost(30_000)
-        connect()
-    }.also { reconnect = it }
+    return viewModelScope
+        .launch {
+            delay(retryDelay)
+            retryDelay = (retryDelay * 2).coerceAtMost(30_000)
+            connect()
+        }.also { reconnect = it }
 }

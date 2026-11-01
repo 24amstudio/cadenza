@@ -29,10 +29,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -141,9 +142,12 @@ fun PlayingScreen(
                             color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.54f),
                         ) {
                             LyricsContent(
-                                model, state, lyrics, currentPosition,
-                                !state.connected || model.isStale(),
-                                Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+                                model = model,
+                                state = state,
+                                document = lyrics,
+                                currentPosition = currentPosition,
+                                stale = !state.connected || model.isStale(),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
                             )
                         }
                     }
@@ -207,7 +211,11 @@ private fun PlayerHeader(
 
 @Composable
 private fun QueuePreview(state: RemoteState) {
-    val entries = state.snapshot?.queue.orEmpty().take(8)
+    val entries =
+        state.snapshot
+            ?.queue
+            .orEmpty()
+            .take(8)
     Surface(
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,

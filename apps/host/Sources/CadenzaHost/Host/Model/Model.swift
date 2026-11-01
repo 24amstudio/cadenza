@@ -285,7 +285,12 @@ final class HostModel {
                     do {
                         try updater.install(configuration: updates, store: service.store)
                     } catch {
-                        service.logger.log(.error, category: "update", action: "install.failed", error.localizedDescription)
+                        service.logger.log(
+                            .error,
+                            category: "update",
+                            action: "install.failed",
+                            error.localizedDescription
+                        )
                     }
                 }
                 return HostUpdateReply(state: "installing", version: version, message: nil)

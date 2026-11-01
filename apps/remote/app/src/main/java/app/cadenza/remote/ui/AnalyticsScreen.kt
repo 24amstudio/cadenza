@@ -92,9 +92,20 @@ fun AnalyticsScreen(
 }
 
 @Composable
-private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(modifier, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun MetricCard(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text(label, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Text(value, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
         }
@@ -102,7 +113,12 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun StatisticCard(model: RemoteModel, state: RemoteState, item: SongStatistic, maximumPlays: Long) {
+private fun StatisticCard(
+    model: RemoteModel,
+    state: RemoteState,
+    item: SongStatistic,
+    maximumPlays: Long,
+) {
     val song = Song(source = item.source, id = item.songId, title = item.title, artist = item.artist)
     val saved = state.favorites.any { it.identity == song.identity }
     Surface(

@@ -166,8 +166,7 @@ final class SingCoordinator {
                 return false
             }
         #endif
-        return HostBuild.profile != "production"
-            || ["coreml-waveform", "mlx-mel-roformer", "stereo-center"].contains(separator.backend)
+        return HostBuild.profile != "production" || separator.backend == "stereo-center"
     }
 
     init(

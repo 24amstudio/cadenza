@@ -21,7 +21,12 @@ struct HostWindow: View {
         .alert(item: $model.prompt) { prompt in
             Alert(title: Text(prompt.title), message: Text(prompt.message), dismissButton: .default(Text("OK")))
         }
-        .sheet(item: Binding(get: { model.invitation.map(PairingSheetItem.init) }, set: { if $0 == nil { model.invitation = nil } })) { item in
+        .sheet(
+            item: Binding(
+                get: { model.invitation.map(PairingSheetItem.init) },
+                set: { if $0 == nil { model.invitation = nil } }
+            )
+        ) { item in
             PairingSheet(invitation: item.invitation)
         }
     }
@@ -70,11 +75,20 @@ struct HostWindow: View {
                         LabeledContent("Artist", value: current.song.artist)
                         LabeledContent("Requested by", value: current.requesterName)
                         HStack {
-                            Button { model.control("playback.previous") } label: { Label("Previous", systemImage: "backward.end.fill") }
-                            Button { model.control(model.snapshot?.playing == true ? "playback.pause" : "playback.resume") } label: {
-                                Label(model.snapshot?.playing == true ? "Pause" : "Play", systemImage: model.snapshot?.playing == true ? "pause.fill" : "play.fill")
+                            Button { model.control("playback.previous") } label: {
+                                Label("Previous", systemImage: "backward.end.fill")
                             }
-                            Button { model.control("playback.skip") } label: { Label("Next", systemImage: "forward.end.fill") }
+                            Button {
+                                model.control(model.snapshot?.playing == true ? "playback.pause" : "playback.resume")
+                            } label: {
+                                Label(
+                                    model.snapshot?.playing == true ? "Pause" : "Play",
+                                    systemImage: model.snapshot?.playing == true ? "pause.fill" : "play.fill"
+                                )
+                            }
+                            Button { model.control("playback.skip") } label: {
+                                Label("Next", systemImage: "forward.end.fill")
+                            }
                             if model.controlling { ProgressView().controlSize(.small).accessibilityLabel("Applying playback request") }
                         }
                         .disabled(model.controlling)
@@ -116,13 +130,24 @@ struct HostWindow: View {
     private var devices: some View {
         Form {
             Section("Remote access") {
-                Toggle("Allow Remotes to change other requests", isOn: Binding(get: { model.snapshot?.allowCrossRemoteEdits ?? false }, set: { model.setPolicy($0) }))
-                Text("When off, a Remote can control only its own requests. Pause and resume remain shared.").foregroundStyle(.secondary)
+                Toggle(
+                    "Allow Remotes to change other requests",
+                    isOn: Binding(
+                        get: { model.snapshot?.allowCrossRemoteEdits ?? false },
+                        set: { model.setPolicy($0) }
+                    )
+                )
+                Text("When off, a Remote can control only its own requests. Pause and resume remain shared.")
+                    .foregroundStyle(.secondary)
                 Button("Pair a Remote", action: model.pair).buttonStyle(.borderedProminent).disabled(!model.running)
             }
             Section("Paired Remotes") {
                 if model.remotes.isEmpty {
-                    ContentUnavailableView("No Remotes paired", systemImage: "ipad.and.iphone", description: Text("Pair a Remote to control Music from another device."))
+                    ContentUnavailableView(
+                        "No Remotes paired",
+                        systemImage: "ipad.and.iphone",
+                        description: Text("Pair a Remote to control Music from another device.")
+                    )
                 } else {
                     ForEach(model.remotes) { remote in
                         HStack {

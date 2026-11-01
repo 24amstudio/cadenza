@@ -264,7 +264,11 @@ struct HostSettings: View {
                 Toggle("Check and install updates automatically", isOn: $model.configuration.automaticUpdates).disabled(
                     !HostBuild.updatesEnabled)
                 HStack {
-                    Button(model.updateBusy ? "Checking…" : (model.stagedVersion == nil ? "Check and install updates" : "Install update")) {
+                    Button(
+                        model.updateBusy
+                            ? "Checking…"
+                            : (model.stagedVersion == nil ? "Check and install updates" : "Install update")
+                    ) {
                         if model.stagedVersion == nil { model.checkUpdates() } else { model.installUpdate() }
                     }.disabled(
                         model.updateBusy || !HostBuild.updatesEnabled)

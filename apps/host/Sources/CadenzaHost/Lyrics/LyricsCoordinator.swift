@@ -50,15 +50,37 @@ actor Lyrics {
             throw unavailable()
         }
         for provider in fallbackProviders {
-            if let document = try await provider.document(song: song, occurrence: occurrence) {
-                if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
-                cache[key] = document
-                if let data = try? JSONEncoder().encode(document) {
-                    try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+            do {
+                if let document = try await provider.document(song: song, occurrence: occurrence) {
+                    if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
+                    cache[key] = document
+                    if let data = try? JSONEncoder().encode(document) {
+                        try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+                    }
+                    try? await disk.remove("lyrics-miss:" + key)
+                    return document
                 }
-                try? await disk.remove("lyrics-miss:" + key)
-                return document
+            } catch {
+                // Provider outages are recoverable. Continue to the next source
+                // and let the caller retry Music's local cache before surfacing a
+                // user-facing failure.
+                continue
             }
+        }
+        // Music's cache can be populated while the fallback request is in flight
+        // (for example after the user opens Music's lyrics pane). Recheck it after
+        // a provider outage so a transient LRCLIB 5xx automatically falls back to
+        // the Apple Music document instead of surfacing the outage to Remote.
+        if !fallbackProviders.isEmpty,
+            let document = try? await music.document(song: song, occurrence: occurrence)
+        {
+            if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
+            cache[key] = document
+            if let data = try? JSONEncoder().encode(document) {
+                try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+            }
+            try? await disk.remove("lyrics-miss:" + key)
+            return document
         }
         if !fallbackProviders.isEmpty,
             let data = try? JSONEncoder().encode(ProviderMiss(checkedAtMs: wallMs()))

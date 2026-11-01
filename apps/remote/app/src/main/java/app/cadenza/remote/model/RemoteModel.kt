@@ -148,7 +148,11 @@ class RemoteModel(
 
     internal var lyricRequestId: String? = null
 
+    internal var lyricStartedAtElapsedMs: Long? = null
+
     internal var lyricUserInitiated = false
+
+    internal var motionStartedAtElapsedMs: Long? = null
 
     internal var discovery: HostDiscovery? = null
 
@@ -229,7 +233,9 @@ class RemoteModel(
                         receiveJob =
                             launch {
                                 try {
-                                    receive(item.frame)
+                                    measureComponent("frame.${item.frame.optString("type", "unknown")}") {
+                                        receive(item.frame)
+                                    }
                                 } catch (error: CancellationException) {
                                     throw error
                                 } catch (error: Exception) {
@@ -431,7 +437,9 @@ class RemoteModel(
         preparationTimeout?.cancel()
         lyricsTimeout?.cancel()
         lyricRequestId = null
+        lyricStartedAtElapsedMs = null
         lyricUserInitiated = false
+        motionStartedAtElapsedMs = null
         clearArtworkRequests()
         mutable.update {
             it.copy(
@@ -556,6 +564,7 @@ class RemoteModel(
         if (!mutable.value.connected) return showError("Connect to Host", "Reconnect before loading lyrics.")
         reportLog("info", "lyrics.requested", "user=$userInitiated")
         lyricRequestId = id()
+        lyricStartedAtElapsedMs = SystemClock.elapsedRealtime()
         val requestId = lyricRequestId
         lyricsTimeout?.cancel()
         lyricUserInitiated = userInitiated
@@ -565,6 +574,7 @@ class RemoteModel(
             viewModelScope.launch {
                 delay(15_000)
                 if (requestId == lyricRequestId && mutable.value.lyricsLoading) {
+                    recordLyricsDuration()
                     lyricUserInitiated = false
                     mutable.update {
                         it.copy(lyricsLoading = false, lyricsIssue = "Host did not return lyrics. Try again.")

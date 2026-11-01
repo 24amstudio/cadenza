@@ -85,7 +85,9 @@ final class SingAudioPipeline: @unchecked Sendable {
         let shouldReport = !failureReported
         failureReported = true
         lock.unlock()
-        output.stop()
+        // Audio engine teardown belongs to SingCoordinator's MainActor. Calling
+        // AVAudioEngine.stop from this DSP queue races route changes and can take
+        // down the Host while the user is starting Sing.
         if shouldReport { onFailure(message) }
     }
 

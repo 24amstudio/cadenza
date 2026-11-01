@@ -17,34 +17,52 @@ struct HostOnboarding: View {
     @State private var detectionTimeout: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 16) {
-                Image(systemName: step == 3 ? "qrcode" : "music.note.list")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(.tint)
-                    .frame(width: 52, height: 52)
-                    .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title).font(.largeTitle.bold())
-                    Text("Step \(step + 1) of 4").foregroundStyle(.secondary)
+        NavigationSplitView {
+            List {
+                Section("Setup") {
+                    ForEach(
+                        Array(["Welcome", "Apple Music", "Permissions", "Pair Remote"].enumerated()),
+                        id: \.offset
+                    ) { index, label in
+                        Label(label, systemImage: index == step ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(index == step ? .primary : .secondary)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if index <= step && !busy { step = index } }
+                    }
                 }
             }
-            ProgressView(value: Double(step + 1), total: 4).padding(.top, 18)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    stepContent
+            .listStyle(.sidebar)
+            .navigationTitle("Cadenza Host")
+        } detail: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .center, spacing: 14) {
+                    Image(systemName: step == 3 ? "qrcode" : "music.note.list")
+                        .font(.title2.weight(.semibold))
+                        .symbolRenderingMode(.hierarchical)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).font(.title.bold())
+                        Text("Step \(step + 1) of 4").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    ProgressView(value: Double(step + 1), total: 4).frame(width: 120)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 26)
-            }
-            HStack {
-                if step > 0 { Button("Back") { step -= 1 }.disabled(busy) }
-                Spacer()
-                if step < 3 { Text("You can change these settings later.").foregroundStyle(.secondary) }
+                .padding(.horizontal, 28).padding(.vertical, 22)
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) { stepContent }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(28)
+                }
+                Divider()
+                HStack {
+                    if step > 0 { Button("Back") { step -= 1 }.disabled(busy) }
+                    Spacer()
+                    if step < 3 { Text("You can change these settings later.").foregroundStyle(.secondary) }
+                }
+                .padding(.horizontal, 28).padding(.vertical, 16)
             }
         }
-        .padding(36)
-        .frame(minWidth: 600, minHeight: 520)
+        .frame(minWidth: 760, minHeight: 560)
         .tint(.accentColor)
         .onReceive(
             NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)

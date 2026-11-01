@@ -28,9 +28,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import app.cadenza.remote.model.DebugLogEntry
 import app.cadenza.remote.model.RemoteState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -48,18 +54,33 @@ fun DebugScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val clipboard = context.getSystemService(ClipboardManager::class.java)
-    var stats by remember { mutableStateOf(readStats(context, null)) }
+    var stats by remember { mutableStateOf(readStats(context, null, null, null)) }
     var previousCpu by remember { mutableStateOf<CpuSample?>(null) }
     var copied by remember { mutableStateOf(false) }
     val cutoff = System.currentTimeMillis() - 60 * 60 * 1_000L
     val recentErrors = state.debugLog.filter { it.timestampMs >= cutoff }
-    LaunchedEffect(Unit) {
-        while (true) {
-            val sample = readCpuSample()
-            stats = readStats(context, previousCpu)
-            previousCpu = sample
-            delay(1_000)
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var storageBytes: Long? = null
+            var lastStorageSampleAt = 0L
+            while (isActive) {
+                val sample = readCpuSample()
+                val now = SystemClock.elapsedRealtime()
+                val refreshStorage = now - lastStorageSampleAt >= STORAGE_SAMPLE_INTERVAL_MS
+                val next =
+                    withContext(Dispatchers.Default) {
+                        readStats(context, previousCpu, sample, if (refreshStorage) null else storageBytes)
+                    }
+                if (refreshStorage) {
+                    storageBytes = next.storageUsedBytes
+                    lastStorageSampleAt = now
+                }
+                stats = next
+                previousCpu = sample
+                delay(STATS_SAMPLE_INTERVAL_MS)
+            }
         }
     }
     Column(
@@ -155,6 +176,8 @@ private fun readCpuSample(): CpuSample? =
 private fun readStats(
     context: Context,
     previous: CpuSample?,
+    current: CpuSample?,
+    cachedStorageBytes: Long?,
 ): DeviceStats {
     val memory = ActivityManager.MemoryInfo()
     (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
@@ -163,15 +186,16 @@ private fun readStats(
     val storage = StatFs(context.filesDir.absolutePath)
     val cpu =
         previous?.let { sample ->
-            val current = readCpuSample() ?: return@let Double.NaN
-            ((current.ticks - sample.ticks).coerceAtLeast(0) / 100.0) /
-                (current.elapsedMs - sample.elapsedMs).coerceAtLeast(1) * 100_000.0
+            current?.let {
+                ((it.ticks - sample.ticks).coerceAtLeast(0) / 100.0) /
+                    (it.elapsedMs - sample.elapsedMs).coerceAtLeast(1) * 100_000.0
+            } ?: Double.NaN
         } ?: Double.NaN
     return DeviceStats(
         cpu,
         process.totalPss.toLong() * 1_024,
         memory.totalMem,
-        appStorageBytes(context),
+        cachedStorageBytes ?: appStorageBytes(context),
         storage.totalBytes,
     )
 }
@@ -184,6 +208,9 @@ private fun directorySize(directory: java.io.File): Long =
     directory.listFiles().orEmpty().sumOf { file ->
         if (file.isDirectory) directorySize(file) else file.length()
     }
+
+private const val STATS_SAMPLE_INTERVAL_MS = 2_000L
+private const val STORAGE_SAMPLE_INTERVAL_MS = 30_000L
 
 internal fun formatBytes(bytes: Long): String {
     if (bytes < 1_024) return "$bytes B"

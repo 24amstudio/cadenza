@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
@@ -125,59 +124,16 @@ fun CadenzaApp(
                 }
             }
             BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
-            Scaffold(
-                bottomBar = {
-                    // Reserve feedback space so a notice cannot cover or move a control, including after scrolling.
-                    Box(Modifier.fillMaxWidth().height(64.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))) {
-                        SnackbarHost(snackbar, Modifier.align(Alignment.Center))
-                    }
-                },
-            ) { outerPadding ->
-                BoxWithConstraints(Modifier.fillMaxSize().padding(outerPadding)) {
-                    val wide = maxWidth >= 720.dp
-                    val compactNavigation = maxWidth < 400.dp || LocalDensity.current.fontScale >= 1.5f
-                    if (lyricsMode && state.profile != null) {
-                        LyricsScreen(model, state, onExit = ::closeLyrics)
-                    } else {
-                        Column(Modifier.fillMaxSize()) {
-                            Row(Modifier.weight(1f)) {
-                                if (wide && state.profile != null) {
-                                    NavigationRail(Modifier.fillMaxHeight().width(104.dp)) {
-                                        destinations.forEach { item ->
-                                            NavigationRailItem(
-                                                selected = destination == item.id,
-                                                onClick = { destination = item.id },
-                                                icon = { Icon(cadenzaVector(item.icon), contentDescription = null) },
-                                                label = { Text(item.label) },
-                                            )
-                                        }
-                                    }
-                                }
-                                Box(Modifier.weight(1f).fillMaxHeight()) {
-                                    if (state.profile == null) {
-                                        PairingScreen(model, state)
-                                    } else {
-                                        screenState.SaveableStateProvider(destination) {
-                                            when (destination) {
-                                                0 ->
-                                                    HomeScreen(
-                                                        model,
-                                                        state,
-                                                        wide,
-                                                        restoreLyricsFocus,
-                                                        onLyricsFocusRestored = { restoreLyricsFocus = false },
-                                                        onOpenLyrics = { lyricsMode = true },
-                                                    )
-                                                1 -> SearchScreen(model, state)
-                                                2 -> QueueScreen(model, state)
-                                                4 -> AnalyticsScreen(state)
-                                                else -> SettingsScreen(model, state, installUpdate)
-                                            }
-                                        }
-                                    }
-                                }
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth >= 720.dp
+                val compactNavigation = maxWidth < 400.dp || LocalDensity.current.fontScale >= 1.5f
+                Scaffold(
+                    bottomBar = {
+                        Column {
+                            if (snackbar.currentSnackbarData != null) {
+                                SnackbarHost(snackbar)
                             }
-                            if (!wide && state.profile != null) {
+                            if (!wide && state.profile != null && !lyricsMode) {
                                 NavigationBar {
                                     destinations.forEach { item ->
                                         NavigationBarItem(
@@ -191,6 +147,52 @@ fun CadenzaApp(
                                             },
                                             label = if (compactNavigation) null else ({ Text(item.label) }),
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                ) { outerPadding ->
+                    Box(Modifier.fillMaxSize().padding(outerPadding)) {
+                        if (lyricsMode && state.profile != null) {
+                            LyricsScreen(model, state, onExit = ::closeLyrics)
+                        } else {
+                            Column(Modifier.fillMaxSize()) {
+                                Row(Modifier.weight(1f)) {
+                                    if (wide && state.profile != null) {
+                                        NavigationRail(Modifier.fillMaxHeight().width(104.dp)) {
+                                            destinations.forEach { item ->
+                                                NavigationRailItem(
+                                                    selected = destination == item.id,
+                                                    onClick = { destination = item.id },
+                                                    icon = { Icon(cadenzaVector(item.icon), contentDescription = null) },
+                                                    label = { Text(item.label) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                                        if (state.profile == null) {
+                                            PairingScreen(model, state)
+                                        } else {
+                                            screenState.SaveableStateProvider(destination) {
+                                                when (destination) {
+                                                    0 ->
+                                                        HomeScreen(
+                                                            model,
+                                                            state,
+                                                            wide,
+                                                            restoreLyricsFocus,
+                                                            onLyricsFocusRestored = { restoreLyricsFocus = false },
+                                                            onOpenLyrics = { lyricsMode = true },
+                                                        )
+                                                    1 -> SearchScreen(model, state)
+                                                    2 -> QueueScreen(model, state)
+                                                    4 -> AnalyticsScreen(model, state)
+                                                    else -> SettingsScreen(model, state, installUpdate)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

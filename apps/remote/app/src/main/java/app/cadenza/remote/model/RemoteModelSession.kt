@@ -27,7 +27,13 @@ internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
     )
     val sentAt = original.sentAtElapsedMs
     if (sentAt > 0) {
-        mutable.update { it.copy(lastCommandLatencyMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)) }
+        val durationMs = (SystemClock.elapsedRealtime() - sentAt).coerceAtLeast(0)
+        mutable.update { it.copy(lastCommandLatencyMs = durationMs) }
+        reportLog(
+            "info",
+            "performance.command",
+            "kind=${original.key} duration_ms=$durationMs outcome=${frame.optString("outcome")}",
+        )
     }
     when (frame.getString("outcome")) {
         "applied" -> finishCommand(commandId)
@@ -72,6 +78,7 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
     }
     if (request != null && request == lyricRequestId) {
         lyricsTimeout?.cancel()
+        recordLyricsDuration()
         mutable.update { it.copy(lyricsLoading = false, lyricsIssue = message) }
         if (lyricUserInitiated) reportFailure(code, "Lyrics unavailable", message)
         lyricUserInitiated = false

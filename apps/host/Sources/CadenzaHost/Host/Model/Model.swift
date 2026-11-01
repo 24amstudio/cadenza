@@ -226,7 +226,11 @@ final class HostModel {
             do {
                 let message = try await updater.check(configuration: configuration.updates)
                 stagedVersion = updater.staged?.1.version
-                if automatic, stagedVersion != nil { installUpdate() } else { notify(message) }
+                if stagedVersion != nil {
+                    installUpdate()
+                } else if !automatic {
+                    notify(message)
+                }
             } catch {
                 if !automatic { showError("Update could not be prepared", error.localizedDescription) }
             }
@@ -266,7 +270,30 @@ final class HostModel {
             }
             stagedVersion = updater.staged?.1.version
             if let version = stagedVersion {
-                return HostUpdateReply(state: "ready", version: version, message: nil)
+                guard !service.queue.busy else {
+                    return HostUpdateReply(
+                        state: "failed", version: nil, message: "Wait for Music's current request to finish.")
+                }
+                do {
+                    try service.queue.flushCredits()
+                    _ = try updater.validateInstall(store: service.store)
+                } catch {
+                    return HostUpdateReply(state: "failed", version: nil, message: error.localizedDescription)
+                }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    do {
+                        try updater.install(configuration: updates, store: service.store)
+                    } catch {
+                        service.logger.log(
+                            .error,
+                            category: "update",
+                            action: "install.failed",
+                            error.localizedDescription
+                        )
+                    }
+                }
+                return HostUpdateReply(state: "installing", version: version, message: nil)
             }
             return HostUpdateReply(state: "current", version: nil, message: "Cadenza Host is up to date.")
         case "install":

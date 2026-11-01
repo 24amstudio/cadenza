@@ -39,7 +39,7 @@ internal fun SingControls(
 ) {
     if ("sing.mode" !in state.capabilities) return
     val sing = state.snapshot?.sing ?: return
-    val canMix = sing.status == "ready" || sing.status == "active"
+    val canMix = sing.status == "active"
     val pendingKeys =
         model.pending.values
             .map { it.key }
@@ -86,12 +86,12 @@ internal fun SingControls(
             }
         }
     }
-    Slider(
-        state = slider,
-        onValueChange = { vocal = it },
-        modifier = Modifier.semantics { contentDescription = "Sing vocal level" },
-        onValueChangeFinished = {
-            if (canMix) {
+    if (canMix) {
+        Slider(
+            state = slider,
+            onValueChange = { vocal = it },
+            modifier = Modifier.semantics { contentDescription = "Sing vocal level" },
+            onValueChangeFinished = {
                 val target = vocal.coerceAtLeast(0f).toInt()
                 vocal = -1f
                 model.command(
@@ -101,15 +101,15 @@ internal fun SingControls(
                         .put("vocal_percent", target),
                     "sing.mix",
                 )
-            }
-        },
-        enabled = state.connected && canMix && "sing.mix" !in pendingKeys,
-    )
-    Text(
-        "Vocal level ${slider.value.toInt()}%",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+            },
+            enabled = state.connected && "sing.mix" !in pendingKeys,
+        )
+        Text(
+            "Vocal level ${slider.value.toInt()}%",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     if (sing.status == "failed" && !failureDialogDismissed) {
         AlertDialog(
             onDismissRequest = { failureDialogDismissed = true },

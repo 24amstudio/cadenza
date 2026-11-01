@@ -97,6 +97,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                     ?.occurrenceId
             ) {
                 val notify = lyricUserInitiated && mutable.value.lyricsLoading
+                recordLyricsDuration()
                 lyricUserInitiated = false
                 lyricsTimeout?.cancel()
                 mutable.update {
@@ -125,6 +126,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                 ) {
                     showError("Lyrics unavailable", frame.optString("message", "Open Music's lyrics pane and retry."))
                 }
+                recordLyricsDuration()
                 lyricUserInitiated = false
                 lyricsTimeout?.cancel()
                 mutable.update {

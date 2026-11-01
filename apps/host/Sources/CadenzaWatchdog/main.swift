@@ -106,7 +106,7 @@ private final class Watchdog {
         sqlite3_bind_int64(statement, 2, now / 1_000)
         bindText(statement, 3, "watchdog")
         sqlite3_bind_null(statement, 4)
-        bindText(statement, 5, "host")
+        bindText(statement, 5, "CadenzaWatchdog")
         bindText(statement, 6, "host.crash.detected")
         bindText(statement, 7, "error")
         bindText(statement, 8, "host.lifecycle")

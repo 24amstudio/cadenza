@@ -14,7 +14,7 @@ struct HostWindow: View {
         }
         .overlay(alignment: .bottom) {
             if let toast = model.toast {
-                Text(toast).padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(16)
+                Text(toast).padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)).padding(16)
                     .accessibilityAddTraits(.updatesFrequently)
             }
         }
@@ -26,94 +26,152 @@ struct HostWindow: View {
                 get: { model.invitation.map(PairingSheetItem.init) },
                 set: { if $0 == nil { model.invitation = nil } }
             )
-        ) { item in PairingSheet(invitation: item.invitation) }
+        ) { item in
+            PairingSheet(invitation: item.invitation)
+        }
     }
 
     private var settings: some View {
-        TabView(selection: $model.selectedTab) {
-            playback.tabItem { Label("Music", systemImage: "music.note") }.tag(0)
-            devices.tabItem { Label("Remotes", systemImage: "ipad.and.iphone") }.tag(1)
-            HostSettings(model: model).tabItem { Label("Settings", systemImage: "gearshape") }.tag(2)
-        }
-        .padding(20)
-    }
-
-    private var playback: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Music").font(.largeTitle.bold())
-            if model.starting { ProgressView("Starting Host") }
-            if let current = model.snapshot?.current {
-                Text(current.song.title).font(.title.bold())
-                Text(current.song.artist).font(.title3).foregroundStyle(.secondary)
-                Text("Requested by \(current.requesterName)")
-                HStack(spacing: 16) {
-                    Button {
-                        model.control("playback.previous")
-                    } label: {
-                        Label("Previous", systemImage: "backward.end.fill")
-                    }
-                    Button {
-                        model.control(model.snapshot?.playing == true ? "playback.pause" : "playback.resume")
-                    } label: {
-                        Label(
-                            model.snapshot?.playing == true ? "Pause" : "Resume",
-                            systemImage: model.snapshot?.playing == true ? "pause.fill" : "play.fill")
-                    }
-                    Button {
-                        model.control("playback.skip")
-                    } label: {
-                        Label("Next", systemImage: "forward.end.fill")
-                    }
-                    if model.controlling {
-                        ProgressView().controlSize(.small).accessibilityLabel("Applying playback request")
-                    }
-                }.disabled(model.controlling)
-            } else {
-                Text("Nothing is playing").font(.title2)
+        NavigationSplitView {
+            List(selection: $model.selectedTab) {
+                Section("Cadenza Host") {
+                    Label("Music", systemImage: "music.note").tag(0)
+                    Label("Remotes", systemImage: "ipad.and.iphone").tag(1)
+                }
+                Section { Label("Settings", systemImage: "gearshape").tag(2) }
             }
-            if let issue = model.snapshot?.issue { Text(issue).foregroundStyle(.secondary) }
-            List(model.snapshot?.queue ?? []) { entry in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(entry.song.title).font(.headline)
-                        Text("\(entry.song.artist) · \(entry.requesterName)").foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text("≈ " + formatDuration(entry.estimatedWaitMs))
-                }.padding(.vertical, 4)
+            .listStyle(.sidebar)
+            .navigationTitle("Cadenza Host")
+        } detail: {
+            Group {
+                switch model.selectedTab {
+                case 0: playback
+                case 1: devices
+                default: HostSettings(model: model)
+                }
             }
-            HStack {
-                Text("Total remaining ≈ " + formatDuration(model.snapshot?.totalRemainingMs))
-                Spacer()
-                Button("Open Music") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Music.app")) }
-                Button("Reconcile queue") { model.selectedTab = 2 }
-            }
-        }
-    }
-
-    private var devices: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Remotes").font(.largeTitle.bold())
-            Toggle(
-                "Allow Remotes to change others' requests",
-                isOn: Binding(
-                    get: { model.snapshot?.allowCrossRemoteEdits ?? false }, set: { model.setPolicy($0) }
-                ))
-            Text(
-                "When off, a Remote cannot skip, seek, stop, or rearrange another Remote's request. Pause and resume are shared."
-            )
-            .foregroundStyle(.secondary)
-            Button("Pair a Remote", action: model.pair).disabled(!model.running)
-            List(model.remotes) { remote in
-                HStack {
-                    RemoteStatusRow(remote: remote)
-                    Spacer()
-                    if !remote.revoked {
-                        Button("Unpair", role: .destructive) { model.revoke(remote) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .toolbar {
+                ToolbarItem {
+                    if model.running {
+                        Label("Host is running", systemImage: "circle.fill").foregroundStyle(.green)
+                    } else if model.starting {
+                        ProgressView().controlSize(.small).accessibilityLabel("Starting Host")
+                    } else {
+                        Label("Host is stopped", systemImage: "circle").foregroundStyle(.secondary)
                     }
                 }
             }
         }
+        .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
+    }
+
+    private var playback: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Form {
+                Section("Now Playing") {
+                    if let current = model.snapshot?.current {
+                        LabeledContent("Title", value: current.song.title)
+                        LabeledContent("Artist", value: current.song.artist)
+                        LabeledContent("Requested by", value: current.requesterName)
+                        HStack {
+                            Button {
+                                model.control("playback.previous")
+                            } label: {
+                                Label("Previous", systemImage: "backward.end.fill")
+                            }
+                            Button {
+                                model.control(model.snapshot?.playing == true ? "playback.pause" : "playback.resume")
+                            } label: {
+                                Label(
+                                    model.snapshot?.playing == true ? "Pause" : "Play",
+                                    systemImage: model.snapshot?.playing == true ? "pause.fill" : "play.fill"
+                                )
+                            }
+                            Button {
+                                model.control("playback.skip")
+                            } label: {
+                                Label("Next", systemImage: "forward.end.fill")
+                            }
+                            if model.controlling {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Applying playback request")
+                            }
+                        }
+                        .disabled(model.controlling)
+                    } else {
+                        Label("Nothing is playing", systemImage: "music.note").foregroundStyle(.secondary)
+                    }
+                    if let issue = model.snapshot?.issue {
+                        Label(issue, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                    }
+                }
+                Section("Playing Next") {
+                    if (model.snapshot?.queue ?? []).isEmpty {
+                        Text("The queue is empty.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.snapshot?.queue ?? []) { entry in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.song.title)
+                                    Text(entry.song.artist + " / " + entry.requesterName)
+                                        .foregroundStyle(.secondary)
+                                        .font(.callout)
+                                }
+                                Spacer()
+                                Text("Approx. " + formatDuration(entry.estimatedWaitMs))
+                                    .foregroundStyle(.secondary)
+                                    .font(.callout.monospacedDigit())
+                            }
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Text("Total remaining: " + formatDuration(model.snapshot?.totalRemainingMs)).foregroundStyle(.secondary)
+                Spacer()
+                Button("Open Music") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Music.app")) }
+                Button("Reconcile queue") { model.selectedTab = 2 }
+            }
+            .padding(.horizontal, 20).padding(.bottom, 16)
+        }
+    }
+
+    private var devices: some View {
+        Form {
+            Section("Remote access") {
+                Toggle(
+                    "Allow Remotes to change other requests",
+                    isOn: Binding(
+                        get: { model.snapshot?.allowCrossRemoteEdits ?? false },
+                        set: { model.setPolicy($0) }
+                    )
+                )
+                Text("When off, a Remote can control only its own requests. Pause and resume remain shared.")
+                    .foregroundStyle(.secondary)
+                Button("Pair a Remote", action: model.pair).buttonStyle(.borderedProminent).disabled(!model.running)
+            }
+            Section("Paired Remotes") {
+                if model.remotes.isEmpty {
+                    ContentUnavailableView(
+                        "No Remotes paired",
+                        systemImage: "ipad.and.iphone",
+                        description: Text("Pair a Remote to control Music from another device.")
+                    )
+                } else {
+                    ForEach(model.remotes) { remote in
+                        HStack {
+                            RemoteStatusRow(remote: remote)
+                            Spacer()
+                            if !remote.revoked { Button("Unpair", role: .destructive) { model.revoke(remote) } }
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

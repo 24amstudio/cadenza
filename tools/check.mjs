@@ -1,13 +1,30 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import development from '../package.json' with { type: 'json' };
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+const configuredDependencies = process.env['CADENZA_NODE_MODULES'];
+
+const gitCommonDirectory = spawnSync('git', ['rev-parse', '--git-common-dir'], {
+  cwd: root,
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'ignore'],
+}).stdout?.trim();
+
+const sharedRepositoryRoot = gitCommonDirectory
+  ? dirname(resolve(root, gitCommonDirectory))
+  : null;
+
 const dependenciesRoot =
-  process.env['CADENZA_NODE_MODULES'] ?? join(root, 'node_modules');
+  configuredDependencies ??
+  (existsSync(join(root, 'node_modules', '@oxlint', 'plugins', 'package.json'))
+    ? join(root, 'node_modules')
+    : sharedRepositoryRoot
+      ? join(sharedRepositoryRoot, 'node_modules')
+      : join(root, 'node_modules'));
 
 const temporaryDirectory = join(root, '.cache', 'tmp');
 const staticOnly = process.argv.includes('--static');
@@ -150,14 +167,28 @@ if (process.platform === 'win32') {
 
 if (!staticOnly) run(process.execPath, ['tools/test.mjs']);
 
+const actionlintName =
+  process.platform === 'win32' ? 'actionlint.exe' : 'actionlint';
+
+const actionlintCandidates = [
+  join(root, '.tools', 'actionlint-1.7.12', actionlintName),
+  ...(sharedRepositoryRoot
+    ? [
+        join(
+          sharedRepositoryRoot,
+          '.tools',
+          'actionlint-1.7.12',
+          actionlintName,
+        ),
+      ]
+    : []),
+];
+
 const workflowLint =
   process.env['CADENZA_ACTIONLINT'] ??
-  join(
-    root,
-    '.tools',
-    'actionlint-1.7.12',
-    process.platform === 'win32' ? 'actionlint.exe' : 'actionlint',
-  );
+  actionlintCandidates.find((candidate) => existsSync(candidate)) ??
+  actionlintCandidates[0] ??
+  actionlintName;
 
 if (!existsSync(workflowLint))
   throw new Error(

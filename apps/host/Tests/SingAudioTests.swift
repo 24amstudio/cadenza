@@ -4,6 +4,10 @@ import os
 @testable import CadenzaHost
 
 final class SingAudioTests: XCTestCase {
+    func testDefaultBackendIsProcessSafeStereoFallback() {
+        XCTAssertEqual(SingSeparatorFactory.defaultBackend().backend, "stereo-center")
+    }
+
     func testCoordinatorRejectsASeparatorThatCannotPrimeForLivePlayback() async {
         let coordinator = await SingCoordinator(
             route: SingTestRoute(),

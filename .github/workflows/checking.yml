@@ -16,6 +16,53 @@ env:
   CI: 'true'
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      host: ${{ steps.paths.outputs.host }}
+      remote: ${{ steps.paths.outputs.remote }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: paths
+        name: Determine affected applications
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          elif [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            changed_paths="$(git diff-tree --root --no-commit-id --name-only -r "$HEAD_SHA")"
+          else
+            changed_paths="$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")"
+          fi
+
+          host=false
+          remote=false
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              apps/host/*) host=true ;;
+              apps/remote/*) remote=true ;;
+              .github/*|shared/*|tools/*|AGENTS.md|SPEC.md|package.json|package-lock.json|bun.lock|bun.lockb)
+                host=true
+                remote=true
+                ;;
+            esac
+          done <<< "$changed_paths"
+
+          printf 'host=%s\n' "$host" >> "$GITHUB_OUTPUT"
+          printf 'remote=%s\n' "$remote" >> "$GITHUB_OUTPUT"
+
   portable:
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -30,6 +77,8 @@ jobs:
       - run: node tools/check.mjs --portable --static
 
   remote:
+    needs: scope
+    if: needs.scope.outputs.remote == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -67,6 +116,8 @@ jobs:
           bash ./gradlew :app:ktlintCheck :app:lintDebug :app:lintRelease :app:compileDebugKotlin :app:compileReleaseKotlin --no-daemon
 
   host:
+    needs: scope
+    if: needs.scope.outputs.host == 'true'
     runs-on: macos-26
     timeout-minutes: 15
     steps:

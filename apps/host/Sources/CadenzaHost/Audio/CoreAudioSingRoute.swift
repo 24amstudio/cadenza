@@ -37,7 +37,6 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             throw SingAudioError.unavailable("The Music output format could not be prepared.")
         }
         bufferPool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
-        let tapUUID = UUID()
         let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
         var createdTap = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &createdTap)
@@ -54,7 +53,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
                 kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
                 kAudioAggregateDeviceTapListKey: [
                     [
-                        kAudioSubTapUIDKey: tapUUID.uuidString,
+                        kAudioSubTapUIDKey: tapDescription.uuid.uuidString,
                         kAudioSubTapDriftCompensationKey: true,
                     ]
                 ],

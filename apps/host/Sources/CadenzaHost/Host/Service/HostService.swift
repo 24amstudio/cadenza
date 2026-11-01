@@ -75,6 +75,9 @@ final class HostService {
         self.motion = MotionProvider(catalog: catalog, cache: cache)
         self.lyrics = Lyrics(cache: cache, providerEnabled: configuration.lyricsProviderEnabled)
         self.sing = SingCoordinator()
+        sing.onLifecycle = { [weak logger] level, action, message, metadata in
+            logger?.log(level, category: "sing", action: action, message, metadata: metadata)
+        }
         logger.log(.info, category: "host.lifecycle", action: "service.initialized", "Host service initialized")
         queue = QueueCoordinator(store: store, music: music, catalog: catalog)
         sing.onSessionChanged = { [weak self] in self?.queue.publish() }

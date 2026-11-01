@@ -156,6 +156,7 @@ final class SingCoordinator {
     private var occurrenceId: String?
     private var preparationGeneration = 0
     var onSessionChanged: (() -> Void)?
+    var onLifecycle: ((HostLogLevel, String, String, [String: String]) -> Void)?
 
     var currentOccurrence: String? { occurrenceId }
     var capabilityAvailable: Bool {
@@ -180,6 +181,7 @@ final class SingCoordinator {
     }
 
     func prepare(for occurrence: String) async {
+        onLifecycle?(.info, "sing.prepare.started", "Sing preparation started", ["occurrence_id": occurrence])
         stop()
         preparationGeneration += 1
         let generation = preparationGeneration
@@ -200,6 +202,12 @@ final class SingCoordinator {
             }
             session.latencyMs = latency
             session.status = "ready"
+            onLifecycle?(
+                .info,
+                "sing.prepare.ready",
+                "Sing preparation completed",
+                ["occurrence_id": occurrence, "latency_ms": String(latency)]
+            )
             onSessionChanged?()
         } catch {
             guard generation == preparationGeneration, occurrenceId == occurrence else { return }
@@ -209,7 +217,8 @@ final class SingCoordinator {
 
     func enable(for occurrence: String) async throws {
         try checkOccurrence(occurrence)
-        guard session.status == "ready" || session.status == "active" else {
+        onLifecycle?(.info, "sing.enable.started", "Sing enable started", ["occurrence_id": occurrence])
+        guard session.status == "ready" else {
             throw SingAudioError.unavailable(session.issue ?? "Sing is not ready.")
         }
         guard let format = route.format else {
@@ -223,9 +232,9 @@ final class SingCoordinator {
                 self.fail(message)
             }
         }
-        try output.start(format: format)
         var startedPipeline: SingAudioPipeline?
         do {
+            try output.start(format: format)
             let route = route
             let expectedOccurrence = occurrence
             let pipeline = SingAudioPipeline(
@@ -249,6 +258,7 @@ final class SingCoordinator {
                 throw SingAudioError.staleOccurrence
             }
         } catch {
+            onLifecycle?(.error, "sing.enable.failed", error.localizedDescription, ["occurrence_id": occurrence])
             if let startedPipeline {
                 startedPipeline.stop()
                 if let activePipeline = self.pipeline, activePipeline === startedPipeline {
@@ -260,9 +270,13 @@ final class SingCoordinator {
                 output.stop()
                 output.onFailure = nil
             }
+            session.status = "failed"
+            session.issue = error.localizedDescription
+            onSessionChanged?()
             throw error
         }
         session.status = "active"
+        onLifecycle?(.info, "sing.enable.active", "Sing is active", ["occurrence_id": occurrence])
     }
 
     func disable(for occurrence: String) throws {
@@ -306,6 +320,7 @@ final class SingCoordinator {
     }
 
     private func fail(_ message: String) {
+        onLifecycle?(.error, "sing.failed", message, ["occurrence_id": occurrenceId ?? ""])
         route.stop()
         pipeline?.stop()
         pipeline = nil

@@ -44,7 +44,7 @@ After installing the development dependencies, run from the repository root:
 node tools/check.mjs --portable
 ```
 
-Portable checks include strict development-script analysis, lint with warnings treated as failures, formatting, line limits, shell syntax, and protocol/SQLite/JXA behavior tests. The complete `node tools/check.mjs` gate adds the native checks available on the current platform. The pre-commit hook runs the fast portable static gate; the pre-push hook runs the complete platform-aware gate. CI runs both native suites on their supported platforms.
+Portable checks include strict development-script analysis, lint with warnings treated as failures, formatting, line limits, shell syntax, and protocol/SQLite/JXA behavior tests. The complete `node tools/check.mjs` gate adds the native checks available on the current platform. Both local hooks run the fast portable static gate; CI runs both native suites on their supported platforms.
 
 ## Required behavior
 

@@ -17,6 +17,7 @@ struct CadenzaHostApp: App {
         MenuBarExtra("Cadenza Host", systemImage: "waveform", isInserted: $showMenuBarIcon) {
             HostMenu(model: model)
                 .task { if model.onboardingComplete { await model.start() } }
+                .background(HostLaunchBridge(model: model, delegate: delegate))
         }
     }
 }

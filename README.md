@@ -14,7 +14,7 @@ Cadenza supports a macOS Cadenza Host and Android Cadenza Remote without paid Ap
 - [Installation](docs/INSTALLATION.md) — requirements, Host app, and Huawei APK installation.
 - [Setup](docs/SETUP.md) — Music permissions, LAN address, storefront, pairing A/B, lyrics, and English translation.
 - [Usage](docs/USAGE.md) — search, queue, protected controls, synchronized lyrics, analytics, and updates.
-- [Building](docs/BUILDING.md) — native toolchains, strict checks, D:/Dev storage, and signed artifacts.
+- [Building](docs/BUILDING.md) — native toolchains, strict checks, H:/Dev storage, and signed artifacts.
 - [Troubleshooting](docs/TROUBLESHOOTING.md).
 
 ## Monorepo layout

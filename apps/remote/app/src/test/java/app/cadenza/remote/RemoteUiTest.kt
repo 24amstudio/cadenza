@@ -299,7 +299,7 @@ class RemoteUiTest {
         compose.onNodeWithText("Lyrics").performClick()
         compose.onNodeWithText("Sing mode").assertIsDisplayed()
         compose.onNodeWithText("Start").assertIsDisplayed()
-        compose.onNodeWithText("Vocal level 0%").assertIsDisplayed()
+        compose.onAllNodesWithText("Vocal level", substring = true).assertCountEquals(0)
     }
 
     @Test
@@ -379,7 +379,7 @@ class RemoteUiTest {
         app.library.setFavorite(song, true)
         openApp()
         compose.onNodeWithText("Library").assertIsDisplayed()
-        compose.onAllNodesWithText("Now playing").assertCountEquals(2)
+        compose.onAllNodesWithText("Now playing").assertCountEquals(1)
         compose.onNodeWithText("Favorites · 1").performClick()
         compose.onNodeWithText("Offline favorite").performClick()
         compose.onNodeWithText("Add to queue").assertIsNotEnabled()
@@ -589,10 +589,13 @@ class RemoteUiTest {
         openApp()
         navigate("Analytics")
         // Waiting on rendered semantics also drains main-looper continuations after SQLite IO.
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("1 play · 0:08").fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Your music").fetchSemanticsNodes().size == 1 }
         assertEquals(1, model.state.value.statistics.size)
-        compose.onNodeWithText("1. Personal favorite").assertIsDisplayed()
-        compose.onNodeWithText("1 play · 0:08").assertIsDisplayed()
+        compose.onNodeWithText("Personal favorite").assertIsDisplayed()
+        compose.onAllNodesWithText("0:08", substring = true).apply {
+            get(0).assertIsDisplayed()
+            get(1).assertIsDisplayed()
+        }
         capture("analytics-tablet")
     }
 

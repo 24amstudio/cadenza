@@ -10,17 +10,17 @@ Remote needs JDK 17, Android SDK platform `android-37.0`, build-tools 36.0.0, an
 
 The Android plugin is a release candidate. Plugin 9.4.1 calls a deprecated Gradle API that fails the strict build on Gradle 9.8.2; older Gradle versions fail the current Android lint update check. The release candidate removes those deprecated calls. Warnings remain errors. The only disabled lint advisory is `OldTargetApi`, because current dependencies require compileSdk 37 while the requested runtime target remains 36; no lint baseline or other warning suppression is used.
 
-Temurin JDK 17, Android command-line tools, SDK components, Gradle, and build dependencies can be installed under D:/Dev. Verify downloaded archives against the checksums published by their upstream projects. Android Studio and an emulator are optional; release users install the app packages without these build tools.
+Temurin JDK 17, Android command-line tools, SDK components, Gradle, and build dependencies can be installed under H:/Dev. Verify downloaded archives against the checksums published by their upstream projects. Android Studio and an emulator are optional; release users install the app packages without these build tools.
 
-## Windows storage on D:/Dev
+## Windows storage on H:/Dev
 
-Open Command Prompt in `D:\Dev`:
+Open Command Prompt in `H:\Dev`:
 
 ```bat
 call tools\windows-env.cmd
 ```
 
-This keeps temporary files, Bun's package cache, Gradle distributions, Android user state, and the SDK under the repository on D:/Dev. Existing executables may remain on C:.
+This keeps temporary files, Bun's package cache, Gradle distributions, Android user state, and the SDK under the repository on H:/Dev. Existing executables may remain on C:.
 
 PowerShell users whose script policy permits local scripts can use:
 
@@ -30,15 +30,15 @@ PowerShell users whose script policy permits local scripts can use:
 
 If PowerShell blocks it, use the Command Prompt version. Changing execution policy is unnecessary.
 
-Place a chosen JDK in `D:\Dev\.tools\jdk-17` and configure the current shell:
+Place a chosen JDK in `H:\Dev\.tools\jdk-17` and configure the current shell:
 
 ```bat
-set "JAVA_HOME=D:\Dev\.tools\jdk-17"
+set "JAVA_HOME=H:\Dev\.tools\jdk-17"
 set "PATH=%JAVA_HOME%\bin;%PATH%"
 javac -version
 ```
 
-On another Windows checkout, install the current Android command-line tools under `.tools\android-sdk\cmdline-tools\latest` and keep the SDK root on D:/Dev. Then, from Command Prompt:
+On another Windows checkout, install the current Android command-line tools under `.tools\android-sdk\cmdline-tools\latest` and keep the SDK root on H:/Dev. Then, from Command Prompt:
 
 ```bat
 call tools\windows-env.cmd
@@ -86,7 +86,7 @@ bash apps/remote/build.sh Debug
 
 The first wrapper invocation downloads the pinned Gradle distribution if absent. All Gradle caches remain inside the repository. The scripts stop if the required SDK platform is missing; Gradle may download missing licensed build components inside the configured SDK root.
 
-The Windows environment scripts prefer the repository's JDK when present. Kotlin compilation runs in the Gradle process. JVM tests, Robolectric's downloaded Android runtime, and the debug signing key also use directories under `.cache` on D:/Dev.
+The Windows environment scripts prefer the repository's JDK when present. Kotlin compilation runs in the Gradle process. JVM tests, Robolectric's downloaded Android runtime, and the debug signing key also use directories under `.cache` on H:/Dev.
 
 Debug output is `apps/remote/app/build/outputs/apk/debug/app-debug.apk`. It preserves the separate `app.cadence.remote.debug` installation ID and is for testing. The Kotlin namespace is `app.cadenza.remote`; this is deliberately different from the installed ID.
 
@@ -134,7 +134,7 @@ Configure and push the repository before relying on the CI workflows. CI runners
 
 ## Shared checks
 
-Workflow validation uses `actionlint` 1.7.12. Install the official platform binary into `.tools/actionlint-1.7.12` or set `CADENZA_ACTIONLINT` to its absolute executable path. The Windows amd64 ZIP SHA-256 is `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`; the Apple silicon macOS tarball SHA-256 is `aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f`. Both come from the official `rhysd/actionlint` v1.7.12 release. Keep local tooling under D:/Dev; root checks never download tools themselves. CI bootstraps the pinned Linux binary with its SHA-256 check.
+Workflow validation uses `actionlint` 1.7.12. Install the official platform binary into `.tools/actionlint-1.7.12` or set `CADENZA_ACTIONLINT` to its absolute executable path. The Windows amd64 ZIP SHA-256 is `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`; the Apple silicon macOS tarball SHA-256 is `aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f`. Both come from the official `rhysd/actionlint` v1.7.12 release. Keep local tooling under H:/Dev; root checks never download tools themselves. CI bootstraps the pinned Linux binary with its SHA-256 check.
 
 Worktrees share the repository's Git common directory. Keep the verified `node_modules` and `.tools/actionlint-1.7.12` under that shared repository root so every worktree can use the same dependencies. `tools/check.mjs` searches the current worktree first and then the shared root automatically.
 

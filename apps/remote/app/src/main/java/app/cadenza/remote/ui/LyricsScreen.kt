@@ -408,7 +408,7 @@ internal fun LyricsContent(
                     // Keep one previous line visible while leaving most of the viewport
                     // for upcoming lyrics. A positive offset places the active row below
                     // the top edge instead of centering it in the pane.
-                    val offset = (viewport * 0.18f).toInt().coerceAtLeast(0)
+                    val offset = -(viewport * 0.18f).toInt()
                     list.animateScrollToItem(active, offset)
                 }
             }

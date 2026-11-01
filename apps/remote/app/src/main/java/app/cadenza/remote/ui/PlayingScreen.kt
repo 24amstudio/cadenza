@@ -77,14 +77,14 @@ fun PlayingScreen(
         } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.colorScheme.surface))
     val lyrics = state.lyrics?.takeIf { it.occurrenceId == current?.occurrenceId && it.level > 0 }
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
-    var showLyrics by rememberSaveable { mutableStateOf(lyricsMayBeAvailable) }
+    var showLyrics by rememberSaveable { mutableStateOf(lyricsMayBeAvailable && wide) }
     var showQueue by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(current?.occurrenceId) {
         showLyrics = false
         showQueue = false
     }
     LaunchedEffect(current?.occurrenceId, lyrics != null) {
-        if (lyrics != null) showLyrics = true
+        if (lyrics != null && wide) showLyrics = true
     }
     LaunchedEffect(current?.occurrenceId, state.connected) {
         if (current != null && state.connected && lyrics == null && !state.lyricsLoading) {
@@ -99,7 +99,17 @@ fun PlayingScreen(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(if (wide) 20.dp else 16.dp),
         ) {
-            PlayerHeader(state, lyricsMayBeAvailable, showLyrics, showQueue, { showLyrics = it }, { showQueue = it })
+            PlayerHeader(
+                state,
+                lyricsMayBeAvailable,
+                showLyrics,
+                showQueue,
+                compact = !tablet,
+                lyricsFocusRequester = lyricsFocusRequester,
+                onOpenLyrics = onOpenLyrics,
+                onLyricsChanged = { showLyrics = it },
+                onQueueChanged = { showQueue = it },
+            )
             if (current == null) {
                 EmptyPlayerSurface()
             } else if (showLyrics && tablet) {
@@ -192,6 +202,9 @@ private fun PlayerHeader(
     lyricsMayBeAvailable: Boolean,
     showLyrics: Boolean,
     showQueue: Boolean,
+    compact: Boolean,
+    lyricsFocusRequester: FocusRequester,
+    onOpenLyrics: () -> Unit,
     onLyricsChanged: (Boolean) -> Unit,
     onQueueChanged: (Boolean) -> Unit,
 ) {
@@ -207,12 +220,21 @@ private fun PlayerHeader(
         if (lyricsMayBeAvailable) {
             FilterChip(
                 selected = showLyrics,
-                onClick = { onLyricsChanged(!showLyrics) },
+                onClick = {
+                    onLyricsChanged(!showLyrics)
+                    if (compact) onOpenLyrics()
+                },
                 label = { Text("Lyrics") },
                 leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
+                modifier = Modifier.focusRequester(lyricsFocusRequester),
             )
         }
-        FilterChip(selected = showQueue, onClick = { onQueueChanged(!showQueue) }, label = { Text("Queue") })
+        FilterChip(
+            selected = showQueue,
+            onClick = { onQueueChanged(!showQueue) },
+            label = { Text("Up next") },
+            modifier = Modifier.semantics { contentDescription = "Queue view" },
+        )
     }
 }
 

@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,12 +26,14 @@ import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.reloadStatistics
 
 @Composable
 fun AnalyticsScreen(
     model: RemoteModel,
     state: RemoteState,
 ) {
+    LaunchedEffect(Unit) { model.reloadStatistics() }
     var sortByTime by rememberSaveable { mutableStateOf(false) }
     val totalPlays = state.statistics.sumOf { it.plays }
     val totalTime = state.statistics.sumOf { it.playedMs }

@@ -1,6 +1,6 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.1.4 and internal build 9, following the user's explicit release-version request. Portable, Host and Remote Checking CI passed for the latest audit changes; the final branch head is `2d7f7f1`. macOS runtime behavior and target-device evidence remain unverified locally.
+Cadenza's current working tree declares visible version 0.1.4 and internal build 9, following the user's explicit release-version request. Portable, Host and Remote Checking CI passed for the latest audit changes; the final branch head is `1f44a60`. macOS runtime behavior and target-device evidence remain unverified locally.
 
 ## Current local checks
 

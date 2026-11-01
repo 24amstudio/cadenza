@@ -75,7 +75,9 @@ struct HostWindow: View {
                         LabeledContent("Artist", value: current.song.artist)
                         LabeledContent("Requested by", value: current.requesterName)
                         HStack {
-                            Button { model.control("playback.previous") } label: {
+                            Button {
+                                model.control("playback.previous")
+                            } label: {
                                 Label("Previous", systemImage: "backward.end.fill")
                             }
                             Button {
@@ -86,10 +88,16 @@ struct HostWindow: View {
                                     systemImage: model.snapshot?.playing == true ? "pause.fill" : "play.fill"
                                 )
                             }
-                            Button { model.control("playback.skip") } label: {
+                            Button {
+                                model.control("playback.skip")
+                            } label: {
                                 Label("Next", systemImage: "forward.end.fill")
                             }
-                            if model.controlling { ProgressView().controlSize(.small).accessibilityLabel("Applying playback request") }
+                            if model.controlling {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Applying playback request")
+                            }
                         }
                         .disabled(model.controlling)
                     } else {
@@ -107,10 +115,14 @@ struct HostWindow: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(entry.song.title)
-                                    Text(entry.song.artist + " / " + entry.requesterName).foregroundStyle(.secondary).font(.callout)
+                                    Text(entry.song.artist + " / " + entry.requesterName)
+                                        .foregroundStyle(.secondary)
+                                        .font(.callout)
                                 }
                                 Spacer()
-                                Text("Approx. " + formatDuration(entry.estimatedWaitMs)).foregroundStyle(.secondary).font(.callout.monospacedDigit())
+                                Text("Approx. " + formatDuration(entry.estimatedWaitMs))
+                                    .foregroundStyle(.secondary)
+                                    .font(.callout.monospacedDigit())
                             }
                         }
                     }

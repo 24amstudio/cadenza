@@ -1,5 +1,6 @@
 package app.cadenza.remote.model
 
+import android.os.SystemClock
 import android.util.Base64
 import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.data.Wire
@@ -69,6 +70,7 @@ internal fun RemoteModel.requestArtwork(url: String) {
 }
 
 internal fun RemoteModel.applyArtworkFrame(frame: JSONObject) {
+    val startedAt = SystemClock.elapsedRealtime()
     val url = frame.nullableString("artwork_url")
     val encoded = frame.nullableString("artwork_data_base64")
     if (url == null || encoded == null || encoded.length > 700_000) return
@@ -83,6 +85,11 @@ internal fun RemoteModel.applyArtworkFrame(frame: JSONObject) {
                 next[url] = bytes
                 current.copy(artwork = next)
             }
+            recordComponentDuration(
+                "artwork",
+                (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0),
+                "bytes=${bytes.size}",
+            )
         }
 }
 

@@ -1,5 +1,6 @@
 package app.cadenza.remote.model
 
+import android.os.SystemClock
 import android.util.Base64
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.data.nullableString
@@ -13,13 +14,17 @@ import org.json.JSONObject
 internal fun RemoteModel.requestMotion(occurrenceId: String) {
     if (transportMode == "ble" || "motion.host-cache" !in mutable.value.capabilities) return
     motionRequestId = id()
+    motionStartedAtElapsedMs = SystemClock.elapsedRealtime()
     motionAssembly = null
     connection?.send(Wire.frame("motion.get").put("request_id", motionRequestId).put("occurrence_id", occurrenceId))
 }
 
 internal fun RemoteModel.motionUnavailable(frame: JSONObject) {
     val requestId = frame.nullableString("request_id") ?: return
-    if (requestId == motionRequestId) motionRequestId = null
+    if (requestId == motionRequestId) {
+        motionRequestId = null
+        motionStartedAtElapsedMs = null
+    }
 }
 
 internal suspend fun RemoteModel.applyMotionChunk(frame: JSONObject) {
@@ -45,10 +50,28 @@ internal suspend fun RemoteModel.applyMotionChunk(frame: JSONObject) {
     motionRequestId = null
     val video = assembly.assemble()
     if (video == null) {
+        motionStartedAtElapsedMs?.let { startedAt ->
+            recordComponentDuration(
+                "motion",
+                (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0),
+                "outcome=rejected",
+                minimumDurationMs = 0,
+            )
+        }
+        motionStartedAtElapsedMs = null
         reportLog("warning", "motion.rejected", "Animated artwork failed verification and was not played.")
         return
     }
     val file = withContext(ioDispatcher) { motionStore.save(assembly.sha256, video) }
+    motionStartedAtElapsedMs?.let { startedAt ->
+        recordComponentDuration(
+            "motion",
+            (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0),
+            "bytes=${video.size}",
+            minimumDurationMs = 0,
+        )
+    }
+    motionStartedAtElapsedMs = null
     if (mutable.value.snapshot
             ?.current
             ?.occurrenceId != occurrenceId

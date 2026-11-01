@@ -138,6 +138,8 @@ Workflow validation uses `actionlint` 1.7.12. Install the official platform bina
 
 Worktrees share the repository's Git common directory. Keep the verified `node_modules` and `.tools/actionlint-1.7.12` under that shared repository root so every worktree can use the same dependencies. `tools/check.mjs` searches the current worktree first and then the shared root automatically.
 
+Worktrees share the repository's Git common directory. Keep the verified `node_modules` and `.tools/actionlint-1.7.12` under that shared repository root so every worktree can use the same dependencies. `tools/check.mjs` searches the current worktree first and then the shared root automatically.
+
 Node is development tooling only. After installing the development dependencies, run the portable checks from the repository root:
 
 ```powershell

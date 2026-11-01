@@ -1,6 +1,6 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.1.4 and internal build 9, following the user's explicit release-version request. Portable, Host and Remote Checking CI pass for commit `dda27b6`. macOS runtime behavior and target-device evidence remain unverified locally; the CI Host and Remote compile/test gates passed.
+Cadenza's current working tree declares visible version 0.1.4 and internal build 9, following the user's explicit release-version request. Portable, Host and Remote Checking CI passed for the preceding commit `dda27b6`; the audit changes in `c362fae` are awaiting their own CI run. macOS runtime behavior and target-device evidence remain unverified locally.
 
 ## Current local checks
 

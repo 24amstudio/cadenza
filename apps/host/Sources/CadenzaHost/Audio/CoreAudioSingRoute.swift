@@ -38,7 +38,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         }
         bufferPool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
         let tapUUID = UUID()
-        var tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
+        let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
         tapDescription.uuid = tapUUID
         tapDescription.name = "Cadenza Sing Music Tap"
         tapDescription.isPrivate = true

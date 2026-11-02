@@ -6,7 +6,7 @@ import OSLog
 final class HostService {
     let store: HostStore
     let music = MusicBridge()
-    let catalog = Catalog()
+    let catalog: Catalog
     let cache: HostCache
     let artwork: ArtworkProvider
     let motion: MotionProvider
@@ -58,6 +58,7 @@ final class HostService {
         self.configuration = configuration
         let store = try HostStore(directory: directory)
         self.store = store
+        catalog = Catalog(credentials: store.credentials)
         let logDatabase = try Database(
             url: directory.appendingPathComponent("database", isDirectory: true)
                 .appendingPathComponent("logs.sqlite"), role: .logs)
@@ -81,6 +82,8 @@ final class HostService {
         logger.log(.info, category: "host.lifecycle", action: "service.initialized", "Host service initialized")
         queue = QueueCoordinator(store: store, music: music, catalog: catalog)
         sing.onSessionChanged = { [weak self] in self?.queue.publish() }
+        queue.playbackDelayMs = { [weak self] in self?.sing.playbackDelayMs ?? 0 }
+        queue.onPlaybackInterrupted = { [weak self] in self?.sing.interruptPlayback() }
         queue.logger = logger
         queue.currentArtwork = { [weak self] occurrenceId in
             try await self?.currentMusicArtwork(occurrenceId)
@@ -93,6 +96,12 @@ final class HostService {
                 self.sing.invalidate()
             }
             published.sing = self.sing.session
+            // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
+            let delay = self.sing.playbackDelayMs
+            if delay > 0, var current = published.current {
+                current.positionMs = max(0, current.positionMs - delay)
+                published.current = current
+            }
             self.onSnapshot?(published)
             if !self.network.peers.isEmpty {
                 let unchanged = self.lastPublished.map { published.permitsHeartbeat(comparedTo: $0) } ?? false
@@ -159,8 +168,7 @@ final class HostService {
         if let observing { observationEnabled = observing }
         do {
             try store.beginEpoch()
-            reauthorizeKeychainItemsIfNeeded()
-            let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId)
+            let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId, credentials: store.credentials)
             self.identity = identity
             try await network.start(
                 identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
@@ -200,26 +208,6 @@ final class HostService {
                 try? await Task.sleep(
                     for: .milliseconds(playing ? 1_000 : (self.network.peers.isEmpty ? 10_000 : 2_000)))
             }
-        }
-    }
-
-    /// Items keep the access list of the signature that created them, so an older signature makes macOS ask
-    /// for every item after each update. Rebuild them under the running signature once. Bump the key when the
-    /// signing identity changes. A denied prompt leaves the items as they are and retries on the next launch.
-    private func reauthorizeKeychainItemsIfNeeded() {
-        let key = "keychainAccess.reauthorized.v1"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        do {
-            var accounts = ["catalog.public-token", "tls.\(store.hostId)"]
-            accounts += try store.database.query("SELECT credential_reference FROM paired_remotes").compactMap {
-                $0["credential_reference"]?.string
-            }
-            for account in accounts { try SecureStore.reauthorize(account) }
-            UserDefaults.standard.set(true, forKey: key)
-        } catch {
-            logger.log(
-                .warning, category: "security", action: "keychain.reauthorize.deferred",
-                "Keychain access will be updated after the next approval.")
         }
     }
 
@@ -321,7 +309,7 @@ final class HostService {
         let invitation = PairingInvitation(
             host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
             certificateDerBase64: identity.certificateDerBase64,
-            secret: try SecureStore.randomToken(), hostName: configuration.name,
+            secret: try CredentialFile.randomToken(), hostName: configuration.name,
             pin: String(format: "%04d", Int.random(in: 0...9_999))
         )
         self.invitation = invitation
@@ -334,7 +322,7 @@ final class HostService {
     private func bootstrapCertificate(for secret: Data) -> Data? {
         guard let invitation, let identity,
             monotonicMs() < invitationDeadline,
-            SecureStore.equal(String(decoding: secret, as: UTF8.self), invitation.secret)
+            CredentialFile.equal(String(decoding: secret, as: UTF8.self), invitation.secret)
         else { return nil }
         return Data(base64Encoded: identity.certificateDerBase64)
     }
@@ -428,7 +416,7 @@ final class HostService {
             monotonicMs() < invitationDeadline
         {
             let now = monotonicMs()
-            let secretValid = pair.secret.map { SecureStore.equal($0, invitation.secret) } ?? false
+            let secretValid = pair.secret.map { CredentialFile.equal($0, invitation.secret) } ?? false
             let pinValid =
                 !invitation.pin.isEmpty && invitationPinAttempts < 3 && now < invitationPinDeadline
                 && pair.pin == invitation.pin

@@ -2,9 +2,9 @@ import Foundation
 
 enum SingSeparatorFactory {
     static func defaultBackend() -> SingSeparator {
-        // MLX model loading can terminate the process inside the native runtime
-        // before Swift receives an error. Keep the shipped startup path entirely
-        // process-safe until the native failure is fixed and verified on macOS.
-        return StereoCenterSuppressor()
+        // Development builds run the MLX separator. Its model loads only when Sing is prepared,
+        // not at launch. Production keeps the stereo fallback, which is the only backend its
+        // capability check advertises, until MLX has release-build validation.
+        HostBuild.profile == "production" ? StereoCenterSuppressor() : MLXSingSeparator()
     }
 }

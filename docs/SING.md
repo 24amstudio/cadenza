@@ -62,13 +62,14 @@ entering a false ready state.
 The vocal stem is mixed back into the original signal according to the
 Remote's vocal percentage.
 
-The deterministic stereo-center separator is the shipped default. The MLX
-backend is currently quarantined from Host startup because a native model load
-can terminate the process before Swift receives an error; it must not be
-re-enabled until the failing macOS runtime path has a crash report and a
-successful release-build validation. The fallback is not presented as neural
-separation, but it keeps Sing available and lets Host report ordinary audio
-errors through its normal Swift recovery path.
+Development builds use the MLX backend, which loads its model when Sing is
+prepared rather than at launch. Production builds keep the deterministic
+stereo-center separator, because it is the only backend the production
+capability check advertises. The MLX backend has not yet passed a release-build
+validation, and no crash report for the earlier native model-load failure is
+recorded. The stereo fallback is not presented as neural separation; it keeps
+Sing available and lets Host report ordinary audio errors through its normal
+Swift recovery path.
 
 ## Backend and licensing policy
 

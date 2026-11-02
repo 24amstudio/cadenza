@@ -12,9 +12,14 @@ final class QueueCoordinator {
     var logger: HostLogger?
     // Stores Music's artwork for an occurrence and returns its local address, or nil when Music has none.
     var currentArtwork: ((String) async throws -> String?)?
+    /// Sing's output delay. Remote positions are shifted by it; Music's own clock drives every decision.
+    var playbackDelayMs: @MainActor () -> Int64 = { 0 }
+    var onPlaybackInterrupted: @MainActor () -> Void = {}
     private var loggedIssue: String?
     var connectedRemoteIds: () -> Set<String> = { [] }
     private(set) var nativeRows: [NativeQueueRow] = []
+    // Music's AutoPlay list, shown for information. It plays after the queue and is never changed by Cadenza.
+    private(set) var autoPlay: [NativeQueueRow] = []
     private var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
     private var lastStatus: MusicStatus?
@@ -99,8 +104,10 @@ final class QueueCoordinator {
         } else {
             do {
                 nativeRead = .success(try await readNativeQueue(deadline: deadline ?? monotonicMs() + 4_000))
+                autoPlay = (try? music.accessibility.autoPlayRows(deadline: monotonicMs() + 1_500)) ?? []
             } catch {
                 nativeRead = .failure(error)
+                autoPlay = []
             }
             queueVerified = (try? nativeRead.get()) != nil
         }
@@ -407,7 +414,7 @@ final class QueueCoordinator {
         guard !locked else {
             throw CadenzaError.failure("busy", "Music is processing another action. Retry using the latest queue.")
         }
-        guard let action = command.action, let deadline = command.expiresAtHostMs else {
+        guard var action = command.action, let deadline = command.expiresAtHostMs else {
             throw CadenzaError.failure("invalid_command", "Invalid control action.")
         }
         locked = true
@@ -493,6 +500,10 @@ final class QueueCoordinator {
             // The Remote's deadline gates dispatch. Music's queue edits take seconds, so a dispatched edit gets a Host
             // budget and finishes, instead of being cut off mid-edit. The Remote settles it by querying the command.
             let nativeDeadline = action.kind.hasPrefix("queue.") ? max(deadline, monotonicMs() + 6_000) : deadline
+            // Remote positions are on the delayed timeline. Music must seek to the position its audio is at.
+            if action.kind == "playback.seek", let position = action.positionMs {
+                action.positionMs = position + playbackDelayMs()
+            }
             if action.kind.hasPrefix("queue.") {
                 try await editQueue(
                     action, actor: actor, deadline: nativeDeadline, plannedEntry: plannedEntry,
@@ -501,6 +512,11 @@ final class QueueCoordinator {
                 try flushCredits()
                 lastObservation = nil
                 try await beforeEffect()
+                if ["playback.pause", "playback.stop", "playback.seek", "playback.skip", "playback.previous"]
+                    .contains(action.kind)
+                {
+                    onPlaybackInterrupted()
+                }
                 try await music.control(action, deadline: deadline)
             }
             try await readState(deadline: nativeDeadline, includeQueue: needsQueueRead)

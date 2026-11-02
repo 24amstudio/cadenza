@@ -22,10 +22,13 @@ import app.cadenza.remote.data.counter
 import app.cadenza.remote.data.deviceName
 import app.cadenza.remote.data.nullableString
 import app.cadenza.remote.data.objects
+import app.cadenza.remote.media.PlaybackKeepAlive
 import app.cadenza.remote.media.RemoteMediaActions
 import app.cadenza.remote.media.RemoteMediaSession
 import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
+import app.cadenza.remote.media.SongChangeNotifier
+import app.cadenza.remote.media.isSongChange
 import app.cadenza.remote.motion.MotionAssembly
 import app.cadenza.remote.motion.MotionStore
 import app.cadenza.remote.network.BleConnection
@@ -83,6 +86,10 @@ class RemoteModel(
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
 
     private val mediaSession = RemoteMediaSession(app, mediaActions::handle)
+
+    private val keepAlive = PlaybackKeepAlive(app)
+
+    private val songChangeNotifier = SongChangeNotifier(app)
 
     val mediaToken get() = mediaSession.token
 
@@ -230,6 +237,34 @@ class RemoteModel(
             state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
         }
         viewModelScope.launch {
+            var previous: String? = null
+            state
+                .map { it.connected to it.snapshot?.current?.occurrenceId }
+                .distinctUntilChanged()
+                .collect { (connected, occurrence) ->
+                    val before = previous
+                    previous = if (connected) occurrence else null
+                    if (!isSongChange(connected, before, occurrence)) return@collect
+                    val value = mutable.value
+                    val song = value.snapshot?.current?.song ?: return@collect
+                    if (value.songChangeNotifications) {
+                        songChangeNotifier.show(
+                            song,
+                            value.profile?.name.orEmpty(),
+                            song.artworkUrl?.let { value.artwork[it] },
+                        )
+                    }
+                }
+        }
+        viewModelScope.launch {
+            state
+                .map { it.connected && it.snapshot?.playing == true }
+                .distinctUntilChanged()
+                .collect { active ->
+                    if (!keepAlive.update(active)) reportLog("warning", "keepalive.refused", "active=$active")
+                }
+        }
+        viewModelScope.launch {
             for (ignored in frameSignal) {
                 while (true) {
                     val item = frameQueue.poll() ?: break
@@ -275,6 +310,7 @@ class RemoteModel(
                         transportMode = preferences.getString("transport_mode", "lan") ?: "lan",
                         recentSearches = SearchHistory.decode(preferences.getString("recent_searches", null)),
                         transportPreference = preferences.getString("transport_preference", "balanced") ?: "balanced",
+                        songChangeNotifications = preferences.getString("song_change_notifications", "true") != "false",
                         theme = theme,
                         favorites = library.songs,
                         unreadableFavorites = library.unreadable,
@@ -427,6 +463,11 @@ class RemoteModel(
         preferences.write("transport_preference" to preference)
         mutable.update { it.copy(transportPreference = preference) }
         if (mutable.value.connected) publishStatus()
+    }
+
+    fun setSongChangeNotifications(enabled: Boolean) {
+        mutable.update { it.copy(songChangeNotifications = enabled) }
+        viewModelScope.launch(ioDispatcher) { preferences.write("song_change_notifications" to enabled.toString()) }
     }
 
     fun disconnect() {
@@ -659,6 +700,7 @@ class RemoteModel(
 
     override fun onCleared() {
         SessionNotification(app).clear()
+        keepAlive.update(false)
         app.mediaAction = null
         mediaSession.release()
         networkMonitor.close()

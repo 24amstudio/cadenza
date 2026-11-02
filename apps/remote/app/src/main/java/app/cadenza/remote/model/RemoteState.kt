@@ -63,6 +63,7 @@ data class RemoteState(
     val effectiveTransport: EffectiveTransportDecision? = null,
     val transportPaths: List<TransportPathStatus> = emptyList(),
     val transportPreference: String = "balanced",
+    val songChangeNotifications: Boolean = true,
     val transportMode: String = "lan",
     val connectionIssue: String? = null,
     val snapshot: HostSnapshot? = null,

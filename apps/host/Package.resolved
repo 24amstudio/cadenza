@@ -1,0 +1,58 @@
+{
+  "originHash" : "389c186d110dd811d8fc5b6188100b48e5189e4c10b117fb5f9404bfc1f4f2cb",
+  "pins" : [
+    {
+      "identity" : "mel-roformer-mlx-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/xocialize/mel-roformer-mlx-swift.git",
+      "state" : {
+        "revision" : "22162f8fd5cd8cc09abc47a87c1ecddf3baf5ee3"
+      }
+    },
+    {
+      "identity" : "mlx-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ml-explore/mlx-swift",
+      "state" : {
+        "revision" : "7ede4fd6d05f63305c1c0ebf4f8c1909a637c574",
+        "version" : "0.33.0"
+      }
+    },
+    {
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections.git",
+      "state" : {
+        "revision" : "f96b909e1a9e469620bc5037c1e24e00153f376f",
+        "version" : "1.7.5"
+      }
+    },
+    {
+      "identity" : "swift-jinja",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-jinja.git",
+      "state" : {
+        "revision" : "1e4d0dc69f7ec1277131fb3853808229c5991825",
+        "version" : "2.5.2"
+      }
+    },
+    {
+      "identity" : "swift-numerics",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-numerics",
+      "state" : {
+        "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
+        "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "swift-transformers",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/huggingface/swift-transformers.git",
+      "state" : {
+        "revision" : "573e5c9036c2f136b3a8a071da8e8907322403d0"
+      }
+    }
+  ],
+  "version" : 3
+}

@@ -86,6 +86,11 @@ fun SongActions(
     val mayInterrupt =
         current == null || current.requestedBy == state.profile?.remoteId ||
             (state.snapshot.allowCrossRemoteEdits && current.requestedBy != null)
+    // Requests stay disabled until the Host reconciles Music's queue, so the sheet says why instead of greying out silently.
+    val queueIssue =
+        state.snapshot
+            ?.takeIf { state.connected && !it.synchronized }
+            ?.let { it.issue ?: "Review Music's queue in Cadenza Host to change requests." }
 
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val spacious = maxWidth >= 500.dp
@@ -106,6 +111,13 @@ fun SongActions(
                     Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    queueIssue?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ActionButton(
                             "Add to queue",

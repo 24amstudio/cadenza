@@ -260,7 +260,8 @@ final class MusicAccessibility {
     func queuePanelOpen() -> Bool {
         beginRead(deadline: monotonicMs() + 500)
         guard (try? root()) != nil else { return false }
-        return playingNextMenuState()?.open ?? false
+        // Full Now Playing shows its queue in place and has no View menu item to open, so a visible queue counts as open.
+        return !playQueueTables().isEmpty || (playingNextMenuState()?.open ?? false)
     }
 
     /// Opens the Playing Next list through Music's View menu. A list that is already visible is left alone. The item
@@ -321,12 +322,30 @@ final class MusicAccessibility {
         return tables
     }
 
+    /// Full Now Playing nests its queue in a group described as "play queue", which the split-view paths never reach.
+    /// The search is bounded because Music's window is large.
+    private func playQueueTables() -> [AXUIElement] {
+        guard let application = try? root() else { return [] }
+        var tables: [AXUIElement] = []
+        for window in children(application) where string(window, kAXRoleAttribute) == kAXWindowRole as String {
+            let groups = shallow(
+                window, maxDepth: 8, maxNodes: 600, skipping: [kAXRowRole, kAXCellRole, kAXMenuBarRole, kAXMenuRole]
+            ) { string($0, kAXDescriptionAttribute) == "play queue" }
+            for group in groups {
+                for scroll in children(group) where string(scroll, kAXRoleAttribute) == kAXScrollAreaRole as String {
+                    tables += children(scroll).filter { string($0, kAXRoleAttribute) == kAXTableRole as String }
+                }
+            }
+        }
+        return tables
+    }
+
     private func queueTable() throws -> AXUIElement {
         if let cachedQueueTable, string(cachedQueueTable, kAXRoleAttribute) == kAXTableRole as String {
             return cachedQueueTable
         }
         cachedQueueTable = nil
-        let tables = try pathTables()
+        let tables = try pathTables() + playQueueTables()
         // The Now Playing list is the table whose visible rows show its own sections. The library list never does.
         // With the menu open, the right-most table is the fallback, because the Now Playing list sits there.
         let panelShown = playingNextMenuItem().map { string($0, kAXTitleAttribute).hasPrefix("Hide") } ?? false
@@ -479,13 +498,7 @@ final class MusicAccessibility {
         var result: [NativeQueueRow] = []
         for row in all[start..<end] {
             try requireReadTime()
-            let text = rowTexts(row).map(displayText)
-            guard let title = text.first else { continue }
-            // The second text reads "Artist — Album" in the Up Next list, so only the artist is kept.
-            let artist = text.dropFirst().first?.components(separatedBy: " — ").first ?? ""
-            result.append(
-                NativeQueueRow(
-                    token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: artist, element: row))
+            if let native = nativeRow(row) { result.append(native) }
         }
         let isEmpty = result.isEmpty && start == end && end < all.count
         emptyQueueMark = isEmpty ? (table, all.count, end, monotonicMs()) : nil
@@ -496,6 +509,32 @@ final class MusicAccessibility {
         shallow(row, maxDepth: 5, maxNodes: 80) { string($0, kAXRoleAttribute) == kAXStaticTextRole }
             .map { string($0, kAXValueAttribute) }
             .filter { !$0.isEmpty }
+    }
+
+    private func nativeRow(_ row: AXUIElement) -> NativeQueueRow? {
+        let text = rowTexts(row).map(displayText)
+        guard let title = text.first else { return nil }
+        // The second text reads "Artist — Album" in the Up Next list, so only the artist is kept.
+        let artist = text.dropFirst().first?.components(separatedBy: " — ").first ?? ""
+        return NativeQueueRow(token: "\(currentPid ?? 0)-\(CFHash(row))", title: title, artist: artist, element: row)
+    }
+
+    /// AutoPlay is the list Music plays after the queue. It is read for display only, and Cadenza never changes it.
+    func autoPlayRows(deadline: Int64? = nil) throws -> [NativeQueueRow] {
+        beginRead(deadline: deadline)
+        let all = tableRows(try queueTable())
+        // AutoPlay is the last section, so its heading is found from the end of the table.
+        guard
+            let heading = stride(from: all.count - 1, through: 0, by: -1).first(where: { index in
+                isAutoPlayText(key(firstText(all[index])))
+            })
+        else { return [] }
+        var result: [NativeQueueRow] = []
+        for row in all[(heading + 1)...] {
+            try requireReadTime()
+            if let native = nativeRow(row) { result.append(native) }
+        }
+        return result
     }
 
     /// The track table that contains the requested song. Tables with a selected row come first, because a

@@ -57,17 +57,18 @@ internal fun SingControls(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("Sing mode", style = MaterialTheme.typography.titleMedium)
-            Text(
-                when (sing.status) {
-                    "active" -> "Vocals and instrumental are mixed on Cadenza Host."
-                    "preparing" -> "Preparing local audio processing. First use may download about 456 MB."
-                    "failed" -> "Sing could not start. Try again."
-                    "unavailable" -> "Start Sing to prepare local audio processing.\nmacOS may ask for audio capture access."
-                    else -> "Lower the vocal level for karaoke."
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            // Only progress and failure need a line; the active and idle states are already shown by the controls.
+            when (sing.status) {
+                "preparing" -> "Preparing…"
+                "failed" -> "Could not start"
+                else -> null
+            }?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
         Button(
             onClick = {

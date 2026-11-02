@@ -6,6 +6,11 @@ actor Catalog {
     private var tokenExpiry: TimeInterval = 0
     private var songs: [SongIdentity: Song] = [:]
     private let http = AppleHTTP()
+    private let credentials: CredentialFile
+
+    init(credentials: CredentialFile) {
+        self.credentials = credentials
+    }
 
     func configure(storefront: String) {
         if storefront.range(of: "^[a-z]{2}$", options: .regularExpression) != nil {
@@ -102,7 +107,7 @@ actor Catalog {
         if response.statusCode == 401 && retry {
             token = nil
             tokenExpiry = 0
-            try? SecureStore.delete("catalog.public-token")
+            try? credentials.delete("catalog.public-token")
             return try await self.request(path: path, query: query, retry: false)
         }
         guard response.statusCode == 200 else {
@@ -114,7 +119,7 @@ actor Catalog {
 
     private func developerToken() async throws -> String {
         if let token, tokenExpiry > Date().timeIntervalSince1970 + 300 { return token }
-        if let cached = try SecureStore.read("catalog.public-token"),
+        if let cached = try credentials.read("catalog.public-token"),
             let value = String(data: cached, encoding: .utf8),
             let expiry = expiry(value), expiry > Date().timeIntervalSince1970 + 300
         {
@@ -140,7 +145,7 @@ actor Catalog {
             {
                 token = value
                 tokenExpiry = expiry
-                try SecureStore.write("catalog.public-token", Data(value.utf8))
+                try credentials.write("catalog.public-token", Data(value.utf8))
                 return value
             }
         }

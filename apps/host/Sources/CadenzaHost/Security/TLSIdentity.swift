@@ -7,14 +7,14 @@ struct TLSIdentity {
     let fingerprint: String
     let certificateDerBase64: String
 
-    @MainActor static func loadOrCreate(hostId: String) async throws -> TLSIdentity {
+    @MainActor static func loadOrCreate(hostId: String, credentials: CredentialFile) async throws -> TLSIdentity {
         let account = "tls.\(hostId)"
         let record: IdentityRecord
-        if let data = try SecureStore.read(account) {
+        if let data = try credentials.read(account) {
             record = try JSONDecoder().decode(IdentityRecord.self, from: data)
         } else {
             record = try await generate(hostId: hostId)
-            try SecureStore.write(account, JSONEncoder().encode(record))
+            try credentials.write(account, JSONEncoder().encode(record))
         }
         var imported: CFArray?
         let options = [kSecImportExportPassphrase: record.password] as CFDictionary
@@ -23,7 +23,7 @@ struct TLSIdentity {
             let value = items.first?[kSecImportItemIdentity as String]
         else {
             throw CadenzaError.failure(
-                "secure_storage", "Cannot load Host's TLS identity. Restore Keychain access and retry.")
+                "secure_storage", "Cannot load Host's TLS identity from its credential file. Restore it and retry.")
         }
         // SecPKCS12Import guarantees kSecImportItemIdentity has SecIdentity's CF type.
         let identity = value as! SecIdentity
@@ -59,7 +59,7 @@ struct TLSIdentity {
                 "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
                 "-keyout", key, "-out", certificate, "-subj", "/CN=Cadenza-\(hostId)",
             ], timeout: 15)
-        let password = try SecureStore.randomToken()
+        let password = try CredentialFile.randomToken()
         var environment = ProcessInfo.processInfo.environment
         environment["CADENZA_IDENTITY_PASSWORD"] = password
         _ = try await Subprocess.run(

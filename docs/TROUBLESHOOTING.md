@@ -12,7 +12,7 @@ Cadenza does not require SSH. SSH is used only for development access to the Hos
 
 ## Host identity changed
 
-Do not replace the certificate check with an accept-all handler. Verify the Host in person and generate a new pairing invitation if its Keychain identity was intentionally replaced.
+Do not replace the certificate check with an accept-all handler. Verify the Host in person and generate a new pairing invitation if its TLS identity was intentionally replaced.
 
 Normal app updates preserve the identity outside the app bundle. Revoking a Remote affects only that pairing.
 
@@ -20,7 +20,7 @@ Normal app updates preserve the identity outside the app bundle. Revoking a Remo
 
 Open Music and check Host → Settings → Music permissions. Allow Automation and Accessibility in macOS privacy settings.
 
-An ad-hoc app update may cause macOS to ask again because macOS authorizes Keychain access by the app's code-signing identity. Production Host archives must use the same stable Developer ID signing identity for every update; changing that identity cannot be fixed by pressing “Always Allow” in the app. A logged-out, sleeping, locked, minimized, or inaccessible Music session may prevent native UI actions.
+Host credentials are kept in an owner-only file, not the Keychain, so app updates do not trigger Keychain prompts. Builds before this change kept them in the Keychain. This build reads only its owner-only credential file, so updates do not prompt. A logged-out, sleeping, locked, minimized, or inaccessible Music session may prevent native UI actions.
 
 ## Catalog search fails
 

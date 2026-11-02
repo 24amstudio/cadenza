@@ -128,7 +128,9 @@ final class HostModel {
             } ?? [], uniquingKeysWith: { _, latest in latest })
         do {
             let rows = try service?.store.remotes() ?? []
+            // Unpaired Remotes stay in the database so past requests keep their owner, but they leave the list.
             remotes = rows.compactMap { row in
+                guard row["revoked_at_ms"]?.integer == nil else { return nil }
                 guard let id = row["remote_id"]?.string, let name = row["display_name"]?.string else {
                     return nil
                 }

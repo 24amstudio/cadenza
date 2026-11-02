@@ -18,7 +18,12 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
     var modelRevision: String { "\(Self.modelRepository)@\(Self.modelCommit)" }
 
     private let windowFrames = 44_100
-    private let stepFrames = 22_050
+    // Non-overlapping windows: each window only has to finish within its own duration.
+    // Overlap processed every second of audio twice, which the live budget cannot absorb.
+    private let stepFrames = 44_100
+    private let delayLock = NSLock()
+    // Smoothed time to process one streaming window. Written on the DSP queue and read on the MainActor.
+    private var smoothedWindowMs: Double?
     private var model: MelRoFormer?
     private var left: [Float] = []
     private var right: [Float] = []
@@ -198,9 +203,11 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         while left.count >= sourceWindow {
             let sourceLeft = Array(left.prefix(sourceWindow))
             let sourceRight = Array(right.prefix(sourceWindow))
+            let started = CFAbsoluteTimeGetCurrent()
             let vocals = try infer(
                 left: resample(sourceLeft, to: windowFrames),
                 right: resample(sourceRight, to: windowFrames))
+            recordWindowTime(since: started)
             let sourceVocalsLeft = resample(vocals.left, to: sourceWindow)
             let sourceVocalsRight = resample(vocals.right, to: sourceWindow)
             let outputLeft = mix(
@@ -271,6 +278,24 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
                 left: finalLeft, right: finalRight, format: format, singFormat: singFormat))
         resetStream()
         return output
+    }
+
+    /// A one-second window plus the time to process it. Output lags the Music timeline by this amount.
+    var playbackDelayMs: Int64 {
+        delayLock.lock()
+        defer { delayLock.unlock() }
+        return 1_000 + Int64((smoothedWindowMs ?? 1_000).rounded())
+    }
+
+    func discardStreamingState() {
+        resetStream()
+    }
+
+    private func recordWindowTime(since started: CFAbsoluteTime) {
+        let elapsedMs = (CFAbsoluteTimeGetCurrent() - started) * 1_000
+        delayLock.lock()
+        defer { delayLock.unlock() }
+        smoothedWindowMs = smoothedWindowMs.map { $0 * 0.8 + elapsedMs * 0.2 } ?? elapsedMs
     }
 
     private func infer(left: [Float], right: [Float]) throws -> (left: [Float], right: [Float]) {

@@ -11,6 +11,9 @@ final class SingAudioPipeline: @unchecked Sendable {
     private let maximumPending = 3
     private var accepting = false
     private var pending = 0
+    // Bumped by flush(). Output from an older generation is dropped under `lock`, so
+    // no stale audio can reach the output after flush() returns.
+    private var generation = 0
     private var failureReported = false
     private let onFailure: @Sendable (String) -> Void
 
@@ -42,6 +45,7 @@ final class SingAudioPipeline: @unchecked Sendable {
             return
         }
         pending += 1
+        let submittedGeneration = generation
         lock.unlock()
         worker.async { [weak self] in
             defer { buffer.release() }
@@ -50,16 +54,36 @@ final class SingAudioPipeline: @unchecked Sendable {
             do {
                 if let streaming = self.separator as? SingStreamingSeparator {
                     for processed in try streaming.processStreaming(buffer, vocalPercent: self.mixState.get()) {
-                        self.output.enqueue(processed)
+                        self.enqueue(processed, submittedGeneration: submittedGeneration)
                     }
                 } else {
                     let processed = try self.separator.process(buffer, vocalPercent: self.mixState.get())
-                    self.output.enqueue(processed)
+                    self.enqueue(processed, submittedGeneration: submittedGeneration)
                 }
             } catch {
                 self.fail(error.localizedDescription)
             }
         }
+    }
+
+    /// Discards queued output and buffered input. The separator is reset on the DSP queue after
+    /// work already submitted, so no earlier block can refill it after the reset.
+    func flush() {
+        lock.lock()
+        generation += 1
+        output.flush()
+        lock.unlock()
+        worker.async { [weak self] in
+            guard let self, let streaming = self.separator as? SingStreamingSeparator else { return }
+            streaming.discardStreamingState()
+        }
+    }
+
+    private func enqueue(_ buffer: SingAudioBuffer, submittedGeneration: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard submittedGeneration == generation else { return }
+        output.enqueue(buffer)
     }
 
     func stop() {

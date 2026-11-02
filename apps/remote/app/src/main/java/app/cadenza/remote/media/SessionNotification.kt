@@ -124,8 +124,9 @@ class SessionNotification(
         val notification = builder.build()
         lastNotification = notification
         manager.notify(ID, notification)
-        if (Build.VERSION.SDK_INT >= 36 && status.pinned && status.connected && status.playing &&
-            manager.canPostPromotedNotifications()
+        // setRequestPromotedOngoing is API 36.1 (Android 16 QPR1). On API 36.0 it does not exist, so it must not run.
+        if (Build.VERSION.SDK_INT >= 36 && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1 &&
+            status.pinned && status.connected && status.playing && manager.canPostPromotedNotifications()
         ) {
             val live =
                 Notification

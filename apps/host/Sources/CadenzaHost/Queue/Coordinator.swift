@@ -425,7 +425,12 @@ final class QueueCoordinator {
             || action.kind == "playback.previous"
         // Queue requests are checked against the cached queue revision, because reading Music's queue before dispatch
         // would take longer than the Remote's deadline.
-        try await readState(deadline: deadline, includeQueue: needsQueueRead && !action.kind.hasPrefix("queue."))
+        // A queue command can arrive before the first explicit queue read completes. Refresh that baseline here so
+        // Play Now does not stay blocked behind a stale unsynchronized snapshot; external changes still leave the
+        // coordinator unsynchronized and are rejected below.
+        try await readState(
+            deadline: deadline,
+            includeQueue: needsQueueRead && (!action.kind.hasPrefix("queue.") || !synchronized))
         let target = action.entryId ?? current?.entryId
         if let occurrence = action.occurrenceId, occurrence != current?.occurrenceId {
             throw CadenzaError.failure("stale_occurrence", "The current song changed.")
@@ -721,6 +726,9 @@ final class QueueCoordinator {
         try await music.prepare(song) { [weak self] in self?.preparationToken == token }
         // Queue controls need the queue read once, so the Remote can enable them as soon as the song is prepared.
         try? await readState(deadline: monotonicMs() + 4_000, includeQueue: true)
+        // readState updates the coordinator's baseline but does not broadcast it. Publish here so the Remote receives
+        // the synchronized queue revision together with the song.ready response.
+        publish()
     }
 
     func flushCredits() throws {

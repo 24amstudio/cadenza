@@ -172,6 +172,7 @@ fun CadenzaApp(
                                 restoreLyricsFocus,
                                 onLyricsFocusRestored = { restoreLyricsFocus = false },
                                 onOpenLyrics = { lyricsMode = true },
+                                onClose = { nowPlayingOpen = false },
                             )
                         } else {
                             Column(Modifier.fillMaxSize()) {

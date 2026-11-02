@@ -6,20 +6,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderState
@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
@@ -56,6 +57,7 @@ fun PlayingScreen(
     restoreLyricsFocus: Boolean,
     onLyricsFocusRestored: () -> Unit,
     onOpenLyrics: () -> Unit,
+    onClose: () -> Unit = {},
 ) {
     KeepScreenAwake(state.snapshot?.playing == true && state.snapshot.current != null)
     val lyricsFocusRequester = remember { FocusRequester() }
@@ -77,14 +79,9 @@ fun PlayingScreen(
         } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.colorScheme.surface))
     val lyrics = state.lyrics?.takeIf { it.occurrenceId == current?.occurrenceId && it.level > 0 }
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
-    var showLyrics by rememberSaveable { mutableStateOf(lyricsMayBeAvailable && wide) }
     var showQueue by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(current?.occurrenceId) {
-        showLyrics = false
         showQueue = false
-    }
-    LaunchedEffect(current?.occurrenceId, lyrics != null) {
-        if (lyrics != null && wide) showLyrics = true
     }
     LaunchedEffect(current?.occurrenceId, state.connected) {
         if (current != null && state.connected && lyrics == null && !state.lyricsLoading) {
@@ -102,72 +99,27 @@ fun PlayingScreen(
             PlayerHeader(
                 state,
                 lyricsMayBeAvailable,
-                showLyrics,
                 showQueue,
                 compact = !tablet,
                 lyricsFocusRequester = lyricsFocusRequester,
                 onOpenLyrics = onOpenLyrics,
-                onLyricsChanged = { showLyrics = it },
+                onClose = onClose,
                 onQueueChanged = { showQueue = it },
             )
             if (current == null) {
                 EmptyPlayerSurface()
-            } else if (showLyrics && tablet) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 520.dp, max = 640.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
+            } else {
+                if (tablet) {
                     Surface(
-                        Modifier.weight(0.44f),
+                        Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.extraLarge,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.88f),
                         tonalElevation = 2.dp,
                     ) {
                         PlayerPanel(model, state, artwork, currentPosition, true)
                     }
-                    Surface(
-                        Modifier.weight(0.56f).fillMaxSize(),
-                        shape = MaterialTheme.shapes.extraLarge,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.54f),
-                        tonalElevation = 1.dp,
-                    ) {
-                        LyricsContent(
-                            model,
-                            state,
-                            lyrics,
-                            currentPosition,
-                            !state.connected || model.isStale(),
-                            Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
-                        )
-                    }
-                }
-            } else {
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.88f),
-                    tonalElevation = 2.dp,
-                ) {
-                    PlayerPanel(model, state, artwork, currentPosition, tablet)
-                }
-                if (showLyrics) {
-                    if (!tablet) {
-                        Surface(
-                            Modifier.fillMaxWidth().heightIn(min = 300.dp, max = 520.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.54f),
-                        ) {
-                            LyricsContent(
-                                model = model,
-                                state = state,
-                                document = lyrics,
-                                currentPosition = currentPosition,
-                                stale = !state.connected || model.isStale(),
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
-                            )
-                        }
-                    }
+                } else {
+                    PortraitPlayerPanel(model, state, artwork, currentPosition)
                 }
                 if (showQueue) QueuePreview(state)
                 state.nextRecommendation?.let { recommendation ->
@@ -200,30 +152,69 @@ fun PlayingScreen(
 private fun PlayerHeader(
     state: RemoteState,
     lyricsMayBeAvailable: Boolean,
-    showLyrics: Boolean,
     showQueue: Boolean,
     compact: Boolean,
     lyricsFocusRequester: FocusRequester,
     onOpenLyrics: () -> Unit,
-    onLyricsChanged: (Boolean) -> Unit,
+    onClose: () -> Unit,
     onQueueChanged: (Boolean) -> Unit,
 ) {
+    if (compact) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                    Icon(cadenzaVector(CadenzaIcon.DOWN), contentDescription = "Close now playing")
+                }
+                Column(
+                    Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text("Now playing", style = MaterialTheme.typography.titleLarge)
+                    ConnectionStatus(state)
+                }
+                Spacer(Modifier.size(48.dp))
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (lyricsMayBeAvailable) {
+                    FilterChip(
+                        selected = false,
+                        onClick = onOpenLyrics,
+                        label = { Text("Lyrics") },
+                        leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
+                        modifier = Modifier.focusRequester(lyricsFocusRequester),
+                    )
+                }
+                FilterChip(
+                    selected = showQueue,
+                    onClick = { onQueueChanged(!showQueue) },
+                    label = { Text("Up next") },
+                    modifier = Modifier.semantics { contentDescription = "Queue view" },
+                )
+            }
+        }
+        return
+    }
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+            Icon(cadenzaVector(CadenzaIcon.DOWN), contentDescription = "Close now playing")
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(if (state.snapshot?.current == null) "Ready to play" else "Now playing", style = MaterialTheme.typography.headlineMedium)
             ConnectionStatus(state)
         }
         if (lyricsMayBeAvailable) {
             FilterChip(
-                selected = showLyrics,
-                onClick = {
-                    onLyricsChanged(!showLyrics)
-                    if (compact) onOpenLyrics()
-                },
+                selected = false,
+                onClick = onOpenLyrics,
                 label = { Text("Lyrics") },
                 leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
                 modifier = Modifier.focusRequester(lyricsFocusRequester),
@@ -301,6 +292,104 @@ private fun EmptyPlayerSurface() {
                 Text("Search for a song and add it to the Host queue.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+@Composable
+private fun PortraitPlayerPanel(
+    model: RemoteModel,
+    state: RemoteState,
+    artwork: ArtworkData?,
+    currentPosition: Long,
+) {
+    val snapshot = state.snapshot ?: return
+    val current = snapshot.current ?: return
+    val owner = current.requestedBy == state.profile?.remoteId
+    val observationsCurrent = !model.isStale()
+    val mixing = snapshot.mixing.takeIf { observationsCurrent }
+    var volume by remember { mutableFloatStateOf(-1f) }
+    val volumeSlider = remember { SliderState(trackRange = 0f..100f) }
+    volumeSlider.value = if (volume >= 0) volume else snapshot.volume.toFloat()
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        MotionArtwork(
+            video = state.motion?.takeIf { it.occurrenceId == current.occurrenceId }?.file,
+            playing = snapshot.playing,
+            modifier =
+                Modifier
+                    .widthIn(max = 420.dp)
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .align(Alignment.CenterHorizontally),
+        ) {
+            Artwork(artwork, Modifier.fillMaxSize())
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(current.song.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2)
+                Text(current.song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                current.song.album.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (current.requesterName.isNotBlank()) {
+                    Text(
+                        "Requested by " + if (owner) "you" else current.requesterName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            FavoriteIconButton(model, state, current.song)
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                qualityLabel(snapshot.quality, observationsCurrent),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                when (mixing) {
+                    true -> "AutoMix"
+                    false -> "AutoMix off"
+                    null -> "AutoMix status waiting for Cadenza Host"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = if (mixing == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        PlaybackTimeline(model, state, currentPosition)
+        PlaybackTransport(model, state, compact = false)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Music volume", style = MaterialTheme.typography.labelLarge)
+            Slider(
+                state = volumeSlider,
+                onValueChange = { volume = it },
+                modifier = Modifier.semantics { contentDescription = "Music volume" },
+                onValueChangeFinished = {
+                    val target = volume.coerceAtLeast(0f).toInt()
+                    volume = -1f
+                    model.command(JSONObject().put("kind", "playback.volume").put("percent", target), "playback.volume")
+                },
+                enabled = state.connected,
+            )
+        }
+        SingControls(model, state, current)
     }
 }
 

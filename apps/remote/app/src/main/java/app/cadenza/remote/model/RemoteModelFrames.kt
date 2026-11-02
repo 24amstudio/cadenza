@@ -87,7 +87,9 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
             if (frame.nullableString("request_id") == preparationId) {
                 preparationTimeout?.cancel()
                 val song = frame.getJSONObject("song")
-                mutable.update { it.copy(preparing = false, preparedSong = song.getString("source") + ":" + song.getString("id")) }
+                val prepared = preparingIdentity ?: (song.getString("source") + ":" + song.getString("id"))
+                preparingIdentity = null
+                mutable.update { it.copy(preparing = false, preparedSong = prepared) }
             }
         "lyrics" -> {
             val document = Wire.lyrics(frame.getJSONObject("lyrics"))

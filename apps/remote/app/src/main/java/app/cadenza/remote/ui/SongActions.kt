@@ -132,6 +132,7 @@ fun SongActions(
                                         current?.occurrenceId ?: JSONObject.NULL,
                                     ),
                                     key,
+                                    song,
                                 )
                             },
                             enabled = canQueue && mayInterrupt,

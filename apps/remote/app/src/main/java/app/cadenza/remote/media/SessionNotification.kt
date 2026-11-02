@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.media.session.MediaSession
 import android.os.Build
@@ -25,13 +26,14 @@ data class SessionStatus(
     val pinned: Boolean,
     val occurrenceId: String = "",
     val canInterrupt: Boolean = false,
+    val artworkBytes: ByteArray? = null,
 ) {
     companion object {
         fun from(state: RemoteState): SessionStatus {
             val current = state.snapshot?.current
             val playing = state.snapshot?.playing == true
             return SessionStatus(
-                state.sessionActive || (state.connected && playing && current != null),
+                state.sessionActive || (current != null && (state.connected || playing)),
                 state.connected,
                 state.profile?.name.orEmpty(),
                 current?.song?.title.orEmpty(),
@@ -42,6 +44,7 @@ data class SessionStatus(
                 current?.requestedBy?.let { requester ->
                     requester == state.profile?.remoteId || state.snapshot.allowCrossRemoteEdits
                 } ?: true,
+                current?.song?.artworkUrl?.let { state.artwork[it] },
             )
         }
     }
@@ -89,9 +92,14 @@ class SessionNotification(
                 .setContentIntent(open)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setCategory(Notification.CATEGORY_STATUS)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setLocalOnly(true)
+                .apply {
+                    status.artworkBytes
+                        ?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+                        ?.let(::setLargeIcon)
+                }
         if (mediaToken != null && status.title.isNotEmpty()) {
             val style = Notification.MediaStyle().setMediaSession(mediaToken)
             if (status.canInterrupt) {

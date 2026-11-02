@@ -162,6 +162,14 @@ fun HomeScreen(
                         }
                     }
                     when {
+                        selected == "playing" && wide ->
+                            HomePlaybackPanel(
+                                model,
+                                state,
+                                restoreLyricsFocus,
+                                onLyricsFocusRestored,
+                                onOpenLyrics,
+                            )
                         selected == "playing" ->
                             PlayingScreen(
                                 model,
@@ -170,6 +178,7 @@ fun HomeScreen(
                                 restoreLyricsFocus,
                                 onLyricsFocusRestored,
                                 onOpenLyrics,
+                                onClose = { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.List) } },
                             )
                         selectedSong != null -> SongActions(model, state, selectedSong, Modifier.fillMaxSize())
                         else -> EmptySelectionCard(Modifier.fillMaxSize())

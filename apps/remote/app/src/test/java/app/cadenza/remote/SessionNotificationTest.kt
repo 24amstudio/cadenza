@@ -3,8 +3,11 @@ package app.cadenza.remote
 import android.app.Notification
 import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
+import app.cadenza.remote.data.CurrentPlayback
+import app.cadenza.remote.data.Song
 import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
+import app.cadenza.remote.model.RemoteState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,6 +19,25 @@ import org.robolectric.annotation.Config
 @Config(sdk = [31])
 class SessionNotificationTest {
     @Test
+    fun aPausedCurrentSongKeepsTheLockScreenSessionActive() {
+        val current =
+            CurrentPlayback(
+                occurrenceId = "occurrence",
+                entryId = "entry",
+                requestedBy = null,
+                requesterName = "",
+                song = Song("catalog", "song", "Title", "Artist"),
+                positionMs = 0,
+                sampledAtHostMs = 0,
+            )
+        assertTrue(
+            SessionStatus
+                .from(RemoteState(connected = true, snapshot = testSnapshot(playing = false, current = current)))
+                .active,
+        )
+    }
+
+    @Test
     fun olderAndroidGetsAnOngoingSessionAndEndingItRemovesTheNotification() {
         val app = ApplicationProvider.getApplicationContext<CadenzaApplication>()
         val manager = app.getSystemService(NotificationManager::class.java)
@@ -25,6 +47,7 @@ class SessionNotificationTest {
         val notification = manager.activeNotifications.single { it.id == SessionNotification.ID }.notification
         assertEquals("Test song", notification.extras.getString(Notification.EXTRA_TITLE))
         assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertEquals(Notification.VISIBILITY_PUBLIC, notification.visibility)
         assertTrue(
             notification.extras
                 .getString(Notification.EXTRA_TEXT)

@@ -140,6 +140,11 @@ class RemoteModel(
 
     internal var preparationId: String? = null
 
+    // Host may resolve a catalog identity to a concrete Music row before replying. Keep the
+    // identity selected on this Remote so the action buttons do not remain disabled when that
+    // resolved row carries a different metadata identity.
+    internal var preparingIdentity: String? = null
+
     internal var searchTimeout: Job? = null
 
     internal var preparationTimeout: Job? = null
@@ -435,6 +440,7 @@ class RemoteModel(
         clock.reset()
         searchTimeout?.cancel()
         preparationTimeout?.cancel()
+        preparingIdentity = null
         lyricsTimeout?.cancel()
         lyricRequestId = null
         lyricStartedAtElapsedMs = null
@@ -528,6 +534,7 @@ class RemoteModel(
     fun prepare(song: Song) {
         reportLog("info", "prepare.requested", "song=${song.source}:${song.id}")
         preparationId = id()
+        preparingIdentity = song.source + ":" + song.id
         val requestId = preparationId
         preparationTimeout?.cancel()
         mutable.update { it.copy(preparing = true, preparedSong = null) }
@@ -552,6 +559,7 @@ class RemoteModel(
             viewModelScope.launch {
                 delay(15_000)
                 if (requestId == preparationId && mutable.value.preparing) {
+                    preparingIdentity = null
                     mutable.update {
                         it.copy(preparing = false, notice = Notice("Music did not prepare this song. Try again."))
                     }

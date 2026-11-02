@@ -74,6 +74,7 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
     }
     if (request != null && request == preparationId) {
         preparationTimeout?.cancel()
+        preparingIdentity = null
         mutable.update { it.copy(preparing = false) }
     }
     if (request != null && request == lyricRequestId) {

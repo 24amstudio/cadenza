@@ -81,24 +81,28 @@ internal fun RemoteModel.applyArtworkFrame(frame: JSONObject) {
     val startedAt = SystemClock.elapsedRealtime()
     val url = frame.nullableString("artwork_url")
     val encoded = frame.nullableString("artwork_data_base64")
-    if (url == null || encoded == null || encoded.length > 700_000) return
-    runCatching { Base64.decode(encoded, Base64.DEFAULT) }
-        .getOrNull()
-        ?.takeIf { it.size <= 524_288 }
-        ?.let { bytes ->
-            releaseArtwork(url)
-            mutableState.update { current ->
-                val next = LinkedHashMap(current.artwork)
-                if (!next.containsKey(url) && next.size >= 8) next.remove(next.keys.first())
-                next[url] = bytes
-                current.copy(artwork = next)
-            }
-            recordComponentDuration(
-                "artwork",
-                (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0),
-                "bytes=${bytes.size}",
-            )
-        }
+    if (url == null) return
+    val bytes =
+        encoded
+            ?.takeIf { it.length <= 700_000 }
+            ?.let { value -> runCatching { Base64.decode(value, Base64.DEFAULT) }.getOrNull() }
+            ?.takeIf { it.size <= 524_288 }
+    if (bytes == null) {
+        releaseArtwork(url)
+        return
+    }
+    releaseArtwork(url)
+    mutableState.update { current ->
+        val next = LinkedHashMap(current.artwork)
+        if (!next.containsKey(url) && next.size >= 8) next.remove(next.keys.first())
+        next[url] = bytes
+        current.copy(artwork = next)
+    }
+    recordComponentDuration(
+        "artwork",
+        (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0),
+        "bytes=${bytes.size}",
+    )
 }
 
 // Sends the outbox in batches of up to 100 entries. A batch is deleted only after its send succeeds, so a dropped

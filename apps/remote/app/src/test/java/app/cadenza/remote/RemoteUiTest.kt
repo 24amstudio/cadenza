@@ -136,7 +136,7 @@ class RemoteUiTest {
             }
         }
         compose.onNodeWithContentDescription("Reconnecting to Test Cadenza Host").assertIsDisplayed()
-        compose.onNodeWithText("Connecting to Test Cadenza Host").assertDoesNotExist()
+        compose.onAllNodesWithText("Connecting to Test Cadenza Host").assertCountEquals(0)
         capture("connection-reconnecting")
     }
 
@@ -286,6 +286,19 @@ class RemoteUiTest {
         capture("integrated-lyrics-phone")
         compose.onNodeWithText("Lyrics").performClick()
         compose.onNodeWithText("Lyrics").assertIsNotSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-mdpi")
+    fun portraitNowPlayingUsesArtworkLedLayout() {
+        seedProfile()
+        openApp()
+        compose.onNode(hasText("Current song") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription("Close now playing").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resume in Cadenza Host").assertIsDisplayed()
+        compose.onNodeWithText("Current song").assertIsDisplayed()
+        capture("now-playing-phone-portrait")
     }
 
     @Test
@@ -486,9 +499,9 @@ class RemoteUiTest {
             model.mutable.update { it.copy(connected = false, lastStateAt = 0) }
         }
         capture("now-playing-ipad")
-        compose.onNodeWithText("Quality waiting for Cadenza Host").assertIsDisplayed()
-        compose.onNodeWithText("AutoMix status waiting for Cadenza Host").assertIsDisplayed()
-        compose.onNodeWithText("Lossless").assertDoesNotExist()
+        compose.onAllNodesWithText("Current song").assertCountEquals(2)
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        compose.onAllNodesWithText("Lossless").assertCountEquals(0)
     }
 
     @Test
@@ -691,9 +704,10 @@ class RemoteUiTest {
 
     @OptIn(ExperimentalMaterial3ExpressiveApi::class)
     @Test
-    fun tabletNowPlayingUsesMediaDetailAndLyricsPane() {
+    fun tabletNowPlayingOpensLyricsAsASeparateSurface() {
         seedProfile()
         createModel()
+        var lyricsOpened = false
         val document =
             LyricDocument(
                 UUID(0, 11).toString(),
@@ -715,14 +729,16 @@ class RemoteUiTest {
                     wide = true,
                     restoreLyricsFocus = false,
                     onLyricsFocusRestored = {},
-                    onOpenLyrics = {},
+                    onOpenLyrics = { lyricsOpened = true },
                 )
             }
         }
         compose.waitUntil(5_000) { model.state.value.loaded }
-        compose.onNodeWithText("A little further to the other side").assertIsDisplayed()
         compose.onNodeWithText("Current song").assertIsDisplayed()
-        capture("now-playing-ipad-lyrics")
+        compose.onAllNodesWithText("A little further to the other side").assertCountEquals(0)
+        compose.onNodeWithText("Lyrics").performClick()
+        assertTrue(lyricsOpened)
+        capture("now-playing-tablet-separate-lyrics")
     }
 
     @OptIn(ExperimentalMaterial3ExpressiveApi::class)

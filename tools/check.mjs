@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+} from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import development from '../package.json' with { type: 'json' };
@@ -25,6 +32,44 @@ const dependenciesRoot =
     : sharedRepositoryRoot
       ? join(sharedRepositoryRoot, 'node_modules')
       : join(root, 'node_modules'));
+
+// Worktrees intentionally share the dependency installation owned by the common repository root. TypeScript and
+// Node's package resolution still walk up from the worktree source path, so expose that shared installation through a
+// temporary junction when this worktree has no local node_modules directory. The link is ignored by Git and removed
+// when the checker exits.
+const localNodeModules = join(root, 'node_modules');
+const sharedNodeModules = join(sharedRepositoryRoot ?? '', 'node_modules');
+let temporaryDependencyLink = false;
+
+if (
+  !existsSync(localNodeModules) &&
+  dependenciesRoot === sharedNodeModules &&
+  existsSync(join(sharedNodeModules, '@oxlint', 'plugins', 'package.json'))
+) {
+  try {
+    symlinkSync(
+      sharedNodeModules,
+      localNodeModules,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    temporaryDependencyLink = true;
+  } catch (error) {
+    throw new Error(
+      `Cannot expose shared dependencies in this worktree. Install dependencies locally or remove the stale ` +
+        `node_modules path and retry: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+process.on('exit', () => {
+  if (temporaryDependencyLink) {
+    try {
+      unlinkSync(localNodeModules);
+    } catch {
+      // A failed cleanup is harmless; the junction is ignored and can be removed before the next check.
+    }
+  }
+});
 
 const temporaryDirectory = join(root, '.cache', 'tmp');
 const staticOnly = process.argv.includes('--static');
@@ -119,6 +164,8 @@ run(process.execPath, [
   join(dependenciesRoot, 'typescript/bin/tsc'),
   '--project',
   'tsconfig.json',
+  '--typeRoots',
+  join(dependenciesRoot, '@types'),
 ]);
 
 run(process.execPath, [

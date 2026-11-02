@@ -66,8 +66,8 @@ internal fun rememberArtwork(url: String?): ArtworkData? {
                     null
                 }
         } else {
-            host?.request(url)
             artwork = ArtworkCache.get(url)?.toArtworkData()
+            if (artwork == null) host?.request(url)
         }
     }
     return artwork
@@ -83,7 +83,7 @@ private suspend fun loadArtwork(
 
 private fun decode(bytes: ByteArray): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    require(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds) != null)
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     require(bounds.outWidth in 1..2_048 && bounds.outHeight in 1..2_048)
     val sample = sampleSize(bounds.outWidth, bounds.outHeight)
     val options =

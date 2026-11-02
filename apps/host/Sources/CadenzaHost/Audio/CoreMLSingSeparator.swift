@@ -205,6 +205,10 @@ final class CoreMLSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         return SingAudioBuffer(format: singFormat, frameCount: left.count, samples: buffer)
     }
 
+    func discardStreamingState() {
+        resetStream()
+    }
+
     private func resetStream() {
         windowLeft.removeAll(keepingCapacity: true)
         windowRight.removeAll(keepingCapacity: true)

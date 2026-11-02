@@ -39,7 +39,7 @@ Wi-Fi client isolation, guest networks, firewalls, separate router subnets, and 
 3. Scan the QR code. Alternatively, choose **Copy pairing details** on Host, transfer that text privately, and paste it into Remote.
 4. Choose **Pair**.
 
-Each invitation expires after five minutes and can pair one Remote. Generate another invitation to pair Remote B; Remote A keeps its connection and identity. Device credentials are distinct and stored in Cadenza Host's Keychain and Android Keystore-backed storage.
+Each invitation expires after five minutes and can pair one Remote. Generate another invitation to pair Remote B; Remote A keeps its connection and identity. Device credentials are distinct: the Host keeps them in an owner-only file beside its database, and the Remote keeps its own in Android Keystore-backed storage.
 
 Discovery helps locate Host; the QR supplies its one-use secret and certificate fingerprint, then Remote retrieves the public certificate over the authenticated local bootstrap socket before establishing pinned TLS. A changed Host identity requires verification and pairing again. No private certificate key is transferred.
 

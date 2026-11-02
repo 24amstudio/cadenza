@@ -74,13 +74,25 @@ protocol SingCaptureRoute: AnyObject, Sendable {
 protocol SingSeparator: AnyObject, Sendable {
     var backend: String { get }
     var modelRevision: String { get }
+    /// How far processed audio trails the Music timeline. Remote progress and lyrics are shifted by this amount.
+    var playbackDelayMs: Int64 { get }
     func prepare(format: SingAudioFormat) async throws -> Int64
     func process(_ input: SingAudioBuffer, vocalPercent: Int) throws -> SingAudioBuffer
+}
+
+extension SingSeparator {
+    var playbackDelayMs: Int64 { 0 }
 }
 
 protocol SingStreamingSeparator: SingSeparator {
     func processStreaming(_ input: SingAudioBuffer, vocalPercent: Int) throws -> [SingAudioBuffer]
     func finishStreaming() throws -> [SingAudioBuffer]
+    /// Drops buffered input so audio from before a pause or seek never reaches the output.
+    func discardStreamingState()
+}
+
+extension SingStreamingSeparator {
+    func discardStreamingState() {}
 }
 
 protocol SingOutputSink: AnyObject, Sendable {
@@ -88,6 +100,12 @@ protocol SingOutputSink: AnyObject, Sendable {
     func start(format: SingAudioFormat) throws
     func enqueue(_ buffer: SingAudioBuffer)
     func stop()
+    /// Drops audio already scheduled for playback.
+    func flush()
+}
+
+extension SingOutputSink {
+    func flush() {}
 }
 
 /// Safe default until a native Core Audio tap and a validated model backend are installed.
@@ -297,6 +315,16 @@ final class SingCoordinator {
         }
         session.vocalPercent = value
         mixState.set(value)
+    }
+
+    /// Remote progress is shifted back by this delay so lyrics follow the audio the listener hears.
+    var playbackDelayMs: Int64 {
+        session.status == "active" ? separator.playbackDelayMs : 0
+    }
+
+    /// Cuts audio already queued for playback, so a pause, seek or skip is heard immediately.
+    func interruptPlayback() {
+        pipeline?.flush()
     }
 
     func stop() {

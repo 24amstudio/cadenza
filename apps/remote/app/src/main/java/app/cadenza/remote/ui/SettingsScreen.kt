@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.data.ThemePreference
@@ -134,6 +137,7 @@ fun SettingsScreen(
                     state = state,
                     chooseTransport = ::chooseTransport,
                 )
+                NotificationsCard(model = model, state = state)
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
         }
@@ -250,6 +254,34 @@ private fun HostCard(
             style = MaterialTheme.typography.bodyMedium,
         )
         Text("Change this setting in Cadenza Host.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun NotificationsCard(
+    model: RemoteModel,
+    state: RemoteState,
+) {
+    SettingsCard(
+        icon = CadenzaIcon.MUSIC,
+        title = "Notifications",
+        supporting = "Choose what Cadenza Remote posts while Host plays.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Song changes", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Show a card each time Host starts another song.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(
+                checked = state.songChangeNotifications,
+                onCheckedChange = model::setSongChangeNotifications,
+                modifier = Modifier.semantics { contentDescription = "Song change notifications" },
+            )
+        }
     }
 }
 

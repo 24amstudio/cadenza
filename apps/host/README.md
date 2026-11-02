@@ -1,6 +1,6 @@
 # Cadenza Host
 
-The native macOS companion uses Swift 6, SwiftUI, AppKit, Network.framework, Accessibility, Translation, Keychain, and the system SQLite library. It controls the existing Music.app and serves multiple independently paired Cadenza Remotes. Audio remains on the Host computer.
+The native macOS companion uses Swift 6, SwiftUI, AppKit, Network.framework, Accessibility, Translation, and the system SQLite library. It controls the existing Music.app and serves multiple independently paired Cadenza Remotes. Audio remains on the Host computer.
 
 Application, local TLS/WebSocket service, command journal, native queue adapter, lyric distribution, signed updater, packaging, and unit-test source is implemented. Native compilation and device validation remain pending. No installable release has been verified or published.
 
@@ -25,7 +25,7 @@ test.
 
 Transport and library metadata use the fixed owned JXA resource. Native queue effects use Accessibility with bounded reads, exact selected-song matching, durable intents, and native readback. Catalog search and Music lyric extraction remain isolated adapters. When enabled, Host falls back to LRCLIB for a validated LRC document, caches the normalized result, and serves cached artwork and lyrics to authenticated Remotes.
 
-Host stores pairing references, policy, attributed requests, receipts, playback sessions, and credit delivery in SQLite outside the app bundle. Credentials and TLS identity material stay in Keychain. Database maintenance preserves unacknowledged credits and live requests.
+Host stores pairing references, policy, attributed requests, receipts, playback sessions, and credit delivery in SQLite outside the app bundle. Credentials and TLS identity material stay in an owner-only file beside the database; earlier builds kept them in Keychain, which this build does not read. Database maintenance preserves unacknowledged credits and live requests.
 
 ## Read-only Music probe
 

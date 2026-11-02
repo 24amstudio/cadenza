@@ -69,6 +69,32 @@ final class SingAudioPipelineTests: XCTestCase {
         wait(for: [failure], timeout: 1)
         XCTAssertEqual(output.count, 0)
     }
+
+    func testFlushDropsOutputOfBuffersSubmittedBeforeTheFlush() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+        func sample() throws -> SingAudioBuffer {
+            let samples = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1))
+            samples.frameLength = 1
+            return SingAudioBuffer(
+                format: SingAudioFormat(sampleRate: 48_000, channelCount: 2), frameCount: 1, samples: samples)
+        }
+        let output = PipelineTestOutput()
+        let separator = PipelineGatedSeparator()
+        let pipeline = SingAudioPipeline(
+            separator: separator,
+            output: output,
+            mixState: SingMixState(),
+            onFailure: { _ in XCTFail("The gated separator should not fail.") })
+
+        pipeline.start()
+        pipeline.submit(try sample())
+        pipeline.flush()
+        separator.release()
+        pipeline.submit(try sample())
+        pipeline.stop()
+
+        XCTAssertEqual(output.count, 1)
+    }
 }
 
 private final class PipelineTestSeparator: SingSeparator, @unchecked Sendable {
@@ -115,6 +141,30 @@ private final class PipelineFailingFlushSeparator: SingStreamingSeparator, @unch
     func finishStreaming() throws -> [SingAudioBuffer] {
         throw SingAudioError.unavailable("flush failed")
     }
+}
+
+/// Holds its first streaming call until released, so a test can flush while that buffer is still in flight.
+private final class PipelineGatedSeparator: SingStreamingSeparator, @unchecked Sendable {
+    let backend = "test-gated"
+    let modelRevision = "test-gated-1"
+    private let gate = DispatchSemaphore(value: 0)
+    private var holdsFirstCall = true
+
+    func release() { gate.signal() }
+
+    func prepare(format: SingAudioFormat) async throws -> Int64 { 0 }
+
+    func process(_ input: SingAudioBuffer, vocalPercent: Int) throws -> SingAudioBuffer { input }
+
+    func processStreaming(_ input: SingAudioBuffer, vocalPercent: Int) throws -> [SingAudioBuffer] {
+        if holdsFirstCall {
+            holdsFirstCall = false
+            gate.wait()
+        }
+        return [input]
+    }
+
+    func finishStreaming() throws -> [SingAudioBuffer] { [] }
 }
 
 private final class PipelineTestOutput: SingOutputSink, @unchecked Sendable {

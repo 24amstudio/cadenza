@@ -78,7 +78,7 @@ Analytics stay in each Remote's private SQLite database. They are not broadcast 
 Production builds check configured stable GitHub releases automatically and verify the signed manifest, package hash, identity, and version before installation. Development and CI builds disable checking/download/installation entry points and scheduled jobs.
 
 On Host, Check for updates can stage a release; installation restarts the companion. Music remains the player.
-A paired Remote can start the same check and install from Settings, under Cadenza Host, with Check for Host update and Update Host. The Host does not ask for confirmation for those requests, and any failure is reported on the Remote. macOS may still ask for Keychain access after an update if the new build is signed by a different certificate.
+A paired Remote can start the same check and install from Settings, under Cadenza Host, with Check for Host update and Update Host. The Host does not ask for confirmation for those requests, and any failure is reported on the Remote. Updates do not ask for Keychain access. Ad-hoc builds may still need macOS privacy approvals granted again.
 
 On Remote, Check for updates prepares an APK. Choose Install prepared update and grant install-source authorization if Android asks. Android or Huawei may require a confirmation; unattended installation is conditional on OS policy.
 

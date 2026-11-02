@@ -127,6 +127,16 @@ struct HostWindow: View {
                         }
                     }
                 }
+                if let autoPlay = model.service?.queue.autoPlay, !autoPlay.isEmpty {
+                    Section("AutoPlay") {
+                        ForEach(autoPlay, id: \.token) { row in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title)
+                                Text(row.artist).foregroundStyle(.secondary).font(.callout)
+                            }
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
             HStack {

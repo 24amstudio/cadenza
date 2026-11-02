@@ -4,11 +4,13 @@ import Foundation
 @MainActor
 final class HostStore {
     let database: Database
+    let credentials: CredentialFile
     let hostId: String
     private(set) var epoch = identifier()
     private let authorization: String
 
     init(directory: URL, defaults: UserDefaults = .standard) throws {
+        credentials = CredentialFile(url: directory.appendingPathComponent("secrets.json"))
         database = try Database(
             url: directory.appendingPathComponent("database", isDirectory: true)
                 .appendingPathComponent("main.sqlite"), role: .main)
@@ -80,8 +82,8 @@ final class HostStore {
     func pair(name: String) throws -> (String, String) {
         let id = identifier()
         let reference = "remote.\(id)"
-        let token = try SecureStore.randomToken()
-        try SecureStore.write(reference, Data(token.utf8))
+        let token = try CredentialFile.randomToken()
+        try credentials.write(reference, Data(token.utf8))
         do {
             try database.run(
                 """
@@ -89,7 +91,7 @@ final class HostStore {
                 VALUES(?,?,?,?)
                 """, [.text(id), .text(name), .text(reference), .integer(wallMs())])
         } catch {
-            try? SecureStore.delete(reference)
+            try? credentials.delete(reference)
             throw error
         }
         return (id, token)
@@ -102,10 +104,10 @@ final class HostStore {
                 [.text(auth.remoteId)]
             ).first,
             let reference = row["credential_reference"]?.string,
-            let data = try SecureStore.read(reference),
+            let data = try credentials.read(reference),
             let token = String(data: data, encoding: .utf8)
         else { return false }
-        return SecureStore.equal(token, auth.token)
+        return CredentialFile.equal(token, auth.token)
     }
 
     func remotes() throws -> [SQLRow] {
@@ -124,7 +126,7 @@ final class HostStore {
         ).first?["credential_reference"]?.string
         try database.run(
             "UPDATE paired_remotes SET revoked_at_ms=? WHERE remote_id=?", [.integer(wallMs()), .text(id)])
-        if let reference { try SecureStore.delete(reference) }
+        if let reference { try credentials.delete(reference) }
     }
 
     func authorize(actor: String, command: Frame, entryId: String?) throws {

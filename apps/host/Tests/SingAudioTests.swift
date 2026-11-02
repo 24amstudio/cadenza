@@ -1,11 +1,12 @@
 import AVFAudio
+import Foundation
 import XCTest
 import os
 @testable import CadenzaHost
 
 final class SingAudioTests: XCTestCase {
-    func testDefaultBackendIsProcessSafeStereoFallback() {
-        XCTAssertEqual(SingSeparatorFactory.defaultBackend().backend, "stereo-center")
+    func testDefaultBackendIsMLXOutsideProduction() {
+        XCTAssertEqual(SingSeparatorFactory.defaultBackend().backend, "mlx-mel-roformer")
     }
 
     func testCoordinatorRejectsASeparatorThatCannotPrimeForLivePlayback() async {
@@ -49,19 +50,20 @@ final class SingAudioTests: XCTestCase {
         second.lease.release()
     }
 
-    func testStereoFallbackSuppressesCenteredSignalAtZeroVocalMix() throws {
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
-        let input = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2))
-        input.frameLength = 2
-        input.floatChannelData![0][0] = 0.5
-        input.floatChannelData![0][1] = -0.5
-        input.floatChannelData![1][0] = 0.5
-        input.floatChannelData![1][1] = -0.5
-        let buffer = SingAudioBuffer(
-            format: SingAudioFormat(sampleRate: 48_000, channelCount: 2), frameCount: 2, samples: input)
-        let output = try StereoCenterSuppressor().process(buffer, vocalPercent: 0)
-        XCTAssertEqual(output.samples.floatChannelData![0][0], 0, accuracy: 0.0001)
-        XCTAssertEqual(output.samples.floatChannelData![1][0], 0, accuracy: 0.0001)
+    func testStereoFallbackRemovesCenteredMidBandAtZeroVocalMix() throws {
+        let input = try centeredTone(hertz: 1_000)
+        let output = try StereoCenterSuppressor().process(input, vocalPercent: 0)
+        XCTAssertLessThan(
+            settledRMS(output.samples, monoSum: true),
+            0.05 * settledRMS(input.samples, monoSum: false))
+    }
+
+    func testStereoFallbackKeepsCenteredBassAtZeroVocalMixInMonoSum() throws {
+        let input = try centeredTone(hertz: 60)
+        let output = try StereoCenterSuppressor().process(input, vocalPercent: 0)
+        XCTAssertGreaterThan(
+            settledRMS(output.samples, monoSum: true),
+            0.9 * settledRMS(input.samples, monoSum: false))
     }
 
     func testStereoFallbackPreservesSignalAtFullVocalMix() throws {
@@ -76,6 +78,33 @@ final class SingAudioTests: XCTestCase {
         XCTAssertEqual(output.samples.floatChannelData![0][0], 0.25, accuracy: 0.0001)
         XCTAssertEqual(output.samples.floatChannelData![1][0], -0.75, accuracy: 0.0001)
     }
+}
+
+private func centeredTone(hertz: Double) throws -> SingAudioBuffer {
+    let frames = 9_600
+    let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+    let samples = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)))
+    samples.frameLength = AVAudioFrameCount(frames)
+    for index in 0..<frames {
+        let value = Float(sin(2 * Double.pi * hertz * Double(index) / 48_000))
+        samples.floatChannelData![0][index] = value
+        samples.floatChannelData![1][index] = value
+    }
+    return SingAudioBuffer(
+        format: SingAudioFormat(sampleRate: 48_000, channelCount: 2), frameCount: frames, samples: samples)
+}
+
+/// RMS of the second half, after the bass filter has settled.
+private func settledRMS(_ samples: AVAudioPCMBuffer, monoSum: Bool) -> Float {
+    let frames = Int(samples.frameLength)
+    let left = samples.floatChannelData![0]
+    let right = samples.floatChannelData![1]
+    var total: Float = 0
+    for index in frames / 2..<frames {
+        let value = monoSum ? (left[index] + right[index]) * 0.5 : left[index]
+        total += value * value
+    }
+    return (total / Float(frames - frames / 2)).squareRoot()
 }
 
 private final class SingTestRoute: SingCaptureRoute, @unchecked Sendable {

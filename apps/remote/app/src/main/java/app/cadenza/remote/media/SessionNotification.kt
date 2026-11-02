@@ -59,17 +59,11 @@ class SessionNotification(
         status: SessionStatus,
         mediaToken: MediaSession.Token? = null,
     ) {
-        if (!status.active || !manager.areNotificationsEnabled() ||
-            (
-                Build.VERSION.SDK_INT >= 33 &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-            )
-        ) {
+        if (!status.active || !canPostNotifications(context, manager)) {
             clear()
             return
         }
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Control session", NotificationManager.IMPORTANCE_LOW))
+        ensureChannel(manager)
         val open =
             PendingIntent.getActivity(
                 context,
@@ -127,7 +121,9 @@ class SessionNotification(
             }
             builder.setStyle(style)
         }
-        manager.notify(ID, builder.build())
+        val notification = builder.build()
+        lastNotification = notification
+        manager.notify(ID, notification)
         if (Build.VERSION.SDK_INT >= 36 && status.pinned && status.connected && status.playing &&
             manager.canPostPromotedNotifications()
         ) {
@@ -183,6 +179,51 @@ class SessionNotification(
     companion object {
         const val ID = 43129
         const val LIVE_ID = 43130
-        private const val CHANNEL = "control-session"
+        private const val CHANNEL = "control-session-media"
+        private const val LEGACY_CHANNEL = "control-session"
+
+        /** The notification last posted for the session. The keep-alive service promotes this same notification. */
+        @Volatile
+        var lastNotification: Notification? = null
+
+        fun ensureChannel(manager: NotificationManager) {
+            manager.deleteNotificationChannel(LEGACY_CHANNEL)
+            // Android treats low-importance notifications as silent and hides them from the lock screen, so the media
+            // card needs default importance. Importance cannot change on an existing channel, which is why the ID is new.
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Control session", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    setSound(null, null)
+                    enableVibration(false)
+                },
+            )
+        }
+
+        /** Only used when the keep-alive service starts before the session notification has been posted. */
+        fun placeholder(context: Context): Notification {
+            ensureChannel(context.getSystemService(NotificationManager::class.java))
+            return Notification
+                .Builder(context, CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("Cadenza Remote")
+                .setContentText("Playing on Cadenza Host")
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setCategory(Notification.CATEGORY_TRANSPORT)
+                .setLocalOnly(true)
+                .build()
+        }
     }
 }
+
+/** Notifications are posted only when the system and the user allow them. */
+internal fun canPostNotifications(
+    context: Context,
+    manager: NotificationManager,
+): Boolean =
+    manager.areNotificationsEnabled() &&
+        (
+            Build.VERSION.SDK_INT < 33 ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        )

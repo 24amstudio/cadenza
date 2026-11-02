@@ -38,7 +38,7 @@ let package = Package(
             path: ".",
             exclude: [
                 "Sources/CSQLite", "Sources/CadenzaSecurity", "Sources/CadenzaUpdater",
-                "Sources/CadenzaRelease", "Tests", "tools", "Scripts", "README.md",
+                "Sources/CadenzaWatchdog", "Sources/CadenzaRelease", "Tests", "tools", "Scripts", "README.md",
             ],
             sources: ["Sources/CadenzaHost"],
             resources: [.copy("storage"), .copy("Resources")]

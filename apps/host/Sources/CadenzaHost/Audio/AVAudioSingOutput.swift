@@ -58,6 +58,13 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
         player.scheduleBuffer(buffer.samples)
     }
 
+    func flush() {
+        guard started else { return }
+        // AVAudioPlayerNode.stop drops every scheduled buffer; play() resumes the node for new audio.
+        player.stop()
+        player.play()
+    }
+
     func stop() {
         player.stop()
         engine.stop()

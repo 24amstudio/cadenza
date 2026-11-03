@@ -25,7 +25,7 @@ actor Lyrics {
         }
         // Bump this prefix whenever parsed timings change; otherwise documents cached
         // by the older parser keep their wrong timings across restarts.
-        if let data = try? await disk.data(for: "lyrics-v2:" + key),
+        if let data = try? await disk.data(for: "lyrics-v3:" + key),
             var known = try? JSONDecoder().decode(LyricDocument.self, from: data)
         {
             known.occurrenceId = occurrence
@@ -38,7 +38,7 @@ actor Lyrics {
             if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
             cache[key] = document
             if let data = try? JSONEncoder().encode(document) {
-                try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+                try? await disk.put(data, for: "lyrics-v3:" + key, kind: "lyrics")
             }
             return document
         }
@@ -55,7 +55,7 @@ actor Lyrics {
                     if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
                     cache[key] = document
                     if let data = try? JSONEncoder().encode(document) {
-                        try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+                        try? await disk.put(data, for: "lyrics-v3:" + key, kind: "lyrics")
                     }
                     try? await disk.remove("lyrics-miss:" + key)
                     return document
@@ -77,7 +77,7 @@ actor Lyrics {
             if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
             cache[key] = document
             if let data = try? JSONEncoder().encode(document) {
-                try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+                try? await disk.put(data, for: "lyrics-v3:" + key, kind: "lyrics")
             }
             try? await disk.remove("lyrics-miss:" + key)
             return document
@@ -106,7 +106,7 @@ actor Lyrics {
             let key = song.source + ":" + song.id
             cache[key] = translated
             if let data = try? JSONEncoder().encode(translated) {
-                try? await disk.put(data, for: "lyrics-v2:" + key, kind: "lyrics")
+                try? await disk.put(data, for: "lyrics-v3:" + key, kind: "lyrics")
             }
         }
         return translated

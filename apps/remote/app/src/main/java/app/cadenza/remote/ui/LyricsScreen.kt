@@ -77,18 +77,29 @@ import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
 import kotlin.math.abs
 
-internal fun activeLyricIndex(
+internal fun activeLyricIndices(
     document: LyricDocument?,
     occurrence: String?,
     positionMs: Long,
     synchronized: Boolean,
-): Int {
-    if (!synchronized || occurrence == null || document?.occurrenceId != occurrence) return -1
-    // Provider end markers can leave short gaps between lines. Keep the most
-    // recently started line active through those gaps so highlighting and
-    // following stay aligned with the playback timeline.
-    return document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
+): List<Int> {
+    if (!synchronized || occurrence == null || document?.occurrenceId != occurrence) return emptyList()
+    // Background vocals are timed as separate lines that overlap their main line, so every line
+    // sounding at this position stays active. Provider end markers can leave short gaps between
+    // lines; then the most recently started line stays active to keep highlighting and following
+    // aligned with the playback timeline.
+    val sounding =
+        document.lines.indices.filter { index ->
+            val line = document.lines[index]
+            line.endMs > line.startMs && line.startMs <= positionMs && positionMs < line.endMs
+        }
+    if (sounding.isNotEmpty()) return sounding
+    val latest = document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
+    return if (latest >= 0) listOf(latest) else emptyList()
 }
+
+// Distance from the nearest active line. Lyrics with no active line use the dimmest tier.
+private fun lyricDistance(index: Int, active: List<Int>): Int = active.minOfOrNull { abs(index - it) } ?: 3
 
 private fun activeWordIndex(
     line: app.cadenza.remote.data.LyricLine,
@@ -318,14 +329,13 @@ private fun CompactTrackIdentity(
 @Composable
 private fun LyricTranslation(
     translation: String?,
-    index: Int,
-    active: Int,
+    distanceFromActive: Int,
     revealed: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val activeLine = index == active
+    val activeLine = distanceFromActive == 0
     // Lines nearest the active line lead the reveal.
-    val revealDelay = abs(index - active).coerceAtMost(6) * 40
+    val revealDelay = distanceFromActive.coerceAtMost(6) * 40
     val emphasis by animateFloatAsState(
         if (activeLine) 1f else 0f,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
@@ -337,9 +347,9 @@ private fun LyricTranslation(
         label = "lyric-translation-alpha",
     )
     val translationBlur by animateDpAsState(
-        when {
-            activeLine -> 0.dp
-            active < 0 || abs(index - active) == 1 -> 2.dp
+        when (distanceFromActive) {
+            0 -> 0.dp
+            1 -> 2.dp
             else -> 4.dp
         },
         animationSpec = tween(260, easing = FastOutSlowInEasing),
@@ -382,7 +392,9 @@ internal fun LyricsContent(
         // Later arrivals animate on their own, and lines that scroll into view afterward appear as-is.
         val translationReveal = remember { MutableTransitionState(false) }
         LaunchedEffect(document != null) { translationReveal.targetState = document != null }
-        val active = activeLyricIndex(document, occurrence, currentPosition, !stale)
+        val active = activeLyricIndices(document, occurrence, currentPosition, !stale)
+        // Follow the newest sounding line; an overlapping background line stays visible just above it.
+        val anchor = active.maxOrNull() ?: -1
         val userScroll =
             remember {
                 object : NestedScrollConnection {
@@ -395,8 +407,8 @@ internal fun LyricsContent(
                     }
                 }
             }
-        LaunchedEffect(active, document?.revision, following) {
-            if (following && active >= 0) {
+        LaunchedEffect(anchor, document?.revision, following) {
+            if (following && anchor >= 0) {
                 // Wait for the lazy list to report a real viewport before seeking it.
                 // A single frame is not enough when artwork and lyrics enter together;
                 // otherwise the first active line can be missed until a manual scroll.
@@ -409,7 +421,7 @@ internal fun LyricsContent(
                     // for upcoming lyrics. A negative offset keeps the active row below
                     // the top edge instead of pinning it against the container boundary.
                     val offset = -(viewport * 0.18f).toInt()
-                    list.animateScrollToItem(active, offset)
+                    list.animateScrollToItem(anchor, offset)
                 }
             }
         }
@@ -464,6 +476,7 @@ internal fun LyricsContent(
                         verticalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
                         itemsIndexed(document.lines, key = { _, line -> line.id }) { index, line ->
+                            val isActive = index in active
                             val canSeek =
                                 state.connected && !stale && mayInterruptPlayback(state) &&
                                     line.endMs > line.startMs
@@ -484,7 +497,7 @@ internal fun LyricsContent(
                                         )
                                     }.padding(vertical = 6.dp)
                                     .semantics(mergeDescendants = true) {
-                                        selected = index == active
+                                        selected = isActive
                                         if (canSeek) contentDescription = "Seek to ${line.text}"
                                     },
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -492,7 +505,7 @@ internal fun LyricsContent(
                                 LyricText(
                                     line,
                                     currentPosition,
-                                    if (active < 0) 3 else abs(index - active),
+                                    lyricDistance(index, active),
                                     onWordClick =
                                         if (canSeek && line.words.isNotEmpty()) {
                                             { time ->
@@ -511,7 +524,7 @@ internal fun LyricsContent(
                                 )
                                 line.romanized?.takeIf { it.isNotBlank() }?.let {
                                     val romanizedStyle =
-                                        if (index == active) {
+                                        if (isActive) {
                                             MaterialTheme.typography.titleLarge
                                         } else {
                                             MaterialTheme.typography.titleMedium
@@ -520,13 +533,12 @@ internal fun LyricsContent(
                                         it,
                                         style = romanizedStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.blur(if (index == active) 0.dp else 2.dp),
+                                        modifier = Modifier.blur(if (isActive) 0.dp else 2.dp),
                                     )
                                 }
                                 LyricTranslation(
                                     translation = line.translation,
-                                    index = index,
-                                    active = active,
+                                    distanceFromActive = lyricDistance(index, active),
                                     revealed = translationReveal.targetState,
                                 )
                             }

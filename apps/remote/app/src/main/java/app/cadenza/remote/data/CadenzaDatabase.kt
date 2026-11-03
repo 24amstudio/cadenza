@@ -292,7 +292,7 @@ class CadenzaDatabase(
         db.delete("playback_credits", null, null)
         db.rawQuery("PRAGMA optimize", null).use { while (it.moveToNext()) { /* Execute all maintenance rows. */ } }
         db.rawQuery("PRAGMA wal_checkpoint(PASSIVE)", null).use { while (it.moveToNext()) { /* Execute all maintenance rows. */ } }
-        db.execSQL("PRAGMA incremental_vacuum(32)")
+        db.rawQuery("PRAGMA incremental_vacuum(32)", null).use { while (it.moveToNext()) { /* Execute all maintenance rows. */ } }
     }
 
     @Synchronized
@@ -405,4 +405,11 @@ class CadenzaDatabase(
             "DELETE FROM recommendation_passports WHERE sequence < (SELECT max(sequence) - 2 FROM recommendation_passports)",
         )
     }
+
+    @Synchronized
+    fun latestRecommendationPassportSequence(): Long =
+        readableDatabase.rawQuery("SELECT coalesce(max(sequence), 0) FROM recommendation_passports", null).use {
+            it.moveToFirst()
+            it.getLong(0)
+        }
 }

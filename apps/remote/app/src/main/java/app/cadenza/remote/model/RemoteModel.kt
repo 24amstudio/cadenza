@@ -298,6 +298,8 @@ class RemoteModel(
                 val staged = RemoteUpdater.staged(app)
                 val cached = withContext(ioDispatcher) { profile?.let { app.database.cachedState(it.hostId) } }
                 val library = withContext(ioDispatcher) { app.library.load() }
+                val passportSequence = withContext(ioDispatcher) { app.database.latestRecommendationPassportSequence() }
+                recommendationEngine.restoreSequence(passportSequence)
                 remoteName = preferences.getString("client_name", null)?.takeIf { it.isNotBlank() && it.length <= 80 } ?: remoteName
                 val theme =
                     ThemePreference.entries.firstOrNull { it.name == preferences.getString("theme", null) } ?: ThemePreference.SYSTEM

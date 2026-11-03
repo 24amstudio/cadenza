@@ -17,8 +17,24 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
     private var metadataDepth = 0
     private var paragraph: LyricLine?
     private var paragraphDepth = 0
+    // Background vocals (`ttm:role="x-bg"`) overlap the main line, so their words form a separate timed line.
+    private var background: LyricLine?
+    private var backgroundDepth = 0
+    private var backgroundLines: [LyricLine] = []
     private var depth = 0
     private var failure: String?
+
+    // Text and words go to the open background vocal span, if any.
+    private var currentLine: LyricLine? {
+        get { background ?? paragraph }
+        set {
+            if background != nil {
+                background = newValue
+            } else {
+                paragraph = newValue
+            }
+        }
+    }
 
     static func parse(_ data: Data, occurrence: String) throws -> LyricDocument {
         guard data.count <= 1_048_576 else {
@@ -118,6 +134,10 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
             )
             paragraphDepth = depth
         }
+        if name == "span", let key = paragraph?.id, background == nil, attributes["ttm:role"] == "x-bg" {
+            background = LyricLine(id: "\(key)-bg\(backgroundLines.count)", text: "", startMs: 0, endMs: 0)
+            backgroundDepth = depth
+        }
         if name == "span", paragraph != nil,
             let start = Self.milliseconds(attributes["begin"]),
             let end = Self.milliseconds(attributes["end"]), end >= start
@@ -134,15 +154,16 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         if translationTarget != nil { translationText += string }
-        if paragraph != nil { paragraph?.text += string }
+        if paragraph != nil { currentLine?.text += string }
         if !wordCaptures.isEmpty { wordCaptures[wordCaptures.count - 1].text += string }
-        if wordCaptures.isEmpty, string.allSatisfy(\.isWhitespace), var line = paragraph,
+        if wordCaptures.isEmpty, string.allSatisfy(\.isWhitespace), var line = currentLine,
             let last = line.words.indices.last
         {
             line.words[last].text += " "
-            paragraph = line
+            currentLine = line
         }
-        if (paragraph?.text.utf8.count ?? 0) > 20_000 || translationText.utf8.count > 20_000 {
+        let lineTextBytes = max(paragraph?.text.utf8.count ?? 0, background?.text.utf8.count ?? 0)
+        if lineTextBytes > 20_000 || translationText.utf8.count > 20_000 {
             failure = "A lyric line is too large."
             parser.abortParsing()
         }
@@ -157,11 +178,24 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
             let hasTrailingSpace = capture.text.last?.isWhitespace == true
             let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
-                paragraph?.words.append(
+                currentLine?.words.append(
                     LyricWord(
                         text: text + (hasTrailingSpace ? " " : ""),
                         startMs: capture.startMs,
                         endMs: capture.endMs))
+            }
+        }
+        if name == "span", backgroundDepth == depth, let vocal = background {
+            background = nil
+            if vocal.words.isEmpty {
+                // Untimed background text has no timing of its own, so it stays in the main line instead of being dropped.
+                paragraph?.text += vocal.text
+            } else {
+                backgroundLines.append(
+                    LyricLine(
+                        id: vocal.id, text: vocal.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                        startMs: vocal.words.map(\.startMs).min() ?? 0,
+                        endMs: vocal.words.map(\.endMs).max() ?? 0, words: vocal.words))
             }
         }
         if name == "p", paragraphDepth == depth, var line = paragraph {
@@ -173,6 +207,8 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 if line.endMs <= line.startMs { line.endMs = wordEnd }
             }
             if !line.text.isEmpty { lines.append(line) }
+            lines.append(contentsOf: backgroundLines)
+            backgroundLines = []
             paragraph = nil
         }
         if name == "text", let target = translationTarget {

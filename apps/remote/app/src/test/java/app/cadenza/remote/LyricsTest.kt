@@ -5,7 +5,7 @@ import app.cadenza.remote.data.LyricLine
 import app.cadenza.remote.data.LyricWord
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.model.id
-import app.cadenza.remote.ui.activeLyricIndex
+import app.cadenza.remote.ui.activeLyricIndices
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -45,11 +45,29 @@ class LyricsTest {
                 ),
                 null,
             )
-        assertEquals(0, activeLyricIndex(document, "occurrence-a", 999, true))
-        assertEquals(1, activeLyricIndex(document, "occurrence-a", 1_000, true))
-        assertEquals(1, activeLyricIndex(document, "occurrence-a", 2_000, true))
-        assertEquals(-1, activeLyricIndex(document, "occurrence-b", 1_000, true))
-        assertEquals(-1, activeLyricIndex(document, "occurrence-a", 1_000, false))
+        assertEquals(listOf(0), activeLyricIndices(document, "occurrence-a", 999, true))
+        assertEquals(listOf(1), activeLyricIndices(document, "occurrence-a", 1_000, true))
+        assertEquals(listOf(1), activeLyricIndices(document, "occurrence-a", 2_000, true))
+        assertEquals(emptyList<Int>(), activeLyricIndices(document, "occurrence-b", 1_000, true))
+        assertEquals(emptyList<Int>(), activeLyricIndices(document, "occurrence-a", 1_000, false))
+    }
+
+    @Test
+    fun backgroundLineStaysActiveAlongsideItsMainLine() {
+        val document =
+            LyricDocument(
+                "occurrence-a",
+                "revision-a",
+                "original",
+                listOf(
+                    LyricLine("main", "Main", 0, 2_000, null),
+                    LyricLine("background", "(Background)", 800, 1_500, null),
+                ),
+                null,
+            )
+        assertEquals(listOf(0), activeLyricIndices(document, "occurrence-a", 500, true))
+        assertEquals(listOf(0, 1), activeLyricIndices(document, "occurrence-a", 1_000, true))
+        assertEquals(listOf(0), activeLyricIndices(document, "occurrence-a", 1_600, true))
     }
 
     @Test

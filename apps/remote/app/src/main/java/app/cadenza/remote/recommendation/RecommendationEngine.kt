@@ -26,6 +26,12 @@ class RecommendationEngine(
         }
     }
 
+    // Host rejects any sequence not greater than the last one it stored, so a restarted process must resume after it.
+    @Synchronized
+    fun restoreSequence(lastIssued: Long) {
+        sequence = maxOf(sequence, lastIssued)
+    }
+
     @Synchronized
     fun passport(nowMs: Long = System.currentTimeMillis()): SignedRecommendationPassport {
         sequence++

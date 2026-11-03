@@ -5,7 +5,7 @@ data class LocalEndpoint(
     val port: Int,
 )
 
-/** Candidates never carry trust: the paired certificate is verified on every connection. */
+/** Candidates never carry trust. The Host's paired token is what authenticates a connection. */
 class EndpointPool {
     private data class Candidate(
         val endpoint: LocalEndpoint,

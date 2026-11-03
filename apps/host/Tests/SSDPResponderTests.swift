@@ -24,18 +24,18 @@ final class SSDPResponderTests: XCTestCase {
             SSDPResponder.response(
                 for: request,
                 hostId: "11111111-1111-1111-1111-111111111111",
-                location: "https://192.168.1.10:43127/"))
+                location: "http://192.168.1.10:43127/"))
         let text = try XCTUnwrap(String(data: response, encoding: .utf8))
         XCTAssertTrue(text.contains("HTTP/1.1 200 OK"))
         XCTAssertTrue(text.contains("HOST-ID: 11111111-1111-1111-1111-111111111111"))
-        XCTAssertTrue(text.contains("LOCATION: https://192.168.1.10:43127/"))
+        XCTAssertTrue(text.contains("LOCATION: http://192.168.1.10:43127/"))
         XCTAssertFalse(text.contains("secret"))
         XCTAssertFalse(text.contains("token"))
-        XCTAssertNil(SSDPResponder.response(for: request, hostId: "bad", location: "https://192.168.1.10:43127/"))
+        XCTAssertNil(SSDPResponder.response(for: request, hostId: "bad", location: "http://192.168.1.10:43127/"))
         XCTAssertNil(
             SSDPResponder.response(
                 for: request,
                 hostId: "11111111-1111-1111-1111-111111111111",
-                location: "https://host/\r\nX-Evil: 1"))
+                location: "http://host/\r\nX-Evil: 1"))
     }
 }

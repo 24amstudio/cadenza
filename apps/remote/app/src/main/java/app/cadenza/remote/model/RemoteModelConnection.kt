@@ -25,7 +25,6 @@ internal fun RemoteModel.openConnection() {
     activeEndpoint = endpoint
     val host = endpoint?.address.orEmpty()
     val port = endpoint?.port ?: 0
-    val fingerprint = invite?.fingerprint ?: profile?.fingerprint
     val version = ++generation
     clock.reset()
     lastHeartbeatAt = 0
@@ -55,8 +54,6 @@ internal fun RemoteModel.openConnection() {
                 getApplication(),
                 host,
                 port,
-                requireNotNull(fingerprint),
-                invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
                 opened = {
                     viewModelScope.launch {
                         if (version != generation) return@launch
@@ -77,8 +74,6 @@ internal fun RemoteModel.openConnection() {
             HostConnection(
                 host,
                 port,
-                requireNotNull(fingerprint),
-                invite?.certificateDerBase64 ?: requireNotNull(profile).certificateDerBase64,
                 opened = {
                     viewModelScope.launch {
                         if (version != generation) return@launch

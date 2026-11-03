@@ -22,6 +22,7 @@ jobs:
     outputs:
       host: ${{ steps.paths.outputs.host }}
       remote: ${{ steps.paths.outputs.remote }}
+      web: ${{ steps.paths.outputs.web }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,20 +49,26 @@ jobs:
 
           host=false
           remote=false
+          web=false
           while IFS= read -r path; do
             [[ -z "$path" ]] && continue
             case "$path" in
               apps/host/*) host=true ;;
               apps/remote/*) remote=true ;;
+              apps/web/*) web=true ;;
               .github/*|shared/*|tools/*|AGENTS.md|SPEC.md|package.json|package-lock.json|bun.lock|bun.lockb)
                 host=true
                 remote=true
+                web=true
                 ;;
             esac
           done <<< "$changed_paths"
 
-          printf 'host=%s\n' "$host" >> "$GITHUB_OUTPUT"
-          printf 'remote=%s\n' "$remote" >> "$GITHUB_OUTPUT"
+          {
+            printf 'host=%s\n' "$host"
+            printf 'remote=%s\n' "$remote"
+            printf 'web=%s\n' "$web"
+          } >> "$GITHUB_OUTPUT"
 
   portable:
     runs-on: ubuntu-latest
@@ -114,6 +121,18 @@ jobs:
           export SOURCE_DATE_EPOCH
           cd apps/remote
           bash ./gradlew :app:ktlintCheck :app:lintDebug :app:lintRelease :app:compileDebugKotlin :app:compileReleaseKotlin --no-daemon
+
+  web:
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the browser Remote
+        run: bash tools/ci/web.sh
 
   host:
     needs: scope

@@ -21,9 +21,9 @@ struct PairingInvitation: Codable, Sendable {
     var version: Int = 1
     var host: String
     var port: Int
-    var fingerprint: String
-    var certificateDerBase64: String
     var secret: String
     var hostName: String
     var pin: String = ""
+    // Present only while Cadenza Web is on. The QR code then also carries this HTTP port for the browser Remote.
+    var webPort: Int? = nil
 }

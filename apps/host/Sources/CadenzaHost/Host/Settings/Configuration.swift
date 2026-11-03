@@ -7,12 +7,13 @@ struct HostConfiguration: Codable {
     var advertisedAddress = ""
     var automaticUpdates = true
     var lyricsProviderEnabled = true
+    var webEnabled = false
     var cacheLimitBytes: Int64 = 256 * 1_048_576
     var updates = UpdateConfiguration()
 
     enum CodingKeys: String, CodingKey {
-        case name, port, storefront, advertisedAddress, automaticUpdates, lyricsProviderEnabled, cacheLimitBytes,
-            updates
+        case name, port, storefront, advertisedAddress, automaticUpdates, lyricsProviderEnabled, webEnabled,
+            cacheLimitBytes, updates
     }
 
     init() {}
@@ -26,6 +27,7 @@ struct HostConfiguration: Codable {
         advertisedAddress = try values.decodeIfPresent(String.self, forKey: .advertisedAddress) ?? ""
         automaticUpdates = try values.decodeIfPresent(Bool.self, forKey: .automaticUpdates) ?? true
         lyricsProviderEnabled = try values.decodeIfPresent(Bool.self, forKey: .lyricsProviderEnabled) ?? true
+        webEnabled = try values.decodeIfPresent(Bool.self, forKey: .webEnabled) ?? false
         cacheLimitBytes = try values.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? 256 * 1_048_576
         updates = try values.decodeIfPresent(UpdateConfiguration.self, forKey: .updates) ?? UpdateConfiguration()
     }
@@ -38,8 +40,14 @@ struct HostConfiguration: Codable {
         try values.encode(advertisedAddress, forKey: .advertisedAddress)
         try values.encode(automaticUpdates, forKey: .automaticUpdates)
         try values.encode(lyricsProviderEnabled, forKey: .lyricsProviderEnabled)
+        try values.encode(webEnabled, forKey: .webEnabled)
         try values.encode(cacheLimitBytes, forKey: .cacheLimitBytes)
         try values.encode(updates, forKey: .updates)
+    }
+
+    // The browser Remote uses the control port plus two, so the native pairing bootstrap on plus one stays unique.
+    var webPort: UInt16 {
+        port <= 65_533 ? port + 2 : port - 2
     }
 
     var isUsable: Bool {

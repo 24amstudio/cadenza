@@ -9,7 +9,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.net.UnknownHostException
-import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 
 interface RemoteConnection {
@@ -20,27 +19,22 @@ interface RemoteConnection {
     fun disconnect()
 }
 
+/**
+ * Plain WebSocket to the Host on the local network. TLS and certificate pinning are not used: the Host authenticates
+ * this Remote by its paired token, and the DNS policy below keeps connections to local addresses.
+ */
 class HostConnection(
     host: String,
     port: Int,
-    fingerprint: String,
-    certificateDerBase64: String,
     private val opened: () -> Unit,
     private val received: (JSONObject) -> Unit,
     private val closed: (String) -> Unit,
 ) : WebSocketListener(),
     RemoteConnection {
-    private val identity = PinnedIdentity(certificateDerBase64, fingerprint)
     private val client =
         OkHttpClient
             .Builder()
-            .sslSocketFactory(identity.socketFactory, identity.trustManager)
-            .hostnameVerifier { hostname, session ->
-                hostname.equals(host, ignoreCase = true) &&
-                    runCatching {
-                        identity.matches(session.peerCertificates.firstOrNull() as? X509Certificate)
-                    }.getOrDefault(false)
-            }.dns { hostname ->
+            .dns { hostname ->
                 Dns.SYSTEM
                     .lookup(hostname)
                     .filter {
@@ -52,12 +46,11 @@ class HostConnection(
             .writeTimeout(1, TimeUnit.SECONDS)
             .pingInterval(10, TimeUnit.SECONDS)
             .followRedirects(false)
-            .followSslRedirects(false)
             .build()
     private val address =
         okhttp3.HttpUrl
             .Builder()
-            .scheme("https")
+            .scheme("http")
             .host(host)
             .port(port)
             .encodedPath("/")

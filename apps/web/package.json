@@ -1,0 +1,29 @@
+{
+  "name": "@cadenza/remote-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "typecheck": "nuxt prepare && vue-tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint -c ../../.oxlintrc.json --deny-warnings --ignore-pattern .nuxt --ignore-pattern .output --ignore-pattern node_modules .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "bun test tests"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.11.2",
+    "nuxt": "^4.1.2",
+    "pinia": "^3.0.3",
+    "vue": "^3.5.22"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.88.0",
+    "@types/bun": "1.4.3",
+    "@types/node": "26.6.5",
+    "oxlint": "1.88.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "vue-tsc": "^3.3.14"
+  }
+}

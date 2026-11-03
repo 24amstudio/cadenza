@@ -14,7 +14,7 @@ struct SettingsUpdatesPane: View {
                 Text("GitHub releases")
             } footer: {
                 if HostBuild.updatesEnabled {
-                    Text("Save settings to apply the repository and key. Updates keep your database and TLS identity.")
+                    Text("Save settings to apply the repository and key. Updates keep your database and pairings.")
                 } else {
                     Text("Automatic updates are disabled in this build.")
                 }

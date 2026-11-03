@@ -14,8 +14,8 @@ final class HostService {
     let lyrics: Lyrics
     let sing: SingCoordinator
     let network = NetworkService()
-    let pairingBootstrap = PairingBootstrap()
     let bluetooth = BluetoothPeripheral()
+    let webRemote = WebRemoteListener()
     let queue: QueueCoordinator
     private(set) var configuration: HostConfiguration
     var transportPolicy = HostTransportPolicy()
@@ -25,7 +25,6 @@ final class HostService {
     private var invitationDeadline: Int64 = 0
     private var invitationPinDeadline: Int64 = 0
     private var invitationPinAttempts = 0
-    private var identity: TLSIdentity?
     private var polling: Task<Void, Never>?
     private var statusReporting: Task<Void, Never>?
     private var jobs: [String: Task<Void, Never>] = [:]
@@ -89,6 +88,7 @@ final class HostService {
             try await self?.currentMusicArtwork(occurrenceId)
         }
         network.logger = logger
+        webRemote.onSocket = { [weak self] socket in self?.openWebSocket(socket) }
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             var published = snapshot
@@ -131,7 +131,6 @@ final class HostService {
         network.onFrame = { [weak self] peer, frame in self?.receive(frame, from: peer) }
         network.onFailure = { [weak self] reason in self?.recoverListener(reason) }
         network.onIssue = { [weak self] message in self?.onIssue?(message) }
-        pairingBootstrap.onRequest = { [weak self] secret in self?.bootstrapCertificate(for: secret) }
         network.onDisconnect = { [weak self] id in
             self?.lastCreditSent.removeValue(forKey: id)
             self?.acknowledgedCredits.removeValue(forKey: id)
@@ -168,18 +167,15 @@ final class HostService {
         if let observing { observationEnabled = observing }
         do {
             try store.beginEpoch()
-            let identity = try await TLSIdentity.loadOrCreate(hostId: store.hostId, credentials: store.credentials)
-            self.identity = identity
-            try await network.start(
-                identity: identity, port: configuration.port, name: configuration.name, hostId: store.hostId)
-            try await pairingBootstrap.start(controlPort: configuration.port)
+            try await network.start(port: configuration.port, name: configuration.name, hostId: store.hostId)
+            await startWebRemote()
             bluetooth.start()
             startStatusReporting()
             await catalog.configure(storefront: configuration.storefront)
             if observationEnabled { startObservation() }
         } catch {
             serviceRunning = false
-            pairingBootstrap.stop()
+            webRemote.stop()
             network.stop()
             throw error
         }
@@ -231,7 +227,7 @@ final class HostService {
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
         network.stop()
-        pairingBootstrap.stop()
+        webRemote.stop()
         bluetooth.stop()
         logger.flush()
     }
@@ -251,7 +247,7 @@ final class HostService {
     }
 
     private func recoverListener(_ reason: String?) {
-        guard serviceRunning, listenerRecovery == nil, let identity else { return }
+        guard serviceRunning, listenerRecovery == nil else { return }
         listenerRecovery = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.listenerRecovery = nil }
@@ -262,9 +258,8 @@ final class HostService {
                         try await Task.sleep(for: .seconds(seconds))
                         try Task.checkCancellation()
                         try await self.network.start(
-                            identity: identity, port: self.configuration.port, name: self.configuration.name,
-                            hostId: self.store.hostId)
-                        try await self.pairingBootstrap.start(controlPort: self.configuration.port)
+                            port: self.configuration.port, name: self.configuration.name, hostId: self.store.hostId)
+                        await self.startWebRemote()
                         self.onDevicesChanged?()
                         return
                     } catch is CancellationError { return } catch { continue }
@@ -297,34 +292,22 @@ final class HostService {
     }
 
     func createInvitation() throws -> PairingInvitation {
-        guard let identity else { throw CadenzaError.failure("network", "Host is still starting.") }
-        guard pairingBootstrap.ready else {
-            throw CadenzaError.failure("network", "Pairing is still starting. Try again in a moment.")
-        }
         let address =
             configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
         guard let address else {
             throw CadenzaError.failure("network", "Connect Cadenza Host to your local network first.")
         }
         let invitation = PairingInvitation(
-            host: address, port: Int(configuration.port), fingerprint: identity.fingerprint,
-            certificateDerBase64: identity.certificateDerBase64,
+            host: address, port: Int(configuration.port),
             secret: try CredentialFile.randomToken(), hostName: configuration.name,
-            pin: String(format: "%04d", Int.random(in: 0...9_999))
+            pin: String(format: "%04d", Int.random(in: 0...9_999)),
+            webPort: configuration.webEnabled ? Int(configuration.webPort) : nil
         )
         self.invitation = invitation
         invitationDeadline = monotonicMs() + 300_000
         invitationPinDeadline = monotonicMs() + 7_000
         invitationPinAttempts = 0
         return invitation
-    }
-
-    private func bootstrapCertificate(for secret: Data) -> Data? {
-        guard let invitation, let identity,
-            monotonicMs() < invitationDeadline,
-            CredentialFile.equal(String(decoding: secret, as: UTF8.self), invitation.secret)
-        else { return nil }
-        return Data(base64Encoded: identity.certificateDerBase64)
     }
 
     func revoke(_ remoteId: String) throws {
@@ -471,8 +454,7 @@ final class HostService {
         var welcome = Welcome(
             hostId: store.hostId, hostName: configuration.name, hostEpoch: store.epoch,
             remoteId: remoteId, token: token, hostAddress: welcomeAddress,
-            hostPort: Int(configuration.port), hostFingerprint: identity?.fingerprint,
-            hostCertificateDerBase64: identity?.certificateDerBase64,
+            hostPort: Int(configuration.port),
             hostTimeMs: monotonicMs(), updates: configuration.updates
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }

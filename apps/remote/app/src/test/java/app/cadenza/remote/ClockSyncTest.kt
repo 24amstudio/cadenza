@@ -12,8 +12,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.ByteBuffer
-import java.util.Base64
 
 class ClockSyncTest {
     @Test
@@ -81,84 +79,33 @@ class ClockSyncTest {
 
     @Test
     fun invalidPairingDetailsCannotConstructAConnectionTarget() {
-        val invite =
-            JSONObject()
-                .put("version", 1)
-                .put("host", "192.168.1.20")
-                .put("port", 43127)
-                .put("fingerprint", TestCertificate.fingerprint)
-                .put("certificate_der_base64", TestCertificate.encoded)
-                .put("secret", "s".repeat(44))
-                .put("host_name", "Example Cadenza Host")
-        assertEquals(43127, Wire.invitation(invite.toString()).port)
-        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(invite.put("host", "https://example.com/").toString()) }
-        invite.put("host", "192.168.1.20").put("fingerprint", "accept-any-certificate")
-        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(invite.toString()) }
+        assertEquals(43127, Wire.invitation(PairingPayloads.binary()).port)
+        assertThrows(IllegalArgumentException::class.java) {
+            Wire.invitation(PairingPayloads.binary(host = "https://example.com/"))
+        }
+        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(PairingPayloads.binary(port = 80)) }
+        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(PairingPayloads.binary(secret = "short")) }
+        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(PairingPayloads.binary(version = 2)) }
     }
 
     @Test
-    fun compactPairingPayloadDerivesThePinnedCertificateFingerprint() {
-        val host = "192.168.1.20".toByteArray()
-        val secret = "s".repeat(44).toByteArray()
-        val certificate = TestCertificate.bytes
-        val fingerprint =
-            TestCertificate.fingerprint
-                .chunked(2)
-                .map { it.toInt(16).toByte() }
-                .toByteArray()
-        val payload =
-            ByteBuffer
-                .allocate(5 + 1 + host.size + 2 + 1 + secret.size + 2 + certificate.size + fingerprint.size)
-                .put(byteArrayOf(0x43, 0x44, 0x5A, 0x50, 1))
-                .put(host.size.toByte())
-                .put(host)
-                .putShort(43127.toShort())
-                .put(secret.size.toByte())
-                .put(secret)
-                .putShort(certificate.size.toShort())
-                .put(certificate)
-                .put(fingerprint)
-                .array()
+    fun compactPairingPayloadCarriesTheHostTargetAndSecret() {
+        val payload = PairingPayloads.binary()
 
         val invitation = Wire.invitation(payload)
 
         assertEquals("192.168.1.20", invitation.host)
         assertEquals(43127, invitation.port)
-        assertEquals(TestCertificate.fingerprint, invitation.fingerprint)
-        assertEquals(TestCertificate.encoded, invitation.certificateDerBase64)
-        val textPayload = "CDZP:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload)
-        val textInvitation = Wire.invitation(textPayload.toByteArray())
-        assertEquals(invitation.host, textInvitation.host)
-        assertEquals(invitation.fingerprint, textInvitation.fingerprint)
-        val fingerprintOnlyPayload =
-            ByteBuffer
-                .allocate(5 + 1 + host.size + 2 + 1 + secret.size + fingerprint.size)
-                .put(byteArrayOf(0x43, 0x44, 0x5A, 0x50, 2))
-                .put(host.size.toByte())
-                .put(host)
-                .putShort(43127.toShort())
-                .put(secret.size.toByte())
-                .put(secret)
-                .put(fingerprint)
-                .array()
-        val fingerprintOnlyInvitation = Wire.invitation(fingerprintOnlyPayload)
-        assertEquals(invitation.fingerprint, fingerprintOnlyInvitation.fingerprint)
-        assertEquals("", fingerprintOnlyInvitation.certificateDerBase64)
-        val fingerprintOnlyText = "CDZP:" + Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprintOnlyPayload)
-        assertEquals(invitation.fingerprint, Wire.invitation(fingerprintOnlyText.toByteArray()).fingerprint)
-        val damaged =
-            payload.copyOf().also {
-                it[it.lastIndex] = (it.last() + 1).toByte()
-            }
-        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(damaged) }
+        assertEquals("s".repeat(44), invitation.secret)
+        assertEquals(invitation.secret, Wire.invitation(PairingPayloads.text(payload).toByteArray()).secret)
+        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(payload.copyOf(payload.size - 3)) }
+        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(payload + byteArrayOf(0)) }
     }
 
     @Test
-    fun compactPairingIsNotRoutedThroughTheJsonFallback() {
-        val payload = byteArrayOf(0x43, 0x44, 0x5A, 0x50)
+    fun legacyJsonInvitationsAreRejected() {
+        val legacy = "{\"version\":1,\"host\":\"192.168.1.20\",\"port\":43127,\"secret\":\"${"s".repeat(44)}\"}"
 
-        assertTrue(Wire.isCompactInvitation(payload))
-        assertTrue(Wire.isCompactInvitation("CDZP:AQ".toByteArray()))
-        assertFalse(Wire.isCompactInvitation("{\"version\":1}".toByteArray()))
+        assertThrows(IllegalArgumentException::class.java) { Wire.invitation(legacy.toByteArray()) }
     }
 }

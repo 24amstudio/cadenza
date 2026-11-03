@@ -8,8 +8,6 @@ struct Welcome: Codable, Sendable {
     var token: String? = nil
     var hostAddress: String? = nil
     var hostPort: Int? = nil
-    var hostFingerprint: String? = nil
-    var hostCertificateDerBase64: String? = nil
     var hostTimeMs: Int64
     var protocolMajor: Int = 1
     var protocolMinor: Int = 1

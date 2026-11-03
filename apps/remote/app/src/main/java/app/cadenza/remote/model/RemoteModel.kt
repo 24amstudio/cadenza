@@ -43,7 +43,6 @@ import app.cadenza.remote.network.PathMeasurementService
 import app.cadenza.remote.network.PrioritizedFrameQueue
 import app.cadenza.remote.network.RemoteConnection
 import app.cadenza.remote.network.RemoteStatusPublisher
-import app.cadenza.remote.network.loadPairingCertificate
 import app.cadenza.remote.network.parsePairingInvitation
 import app.cadenza.remote.recommendation.RecommendationEngine
 import app.cadenza.remote.recommendation.RecommendationFeedback
@@ -392,34 +391,13 @@ class RemoteModel(
             endpoints.clear()
             remoteName = name.trim()
             if (firstPairing) {
-                // A QR pairing establishes the certificate used by both LAN and
-                // BLE. Start the first session in hybrid mode so the Remote can
-                // discover the Host's BLE peripheral immediately after pairing.
+                // Start the first session in hybrid mode so the Remote can discover
+                // the Host's BLE peripheral immediately after pairing.
                 transportMode = "hybrid"
                 preferences.write("transport_mode" to transportMode)
                 mutable.update { it.copy(transportMode = transportMode) }
             }
-            if (invite.certificateDerBase64.isEmpty()) {
-                mutable.update { it.copy(connecting = true, connectionIssue = null) }
-                viewModelScope.loadPairingCertificate(invite, ioDispatcher) { result ->
-                    result
-                        .onSuccess { certificate ->
-                            if (invitation == invite) {
-                                invitation = invite.copy(certificateDerBase64 = certificate)
-                                connect()
-                            }
-                        }.onFailure { error ->
-                            if (invitation == invite) {
-                                invitation = null
-                                val message = error.message ?: "Could not retrieve the Host certificate."
-                                mutable.update { it.copy(connecting = false, connectionIssue = message) }
-                                showError("Could not connect", message)
-                            }
-                        }
-                }
-            } else {
-                connect()
-            }
+            connect()
         } catch (error: Exception) {
             val message = error.message ?: "Scan a current Host QR code."
             mutable.update { it.copy(connecting = false, connectionIssue = message) }

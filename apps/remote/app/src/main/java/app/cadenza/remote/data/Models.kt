@@ -5,7 +5,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.security.MessageDigest
 import java.util.Base64
 
 data class SongIdentity(
@@ -117,18 +116,13 @@ data class HostProfile(
     val name: String,
     val address: String,
     val port: Int,
-    val fingerprint: String,
     val remoteId: String,
-    val certificateDerBase64: String = "",
 )
 
 data class PairingInvitation(
     val host: String,
     val port: Int,
-    val fingerprint: String,
     val secret: String,
-    val hostName: String,
-    val certificateDerBase64: String,
 )
 
 data class SongStatistic(
@@ -171,8 +165,6 @@ object Wire {
     private val pairingTextPrefix = "CDZP:".toByteArray(Charsets.US_ASCII)
     const val MAXIMUM_BYTES = 1_048_576
     const val MAXIMUM_COUNTER = 9_007_199_254_740_991L
-
-    fun isCompactInvitation(payload: ByteArray): Boolean = payload.hasPrefix(pairingMagic) || payload.hasPrefix(pairingTextPrefix)
 
     fun frame(type: String): JSONObject = JSONObject().put("version", 1).put("type", type)
 
@@ -315,23 +307,6 @@ object Wire {
         )
     }
 
-    fun invitation(text: String): PairingInvitation {
-        require(text.toByteArray().size <= 4_096) { "Pairing data is too large." }
-        val value = JSONObject(text)
-        require(value.counter("version") == 1L) { "This pairing version is unsupported." }
-        val host = value.getString("host")
-        val port = value.counter("port")
-        val fingerprint = value.getString("fingerprint")
-        val secret = value.getString("secret")
-        val certificate = value.getString("certificate_der_base64")
-        require(host.matches(Regex("[A-Za-z0-9.\\-:]{1,253}")) && port in 1024..65535) { "Invalid Host address." }
-        require(fingerprint.matches(Regex("[0-9a-f]{64}")) && secret.length in 32..128) { "Invalid pairing identity." }
-        require(certificate.length in 512..3_072 && certificate.matches(Regex("[A-Za-z0-9+/]+={0,2}"))) {
-            "Scan a current Host QR code containing its public certificate."
-        }
-        return PairingInvitation(host, port.toInt(), fingerprint, secret, value.getString("host_name").take(80), certificate)
-    }
-
     fun invitation(payload: ByteArray): PairingInvitation {
         if (payload.hasPrefix(pairingTextPrefix)) {
             require(payload.size in (pairingTextPrefix.size + 1)..4_096) { "Pairing data is too large." }
@@ -352,40 +327,15 @@ object Wire {
         val magic = ByteArray(pairingMagic.size)
         input.get(magic)
         require(magic.contentEquals(pairingMagic)) { "This QR code is not a Cadenza Host invitation." }
-        val version = input.get().toInt()
-        require(version in 1..2) { "This pairing version is unsupported." }
+        require(input.get().toInt() == 3) { "Update Cadenza Host to pair with this Remote." }
         val host = readUtf8(input, input.get().toInt() and 0xff, "Host address")
         val port = input.short.toInt() and 0xffff
         val secret = readUtf8(input, input.get().toInt() and 0xff, "Pairing secret")
-        val certificate: ByteArray
-        val fingerprintBytes = ByteArray(32)
-        if (version == 1) {
-            val certificateLength = input.short.toInt() and 0xffff
-            require(certificateLength in 512..3_072 && certificateLength <= input.remaining() - 32) {
-                "The Host certificate is invalid."
-            }
-            certificate = ByteArray(certificateLength)
-            input.get(certificate)
-            input.get(fingerprintBytes)
-        } else {
-            require(input.remaining() >= fingerprintBytes.size) { "The Host fingerprint is invalid." }
-            certificate = ByteArray(0)
-            input.get(fingerprintBytes)
-        }
-        require(port in 1024..65535) { "Invalid Host address." }
-        var padding = 0
-        while (input.hasRemaining()) {
-            require(input.get().toInt() == 0 && ++padding <= 16) { "Invalid pairing envelope padding." }
-        }
+        require(!input.hasRemaining()) { "Invalid pairing envelope." }
         require(host.matches(Regex("[A-Za-z0-9.\\-:]{1,253}"))) { "Invalid Host address." }
+        require(port in 1024..65535) { "Invalid Host address." }
         require(secret.length in 32..128) { "Invalid pairing identity." }
-        val encodedCertificate = if (certificate.isEmpty()) "" else Base64.getEncoder().encodeToString(certificate)
-        if (certificate.isNotEmpty()) {
-            val digest = MessageDigest.getInstance("SHA-256").digest(certificate)
-            require(digest.contentEquals(fingerprintBytes)) { "The Host certificate fingerprint is invalid." }
-        }
-        val fingerprint = fingerprintBytes.joinToString("") { "%02x".format(it.toInt() and 255) }
-        return PairingInvitation(host, port, fingerprint, secret, "", encodedCertificate)
+        return PairingInvitation(host, port, secret)
     }
 
     private fun readUtf8(

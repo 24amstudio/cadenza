@@ -29,7 +29,7 @@ class DatabaseIntegrationTest {
     private val app get() = ApplicationProvider.getApplicationContext<CadenzaApplication>()
     private lateinit var database: CadenzaDatabase
     private val profile =
-        HostProfile("test-host", "Test Cadenza Host", "10.0.0.5", 43127, TestCertificate.fingerprint, "remote-a", TestCertificate.encoded)
+        HostProfile("test-host", "Test Cadenza Host", "10.0.0.5", 43127, "remote-a")
 
     @Before
     fun open() {

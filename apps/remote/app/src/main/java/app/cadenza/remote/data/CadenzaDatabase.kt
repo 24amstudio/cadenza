@@ -91,9 +91,7 @@ class CadenzaDatabase(
                 put("credential_reference", "host." + profile.hostId)
                 put("address", profile.address)
                 put("port", profile.port)
-                put("fingerprint", profile.fingerprint)
                 put("remote_id", profile.remoteId)
-                put("certificate_der_base64", profile.certificateDerBase64)
             }
         val db = writableDatabase
         db.transaction {
@@ -156,7 +154,7 @@ class CadenzaDatabase(
     fun profile(hostId: String): HostProfile? {
         readableDatabase
             .rawQuery(
-                "SELECT host_id,display_name,address,port,fingerprint,remote_id,certificate_der_base64 FROM paired_hosts WHERE host_id=?",
+                "SELECT host_id,display_name,address,port,remote_id FROM paired_hosts WHERE host_id=?",
                 arrayOf(hostId),
             ).use {
                 if (!it.moveToFirst()) return null
@@ -166,8 +164,6 @@ class CadenzaDatabase(
                     it.getString(2),
                     it.getInt(3),
                     it.getString(4),
-                    it.getString(5),
-                    it.getString(6),
                 )
             }
     }

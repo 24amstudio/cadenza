@@ -1,12 +1,16 @@
 package app.cadenza.remote
 
 import android.database.sqlite.SQLiteConstraintException
+import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import app.cadenza.remote.data.CadenzaDatabase
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SqlStatements
 import app.cadenza.remote.model.id
+import app.cadenza.remote.recommendation.RecommendationEngine
+import app.cadenza.remote.recommendation.RecommendationPassportSigner
+import app.cadenza.remote.recommendation.SignedRecommendationPassport
 import app.cadenza.remote.ui.duration
 import org.json.JSONObject
 import org.junit.After
@@ -103,6 +107,32 @@ class DatabaseIntegrationTest {
                 .getString("operation"),
         )
     }
+
+    @Test
+    fun maintenanceReclaimsFreedPagesWithoutFailing() {
+        repeat(300) { database.queueLog("info", "test", "x".repeat(2_000)) }
+        database.maintain()
+    }
+
+    @Test
+    fun restartedRecommendationEngineContinuesAfterPersistedPassport() {
+        val issued = RecommendationEngine(RecommendationPassportSigner("passport-test")).passport(nowMs = 1_000)
+        database.saveRecommendationPassport(
+            passportSequence(issued),
+            issued.payload,
+            issued.publicKey,
+            issued.signature,
+            1_000,
+        )
+        database.close()
+        database = CadenzaDatabase(app)
+        val restarted = RecommendationEngine(RecommendationPassportSigner("passport-test"))
+        restarted.restoreSequence(database.latestRecommendationPassportSequence())
+        assertEquals(passportSequence(issued) + 1, passportSequence(restarted.passport(nowMs = 2_000)))
+    }
+
+    private fun passportSequence(signed: SignedRecommendationPassport): Long =
+        JSONObject(String(Base64.decode(signed.payload, Base64.NO_WRAP), Charsets.UTF_8)).getLong("sequence")
 
     private fun credit(
         sequence: Long,

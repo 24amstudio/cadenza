@@ -20,6 +20,8 @@ final class QueueCoordinator {
     private(set) var nativeRows: [NativeQueueRow] = []
     // Music's AutoPlay list, shown for information. It plays after the queue and is never changed by Cadenza.
     private(set) var autoPlay: [NativeQueueRow] = []
+    // An enqueue takes a moment to appear in Music. A request younger than this is never cancelled as missing.
+    private static let unboundGraceMs: Int64 = 60_000
     private var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
     private var lastStatus: MusicStatus?
@@ -77,7 +79,7 @@ final class QueueCoordinator {
         guard !locked else { return }
         locked = true
         defer { locked = false }
-        do { try await readState(includeQueue: false) } catch {
+        do { try await readState(includeQueue: needsStaleRequestSettlement()) } catch {
             synchronized = false
             issue = error.localizedDescription
             if current?.requestedBy != nil {
@@ -96,6 +98,7 @@ final class QueueCoordinator {
         let status = try await music.status(deadline: deadline)
         let now = monotonicMs()
         if primingLyrics && status.song?.identity != lastStatus?.song?.identity { primingLyrics = false }
+        let readNativeNow = includeQueue && !primingLyrics
         let nativeRead: Result<[NativeQueueRow], Error>
         if !includeQueue || primingLyrics {
             // Background refreshes keep the last queue read. Each edit reads the queue again after it runs and fails if the
@@ -236,6 +239,11 @@ final class QueueCoordinator {
         }
         for removed in missing {
             if let id = bindings.removeValue(forKey: removed.token), id != current?.entryId { try store.remove(id) }
+        }
+        // A saved request with no Music row and no visible row it could be is no longer in Music's queue. Cancelling it
+        // here stops it blocking every request until someone reconciles by hand.
+        if readNativeNow, queueVerified, activeCommand == nil, waiting.isEmpty, case .success = nativeRead {
+            _ = try settleUnboundRequests(observed: observed)
         }
         let unresolved = try store.pending().contains { entry in
             guard let id = entry["entry_id"]?.string else { return true }
@@ -679,8 +687,50 @@ final class QueueCoordinator {
         try store.bump()
     }
 
+    /// Saved requests that never reached a Music row and are old enough that their enqueue has finished.
+    private func unboundRequestIds() throws -> [String] {
+        let bound = Set(bindings.values)
+        let cutoff = wallMs() - Self.unboundGraceMs
+        return try store.pending().compactMap { row in
+            guard let id = row["entry_id"]?.string, row["native_token"]?.string == nil, !bound.contains(id),
+                let created = row["created_at_ms"]?.integer, created < cutoff
+            else { return nil }
+            return id
+        }
+    }
+
+    /// Cancels unbound requests that no visible row matches. A request a visible row matches is left alone, because
+    /// binding it would guess who requested that row.
+    private func settleUnboundRequests(observed: [NativeQueueRow]) throws -> Bool {
+        let stale = try unboundRequestIds().filter { id in
+            guard let entry = try store.entry(id), let title = entry["title"]?.string,
+                let artist = entry["artist"]?.string
+            else { return false }
+            return !observed.contains { $0.title == title && $0.artist == artist && bindings[$0.token] == nil }
+        }
+        guard !stale.isEmpty else { return false }
+        let assigned = Set(bindings.values)
+        for id in stale { try store.remove(id) }
+        try store.bump()
+        try journal.reconcileQueue(assignments: assigned)
+        logger?.log(
+            .warning, category: "queue", action: "queue.settled",
+            "Cancelled \(stale.count) saved request(s) that Music no longer lists.",
+            metadata: ["count": String(stale.count)])
+        return true
+    }
+
+    /// The background refresh reads the queue only while it is unsynchronized and Music already shows its queue, so the
+    /// Host never opens Music's panels for this.
+    private func needsStaleRequestSettlement() -> Bool {
+        guard !synchronized, activeCommand == nil, waiting.isEmpty,
+            ((try? unboundRequestIds()) ?? []).isEmpty == false
+        else { return false }
+        return music.accessibility.queuePanelOpen()
+    }
+
     /// Reads Music's queue on an explicit action. The Playing Next list is opened first when it is closed, and the read
-    /// waits for it only within the deadline. The status poll never reads the queue.
+    /// waits for it only within the deadline. The status poll reads the queue only for the settlement above.
     private func readNativeQueue(deadline: Int64) async throws -> [NativeQueueRow] {
         if !music.accessibility.queuePanelOpen() {
             try music.accessibility.requestQueuePanel()

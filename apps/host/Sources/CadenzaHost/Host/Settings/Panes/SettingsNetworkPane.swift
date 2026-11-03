@@ -16,6 +16,14 @@ struct SettingsNetworkPane: View {
             } footer: {
                 Text("The storefront is a two-letter country code, such as id or us.")
             }
+            Section {
+                Toggle("Cadenza Web", isOn: $model.configuration.webEnabled)
+            } footer: {
+                Text(
+                    "Lets a browser on this network control Cadenza Host through port \(model.configuration.webPort). "
+                        + "Pairing codes then also open the web remote."
+                )
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("Network")

@@ -61,17 +61,11 @@ final class NetworkService {
     var logger: HostLogger?
     private let queue = DispatchQueue(label: "app.cadenza.network", qos: .userInitiated)
 
-    func start(identity: TLSIdentity, port: UInt16, name: String, hostId: String) async throws {
+    func start(port: UInt16, name: String, hostId: String) async throws {
         stop()
-        let tls = NWProtocolTLS.Options()
-        guard let local = sec_identity_create(identity.identity) else {
-            throw CadenzaError.failure("tls", "Cannot initialize the Host identity.")
-        }
-        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, local)
-        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
-        let parameters = NWParameters(tls: tls, tcp: tcp)
+        let parameters = NWParameters(tls: nil, tcp: tcp)
         parameters.includePeerToPeer = false
         let webSocket = NWProtocolWebSocket.Options()
         webSocket.autoReplyPing = true
@@ -160,7 +154,7 @@ final class NetworkService {
     }
 
     private func accept(_ connection: NWConnection) {
-        guard peers.count < 32, localAddress(connection.endpoint) else {
+        guard peers.count < 32, LocalAddress.isLocal(connection.endpoint) else {
             connection.cancel()
             return
         }
@@ -186,18 +180,6 @@ final class NetworkService {
             }
         }
         connection.start(queue: queue)
-    }
-
-    private func localAddress(_ endpoint: NWEndpoint) -> Bool {
-        guard case .hostPort(let host, _) = endpoint else { return false }
-        let value = String(describing: host).lowercased()
-        if value == "::1" || value.hasPrefix("fe80:") || value.hasPrefix("fc") || value.hasPrefix("fd") { return true }
-        let bytes = value.split(separator: ".").compactMap { UInt8($0) }
-        guard bytes.count == 4 else { return false }
-        return bytes[0] == 10 || bytes[0] == 127
-            || (bytes[0] == 192 && bytes[1] == 168)
-            || (bytes[0] == 172 && (16...31).contains(bytes[1]))
-            || (bytes[0] == 169 && bytes[1] == 254)
     }
 
     private func receive(_ peerId: String) {
@@ -253,6 +235,31 @@ final class NetworkService {
     func disconnectBluetooth(_ centralID: UUID) {
         guard let peerId = bluetoothPeers.removeValue(forKey: centralID) else { return }
         disconnect(peerId)
+    }
+
+    // Browser Remotes arrive through the web listener, which owns WebSocket framing. Their messages then pass through the
+    // same authentication, rate limits, and handlers as native Remotes.
+    func acceptWeb(send: @escaping (Data) -> Bool, cancel: @escaping () -> Void) -> String? {
+        guard peers.count < 32 else {
+            cancel()
+            return nil
+        }
+        let peer = Peer(transport: "lan", send: send, cancel: cancel)
+        peers[peer.id] = peer
+        logger?.log(
+            .info, category: "network", action: "peer.connected", "Remote connection opened",
+            metadata: ["peer": peer.id, "transport": "web"]
+        )
+        Task { @MainActor [weak self, weak peer] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, let peer, self.peers[peer.id]?.authenticated == false else { return }
+            self.disconnect(peer.id)
+        }
+        return peer.id
+    }
+
+    func receiveWeb(_ data: Data, from peerId: String) {
+        consume(data, peerId: peerId)
     }
 
     private func consume(_ data: Data, peerId: String) {

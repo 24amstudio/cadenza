@@ -12,7 +12,6 @@ internal fun failureSeverity(code: String?): FailureSeverity =
         "music_permission",
         "authentication",
         "revoked",
-        "tls",
         "secure_storage",
         "storage",
         "database_corrupt",

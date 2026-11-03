@@ -238,7 +238,7 @@ internal fun resultPayloadCandidates(result: Result): List<ByteArray> {
     val binary = segments?.filterIsInstance<ByteArray>()?.takeIf { it.isNotEmpty() }
     val segmented = binary?.fold(ByteArray(0)) { output, segment -> output + segment }
     val text = result.text.toByteArray(Charsets.UTF_8)
-    val candidates = listOfNotNull(segmented, result.rawBytes, text)
+    val candidates = listOfNotNull(segmented, result.rawBytes, text, webWrappedInvitation(result.text))
     val compact = candidates.filter { it.startsWith(compactPairingMagic) }
     val other = candidates.filterNot { it.startsWith(compactPairingMagic) }
     return (compact + other).fold(emptyList()) { unique, candidate ->
@@ -246,17 +246,18 @@ internal fun resultPayloadCandidates(result: Result): List<ByteArray> {
     }
 }
 
+// With Cadenza Web on, Cadenza Host encodes the invitation as an HTTP address whose fragment is the native "CDZP:"
+// payload. A regular camera opens the address; this app reads the same fragment, so one code serves both.
+internal fun webWrappedInvitation(text: String): ByteArray? {
+    if (!text.startsWith("http://")) return null
+    val fragment = text.substringAfter('#', missingDelimiterValue = "")
+    return fragment.takeIf { it.startsWith("CDZP:") }?.toByteArray(Charsets.US_ASCII)
+}
+
 internal fun pairingResultPayload(result: Result): ByteArray? =
     resultPayloadCandidates(result).firstOrNull { it.size <= 4_096 && isValidPairingPayload(it) }
 
-private fun isValidPairingPayload(payload: ByteArray): Boolean =
-    runCatching {
-        if (Wire.isCompactInvitation(payload)) {
-            Wire.invitation(payload)
-        } else {
-            Wire.invitation(String(payload, Charsets.UTF_8))
-        }
-    }.isSuccess
+private fun isValidPairingPayload(payload: ByteArray): Boolean = runCatching { Wire.invitation(payload) }.isSuccess
 
 private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
     size >= prefix.size && prefix.indices.all { index -> this[index] == prefix[index] }

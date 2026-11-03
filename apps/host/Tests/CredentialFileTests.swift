@@ -37,7 +37,7 @@ struct CredentialFileTests {
         try damaged.write(to: url)
 
         let file = CredentialFile(url: url)
-        #expect(throws: CadenzaError.self) { try file.read("tls.host") }
+        #expect(throws: CadenzaError.self) { try file.read("remote.host") }
         #expect(throws: CadenzaError.self) { try file.write("remote.a", Data("token".utf8)) }
         #expect(try Data(contentsOf: url) == damaged)
     }

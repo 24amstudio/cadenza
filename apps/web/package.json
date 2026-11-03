@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "nuxt dev",
     "generate": "nuxt generate",
-    "typecheck": "nuxt prepare && vue-tsc -p .nuxt/tsconfig.json --noEmit",
-    "lint": "oxlint . --ignore-pattern .nuxt --ignore-pattern .output --ignore-pattern node_modules",
-    "format:check": "prettier --check ."
+    "typecheck": "nuxt prepare && vue-tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint -c ../../.oxlintrc.json --deny-warnings --ignore-pattern .nuxt --ignore-pattern .output --ignore-pattern node_modules .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "bun test tests"
   },
   "dependencies": {
     "@pinia/nuxt": "^0.11.2",
@@ -16,8 +18,8 @@
     "vue": "^3.5.22"
   },
   "devDependencies": {
-    "@nuxtjs/color-mode": "^3.5.2",
     "@oxlint/plugins": "1.88.0",
+    "@types/bun": "1.4.3",
     "@types/node": "26.6.5",
     "oxlint": "1.88.0",
     "prettier": "3.9.10",

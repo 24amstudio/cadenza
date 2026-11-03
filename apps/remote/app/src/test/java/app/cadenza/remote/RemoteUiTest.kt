@@ -130,7 +130,7 @@ class RemoteUiTest {
                 ConnectionStatus(
                     RemoteState(
                         connecting = true,
-                        profile = HostProfile(hostId, "Test Cadenza Host", "10.0.0.5", 43127, "fingerprint", remoteId),
+                        profile = HostProfile(hostId, "Test Cadenza Host", "10.0.0.5", 43127, remoteId),
                     ),
                 )
             }
@@ -896,9 +896,7 @@ class RemoteUiTest {
                 "Test Cadenza Host",
                 "10.0.0.5",
                 43127,
-                TestCertificate.fingerprint,
                 remoteId,
-                TestCertificate.encoded,
             )
         app.database.saveProfile(profile)
         app.database.saveState(hostId, snapshot(emptyQueue, playing, sing))

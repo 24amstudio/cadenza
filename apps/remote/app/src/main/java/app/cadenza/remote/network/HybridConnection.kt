@@ -8,8 +8,6 @@ class HybridConnection(
     context: Context,
     host: String,
     port: Int,
-    fingerprint: String,
-    certificateDerBase64: String,
     opened: () -> Unit,
     received: (JSONObject) -> Unit,
     closed: (String) -> Unit,
@@ -21,7 +19,7 @@ class HybridConnection(
     private var pendingPair: JSONObject? = null
     private var handshake: JSONObject? = null
     private val lan =
-        HostConnection(host, port, fingerprint, certificateDerBase64, ::lanOpened, received) {
+        HostConnection(host, port, ::lanOpened, received) {
             lanReady = false
             if (!bleReady) closed(it)
         }

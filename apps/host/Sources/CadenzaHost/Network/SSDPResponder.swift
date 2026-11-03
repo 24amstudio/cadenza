@@ -31,7 +31,7 @@ final class SSDPResponder {
                 let response = Self.response(
                     for: content,
                     hostId: hostId,
-                    location: "https://\(address):\(servicePort.rawValue)/")
+                    location: "http://\(address):\(servicePort.rawValue)/")
                 guard let response else { return }
                 message.reply(content: response)
             }
@@ -55,7 +55,7 @@ final class SSDPResponder {
     nonisolated static func response(for data: Data, hostId: String, location: String) -> Data? {
         guard requestMatches(data),
             hostId.range(of: "^[0-9a-f-]{36}$", options: .regularExpression) != nil,
-            location.hasPrefix("https://"),
+            location.hasPrefix("http://"),
             (location.unicodeScalars.allSatisfy { $0.value >= 0x20 })
         else { return nil }
         let lines = [

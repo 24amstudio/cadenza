@@ -2,6 +2,9 @@
 node_modules/
 **/.nuxt/
 **/.output/
+/apps/host/Resources/WebRemote/
+# Nuxt's static preset links dist to the generated output.
+/apps/web/dist
 .cache/
 .tools/
 dist/

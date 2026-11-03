@@ -1,5 +1,7 @@
 # Native build output and local tooling
 node_modules/
+**/.nuxt/
+**/.output/
 .cache/
 .tools/
 dist/

@@ -89,6 +89,8 @@ const excluded = new Set([
   '.tools',
   '.build',
   '.gradle',
+  '.nuxt',
+  '.output',
   'build',
   'dist',
   'vendor',

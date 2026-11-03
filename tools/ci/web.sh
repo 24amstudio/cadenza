@@ -14,6 +14,8 @@ install -m 755 "$TMPDIR/bun-install/bun-linux-x64/bun" "$HOME/.bun/bin/bun"
 export PATH="$HOME/.bun/bin:$PATH"
 export SYSTEM_BUN="$(command -v bun)"
 "$SYSTEM_BUN" --version
+# The shared Oxlint configuration loads its anti-slop plugin from the root workspace, so the root dependencies are needed too.
+(cd "$project_root" && "$SYSTEM_BUN" install --frozen-lockfile)
 cd "$project_root/apps/web"
 "$SYSTEM_BUN" install --frozen-lockfile
 "$SYSTEM_BUN" run typecheck

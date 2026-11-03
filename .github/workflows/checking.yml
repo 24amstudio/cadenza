@@ -64,9 +64,11 @@ jobs:
             esac
           done <<< "$changed_paths"
 
-          printf 'host=%s\n' "$host" >> "$GITHUB_OUTPUT"
-          printf 'remote=%s\n' "$remote" >> "$GITHUB_OUTPUT"
-          printf 'web=%s\n' "$web" >> "$GITHUB_OUTPUT"
+          {
+            printf 'host=%s\n' "$host"
+            printf 'remote=%s\n' "$remote"
+            printf 'web=%s\n' "$web"
+          } >> "$GITHUB_OUTPUT"
 
   portable:
     runs-on: ubuntu-latest

@@ -27,11 +27,10 @@ import {
 import type { CurrentPlayback, LyricDocument } from '../app/lib/protocol/types';
 
 // Builds the same bytes Cadenza Host writes into its QR fragment, so the parser is checked against the real layout.
-function invitationFragment(secret: string, version = 2): string {
+function invitationFragment(secret: string, version = 3): string {
   const host = Buffer.from('192.168.1.20', 'utf8');
   const port = Buffer.from([0x0b, 0x0b]);
   const secretBytes = Buffer.from(secret, 'utf8');
-  const fingerprint = Buffer.alloc(32, 0xab);
 
   const bytes = Buffer.concat([
     Buffer.from([0x43, 0x44, 0x5a, 0x50, version, host.length]),
@@ -39,7 +38,6 @@ function invitationFragment(secret: string, version = 2): string {
     port,
     Buffer.from([secretBytes.length]),
     secretBytes,
-    fingerprint,
   ]);
 
   const encoded = bytes.toString('base64url');
@@ -61,13 +59,25 @@ describe('pairing invitation', () => {
   });
 
   test('refuses the superseded invitation layout', () => {
-    expect(readInvitationSecret(invitationFragment(secret, 1))).toBeNull();
+    expect(readInvitationSecret(invitationFragment(secret, 2))).toBeNull();
   });
 
   test('refuses truncated invitations', () => {
     const complete = invitationFragment(secret);
     expect(
       readInvitationSecret(complete.slice(0, complete.length - 20)),
+    ).toBeNull();
+  });
+
+  test('refuses invitations with bytes after the secret', () => {
+    const complete = Buffer.from(
+      invitationFragment(secret).slice('#CDZP:'.length),
+      'base64url',
+    );
+
+    const extended = Buffer.concat([complete, Buffer.from([0x00])]);
+    expect(
+      readInvitationSecret(`#CDZP:${extended.toString('base64url')}`),
     ).toBeNull();
   });
 });

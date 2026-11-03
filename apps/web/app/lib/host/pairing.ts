@@ -1,15 +1,14 @@
 // Cadenza Host puts the native pairing invitation after "#" in its QR URL, for example
-// https://192.168.1.20:43129/#CDZP:<base64url>. The fragment never reaches the Host as part of an HTTP request.
-// Layout after base64url decoding: "CDZP" magic, version byte, length-prefixed host, 2-byte port, length-prefixed
-// one-use secret, then a 32-byte certificate fingerprint. Only the secret is needed by the browser, which already
-// connects to the origin the QR code named.
+// http://192.168.1.20:43129/#CDZP:<base64url>. The fragment never reaches the Host as part of an HTTP request.
+// Layout after base64url decoding: "CDZP" magic, version byte, length-prefixed host, 2-byte port, then a
+// length-prefixed one-use secret. The browser needs only the secret because it already connects to the origin
+// the QR code named.
 
 const invitationPrefix = 'CDZP:';
 const magic = [0x43, 0x44, 0x5a, 0x50];
 
-// Version 1 invitations carried the certificate in a different layout; the browser accepts only the current form.
-const supportedVersion = 2;
-const fingerprintBytes = 32;
+// Older invitation layouts are refused rather than parsed.
+const supportedVersion = 3;
 
 export function readInvitationSecret(hash: string): string | null {
   const fragment = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -39,7 +38,8 @@ function secretFromBytes(bytes: Uint8Array): string | null {
 
   if (secretLength < 32 || secretLength > 128) return null;
 
-  if (bytes.length < secretEnd + fingerprintBytes) return null;
+  // The Host writes exactly these bytes, so anything after the secret means this is not a current invitation.
+  if (bytes.length !== secretEnd) return null;
 
   return new TextDecoder().decode(bytes.slice(secretStart, secretEnd));
 }

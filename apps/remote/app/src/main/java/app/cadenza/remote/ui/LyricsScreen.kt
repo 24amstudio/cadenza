@@ -99,7 +99,10 @@ internal fun activeLyricIndices(
 }
 
 // Distance from the nearest active line. Lyrics with no active line use the dimmest tier.
-private fun lyricDistance(index: Int, active: List<Int>): Int = active.minOfOrNull { abs(index - it) } ?: 3
+private fun lyricDistance(
+    index: Int,
+    active: List<Int>,
+): Int = active.minOfOrNull { abs(index - it) } ?: 3
 
 private fun activeWordIndex(
     line: app.cadenza.remote.data.LyricLine,

@@ -26,7 +26,7 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Cadenza"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
         <meta-data android:name="app.cadenza.BUILD_PROFILE" android:value="${cadenzaBuildProfile}" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

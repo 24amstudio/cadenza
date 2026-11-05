@@ -11,6 +11,8 @@ export interface ClockProbe {
 export interface ClockEstimate {
   offsetMs: number;
   roundTripMs: number;
+  // Half the round trip bounds how far the offset can be wrong. Deadlines subtract it, as Cadenza Remote does.
+  uncertaintyMs: number;
 }
 
 // The probe with the shortest round trip has the least asymmetric queuing delay, so its offset is the most reliable.
@@ -32,7 +34,11 @@ export function bestClockEstimate(probes: ClockProbe[]): ClockEstimate | null {
       2;
 
     if (best === null || roundTripMs < best.roundTripMs) {
-      best = { offsetMs, roundTripMs };
+      best = {
+        offsetMs,
+        roundTripMs,
+        uncertaintyMs: Math.ceil(roundTripMs / 2),
+      };
     }
   }
 

@@ -411,6 +411,24 @@ describe('HostClient commands', () => {
     expect(await pending).toMatchObject({ outcome: 'applied', revision: 19 });
   });
 
+  test('a command expires within the one-second window the Host accepts', async () => {
+    const { client, sockets, clock } = harness();
+    client.start('S'.repeat(43));
+    socketAt(sockets, 0).open();
+    socketAt(sockets, 0).receive(welcome(token));
+    socketAt(sockets, 0).receive(snapshotFrame(18));
+    answerClockProbes(socketAt(sockets, 0), clock);
+
+    const hostNow = client.hostNowMs();
+    void client.sendCommand({ kind: 'playback.pause', occurrenceId });
+
+    const command = socketAt(sockets, 0).framesOfType('command')[0];
+    const remainingMs = Number(command?.expires_at_host_ms) - (hostNow ?? 0);
+
+    expect(remainingMs).toBeGreaterThan(0);
+    expect(remainingMs).toBeLessThanOrEqual(1_000);
+  });
+
   test('refuses to send before the Host has a clock estimate', async () => {
     const { client, sockets } = harness();
     client.start('S'.repeat(43));

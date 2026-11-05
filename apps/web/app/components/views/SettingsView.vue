@@ -133,7 +133,7 @@ function forget(): void {
       <p v-if="!nameValid" class="field-error">Use 1 to 80 characters.</p>
 
       <div class="row">
-        <span>Forget this browser</span>
+        <span>Forget this Host</span>
         <div v-if="!confirmingForget">
           <button
             class="danger-button"
@@ -145,7 +145,7 @@ function forget(): void {
         </div>
         <div v-else class="confirm">
           <button class="danger-button" type="button" @click="forget">
-            Forget browser
+            Forget Host
           </button>
           <button
             class="quiet-button"
@@ -157,7 +157,7 @@ function forget(): void {
         </div>
       </div>
       <p class="footnote">
-        Forgetting removes this browser’s credential here. Remove it from
+        Forgetting removes this Host from this browser. Remove this browser from
         Cadenza Host to stop it from reconnecting.
       </p>
     </section>

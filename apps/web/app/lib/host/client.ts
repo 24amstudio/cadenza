@@ -91,7 +91,11 @@ type PendingRequest =
   | { kind: 'rename'; name: string };
 
 const handshakeTimeoutMs = 8_000;
-const commandDeadlineMs = 5_000;
+
+// The Host refuses a command whose deadline is more than one second ahead of its clock. Cadenza Remote uses 900 ms
+// less the clock uncertainty, and so does this page. A longer deadline is rejected as invalid_deadline.
+const commandDeadlineMs = 900;
+
 const clockProbeCount = 4;
 const clockRefreshMs = 60_000;
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
@@ -113,6 +117,7 @@ export class HostClient {
   private capabilities: string[] = [];
   private snapshot: Snapshot | null = null;
   private offsetMs: number | null = null;
+  private uncertaintyMs = 0;
   private probes: ClockProbe[] = [];
   private readonly pendingCommands = new Map<string, PendingCommand>();
   private readonly artworkAssemblies = new Map<string, ArtworkAssembly>();
@@ -217,7 +222,10 @@ export class HostClient {
         encodeCommand({
           commandId,
           hostEpoch: snapshot.hostEpoch,
-          expiresAtHostMs: Math.max(0, Math.round(hostNow + commandDeadlineMs)),
+          expiresAtHostMs: Math.max(
+            0,
+            Math.round(hostNow + commandDeadlineMs - this.uncertaintyMs),
+          ),
           expectedRevision: snapshot.revision,
           action,
         }),
@@ -670,6 +678,7 @@ export class HostClient {
 
     if (estimate === null) return;
     this.offsetMs = estimate.offsetMs;
+    this.uncertaintyMs = estimate.uncertaintyMs;
     traceEvent('clock offset estimated', { offsetMs: estimate.offsetMs });
     this.options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
   }

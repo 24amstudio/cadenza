@@ -75,7 +75,7 @@ const body = computed(() => {
     return 'Choose Cadenza Host in the list that opens. Keep Bluetooth on near the Host.';
 
   if (linked.value)
-    return 'Cadenza Host shows a four-digit PIN. It expires seven seconds after the Host shows it.';
+    return 'Cadenza Host shows a four-digit PIN. It expires ten seconds after the Host shows it.';
 
   if (host.bluetoothSupported)
     return 'On Cadenza Host, choose Pair a Remote to show a PIN. Then find Cadenza Host from this browser.';

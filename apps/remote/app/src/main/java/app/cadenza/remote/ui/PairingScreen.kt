@@ -115,7 +115,7 @@ fun PairingScreen(
                         onValueChange = { value -> pin = value.filter(Char::isDigit).take(4) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Host PIN") },
-                        supportingText = { Text("The PIN expires after seven seconds.") },
+                        supportingText = { Text("The PIN expires after ten seconds.") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                     )

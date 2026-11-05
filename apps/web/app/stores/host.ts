@@ -111,18 +111,6 @@ export const useHostStore = defineStore('host', () => {
       !lyricsForCurrent.value.unavailable,
   );
 
-  // Lyrics are known to be absent only after Cadenza Host answers. A song that has just changed is still waiting.
-  const lyricsAbsent = computed(() => {
-    const state = lyricsForCurrent.value;
-
-    if (current.value === null || state === null) return false;
-
-    return (
-      state.unavailable ||
-      (state.document !== null && state.document.lines.length === 0)
-    );
-  });
-
   // The position ticks only while music is playing and the socket is connected. Each tick is a cheap recomputation of
   // the Host-anchored position, not a network request.
   const positionMs = computed(() => {
@@ -513,7 +501,6 @@ export const useHostStore = defineStore('host', () => {
     lyricsDocument,
     lyricsStatus,
     lyricsLoading,
-    lyricsAbsent,
     busyAction,
     artworkFor,
     requestArtwork,

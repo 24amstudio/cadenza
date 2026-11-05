@@ -144,6 +144,15 @@ struct ProtocolTests {
         #expect(document.lines[0].endMs == 3_000)
     }
 
+    @Test func lrclibSyllablesStayJoinedAndWordsKeepTheirSpaces() throws {
+        let record = LRCLIBRecord(
+            trackName: "Example", artistName: "Example Artist", albumName: "Album", duration: 12,
+            instrumental: false, plainLyrics: nil,
+            syncedLyrics: "[00:01.00]<00:01.00>Ro<00:01.20>da<00:01.40>me <00:01.60>mang<00:01.80> te")
+        let document = try #require(try LRCParser.document(record, occurrence: id))
+        #expect(document.lines[0].words.map(\.text) == ["Ro", "da", "me ", "mang ", "te"])
+    }
+
     @Test func lrclibLyricsExposeLatinTransliterationForNonLatinText() throws {
         let record = LRCLIBRecord(
             trackName: "Example", artistName: "Example Artist", albumName: "Album", duration: 12,

@@ -34,7 +34,7 @@ struct PairingSheet: View {
                     .font(.system(size: 40, weight: .semibold, design: .monospaced))
                     .textSelection(.enabled)
                     .accessibilityLabel("Bluetooth PIN " + invitation.pin.map(String.init).joined(separator: " "))
-                Text("It expires ten seconds after it appears.").foregroundStyle(.secondary)
+                Text("A new PIN appears every fifteen seconds.").foregroundStyle(.secondary)
             }
             HStack {
                 Button("Show larger QR") { showingLargeCode = true }

@@ -33,7 +33,12 @@ export function encodePair(
   return JSON.stringify({
     version: 1,
     type: 'pair',
-    pair: { ...credential, name, remote_version: remoteVersion },
+    pair: {
+      ...credential,
+      name,
+      remote_version: remoteVersion,
+      heartbeat: true,
+    },
   });
 }
 
@@ -47,6 +52,7 @@ export function encodeHello(auth: AuthPayload): string {
       last_credit_sequence: auth.lastCreditSequence,
       name: auth.name,
       remote_version: auth.remoteVersion,
+      heartbeat: true,
     },
   });
 }
@@ -57,16 +63,18 @@ export function encodeRemoteConfigure(requestId: string, name: string): string {
     type: 'remote.configure',
     request_id: requestId,
     name,
-    heartbeat: false,
+    heartbeat: true,
   });
 }
 
+// performance.now() is fractional, but the Host accepts integer counters only. A fractional value made every probe fail,
+// so the browser never learned the Host clock and every command stayed unsent.
 export function encodeClock(requestId: string, sentAtRemoteMs: number): string {
   return JSON.stringify({
     version: 1,
     type: 'clock',
     request_id: requestId,
-    clock: { sent_at_remote_ms: sentAtRemoteMs },
+    clock: { sent_at_remote_ms: Math.round(sentAtRemoteMs) },
   });
 }
 
@@ -78,15 +86,19 @@ export function encodeLyricsGet(requestId: string): string {
   });
 }
 
+// A progressive request asks for a small preview first, then the full image in chunks.
 export function encodeArtworkGet(
   requestId: string,
   artworkUrl: string,
+  progressive = false,
 ): string {
+  // JSON.stringify drops the undefined key, so the Host sees progressive only when it was requested.
   return JSON.stringify({
     version: 1,
     type: 'artwork.get',
     request_id: requestId,
     artwork_url: artworkUrl,
+    progressive: progressive ? true : undefined,
   });
 }
 

@@ -20,6 +20,18 @@ struct LyricTimingTests {
         #expect(document.lines[0].words.map(\.startMs) == [33_016, 33_439])
     }
 
+    @Test func syllablesStayJoinedAndWordsKeepTheirSpaces() throws {
+        let ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word" xml:lang="id">
+              <body><div>
+                <p begin="1.0" end="3.0" itunes:key="L1"><span begin="1.0" end="1.2">Ro</span><span begin="1.2" end="1.4">da</span> <span begin="1.4" end="1.6">me</span><span begin="1.6" end="1.8">mang</span><span begin="1.8" end="2.0"> te</span></p>
+              </div></body>
+            </tt>
+            """
+        let document = try TTMLDocument.parse(Data(ttml.utf8), occurrence: "occurrence")
+        #expect(document.lines[0].words.map(\.text) == ["Ro", "da ", "me", "mang ", "te"])
+    }
+
     @Test func backgroundVocalsBecomeAnOverlappingTimedLine() throws {
         let ttml = """
             <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word" xml:lang="en">

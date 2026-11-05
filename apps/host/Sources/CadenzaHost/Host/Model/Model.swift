@@ -79,6 +79,7 @@ final class HostModel {
             ).appendingPathComponent("Cadence Host", isDirectory: true)
             let service = try HostService(directory: directory, configuration: configuration)
             self.service = service
+            service.onInvitationChanged = { [weak self] in self?.invitation = $0 }
             service.transportPolicy = hostTransportPolicy
             service.remoteTransportPreferences = remoteTransportPreferences
             service.remoteTransportManualPaths = remoteTransportManualPaths

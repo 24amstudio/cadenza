@@ -21,13 +21,17 @@ final class HostService {
     var transportPolicy = HostTransportPolicy()
     var remoteTransportPreferences: [String: TransportPreference] = [:]
     var remoteTransportManualPaths: [String: String] = [:]
-    private(set) var invitation: PairingInvitation?
-    private var invitationDeadline: Int64 = 0
-    private var invitationPinDeadline: Int64 = 0
-    private var invitationPinAttempts = 0
+    var invitation: PairingInvitation?
+    // Each PIN is accepted for this long. The Host then issues a new one while the pairing window is open.
+    static let pinLifetimeMs: Int64 = 15_000
+    var invitationDeadline: Int64 = 0
+    var invitationPinDeadline: Int64 = 0
+    var invitationPinAttempts = 0
+    var pinRotation: Task<Void, Never>?
+    var onInvitationChanged: ((PairingInvitation?) -> Void)?
     private var polling: Task<Void, Never>?
     private var statusReporting: Task<Void, Never>?
-    private var jobs: [String: Task<Void, Never>] = [:]
+    var jobs: [String: Task<Void, Never>] = [:]
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
     private var lyricDocument: LyricDocument?
@@ -46,7 +50,6 @@ final class HostService {
     let recommendationFeedbackModel = RecommendationFeedbackModel()
     private var listenerRecovery: Task<Void, Never>?
     private var serviceRunning = false
-    private var lastPublished: HostSnapshot?
     private let latencyLog = Logger(subsystem: "app.cadence.host", category: "latency")
     var onSnapshot: ((HostSnapshot) -> Void)?
     var onDevicesChanged: (() -> Void)?
@@ -104,16 +107,29 @@ final class HostService {
             }
             self.onSnapshot?(published)
             if !self.network.peers.isEmpty {
-                let unchanged = self.lastPublished.map { published.permitsHeartbeat(comparedTo: $0) } ?? false
-                if unchanged {
-                    self.network.broadcast(Frame(type: "heartbeat", hostEpoch: published.hostEpoch))
-                    for peer in self.network.peers.values where peer.authenticated && !peer.supportsHeartbeat {
-                        self.network.send(Frame(type: "state", snapshot: published), to: peer)
+                let now = monotonicMs()
+                var heartbeatRecipients: [NetworkService.Peer] = []
+                var stateRecipients: [NetworkService.Peer] = []
+                for peer in self.network.peers.values where peer.authenticated {
+                    // A heartbeat says the state the Remote already has still holds, so it is sent only when no newer
+                    // state is waiting for that Remote. A heartbeat would otherwise replace the waiting state. Bluetooth
+                    // Remotes also get one while playback continues, with a full state at least every fifteen seconds,
+                    // because a full state every second saturates the link. Progress is extrapolated from the last state.
+                    if peer.supportsHeartbeat, peer.pendingState == nil, let sent = peer.lastSnapshot,
+                        published.permitsHeartbeat(comparedTo: sent)
+                            || (peer.transport == "ble" && now - peer.lastSnapshotAt < 15_000
+                                && published.changedOnlyByPlaybackTime(since: sent))
+                    {
+                        heartbeatRecipients.append(peer)
+                    } else {
+                        stateRecipients.append(peer)
+                        peer.lastSnapshot = published
+                        peer.lastSnapshotAt = now
                     }
-                } else {
-                    self.network.broadcast(Frame(type: "state", snapshot: published))
                 }
-                self.lastPublished = published
+                self.network.broadcast(
+                    Frame(type: "heartbeat", hostEpoch: published.hostEpoch), to: heartbeatRecipients)
+                self.network.broadcast(Frame(type: "state", snapshot: published), to: stateRecipients)
             }
             if published.current?.occurrenceId != self.lyricDocument?.occurrenceId {
                 self.lyricDocument = nil
@@ -148,11 +164,12 @@ final class HostService {
             self.network.acceptBluetooth(
                 centralID: centralID,
                 send: { [weak self] data in
-                    guard let self else { return false }
+                    guard let self else { return .failed }
                     return self.bluetooth.send(data, to: centralID, completion: { _ in })
                 },
                 cancel: {})
         }
+        bluetooth.onDrain = { [weak self] centralID in self?.network.drainedBluetooth(centralID) }
         bluetooth.onReceive = { [weak self] centralID, data in
             self?.network.receiveBluetooth(data, from: centralID)
         }
@@ -213,6 +230,8 @@ final class HostService {
 
     func stop() {
         serviceRunning = false
+        pinRotation?.cancel()
+        pinRotation = nil
         logger.log(.info, category: "host.lifecycle", action: "service.stop", "Host service stopping")
         settleCredits()
         polling?.cancel()
@@ -291,25 +310,6 @@ final class HostService {
         try await start()
     }
 
-    func createInvitation() throws -> PairingInvitation {
-        let address =
-            configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
-        guard let address else {
-            throw CadenzaError.failure("network", "Connect Cadenza Host to your local network first.")
-        }
-        let invitation = PairingInvitation(
-            host: address, port: Int(configuration.port),
-            secret: try CredentialFile.randomToken(), hostName: configuration.name,
-            pin: String(format: "%04d", Int.random(in: 0...9_999)),
-            webPort: configuration.webEnabled ? Int(configuration.webPort) : nil
-        )
-        self.invitation = invitation
-        invitationDeadline = monotonicMs() + 300_000
-        invitationPinDeadline = monotonicMs() + 10_000
-        invitationPinAttempts = 0
-        return invitation
-    }
-
     func revoke(_ remoteId: String) throws {
         try store.revoke(remoteId)
         network.revoke(remoteId)
@@ -366,7 +366,10 @@ final class HostService {
                 network.send(
                     Frame(type: "transport.configured", requestId: frame.requestId, transport: policy), to: peer)
             case "log.report": try recordRemoteLogs(frame, peer: peer)
-            case "artwork.get": loadArtwork(peer: peer, requestId: frame.requestId, url: frame.artworkUrl)
+            case "artwork.get":
+                loadArtwork(
+                    peer: peer, requestId: frame.requestId, url: frame.artworkUrl,
+                    progressive: frame.progressive == true)
             case "clock": try clock(frame, peer: peer)
             case "state.get": network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
             case "analytics.ack": try acknowledge(frame, peer: peer, actor: actor)
@@ -417,7 +420,7 @@ final class HostService {
                 remoteVersion: pair.remoteVersion, metadata: ["remote_id": remoteId, "name": name])
             peer.supportsHeartbeat = pair.heartbeat == true
             peer.remoteVersion = pair.remoteVersion
-            self.invitation = nil
+            endInvitation()
             invitationPinDeadline = 0
             invitationPinAttempts = 3
         } else if frame.type == "hello", let auth = frame.auth, try store.authenticate(auth) {
@@ -459,6 +462,7 @@ final class HostService {
         )
         if !configuration.lyricsProviderEnabled { welcome.capabilities.removeAll { $0 == "lyrics.lrclib" } }
         if sing.capabilityAvailable { welcome.capabilities.append("sing.mode") }
+        welcome.capabilities.append("artwork.progressive")
         if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
@@ -791,103 +795,6 @@ final class HostService {
     private func currentMusicArtwork(_ occurrenceId: String) async throws -> String? {
         guard let data = try await music.currentArtwork() else { return nil }
         return try artwork.storeMusicArtwork(data, occurrenceId: occurrenceId)
-    }
-
-    private func loadArtwork(peer: NetworkService.Peer, requestId: String?, url: String?) {
-        guard let requestId, let url else {
-            fail(
-                CadenzaError.failure("artwork_unavailable", "Artwork request is invalid."),
-                request: Frame(type: "artwork.get", requestId: requestId), peer: peer)
-            return
-        }
-        // A refusal is answered with artwork.unavailable, which releases the Remote's pending request. An error
-        // frame would leave that request pending, so the artwork would never be asked for again.
-        guard ArtworkProvider.isServableURL(url), jobs.count < 16 else {
-            var refusal = Frame(type: "artwork.unavailable", requestId: requestId)
-            refusal.artworkUrl = url
-            refusal.message = "Artwork is not available from Cadenza Host right now."
-            network.send(refusal, to: peer)
-            return
-        }
-        let key = peer.id + requestId
-        jobs[key]?.cancel()
-        network.send(Frame(type: "operation.started", requestId: requestId), to: peer)
-        jobs[key] = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.jobs.removeValue(forKey: key) }
-            do {
-                guard let data = try await self.artwork.data(for: url) else {
-                    throw CadenzaError.failure("artwork_unavailable", "Artwork is unavailable.")
-                }
-                var frame = Frame(type: "artwork", requestId: requestId)
-                frame.artworkUrl = url
-                frame.artworkDataBase64 = data.base64EncodedString()
-                self.network.send(frame, to: peer)
-            } catch {
-                if !Task.isCancelled {
-                    var frame = Frame(type: "artwork.unavailable", requestId: requestId)
-                    frame.artworkUrl = url
-                    frame.message = error.localizedDescription
-                    self.network.send(frame, to: peer)
-                }
-            }
-        }
-    }
-
-    // Animated album art reaches the Remote as bounded chunks of one cached file, with a digest the Remote checks before
-    // playing it. A song change or a refusal is answered with motion.unavailable, which releases the Remote's request.
-    private func loadMotion(peer: NetworkService.Peer, requestId: String?, occurrenceId: String?) {
-        guard let requestId, let occurrenceId else {
-            fail(
-                CadenzaError.failure("motion_unavailable", "Motion request is invalid."),
-                request: Frame(type: "motion.get", requestId: requestId), peer: peer)
-            return
-        }
-        let key = peer.id + requestId
-        jobs[key]?.cancel()
-        jobs[key] = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.jobs.removeValue(forKey: key) }
-            var unavailable = Frame(type: "motion.unavailable", requestId: requestId)
-            unavailable.occurrenceId = occurrenceId
-            do {
-                guard let current = try self.queue.snapshot().current, current.occurrenceId == occurrenceId,
-                    let video = try await self.motion.video(album: current.song.album, artist: current.song.artist)
-                else {
-                    self.network.send(unavailable, to: peer)
-                    return
-                }
-                // The song may change during the download. The newer occurrence has its own request.
-                guard try self.queue.snapshot().current?.occurrenceId == occurrenceId else { return }
-                self.sendMotion(video, requestId: requestId, occurrenceId: occurrenceId, to: peer)
-            } catch {
-                if !Task.isCancelled {
-                    unavailable.message = error.localizedDescription
-                    self.network.send(unavailable, to: peer)
-                }
-            }
-        }
-    }
-
-    private static let motionChunkBytes = 480 * 1_024
-
-    private func sendMotion(_ video: Data, requestId: String, occurrenceId: String, to peer: NetworkService.Peer) {
-        let count = (video.count + Self.motionChunkBytes - 1) / Self.motionChunkBytes
-        let digest = SHA256.hash(data: video).map { String(format: "%02x", $0) }.joined()
-        for index in 0..<count {
-            let start = index * Self.motionChunkBytes
-            var frame = Frame(type: "motion.chunk", requestId: requestId)
-            frame.occurrenceId = occurrenceId
-            frame.chunkIndex = index
-            frame.chunkCount = count
-            frame.totalBytes = video.count
-            frame.sha256 = digest
-            frame.dataBase64 = video[start..<min(start + Self.motionChunkBytes, video.count)].base64EncodedString()
-            network.send(frame, to: peer)
-        }
-        logger.log(
-            .info, category: "motion", action: "motion.sent", "Motion artwork sent in \(count) chunks",
-            metadata: ["occurrence_id": occurrenceId, "bytes": String(video.count)])
     }
 
     // Every command field a debugging session needs, without the song's full metadata.

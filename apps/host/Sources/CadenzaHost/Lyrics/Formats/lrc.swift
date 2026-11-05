@@ -71,10 +71,10 @@ enum LRCParser {
 
     private static func parseWords(_ text: String, lineStart: Int64) -> [LyricWord] {
         let matches = wordMatches(in: text)
-        guard !matches.isEmpty else { return [] }
-        return matches.enumerated().compactMap { index, match in
+        var words: [LyricWord] = []
+        for (index, match) in matches.enumerated() {
             guard let timestampRange = Range(match.range, in: text), let start = timestamp(String(text[timestampRange]))
-            else { return nil }
+            else { continue }
             let next =
                 index + 1 < matches.count
                 ? timestamp(String(text[Range(matches[index + 1].range, in: text)!]))
@@ -83,13 +83,21 @@ enum LRCParser {
             let upper =
                 index + 1 < matches.count ? Range(matches[index + 1].range, in: text)!.lowerBound : text.endIndex
             let rawValue = String(text[timestampRange.upperBound..<upper])
+            // A space before a timestamp separates this token from the one before it. Trimming would drop it, so the
+            // previous token keeps it. Syllables without a space stay joined.
+            if rawValue.first?.isWhitespace == true, let last = words.indices.last,
+                words[last].text.last?.isWhitespace != true
+            {
+                words[last].text += " "
+            }
             let hasTrailingSpace = rawValue.last?.isWhitespace == true
             let value =
                 rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 + (hasTrailingSpace ? " " : "")
-            guard !value.isEmpty else { return nil }
-            return LyricWord(text: value, startMs: max(lineStart, start), endMs: max(start, end))
+            guard !value.isEmpty else { continue }
+            words.append(LyricWord(text: value, startMs: max(lineStart, start), endMs: max(start, end)))
         }
+        return words
     }
 
     private static func timestamp(_ value: String) -> Int64? {

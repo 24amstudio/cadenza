@@ -5,6 +5,7 @@ import { isValidRemoteName } from '~/lib/host/endpoint';
 import { useHostStore } from '~/stores/host';
 import {
   usePreferencesStore,
+  type LyricsSize,
   type ThemePreference,
 } from '~/stores/preferences';
 
@@ -15,6 +16,12 @@ const themes: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
+];
+
+const lyricsSizes: { value: LyricsSize; label: string }[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'large', label: 'Large' },
+  { value: 'extra-large', label: 'Extra large' },
 ];
 
 const nameDraft = ref(host.remoteName);
@@ -85,6 +92,21 @@ function forget(): void {
             @click="preferences.setTheme(theme.value)"
           >
             {{ theme.label }}
+          </button>
+        </div>
+      </div>
+      <div class="row">
+        <span>Lyrics size</span>
+        <div class="segmented" role="group" aria-label="Lyrics size">
+          <button
+            v-for="size in lyricsSizes"
+            :key="size.value"
+            type="button"
+            :class="{ active: preferences.lyricsSize === size.value }"
+            :aria-pressed="preferences.lyricsSize === size.value"
+            @click="preferences.setLyricsSize(size.value)"
+          >
+            {{ size.label }}
           </button>
         </div>
       </div>

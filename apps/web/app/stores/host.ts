@@ -111,13 +111,11 @@ export const useHostStore = defineStore('host', () => {
       !lyricsForCurrent.value.unavailable,
   );
 
-  // The position ticks only while music is playing and the socket is connected. Each tick is a cheap recomputation of
-  // the Host-anchored position, not a network request.
-  const positionMs = computed(() => {
+  // The Host-anchored position at this instant. Per-frame views, such as the lyric sweep, read it directly.
+  function livePositionMs(): number {
     const song = current.value;
 
     if (song === null) return 0;
-    void clockTick.value;
     const offset = clockOffsetMs.value;
 
     // Until the clock is known, progress continues from the local time the snapshot arrived. Holding the sample time
@@ -128,6 +126,13 @@ export const useHostStore = defineStore('host', () => {
         : performance.now() + offset;
 
     return positionAt(song, isPlaying.value, hostNow);
+  }
+
+  // The tick re-renders the position-driven views a few times a second. It is not a network request.
+  const positionMs = computed(() => {
+    void clockTick.value;
+
+    return livePositionMs();
   });
 
   watch(
@@ -485,6 +490,7 @@ export const useHostStore = defineStore('host', () => {
   }
 
   return {
+    livePositionMs,
     phase,
     attempt,
     phaseMessage,

@@ -58,6 +58,8 @@ defineExpose({ reveal });
       <LyricLines
         :lines="host.lyricsDocument.lines"
         :position-ms="host.positionMs"
+        :live-position-ms="host.livePositionMs"
+        :playing="host.isPlaying"
         :timed="level >= 2"
         :word-timed="level === 3"
         :size="preferences.lyricsSize"
@@ -130,16 +132,21 @@ h2 {
   min-height: 0;
 }
 
-/* Full screen shows no scrollbar, and the top and bottom of the box fade so cut-off lines have no hard edge. */
+/* Full screen shows no scrollbar. The top and bottom 48 px of the box fade, so cut-off lines have no hard edge. */
 .lyrics-panel.immersive .lyrics-scroll {
   height: 100%;
   min-height: 0;
   scrollbar-width: none;
-  mask-image: linear-gradient(transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(
+    transparent,
+    #000 48px,
+    #000 calc(100% - 48px),
+    transparent
+  );
   -webkit-mask-image: linear-gradient(
     transparent,
-    #000 8%,
-    #000 92%,
+    #000 48px,
+    #000 calc(100% - 48px),
     transparent
   );
 }
@@ -148,11 +155,11 @@ h2 {
   display: none;
 }
 
-/* No padding above or below the list: at the start or end of a song the lines fill the box from its edge, instead of
-   leaving an empty band. Mid-song the active line still sits in the middle, because there are lines on both sides.
-   The list runs the full width and starts at the left edge, as in the wide-screen full-screen player. */
+/* The list keeps 64 px above and below, so the first and last lines sit clear of the 48 px edge fade. Mid-song the active
+   line still sits in the middle, because there are lines on both sides. The list runs the full width and starts at the
+   left edge, as in the wide-screen full-screen player. */
 .lyrics-panel.immersive :deep(.lyrics) {
-  padding: 0;
+  padding: 64px 0;
   max-width: none;
   margin: 0;
   /* Full screen keeps the lines above and below the active one readable, so more of the song shows at once. */

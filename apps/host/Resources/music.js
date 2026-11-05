@@ -74,6 +74,8 @@ function readStatus(music) {
       0,
       Math.round(Number(readValue(() => music.playerPosition(), 0)) * 1000),
     ),
+    // Read straight after the position, so the Host can date the position to this moment rather than to process exit.
+    read_at_ms: Date.now(),
     song: readValue(() => describeTrack(music.currentTrack()), null),
   });
 }

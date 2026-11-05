@@ -50,7 +50,14 @@ final class MusicBridge {
     }
 
     func status(deadline: Int64? = nil) async throws -> MusicStatus {
-        try await Wire.decode(MusicStatus.self, from: script(["status"], deadline: deadline))
+        let started = monotonicMs()
+        var status = try await Wire.decode(MusicStatus.self, from: script(["status"], deadline: deadline))
+        let finished = monotonicMs()
+
+        status.sampledAtMs = MusicStatus.sampleTime(
+            readAtMs: status.readAtMs, startedMs: started, finishedMs: finished, nowWallMs: wallMs())
+
+        return status
     }
 
     func librarySearch(_ query: String) async throws -> [Song] {

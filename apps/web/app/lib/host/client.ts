@@ -96,8 +96,14 @@ const handshakeTimeoutMs = 8_000;
 // less the clock uncertainty, and so does this page. A longer deadline is rejected as invalid_deadline.
 const commandDeadlineMs = 900;
 
+// The first probes come back to back and set the offset. After that one probe runs every few seconds, so the offset
+// follows the link as its round trip changes.
 const clockProbeCount = 4;
-const clockRefreshMs = 60_000;
+const clockProbeIntervalMs = 5_000;
+
+// The offset comes from the fastest round trip in this window. A slow probe carries more asymmetric queuing delay.
+const clockWindowSize = 12;
+
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const artworkCapability = 'artwork.host-cache';
 const progressiveArtworkCapability = 'artwork.progressive';
@@ -667,6 +673,7 @@ export class HostClient {
       receivedAtHostMs: sample.receivedAtHostMs,
       sentAtHostMs: sample.sentAtHostMs,
     });
+    this.probes.splice(0, Math.max(0, this.probes.length - clockWindowSize));
 
     if (this.probes.length < clockProbeCount) {
       this.sendClockProbe();
@@ -674,12 +681,25 @@ export class HostClient {
       return;
     }
 
+    this.updateClockEstimate();
+    this.cancelClockRefresh?.();
+    this.cancelClockRefresh = this.options.schedule(
+      () => this.sendClockProbe(),
+      clockProbeIntervalMs,
+    );
+  }
+
+  private updateClockEstimate(): void {
     const estimate = bestClockEstimate(this.probes);
 
     if (estimate === null) return;
     this.offsetMs = estimate.offsetMs;
     this.uncertaintyMs = estimate.uncertaintyMs;
-    traceEvent('clock offset estimated', { offsetMs: estimate.offsetMs });
+    traceEvent('clock offset estimated', {
+      offsetMs: estimate.offsetMs,
+      roundTripMs: estimate.roundTripMs,
+      uncertaintyMs: estimate.uncertaintyMs,
+    });
     this.options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
   }
 
@@ -716,10 +736,6 @@ export class HostClient {
     this.cancelClockRefresh?.();
     this.probes = [];
     this.sendClockProbe();
-    this.cancelClockRefresh = this.options.schedule(
-      () => this.refreshClock(),
-      clockRefreshMs,
-    );
   }
 
   private sendClockProbe(): void {

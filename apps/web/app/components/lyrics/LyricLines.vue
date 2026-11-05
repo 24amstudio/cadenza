@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { activeLineIndices, wordFills } from '~/lib/lyrics';
+import {
+  activeLineIndices,
+  sweepEdgeWidth,
+  sweepTarget,
+  wordFills,
+} from '~/lib/lyrics';
 import type { LyricLine } from '~/lib/protocol/types';
 import { lyricsScales, type LyricsSize } from '~/stores/preferences';
 
 const props = defineProps<{
   lines: LyricLine[];
   positionMs: number;
+  // Read on every animation frame for the sweep. The tick-driven positionMs only drives the line tiers and the follow.
+  livePositionMs: () => number;
+  playing: boolean;
   timed: boolean;
   wordTimed: boolean;
   size: LyricsSize;
@@ -31,12 +39,108 @@ const activeIndices = computed(() =>
 // The newest active line is the one that started last. The view keeps it centred, and it is the only line that sweeps.
 const newestIndex = computed(() => activeIndices.value.at(-1) ?? -1);
 
-const wordFillsByLine = computed(() =>
-  props.lines.map((line, index) =>
-    props.wordTimed
-      ? wordFills(line, props.positionMs, index === newestIndex.value)
-      : [],
-  ),
+// The sweeping word is the only word that animates. Overlapping lines show their other words whole, with no sweep.
+// Its key follows the live clock, so the sweep moves to the next word on the frame that word starts.
+const liveSweepKey = ref<string | null>(null);
+
+// The word that stops sweeping finishes over a short ease, so a handoff between overlapping lines does not snap.
+const finishingKey = ref<string | null>(null);
+
+watch(liveSweepKey, (_next, previous) => {
+  finishingKey.value = previous ?? null;
+});
+
+function wordClass(lineIndex: number, wordIndex: number): string | undefined {
+  const key = `${lineIndex}:${wordIndex}`;
+
+  if (key === liveSweepKey.value) return 'sweeping';
+
+  return key === finishingKey.value ? 'finishing' : undefined;
+}
+
+// Word fills are written to the elements from the live clock. Vue does not bind them, so a re-render cannot overwrite
+// a frame's value. A value is written only when it changes.
+const writtenFills = new WeakMap<HTMLElement, string>();
+
+function writeWordFill(element: HTMLElement, fill: number, edge: number): void {
+  const value = `${fill} ${edge}`;
+
+  if (writtenFills.get(element) === value) return;
+  writtenFills.set(element, value);
+  element.style.setProperty('--fill', `${fill}%`);
+  element.style.setProperty('--soft', `${edge}%`);
+}
+
+function syncWordFills(): void {
+  const root = container.value;
+
+  if (root === null || !props.wordTimed) return;
+
+  const position = props.livePositionMs();
+  const target = sweepTarget(props.lines, position);
+
+  liveSweepKey.value = target === null ? null : `${target.line}:${target.word}`;
+
+  const lineElements = root.querySelectorAll<HTMLElement>('.line');
+
+  props.lines.forEach((line, lineIndex) => {
+    const lineElement = lineElements.item(lineIndex);
+
+    if (lineElement === null) return;
+
+    const isSweepLine = target?.line === lineIndex;
+    const fills = wordFills(line, position, isSweepLine);
+
+    lineElement
+      .querySelectorAll<HTMLElement>('.word')
+      .forEach((wordElement, wordIndex) => {
+        const fill = fills[wordIndex] ?? 0;
+        const sweeping = isSweepLine && target?.word === wordIndex;
+
+        writeWordFill(wordElement, fill, sweeping ? sweepEdgeWidth(fill) : 0);
+      });
+  });
+}
+
+// One frame loop drives the sweep while the music plays. Paused views sync on each position or line change instead.
+let frameRequest: number | null = null;
+
+function frameLoop(): void {
+  syncWordFills();
+  frameRequest = requestAnimationFrame(frameLoop);
+}
+
+function startFrames(): void {
+  if (frameRequest === null && props.wordTimed) {
+    frameRequest = requestAnimationFrame(frameLoop);
+  }
+}
+
+function stopFrames(): void {
+  if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+  frameRequest = null;
+}
+
+watch(
+  () => props.playing,
+  (playing) => {
+    if (playing) {
+      startFrames();
+
+      return;
+    }
+
+    stopFrames();
+    syncWordFills();
+  },
+);
+
+watch(
+  [() => props.lines, () => props.positionMs],
+  () => {
+    syncWordFills();
+  },
+  { flush: 'post' },
 );
 
 type LyricTier = 'plain' | 'active' | 'near' | 'far';
@@ -144,6 +248,9 @@ watch(newestIndex, async () => {
 });
 
 onMounted(() => {
+  syncWordFills();
+
+  if (props.playing) startFrames();
   follow(false);
   userScroller = container.value ? scrollerOf(container.value) : null;
   userScroller?.addEventListener('wheel', stopFollowing, { passive: true });
@@ -159,6 +266,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  stopFrames();
   stopFollowing();
   resizeObserver?.disconnect();
   userScroller?.removeEventListener('wheel', stopFollowing);
@@ -192,9 +300,7 @@ onUnmounted(() => {
             v-for="(word, wordIndex) in line.words"
             :key="`${line.id}-${wordIndex}`"
             class="word"
-            :style="{
-              '--fill': `${wordFillsByLine[index]?.[wordIndex] ?? 0}%`,
-            }"
+            :class="wordClass(index, wordIndex)"
             >{{ word.text }}</span
           >
         </template>
@@ -303,19 +409,23 @@ onUnmounted(() => {
   color: var(--color-text);
 }
 
-/* Sung words fill from the left in the text colour; words still to come stay in the tertiary colour. Every word eases
-   between position updates (every 250 ms), including when its line stops being the newest, so a finished line completes
-   its last word instead of snapping. */
+/* Sung words fill from the left in the text colour; words still to come stay in the tertiary colour. The fill is written
+   every frame from the playback clock. The sweeping word blends across --soft on either side of its fill, so its edge is
+   soft. Every other word changes at once, so overlapping lines do not sweep together. */
 .lyrics.timed .word {
   background-image: linear-gradient(
     90deg,
-    var(--color-text) var(--fill),
-    var(--color-text-tertiary) var(--fill)
+    var(--color-text) max(0%, calc(var(--fill) - var(--soft, 0%))),
+    var(--color-text-tertiary) min(100%, calc(var(--fill) + var(--soft, 0%)))
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  transition: --fill 250ms linear;
+}
+
+/* A word that stops sweeping completes over 150 ms, so a handoff between overlapping lines does not snap. */
+.lyrics.timed .word.finishing {
+  transition: --fill 150ms ease-out;
 }
 
 /* Phones show less text at once, so the wider desktop spacing would scatter the lyrics. */
@@ -333,7 +443,8 @@ onUnmounted(() => {
   .line,
   .line-text,
   .translation,
-  .lyrics.timed .word {
+  .lyrics.timed .word.sweeping,
+  .lyrics.timed .word.finishing {
     transition: none;
   }
 }

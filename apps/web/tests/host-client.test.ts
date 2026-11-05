@@ -429,6 +429,41 @@ describe('HostClient commands', () => {
     expect(remainingMs).toBeLessThanOrEqual(1_000);
   });
 
+  test('keeps probing while connected, and a slow asymmetric probe does not move the offset', () => {
+    const { client, sockets, clock } = harness();
+
+    client.start('S'.repeat(43));
+    socketAt(sockets, 0).open();
+    socketAt(sockets, 0).receive(welcome(token));
+    socketAt(sockets, 0).receive(snapshotFrame(18));
+    answerClockProbes(socketAt(sockets, 0), clock);
+    expect((client.hostNowMs() ?? 0) - clock.now).toBe(hostOffsetMs);
+
+    clock.advance(5_000);
+    const probe = socketAt(sockets, 0).framesOfType('clock').at(-1);
+
+    const sample = probe === undefined ? null : objectField(probe, 'clock');
+
+    const sentAtRemote =
+      sample === null ? null : counterField(sample, 'sent_at_remote_ms');
+
+    expect(sentAtRemote).not.toBeNull();
+
+    // The reply crosses a slow link: 180 ms out and 20 ms back. An estimate built from it would be 80 ms off.
+    clock.advance(200);
+    socketAt(sockets, 0).receive({
+      type: 'clock',
+      request_id: probe?.request_id ?? null,
+      clock: {
+        sent_at_remote_ms: sentAtRemote,
+        received_at_host_ms: (sentAtRemote ?? 0) + 180 + hostOffsetMs,
+        sent_at_host_ms: (sentAtRemote ?? 0) + 180 + hostOffsetMs,
+      },
+    });
+
+    expect((client.hostNowMs() ?? 0) - clock.now).toBe(hostOffsetMs);
+  });
+
   test('refuses to send before the Host has a clock estimate', async () => {
     const { client, sockets } = harness();
     client.start('S'.repeat(43));

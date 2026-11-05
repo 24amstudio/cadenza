@@ -88,3 +88,27 @@ export function wordFills(
     return index < latest ? 100 : 0;
   });
 }
+
+// The one word that sweeps across all lines: the latest started word of the newest sounding line. Null before the
+// line's first word starts. Overlapping lines do not add sweeps, so the view animates only this word.
+export function sweepTarget(
+  lines: LyricLine[],
+  positionMs: number,
+): { line: number; word: number } | null {
+  const line = activeLineIndices(lines, positionMs).at(-1);
+  const target = line === undefined ? undefined : lines[line];
+
+  if (line === undefined || target === undefined) return null;
+
+  const word = latestStartedWord(target.words, positionMs);
+
+  return word < 0 ? null : { line, word };
+}
+
+// Width of the soft edge on the sweeping word, as a percentage of the word. It is widest halfway through the word and
+// zero at both ends, so a word that has not started or has finished has a hard edge.
+const sweepEdgePercent = 12;
+
+export function sweepEdgeWidth(fill: number): number {
+  return sweepEdgePercent * (1 - Math.abs(fill / 50 - 1));
+}

@@ -28,7 +28,9 @@ final class BluetoothFrameCodec {
         }
     }
 
-    static func chunks(for payload: Data, maximumChunkBytes: Int = 182) throws -> [Data] {
+    static let defaultChunkBytes = 182
+
+    static func chunks(for payload: Data, maximumChunkBytes: Int = defaultChunkBytes) throws -> [Data] {
         guard payload.count <= maximumFrameBytes else {
             throw CadenzaError.failure("invalid_command", "Bluetooth frame is too large.")
         }

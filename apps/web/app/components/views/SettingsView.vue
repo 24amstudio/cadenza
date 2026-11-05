@@ -47,6 +47,8 @@ const statusLabel = computed(() => {
       return 'Pairing';
     case 'pairing-failed':
       return 'Pairing failed';
+    case 'bluetooth-idle':
+      return 'Not connected';
     default:
       return 'Not paired';
   }

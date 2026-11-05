@@ -482,3 +482,111 @@ describe('HostClient commands', () => {
     });
   });
 });
+
+describe('HostClient over Bluetooth', () => {
+  test('pairs with the Host PIN and stores the name the user entered', () => {
+    const { client, credentials, changes } = harness();
+    const link = new FakeSocket();
+
+    client.startBluetooth();
+    client.pairOverBluetooth(link, '4821', 'Desk');
+
+    expect(link.framesOfType('pair')).toEqual([
+      {
+        version: 1,
+        type: 'pair',
+        pair: { pin: '4821', name: 'Desk', remote_version: 'cadenza-web test' },
+      },
+    ]);
+
+    link.receive(welcome(token));
+
+    expect(credentials.value).toMatchObject({ remoteId, token, name: 'Desk' });
+    expect(phases(changes)).toEqual(['unpaired', 'pairing', 'connected']);
+  });
+
+  test('a rejected PIN ends the attempt and stores no credential', () => {
+    const { client, credentials, changes } = harness();
+    const link = new FakeSocket();
+
+    client.startBluetooth();
+    client.pairOverBluetooth(link, '0000', 'Desk');
+    link.receive({
+      type: 'error',
+      error_code: 'authentication',
+      message: 'The pairing PIN is invalid or expired.',
+    });
+
+    expect(credentials.value).toBeNull();
+    expect(link.closed).toBe(true);
+    expect(changes.at(-1)).toEqual({
+      kind: 'phase',
+      phase: 'pairing-failed',
+      attempt: 0,
+      message: 'The pairing PIN is invalid or expired.',
+    });
+  });
+
+  test('a link that drops after pairing waits for a user gesture instead of reopening', () => {
+    const { client, sockets, clock, credentials, changes } = harness();
+    const link = new FakeSocket();
+
+    client.startBluetooth();
+    client.pairOverBluetooth(link, '4821', 'Desk');
+    link.receive(welcome(token));
+    link.serverDrop();
+    clock.advance(60_000);
+
+    expect(credentials.value).toMatchObject({ remoteId, token });
+    expect(phases(changes).at(-1)).toBe('bluetooth-idle');
+    expect(sockets).toHaveLength(0);
+  });
+
+  test('reconnects with the stored credential over a new link', () => {
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 4,
+    };
+    const { client, changes } = harness(credentials);
+    const link = new FakeSocket();
+
+    client.startBluetooth();
+    client.connectOverBluetooth(link);
+
+    expect(link.framesOfType('hello')).toEqual([
+      {
+        version: 1,
+        type: 'hello',
+        auth: {
+          remote_id: remoteId,
+          token,
+          last_credit_sequence: 4,
+          name: 'Desk',
+          remote_version: 'cadenza-web test',
+        },
+      },
+    ]);
+
+    link.receive(welcome(null));
+
+    expect(phases(changes)).toEqual([
+      'bluetooth-idle',
+      'connecting',
+      'connected',
+    ]);
+  });
+
+  test('never opens a Bluetooth session without a stored credential', () => {
+    const { client, changes } = harness();
+    const link = new FakeSocket();
+
+    client.startBluetooth();
+    client.connectOverBluetooth(link);
+
+    expect(link.frames).toHaveLength(0);
+    expect(phases(changes)).toEqual(['unpaired']);
+  });
+});

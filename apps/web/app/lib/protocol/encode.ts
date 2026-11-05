@@ -19,15 +19,21 @@ export interface CommandEnvelope {
   action: CommandAction;
 }
 
+// The one-use QR secret pairs over the LAN. The four-digit PIN pairs over Bluetooth, as in Cadenza Remote.
+export type PairingProof = { secret: string } | { pin: string };
+
 export function encodePair(
-  secret: string,
+  proof: PairingProof,
   name: string,
   remoteVersion: string,
 ): string {
+  const credential =
+    'pin' in proof ? { pin: proof.pin } : { secret: proof.secret };
+
   return JSON.stringify({
     version: 1,
     type: 'pair',
-    pair: { secret, name, remote_version: remoteVersion },
+    pair: { ...credential, name, remote_version: remoteVersion },
   });
 }
 

@@ -21,9 +21,12 @@ const ui = useUiStore();
 usePreferencesStore();
 
 // Until a Host is paired, the page is only the pairing surface. Once paired, the player stays visible even while
-// reconnecting so the last known state remains readable.
+// reconnecting so the last known state remains readable. A Bluetooth session that ended needs a click to reopen, so
+// it also returns to that surface.
 const needsPairing = computed(() =>
-  ['unpaired', 'pairing', 'pairing-failed'].includes(host.phase),
+  ['unpaired', 'pairing', 'pairing-failed', 'bluetooth-idle'].includes(
+    host.phase,
+  ),
 );
 
 watch(

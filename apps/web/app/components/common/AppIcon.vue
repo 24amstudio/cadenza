@@ -14,7 +14,9 @@ export type IconName =
   | 'refresh'
   | 'qr'
   | 'host'
-  | 'check';
+  | 'check'
+  | 'fullscreen'
+  | 'collapse';
 
 // Paths are drawn on a 24-unit grid. Transport glyphs are solid; everything else is a 1.8-unit outline.
 const iconPaths: Record<IconName, string[]> = {
@@ -63,6 +65,13 @@ const iconPaths: Record<IconName, string[]> = {
   ],
   host: ['M3.5 5.5h17v11h-17z', 'M9 19.5h6', 'M12 16.5v3'],
   check: ['M5 12.5l4.5 4.5L19 7.5'],
+  fullscreen: [
+    'M4 9V4.5h4.5',
+    'M15.5 4.5H20V9',
+    'M20 15v4.5h-4.5',
+    'M8.5 19.5H4V15',
+  ],
+  collapse: ['M6 9.5l6 6 6-6'],
 };
 
 const solid = new Set<IconName>(['play', 'pause', 'previous', 'next']);

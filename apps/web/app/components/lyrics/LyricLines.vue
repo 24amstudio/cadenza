@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { activeLineIndices, wordFillPercent } from '~/lib/lyrics';
+import { activeLineIndices, wordFills } from '~/lib/lyrics';
 import type { LyricLine } from '~/lib/protocol/types';
 import { lyricsScales, type LyricsSize } from '~/stores/preferences';
 
@@ -28,8 +28,16 @@ const activeIndices = computed(() =>
   props.timed ? activeLineIndices(props.lines, props.positionMs) : [],
 );
 
-// The newest active line is the one that started last. The view keeps it centred.
+// The newest active line is the one that started last. The view keeps it centred, and it is the only line that sweeps.
 const newestIndex = computed(() => activeIndices.value.at(-1) ?? -1);
+
+const wordFillsByLine = computed(() =>
+  props.lines.map((line, index) =>
+    props.wordTimed
+      ? wordFills(line, props.positionMs, index === newestIndex.value)
+      : [],
+  ),
+);
 
 // 'active' is a sounding line, 'near' is one line away from one, and 'far' is anything else.
 function tierOf(index: number): 'plain' | 'active' | 'near' | 'far' {
@@ -118,6 +126,7 @@ function follow(animated: boolean): void {
 }
 
 let userScroller: HTMLElement | null = null;
+let resizeObserver: ResizeObserver | null = null;
 
 watch(newestIndex, async () => {
   await nextTick();
@@ -131,10 +140,17 @@ onMounted(() => {
   userScroller?.addEventListener('touchstart', stopFollowing, {
     passive: true,
   });
+
+  // The box changes height when the layout does, such as entering full screen. The newest line is centred again.
+  if (userScroller) {
+    resizeObserver = new ResizeObserver(() => follow(false));
+    resizeObserver.observe(userScroller);
+  }
 });
 
 onUnmounted(() => {
   stopFollowing();
+  resizeObserver?.disconnect();
   userScroller?.removeEventListener('wheel', stopFollowing);
   userScroller?.removeEventListener('touchstart', stopFollowing);
 });
@@ -151,7 +167,7 @@ onUnmounted(() => {
       v-for="(line, index) in lines"
       :key="line.id"
       class="line"
-      :class="tierOf(index)"
+      :class="[tierOf(index), { sweeping: index === newestIndex }]"
       :data-newest="index === newestIndex ? 'true' : undefined"
       :role="timed ? 'button' : undefined"
       :tabindex="timed ? 0 : undefined"
@@ -165,7 +181,9 @@ onUnmounted(() => {
             v-for="(word, wordIndex) in line.words"
             :key="`${line.id}-${wordIndex}`"
             class="word"
-            :style="{ '--fill': `${wordFillPercent(word, positionMs)}%` }"
+            :style="{
+              '--fill': `${wordFillsByLine[index]?.[wordIndex] ?? 0}%`,
+            }"
             >{{ word.text }}</span
           >
         </template>
@@ -187,14 +205,14 @@ onUnmounted(() => {
 .lyrics {
   --ease-lyric: cubic-bezier(0.22, 1, 0.36, 1);
   display: grid;
-  gap: 8px;
+  gap: 12px;
   max-width: min(100%, 1200px);
   margin: 0 auto;
   padding: 36vh 0 40vh;
 }
 
 .line {
-  padding: 14px 0;
+  padding: 24px 0;
   transform-origin: left center;
   transition:
     opacity 700ms var(--ease-lyric),
@@ -268,7 +286,22 @@ onUnmounted(() => {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  transition: --fill 300ms linear;
+}
+
+/* Only the sweeping line animates its fill. Position updates arrive every 250 ms, so the sweep eases over that step. */
+.lyrics.timed .line.sweeping .word {
+  transition: --fill 250ms linear;
+}
+
+/* Phones show less text at once, so the wider desktop spacing would scatter the lyrics. */
+@media (max-width: 719px) {
+  .lyrics {
+    gap: 4px;
+  }
+
+  .line {
+    padding: 4px 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

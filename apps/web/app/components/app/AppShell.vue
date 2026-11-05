@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import AppSidebar from '~/components/app/AppSidebar.vue';
 import ConnectionBanner from '~/components/app/ConnectionBanner.vue';
 import MobileTabBar from '~/components/app/MobileTabBar.vue';
 import ToastRegion from '~/components/app/ToastRegion.vue';
 import PlayerBar from '~/components/player/PlayerBar.vue';
 import PairingView from '~/components/pairing/PairingView.vue';
-import LyricsView from '~/components/views/LyricsView.vue';
 import NowPlayingView from '~/components/views/NowPlayingView.vue';
 import SettingsView from '~/components/views/SettingsView.vue';
 import UpNextView from '~/components/views/UpNextView.vue';
@@ -29,38 +28,53 @@ const needsPairing = computed(() =>
   ),
 );
 
-// Leave the Lyrics view only when the song has none. A song that just changed keeps the view open while its lyrics load.
-watch(
-  () => host.lyricsAbsent,
-  (absent) => {
-    if (absent && ui.view === 'lyrics') ui.showView('now-playing');
-  },
+// The full-screen player needs a song to show. Pairing has no full-screen mode.
+const immersive = computed(
+  () => ui.immersive && host.current !== null && !needsPairing.value,
 );
 
+// Sidebar, player, and tab bar are left out while the full-screen player is open.
+const showChrome = computed(() => !needsPairing.value && !immersive.value);
+
+// Escape leaves the full-screen player, as the exit control does.
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && ui.immersive) ui.setImmersive(false);
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
   host.start();
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown);
 });
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-pairing': needsPairing }">
-    <AppSidebar v-if="!needsPairing" class="sidebar" />
+  <div
+    class="app-shell"
+    :class="{ 'is-pairing': needsPairing, 'is-immersive': immersive }"
+  >
+    <AppSidebar v-if="showChrome" class="sidebar" />
 
     <main class="content">
       <PairingView v-if="needsPairing" />
       <template v-else>
         <ConnectionBanner />
-        <NowPlayingView v-if="ui.view === 'now-playing'" />
-        <LyricsView v-else-if="ui.view === 'lyrics'" />
+        <NowPlayingView
+          v-if="ui.view === 'now-playing'"
+          :immersive="immersive"
+        />
         <UpNextView v-else-if="ui.view === 'up-next'" />
         <SettingsView v-else />
       </template>
     </main>
 
-    <div v-if="!needsPairing" class="player-slot">
+    <div v-if="showChrome" class="player-slot">
       <PlayerBar />
     </div>
-    <MobileTabBar v-if="!needsPairing" class="tabs" />
+    <MobileTabBar v-if="showChrome" class="tabs" />
     <ToastRegion />
   </div>
 </template>
@@ -129,5 +143,18 @@ onMounted(() => {
     display: grid;
     grid-area: tabs;
   }
+}
+
+/* Full screen takes the whole window. The chrome is not rendered, so the content area gets all of it. */
+.app-shell.is-immersive {
+  background: #0a0708;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'content';
+}
+
+.is-immersive .content {
+  overflow: hidden;
+  padding: 20px clamp(18px, 3vw, 40px);
 }
 </style>

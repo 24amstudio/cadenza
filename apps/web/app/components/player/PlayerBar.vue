@@ -21,12 +21,6 @@ const controlsDisabled = computed(
 const showLyricsToggle = computed(
   () => host.current !== null && host.lyricsStatus > 0,
 );
-
-const lyricsOpen = computed(() => ui.view === 'lyrics');
-
-function toggleLyrics(): void {
-  ui.showView(lyricsOpen.value ? 'now-playing' : 'lyrics');
-}
 </script>
 
 <template>
@@ -85,11 +79,9 @@ function toggleLyrics(): void {
       <button
         v-if="showLyricsToggle"
         class="utility-button"
-        :class="{ active: lyricsOpen }"
         type="button"
-        aria-label="Lyrics"
-        :aria-pressed="lyricsOpen"
-        @click="toggleLyrics"
+        aria-label="Show lyrics"
+        @click="ui.revealLyrics()"
       >
         <AppIcon name="lyrics" />
       </button>

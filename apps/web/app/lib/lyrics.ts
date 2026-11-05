@@ -44,11 +44,47 @@ export function activeLineIndices(
   return latest >= 0 ? [latest] : [];
 }
 
-// How much of a word has been sung, as a percentage. The active line sweeps its colour across words with this value.
-export function wordFillPercent(word: LyricWord, positionMs: number): number {
+function wordFillPercent(word: LyricWord, positionMs: number): number {
   if (positionMs <= word.startMs) return 0;
 
   if (positionMs >= word.endMs) return 100;
 
   return ((positionMs - word.startMs) / (word.endMs - word.startMs)) * 100;
+}
+
+// The last word that has started. Provider timings can overlap, so an earlier word may still be ending.
+function latestStartedWord(words: LyricWord[], positionMs: number): number {
+  let latest = -1;
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+
+    if (
+      word !== undefined &&
+      word.endMs > word.startMs &&
+      word.startMs <= positionMs
+    ) {
+      latest = index;
+    }
+  }
+
+  return latest;
+}
+
+// Fill for each word of a line, as a percentage. Only one word on screen sweeps at a time: the latest started word of the
+// newest active line. Earlier words are sung, later words are not, and every other line shows whole words.
+export function wordFills(
+  line: LyricLine,
+  positionMs: number,
+  sweeping: boolean,
+): number[] {
+  const latest = latestStartedWord(line.words, positionMs);
+
+  return line.words.map((word, index) => {
+    if (!sweeping) return word.startMs <= positionMs ? 100 : 0;
+
+    if (index === latest) return wordFillPercent(word, positionMs);
+
+    return index < latest ? 100 : 0;
+  });
 }

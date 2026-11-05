@@ -8,10 +8,6 @@ import { useUiStore } from '~/stores/ui';
 const host = useHostStore();
 const ui = useUiStore();
 
-const items = computed(() =>
-  navigationItems(host.current !== null && host.lyricsStatus > 0),
-);
-
 const statusLabel = computed(() => {
   switch (host.phase) {
     case 'connected':
@@ -38,7 +34,7 @@ const statusLabel = computed(() => {
 
     <nav class="nav" aria-label="Sections">
       <button
-        v-for="item in items"
+        v-for="item in navigationItems"
         :key="item.view"
         class="nav-item"
         :class="{ active: ui.view === item.view }"

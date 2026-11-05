@@ -13,11 +13,7 @@ import {
   isValidRemoteName,
   socketUrlFor,
 } from '../app/lib/host/endpoint';
-import {
-  activeLineIndices,
-  lyricsLevel,
-  wordFillPercent,
-} from '../app/lib/lyrics';
+import { activeLineIndices, lyricsLevel, wordFills } from '../app/lib/lyrics';
 import {
   formatClock,
   formatWait,
@@ -201,12 +197,27 @@ describe('lyrics', () => {
     expect(activeLineIndices(lines, 3_500)).toEqual([2]);
   });
 
-  test('fills a word as it is sung, from nothing to all of it', () => {
-    const word = { text: 'line', startMs: 1_400, endMs: 2_000 };
+  test('sweeps only the latest started word, even when word timings overlap', () => {
+    // The second word starts while the first is still ending.
+    const overlapping = {
+      ...timedLine,
+      words: [
+        { text: 'first ', startMs: 1_000, endMs: 1_600 },
+        { text: 'line', startMs: 1_400, endMs: 2_000 },
+      ],
+    };
 
-    expect(wordFillPercent(word, 1_300)).toBe(0);
-    expect(wordFillPercent(word, 1_700)).toBeCloseTo(50);
-    expect(wordFillPercent(word, 2_100)).toBe(100);
+    const partial = (fills: number[]) =>
+      fills.filter((fill) => fill > 0 && fill < 100);
+
+    expect(wordFills(overlapping, 900, true)).toEqual([0, 0]);
+
+    const during = wordFills(overlapping, 1_500, true);
+
+    expect(during[0]).toBe(100);
+    expect(during[1]).toBeCloseTo(16.7, 1);
+    expect(partial(during)).toHaveLength(1);
+    expect(wordFills(overlapping, 1_500, false)).toEqual([100, 100]);
   });
 });
 

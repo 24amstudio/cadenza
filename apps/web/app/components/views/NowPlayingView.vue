@@ -180,14 +180,16 @@ const ambientStyle = computed(() => {
   isolation: isolate;
   display: grid;
   gap: 40px;
-  max-width: 1120px;
-  margin: 0 auto;
 }
 
+/* The colour spans the full width of the page. The page clips it at its edges, so it can be wider than the content. */
 .now-playing::before {
   content: '';
   position: absolute;
-  inset: -60px -80px auto;
+  top: -60px;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
   z-index: -1;
   height: 560px;
   background: var(--ambient-image) center / cover no-repeat;
@@ -363,6 +365,8 @@ h2 {
 /* The artwork colours the whole screen, with a dark scrim so the white text stays readable. */
 .now-playing.immersive::before {
   inset: -40px;
+  width: auto;
+  transform: none;
   height: auto;
   opacity: 0.95;
   filter: blur(56px) saturate(1.35);
@@ -411,10 +415,13 @@ h2 {
   grid-area: exit;
 }
 
+/* Space between the song header and the first lyric line on wide screens. The phone layout sets its own spacing below. */
 .now-playing.immersive > .lyrics-panel {
   grid-area: lyrics;
   height: 100%;
   min-height: 0;
+  padding-top: 24px;
+  box-sizing: border-box;
 }
 
 .now-playing.immersive .scrubber {

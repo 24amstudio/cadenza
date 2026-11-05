@@ -39,8 +39,18 @@ const wordFillsByLine = computed(() =>
   ),
 );
 
+type LyricTier = 'plain' | 'active' | 'near' | 'far';
+
+// The value the CSS eases between: 0 for active, 1 for near, 2 for far.
+const tierNumbers: Record<LyricTier, number> = {
+  plain: 0,
+  active: 0,
+  near: 1,
+  far: 2,
+};
+
 // 'active' is a sounding line, 'near' is one line away from one, and 'far' is anything else.
-function tierOf(index: number): 'plain' | 'active' | 'near' | 'far' {
+function tierOf(index: number): LyricTier {
   if (!props.timed) return 'plain';
 
   if (activeIndices.value.includes(index)) return 'active';
@@ -167,7 +177,8 @@ onUnmounted(() => {
       v-for="(line, index) in lines"
       :key="line.id"
       class="line"
-      :class="[tierOf(index), { sweeping: index === newestIndex }]"
+      :class="tierOf(index)"
+      :style="{ '--lyric-tier': tierNumbers[tierOf(index)] }"
       :data-newest="index === newestIndex ? 'true' : undefined"
       :role="timed ? 'button' : undefined"
       :tabindex="timed ? 0 : undefined"
@@ -195,6 +206,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* The tier is registered so it can ease as one value. Opacity, blur and scale all follow that value. */
+@property --lyric-tier {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
 /* Animated colour stops need a registered property, so the sweep across a word can ease between position updates. */
 @property --fill {
   syntax: '<percentage>';
@@ -204,6 +222,13 @@ onUnmounted(() => {
 
 .lyrics {
   --ease-lyric: cubic-bezier(0.22, 1, 0.36, 1);
+  --lyric-near-opacity: 0.55;
+  --lyric-far-opacity: 0.3;
+  --lyric-near-blur: 1.5px;
+  --lyric-far-blur: 3px;
+  --lyric-active-scale: 1.04;
+  --lyric-near-scale: 0.985;
+  --lyric-far-scale: 0.96;
   display: grid;
   gap: 12px;
   max-width: min(100%, 1200px);
@@ -211,13 +236,37 @@ onUnmounted(() => {
   padding: 36vh 0 40vh;
 }
 
+/* Only the tier eases. Opacity, blur and scale derive from it, so a line that changes tier mid-transition keeps one
+   running animation instead of one per property. The derived values are piecewise linear: active at 0, near at 1, far at 2. */
 .line {
   padding: 24px 0;
   transform-origin: left center;
-  transition:
-    opacity 700ms var(--ease-lyric),
-    filter 700ms var(--ease-lyric),
-    transform 900ms var(--ease-lyric);
+  transition: --lyric-tier 700ms var(--ease-lyric);
+}
+
+.lyrics.timed .line {
+  --lyric-near-step: min(var(--lyric-tier), 1);
+  --lyric-far-step: max(var(--lyric-tier) - 1, 0);
+  opacity: calc(
+    1 + (var(--lyric-near-opacity) - 1) * var(--lyric-near-step) +
+      (var(--lyric-far-opacity) - var(--lyric-near-opacity)) *
+      var(--lyric-far-step)
+  );
+  filter: blur(
+    calc(
+      var(--lyric-near-blur) * var(--lyric-near-step) +
+        (var(--lyric-far-blur) - var(--lyric-near-blur)) * var(--lyric-far-step)
+    )
+  );
+  transform: scale(
+    calc(
+      var(--lyric-active-scale) +
+        (var(--lyric-near-scale) - var(--lyric-active-scale)) *
+        var(--lyric-near-step) +
+        (var(--lyric-far-scale) - var(--lyric-near-scale)) *
+        var(--lyric-far-step)
+    )
+  );
 }
 
 .line-text {
@@ -250,33 +299,13 @@ onUnmounted(() => {
   color: var(--color-text);
 }
 
-.plain {
-  opacity: 1;
-}
-
-.lyrics.timed .near {
-  opacity: 0.55;
-  filter: blur(1.5px);
-  transform: scale(0.985);
-}
-
-.lyrics.timed .far {
-  opacity: 0.3;
-  filter: blur(3px);
-  transform: scale(0.96);
-}
-
-.lyrics.timed .active {
-  opacity: 1;
-  filter: none;
-  transform: scale(1.04);
-}
-
 .lyrics.timed .active .line-text {
   color: var(--color-text);
 }
 
-/* Sung words fill from the left in the text colour; words still to come stay in the tertiary colour. */
+/* Sung words fill from the left in the text colour; words still to come stay in the tertiary colour. Every word eases
+   between position updates (every 250 ms), including when its line stops being the newest, so a finished line completes
+   its last word instead of snapping. */
 .lyrics.timed .word {
   background-image: linear-gradient(
     90deg,
@@ -286,10 +315,6 @@ onUnmounted(() => {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-}
-
-/* Only the sweeping line animates its fill. Position updates arrive every 250 ms, so the sweep eases over that step. */
-.lyrics.timed .line.sweeping .word {
   transition: --fill 250ms linear;
 }
 
@@ -308,7 +333,7 @@ onUnmounted(() => {
   .line,
   .line-text,
   .translation,
-  .word {
+  .lyrics.timed .word {
     transition: none;
   }
 }

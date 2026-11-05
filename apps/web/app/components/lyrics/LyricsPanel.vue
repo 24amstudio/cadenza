@@ -117,6 +117,12 @@ h2 {
   overflow-y: auto;
 }
 
+/* The lyric list uses the full width of the page, so its lines line up with the artwork above. */
+.lyrics-panel :deep(.lyrics) {
+  max-width: none;
+  margin: 0;
+}
+
 /* Full screen: the lyrics fill the column beside the song data. */
 .lyrics-panel.immersive {
   grid-template-rows: minmax(0, 1fr);
@@ -149,17 +155,11 @@ h2 {
   padding: 0;
   max-width: none;
   margin: 0;
-}
-
-/* Full screen keeps the lines above and below the active one readable, so more of the song shows at once. */
-.lyrics-panel.immersive :deep(.lyrics.timed .near) {
-  opacity: 0.62;
-  filter: blur(0.5px);
-}
-
-.lyrics-panel.immersive :deep(.lyrics.timed .far) {
-  opacity: 0.42;
-  filter: blur(1.2px);
+  /* Full screen keeps the lines above and below the active one readable, so more of the song shows at once. */
+  --lyric-near-opacity: 0.62;
+  --lyric-near-blur: 0.5px;
+  --lyric-far-opacity: 0.42;
+  --lyric-far-blur: 1.2px;
 }
 
 /* On a phone the text is large enough to read at a glance, and the lines have room between them. */

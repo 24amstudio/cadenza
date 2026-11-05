@@ -3,6 +3,8 @@ import {
   BluetoothFrameReader,
   bluetoothChunks,
   maximumBluetoothFrameBytes,
+  writeFrameChunks,
+  type BluetoothFrameWriter,
 } from '../app/lib/host/bluetooth';
 
 function joined(chunks: Uint8Array[]): Uint8Array {
@@ -81,5 +83,47 @@ describe('Bluetooth framing', () => {
     const tooLarge = 'x'.repeat(maximumBluetoothFrameBytes + 1);
 
     expect(() => bluetoothChunks(tooLarge)).toThrow('too large');
+  });
+});
+
+function recordingWriter(writeWithoutResponse: boolean) {
+  const calls: string[] = [];
+
+  const writer: BluetoothFrameWriter = {
+    properties: { writeWithoutResponse },
+    writeValueWithResponse: async () => {
+      calls.push('response');
+    },
+    writeValueWithoutResponse: async () => {
+      calls.push('no-response');
+    },
+  };
+
+  return { writer, calls };
+}
+
+describe('Bluetooth frame writes', () => {
+  test('acknowledges only the last chunk of a frame', async () => {
+    const chunks = bluetoothChunks(
+      '{"type":"command","padding":"' + 'x'.repeat(80) + '"}',
+    );
+
+    const { writer, calls } = recordingWriter(true);
+
+    await writeFrameChunks(writer, chunks);
+
+    expect(calls).toEqual([
+      ...Array.from({ length: chunks.length - 1 }, () => 'no-response'),
+      'response',
+    ]);
+  });
+
+  test('keeps every chunk acknowledged when the Host characteristic has no write without response', async () => {
+    const chunks = bluetoothChunks('{"type":"clock"}');
+    const { writer, calls } = recordingWriter(false);
+
+    await writeFrameChunks(writer, chunks);
+
+    expect(calls).toEqual(chunks.map(() => 'response'));
   });
 });

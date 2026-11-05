@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import AppSidebar from '~/components/app/AppSidebar.vue';
 import ConnectionBanner from '~/components/app/ConnectionBanner.vue';
 import MobileTabBar from '~/components/app/MobileTabBar.vue';
@@ -9,6 +9,8 @@ import PairingView from '~/components/pairing/PairingView.vue';
 import NowPlayingView from '~/components/views/NowPlayingView.vue';
 import SettingsView from '~/components/views/SettingsView.vue';
 import UpNextView from '~/components/views/UpNextView.vue';
+import { showNotification } from '~/lib/browserNotifications';
+import { createSongChangeDetector, documentTitle } from '~/lib/songAlerts';
 import { useHostStore } from '~/stores/host';
 import { usePreferencesStore } from '~/stores/preferences';
 import { useUiStore } from '~/stores/ui';
@@ -17,7 +19,41 @@ const host = useHostStore();
 const ui = useUiStore();
 
 // Creating the store applies the saved theme at startup, not only when Settings opens.
-usePreferencesStore();
+const preferences = usePreferencesStore();
+
+// The tab title names the song that is playing, so a background tab still shows it.
+watch(
+  () => host.current?.song ?? null,
+  (song) => {
+    document.title = documentTitle(song);
+  },
+  { immediate: true },
+);
+
+// A new play after a known one is announced. The first play seen only sets the baseline, so opening the page or
+// reconnecting does not alert about a song that was already playing.
+const songChanged = createSongChangeDetector();
+
+watch(
+  () => host.current?.occurrenceId ?? null,
+  (occurrenceId) => {
+    if (!songChanged.observe(occurrenceId) || !preferences.songNotifications) {
+      return;
+    }
+
+    const song = host.current?.song;
+
+    if (song !== undefined) showNotification(song.title, song.artist);
+  },
+);
+
+// Pairing starts a new session, so the first song from another Host is a baseline rather than a change.
+watch(
+  () => host.phase,
+  (phase) => {
+    if (phase === 'pairing') songChanged.reset();
+  },
+);
 
 // Until a Host is paired, the page is only the pairing surface. Once paired, the player stays visible even while
 // reconnecting so the last known state remains readable. A Bluetooth session that ended needs a click to reopen, so

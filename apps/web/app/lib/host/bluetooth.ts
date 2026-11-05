@@ -37,6 +37,24 @@ export function bluetoothChunks(text: string): Uint8Array<ArrayBuffer>[] {
   return chunks;
 }
 
+// Each acknowledged 20-byte write costs a radio round trip, and a command frame is about a dozen of them. The chunks go
+// without a response, which the Host's characteristic allows. Only the last chunk waits for one: it confirms the Host
+// has the frame's bytes before the next frame starts.
+export async function writeFrameChunks(
+  writer: BluetoothFrameWriter,
+  chunks: Uint8Array<ArrayBuffer>[],
+): Promise<void> {
+  const last = chunks.length - 1;
+
+  for (const [index, chunk] of chunks.entries()) {
+    if (index === last || !writer.properties.writeWithoutResponse) {
+      await writer.writeValueWithResponse(chunk);
+    } else {
+      await writer.writeValueWithoutResponse(chunk);
+    }
+  }
+}
+
 // Bytes are written into one buffer that is compacted in place. Copying the whole backlog for every 20-byte value made
 // a large artwork response quadratic in the number of notifications.
 export class BluetoothFrameReader {
@@ -137,10 +155,15 @@ interface BluetoothRemoteGATTService {
   ): Promise<BluetoothRemoteGATTCharacteristic>;
 }
 
-interface BluetoothRemoteGATTCharacteristic {
+export interface BluetoothFrameWriter {
+  readonly properties: { readonly writeWithoutResponse: boolean };
+  writeValueWithResponse(value: BufferSource): Promise<void>;
+  writeValueWithoutResponse(value: BufferSource): Promise<void>;
+}
+
+interface BluetoothRemoteGATTCharacteristic extends BluetoothFrameWriter {
   readonly value?: DataView;
   startNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
-  writeValueWithResponse(value: BufferSource): Promise<void>;
   addEventListener(
     type: 'characteristicvaluechanged',
     listener: () => void,
@@ -282,10 +305,10 @@ function linkSocket(
     onMessage: null,
     onClose: null,
     send(text) {
+      const chunks = bluetoothChunks(text);
+
       // Writes run one at a time, because a Bluetooth link accepts one pending write at once.
-      for (const chunk of bluetoothChunks(text)) {
-        writes = writes.then(() => write.writeValueWithResponse(chunk));
-      }
+      writes = writes.then(() => writeFrameChunks(write, chunks));
 
       writes.catch((error) => {
         traceEvent('bluetooth: write failed', error);

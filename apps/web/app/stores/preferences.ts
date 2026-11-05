@@ -60,11 +60,32 @@ function writeLyricsSize(value: LyricsSize): void {
   }
 }
 
+const songNotificationsKey = 'cadenza.web.songNotifications';
+
+// Off until the user turns it on in Settings, because the browser asks for permission only after that click.
+function readSongNotifications(): boolean {
+  try {
+    return localStorage.getItem(songNotificationsKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeSongNotifications(value: boolean): void {
+  try {
+    localStorage.setItem(songNotificationsKey, String(value));
+  } catch {
+    // The choice still applies for this page session.
+  }
+}
+
 export const usePreferencesStore = defineStore('preferences', () => {
   const theme = ref<ThemePreference>(readTheme());
   const lyricsSize = ref<LyricsSize>(readLyricsSize());
+  const songNotifications = ref(readSongNotifications());
 
   watch(lyricsSize, writeLyricsSize);
+  watch(songNotifications, writeSongNotifications);
 
   watch(
     theme,
@@ -86,5 +107,16 @@ export const usePreferencesStore = defineStore('preferences', () => {
     lyricsSize.value = value;
   }
 
-  return { theme, setTheme, lyricsSize, setLyricsSize };
+  function setSongNotifications(value: boolean): void {
+    songNotifications.value = value;
+  }
+
+  return {
+    theme,
+    setTheme,
+    lyricsSize,
+    setLyricsSize,
+    songNotifications,
+    setSongNotifications,
+  };
 });

@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
+import {
+  notificationAccess,
+  requestNotificationAccess,
+  showNotification,
+  type NotificationAccess,
+} from '~/lib/browserNotifications';
 import { isValidRemoteName } from '~/lib/host/endpoint';
 import { useHostStore } from '~/stores/host';
 import {
@@ -70,6 +76,48 @@ function forget(): void {
   confirmingForget.value = false;
   host.forgetBrowser();
 }
+
+const songAlertAccess = ref<NotificationAccess>(notificationAccess());
+
+// The site's permission can change in the browser while this page is open, so it is read again when the page regains focus.
+function refreshSongAlertAccess(): void {
+  songAlertAccess.value = notificationAccess();
+}
+
+onMounted(() => window.addEventListener('focus', refreshSongAlertAccess));
+
+onUnmounted(() => window.removeEventListener('focus', refreshSongAlertAccess));
+
+const songAlertNote = computed(() => {
+  switch (songAlertAccess.value) {
+    case 'unsupported':
+      return 'This browser cannot show notifications for this page. Notifications need HTTPS or localhost.';
+    case 'denied':
+      return "Notifications are blocked for this site. Allow them in your browser's site settings, then turn this on again.";
+    default:
+      return 'Show a system notification when a different song starts.';
+  }
+});
+
+// The browser opens its permission prompt only from a click, so turning alerts on starts here. The confirmation is a
+// system notification, so it also shows whether the browser delivers song alerts.
+async function toggleSongAlerts(): Promise<void> {
+  if (preferences.songNotifications) {
+    preferences.setSongNotifications(false);
+
+    return;
+  }
+
+  songAlertAccess.value = await requestNotificationAccess();
+
+  if (songAlertAccess.value !== 'granted') return;
+
+  preferences.setSongNotifications(true);
+  showNotification(
+    'Song changes are on',
+    'Cadenza Remote will notify you when a different song starts.',
+  );
+}
 </script>
 
 <template>
@@ -110,6 +158,25 @@ function forget(): void {
           </button>
         </div>
       </div>
+    </section>
+
+    <section class="group" aria-labelledby="notifications-title">
+      <h2 id="notifications-title">Notifications</h2>
+      <div class="row">
+        <span id="song-alerts-label">Song changes</span>
+        <button
+          class="switch"
+          type="button"
+          role="switch"
+          aria-labelledby="song-alerts-label"
+          :aria-checked="preferences.songNotifications"
+          :disabled="songAlertAccess === 'unsupported'"
+          @click="toggleSongAlerts"
+        >
+          <span class="switch-thumb" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="footnote" aria-live="polite">{{ songAlertNote }}</p>
     </section>
 
     <section class="group" aria-labelledby="browser-title">
@@ -332,6 +399,39 @@ input[aria-invalid='true'] {
 .status-text {
   color: var(--color-text-secondary);
   font-size: 14px;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 51px;
+  height: 31px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fill-strong);
+}
+
+.switch[aria-checked='true'] {
+  background: var(--color-accent);
+}
+
+.switch:disabled {
+  opacity: 0.4;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+}
+
+.switch[aria-checked='true'] .switch-thumb {
+  transform: translateX(20px);
 }
 
 @media (max-width: 719px) {

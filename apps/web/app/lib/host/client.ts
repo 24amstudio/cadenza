@@ -9,6 +9,7 @@ import {
   encodeLyricsGet,
   encodePair,
   encodeRemoteConfigure,
+  type PairingProof,
 } from '../protocol/encode';
 import { decodeHostMessage, type HostMessage } from '../protocol/decode';
 import { artworkDataUrl } from './artwork';
@@ -28,7 +29,8 @@ export type HostPhase =
   | 'pairing-failed'
   | 'connecting'
   | 'connected'
-  | 'reconnecting';
+  | 'reconnecting'
+  | 'bluetooth-idle';
 
 export type HostChange =
   | { kind: 'phase'; phase: HostPhase; attempt: number; message: string | null }
@@ -66,6 +68,11 @@ interface PendingCommand {
   resolve: (result: CommandResult) => void;
 }
 
+interface PendingPairing {
+  proof: PairingProof;
+  name: string;
+}
+
 type PendingRequest =
   | { kind: 'clock'; sentAtRemoteMs: number }
   | { kind: 'lyrics'; occurrenceId: string }
@@ -85,7 +92,9 @@ export class HostClient {
   private readonly options: HostClientOptions;
   private socket: SocketLike | null = null;
   private credential: StoredCredential | null;
-  private pendingSecret: string | null = null;
+  private pendingPairing: PendingPairing | null = null;
+  // A Bluetooth link is opened by a user gesture, so it is never reopened here. Losing one ends the session.
+  private linkedOverBluetooth = false;
   private phase: HostPhase = 'unpaired';
   private attempt = 0;
   private welcomed = false;
@@ -106,9 +115,14 @@ export class HostClient {
   }
 
   start(invitationSecret: string | null): void {
-    if (invitationSecret !== null) this.pendingSecret = invitationSecret;
+    if (invitationSecret !== null) {
+      this.pendingPairing = {
+        proof: { secret: invitationSecret },
+        name: this.options.defaultName,
+      };
+    }
 
-    if (this.pendingSecret === null && this.credential === null) {
+    if (this.pendingPairing === null && this.credential === null) {
       this.setPhase('unpaired', null);
 
       return;
@@ -117,8 +131,26 @@ export class HostClient {
     this.connect();
   }
 
+  // Bluetooth pages start with no socket. The store opens one from a click, then hands it to the client.
+  startBluetooth(): void {
+    this.setPhase(
+      this.credential === null ? 'unpaired' : 'bluetooth-idle',
+      null,
+    );
+  }
+
+  pairOverBluetooth(socket: SocketLike, pin: string, name: string): void {
+    this.pendingPairing = { proof: { pin }, name };
+    this.attachBluetooth(socket);
+  }
+
+  connectOverBluetooth(socket: SocketLike): void {
+    if (this.credential === null) return;
+    this.attachBluetooth(socket);
+  }
+
   retry(): void {
-    if (this.pendingSecret === null && this.credential === null) return;
+    if (this.pendingPairing === null && this.credential === null) return;
     this.cancelReconnect?.();
     this.cancelReconnect = null;
     this.connect();
@@ -211,7 +243,7 @@ export class HostClient {
   forget(): void {
     this.options.credentials.clear();
     this.credential = null;
-    this.pendingSecret = null;
+    this.pendingPairing = null;
     this.closeSocket();
     this.cancelTimers();
     this.setPhase('unpaired', null);
@@ -227,10 +259,11 @@ export class HostClient {
     this.cancelReconnect = null;
     this.closeSocket();
     this.welcomed = false;
+    this.linkedOverBluetooth = false;
 
     if (this.attempt === 0) {
       this.setPhase(
-        this.pendingSecret === null ? 'connecting' : 'pairing',
+        this.pendingPairing === null ? 'connecting' : 'pairing',
         null,
       );
     }
@@ -245,14 +278,33 @@ export class HostClient {
     }, handshakeTimeoutMs);
   }
 
+  private attachBluetooth(socket: SocketLike): void {
+    this.closeSocket();
+    this.cancelReconnect?.();
+    this.cancelReconnect = null;
+    this.welcomed = false;
+    this.linkedOverBluetooth = true;
+    this.socket = socket;
+    socket.onMessage = (text) => this.receive(socket, text);
+    socket.onClose = () => this.handleClose(socket);
+    this.cancelHandshake = this.options.schedule(() => {
+      if (this.socket === socket && !this.welcomed) socket.close();
+    }, handshakeTimeoutMs);
+    this.setPhase(
+      this.pendingPairing === null ? 'connecting' : 'pairing',
+      null,
+    );
+    this.handshake(socket);
+  }
+
   private handshake(socket: SocketLike): void {
     if (this.socket !== socket) return;
 
-    if (this.pendingSecret !== null) {
+    if (this.pendingPairing !== null) {
       socket.send(
         encodePair(
-          this.pendingSecret,
-          this.options.defaultName,
+          this.pendingPairing.proof,
+          this.pendingPairing.name,
           this.options.remoteVersion,
         ),
       );
@@ -345,10 +397,10 @@ export class HostClient {
     this.cancelHandshake?.();
     this.cancelHandshake = null;
 
-    if (this.pendingSecret !== null) {
+    if (this.pendingPairing !== null) {
       if (welcome.token === null) {
         this.failPairing(
-          'Cadenza Host did not issue a credential. Scan a new QR code.',
+          'Cadenza Host did not issue a credential. Pair again.',
         );
 
         return;
@@ -357,11 +409,11 @@ export class HostClient {
       this.credential = {
         remoteId: welcome.remoteId,
         token: welcome.token,
-        name: this.options.defaultName,
+        name: this.pendingPairing.name,
         lastCreditSequence: 0,
       };
       this.options.credentials.write(this.credential);
-      this.pendingSecret = null;
+      this.pendingPairing = null;
     }
 
     this.options.onChange({ kind: 'welcome', welcome });
@@ -408,7 +460,7 @@ export class HostClient {
     }
 
     if (errorCode === 'authentication' || errorCode === 'revoked') {
-      if (this.pendingSecret !== null) {
+      if (this.pendingPairing !== null) {
         this.failPairing(message);
       } else {
         this.unpairForRevocation();
@@ -417,7 +469,7 @@ export class HostClient {
       return;
     }
 
-    if (this.pendingSecret !== null) this.failPairing(message);
+    if (this.pendingPairing !== null) this.failPairing(message);
     else this.emitNotice(message);
   }
 
@@ -559,7 +611,24 @@ export class HostClient {
 
     if (this.phase === 'pairing-failed' || this.phase === 'unpaired') return;
 
-    if (this.pendingSecret === null && this.credential === null) {
+    if (this.linkedOverBluetooth) {
+      if (this.pendingPairing !== null) {
+        this.failPairing(
+          'The Bluetooth connection closed before Cadenza Host confirmed this browser.',
+        );
+
+        return;
+      }
+
+      this.setPhase(
+        'bluetooth-idle',
+        'The Bluetooth connection ended. Connect again to continue.',
+      );
+
+      return;
+    }
+
+    if (this.pendingPairing === null && this.credential === null) {
       this.setPhase('unpaired', null);
 
       return;
@@ -596,7 +665,7 @@ export class HostClient {
   }
 
   private failPairing(message: string): void {
-    this.pendingSecret = null;
+    this.pendingPairing = null;
     this.closeSocket();
     this.cancelTimers();
     this.setPhase('pairing-failed', message);
@@ -609,7 +678,7 @@ export class HostClient {
     this.cancelTimers();
     this.setPhase(
       'unpaired',
-      'This browser is no longer paired with Cadenza Host. Scan a new QR code.',
+      'This browser is no longer paired with Cadenza Host. Pair it again.',
     );
   }
 

@@ -255,7 +255,9 @@ describe('outgoing frames', () => {
 
   test('pairing and hello frames use the snake_case contract', () => {
     expect(
-      JSON.parse(encodePair('s'.repeat(40), 'Mac', 'cadenza-web 1')),
+      JSON.parse(
+        encodePair({ secret: 's'.repeat(40) }, 'Mac', 'cadenza-web 1'),
+      ),
     ).toEqual({
       version: 1,
       type: 'pair',
@@ -264,6 +266,15 @@ describe('outgoing frames', () => {
         name: 'Mac',
         remote_version: 'cadenza-web 1',
       },
+    });
+
+    // Bluetooth pairing proves itself with the Host's PIN and never sends the QR secret.
+    expect(
+      JSON.parse(encodePair({ pin: '4821' }, 'Desk', 'cadenza-web 1')),
+    ).toEqual({
+      version: 1,
+      type: 'pair',
+      pair: { pin: '4821', name: 'Desk', remote_version: 'cadenza-web 1' },
     });
 
     const hello = JSON.parse(

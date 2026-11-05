@@ -21,6 +21,8 @@ const statusLabel = computed(() => {
     case 'connecting':
     case 'pairing':
       return 'Connecting';
+    case 'bluetooth-idle':
+      return 'Not connected';
     default:
       return 'Not paired';
   }

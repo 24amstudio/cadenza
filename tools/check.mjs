@@ -247,6 +247,7 @@ if (!existsSync(workflowLint))
 run(workflowLint, [
   '.github/workflows/checking.yml',
   '.github/workflows/build.yml',
+  '.github/workflows/pages.yml',
 ]);
 
 if (process.argv.includes('--portable')) {

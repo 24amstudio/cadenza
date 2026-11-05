@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia';
 import { computed, ref, shallowRef, watch } from 'vue';
+import { bluetoothAvailable, openBluetoothSocket } from '~/lib/host/bluetooth';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
-import { HostClient, type HostChange, type HostPhase } from '~/lib/host/client';
+import {
+  HostClient,
+  type HostChange,
+  type HostPhase,
+  type SocketLike,
+} from '~/lib/host/client';
 import { createCredentialStore } from '~/lib/host/credentials';
 import {
   defaultRemoteName,
@@ -46,6 +52,13 @@ export const useHostStore = defineStore('host', () => {
   const artworks = shallowRef<Record<string, string | null>>({});
   const busyAction = ref<CommandAction['kind'] | null>(null);
   const artworkRequests = new Set<string>();
+  // Web Bluetooth exists only in secure contexts and Chromium-based browsers. When it is absent, pairing uses the QR.
+  const bluetoothSupported = bluetoothAvailable();
+  // 'searching' while the browser's device chooser and GATT connection run. 'linked' once the Host's link waits for a PIN.
+  const bluetoothState = ref<'idle' | 'searching' | 'linked'>('idle');
+  // Failures that need a decision open a dialog in the pairing view. Routine outcomes use a toast instead.
+  const pairingFailure = ref<string | null>(null);
+  let bluetoothLink: SocketLike | null = null;
   let client: HostClient | null = null;
   let ticker: ReturnType<typeof setInterval> | null = null;
 
@@ -141,11 +154,82 @@ export const useHostStore = defineStore('host', () => {
       onChange: handleChange,
     });
     remoteName.value = client.remoteName();
-    client.start(secret);
+
+    if (bluetoothSupported) client.startBluetooth();
+    else client.start(secret);
   }
 
   function retry(): void {
+    if (bluetoothSupported) return;
     client?.retry();
+  }
+
+  // Must be called from a click handler: the browser allows its device chooser only in response to a user gesture.
+  function findBluetoothHost(): void {
+    if (client === null || bluetoothState.value !== 'idle') return;
+    bluetoothState.value = 'searching';
+
+    openBluetoothSocket().then(
+      (socket) => {
+        bluetoothState.value = 'idle';
+
+        if (phase.value === 'bluetooth-idle') {
+          client?.connectOverBluetooth(socket);
+
+          return;
+        }
+
+        bluetoothLink = socket;
+        bluetoothState.value = 'linked';
+        socket.onClose = () => {
+          if (bluetoothLink !== socket) return;
+          bluetoothLink = null;
+          bluetoothState.value = 'idle';
+          notices.show(
+            'The Bluetooth link to Cadenza Host closed. Find it again to pair.',
+          );
+        };
+      },
+      (error: Error) => {
+        bluetoothState.value = 'idle';
+        reportBluetoothFailure(error);
+      },
+    );
+  }
+
+  function pairOverBluetooth(pin: string, name: string): void {
+    const socket = bluetoothLink;
+
+    if (client === null || socket === null) return;
+    bluetoothLink = null;
+    bluetoothState.value = 'idle';
+    client.pairOverBluetooth(socket, pin, name);
+  }
+
+  function closeBluetoothLink(): void {
+    const socket = bluetoothLink;
+
+    bluetoothLink = null;
+    bluetoothState.value = 'idle';
+    socket?.close();
+  }
+
+  function dismissPairingFailure(): void {
+    pairingFailure.value = null;
+  }
+
+  function reportBluetoothFailure(error: Error): void {
+    // The chooser was dismissed, or no Host answered. Both are routine and the user can simply try again.
+    if (error instanceof DOMException && error.name === 'NotFoundError') {
+      notices.show(
+        'No Cadenza Host was chosen. Keep Bluetooth on near the Host and try again.',
+      );
+
+      return;
+    }
+
+    pairingFailure.value =
+      'Cadenza Host could not be reached over Bluetooth. Keep Bluetooth on near the Host, then try again.';
   }
 
   function handleChange(change: HostChange): void {
@@ -214,6 +298,10 @@ export const useHostStore = defineStore('host', () => {
       // Requests in flight on the old socket were dropped. Clearing them lets the next snapshot ask again.
       artworkRequests.clear();
       lyrics.value = null;
+    }
+
+    if (next === 'pairing-failed' && bluetoothSupported) {
+      pairingFailure.value = message;
     }
 
     if (next === 'unpaired' || next === 'pairing-failed') {
@@ -343,6 +431,7 @@ export const useHostStore = defineStore('host', () => {
   }
 
   function forgetBrowser(): void {
+    closeBluetoothLink();
     client?.forget();
     remoteName.value = '';
   }
@@ -367,6 +456,13 @@ export const useHostStore = defineStore('host', () => {
     busyAction,
     artworkFor,
     requestArtwork,
+    bluetoothSupported,
+    bluetoothState,
+    pairingFailure,
+    findBluetoothHost,
+    pairOverBluetooth,
+    closeBluetoothLink,
+    dismissPairingFailure,
     start,
     retry,
     togglePlayback,

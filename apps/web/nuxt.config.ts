@@ -14,6 +14,9 @@ export default defineNuxtConfig({
     preset: 'static',
   },
   app: {
+    // Cadenza Host serves the app at the root. GitHub Pages project sites serve it under /<repository>/, which the
+    // Pages workflow passes in as CADENZA_WEB_BASE_URL.
+    baseURL: process.env['CADENZA_WEB_BASE_URL'] ?? '/',
     head: {
       title: 'Cadenza Remote',
       htmlAttrs: { lang: 'en' },

@@ -68,7 +68,9 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
         }
         let chunks: [Data]
         do {
-            chunks = try BluetoothFrameCodec.chunks(for: data)
+            // Web Bluetooth cannot negotiate an MTU, so a browser central may accept only 20-byte notifications.
+            let chunkBytes = min(BluetoothFrameCodec.defaultChunkBytes, central.maximumUpdateValueLength)
+            chunks = try BluetoothFrameCodec.chunks(for: data, maximumChunkBytes: chunkBytes)
         } catch {
             completion(error)
             return false

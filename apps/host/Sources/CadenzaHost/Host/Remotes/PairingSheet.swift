@@ -28,6 +28,14 @@ struct PairingSheet: View {
                 Text("A regular camera opens " + webAddress).foregroundStyle(.secondary).textSelection(.enabled)
             }
             Text("\(invitation.host):\(invitation.port)").textSelection(.enabled)
+            VStack(spacing: 6) {
+                Text("Pair over Bluetooth with this PIN").font(.headline)
+                Text(invitation.pin)
+                    .font(.system(size: 40, weight: .semibold, design: .monospaced))
+                    .textSelection(.enabled)
+                    .accessibilityLabel("Bluetooth PIN " + invitation.pin.map(String.init).joined(separator: " "))
+                Text("It expires ten seconds after it appears.").foregroundStyle(.secondary)
+            }
             HStack {
                 Button("Show larger QR") { showingLargeCode = true }
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)

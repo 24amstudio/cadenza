@@ -305,7 +305,7 @@ final class HostService {
         )
         self.invitation = invitation
         invitationDeadline = monotonicMs() + 300_000
-        invitationPinDeadline = monotonicMs() + 7_000
+        invitationPinDeadline = monotonicMs() + 10_000
         invitationPinAttempts = 0
         return invitation
     }

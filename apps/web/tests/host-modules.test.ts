@@ -14,9 +14,9 @@ import {
   socketUrlFor,
 } from '../app/lib/host/endpoint';
 import {
-  activeLineIndex,
-  activeWordIndex,
+  activeLineIndices,
   lyricsLevel,
+  wordFillPercent,
 } from '../app/lib/lyrics';
 import {
   formatClock,
@@ -102,6 +102,7 @@ describe('clock estimate', () => {
     expect(bestClockEstimate([slow, fast])).toEqual({
       offsetMs: 1000,
       roundTripMs: 10,
+      uncertaintyMs: 5,
     });
   });
 
@@ -185,17 +186,27 @@ describe('lyrics', () => {
     expect(lyricsLevel(document([timedLine]))).toBe(3);
   });
 
-  test('follows the last line that has started and the last word that has started', () => {
+  test('keeps every sounding line active and keeps the latest one through a gap', () => {
+    // A background vocal overlaps the main line, then a gap follows before the next line.
     const lines = [
       timedLine,
+      { ...timedLine, id: 'bg', startMs: 1_200, endMs: 1_800 },
       { ...timedLine, id: 'b', startMs: 3_000, endMs: 4_000 },
     ];
 
-    expect(activeLineIndex(lines, 500)).toBe(-1);
-    expect(activeLineIndex(lines, 1_500)).toBe(0);
-    expect(activeLineIndex(lines, 3_500)).toBe(1);
-    expect(activeWordIndex(timedLine, 1_450)).toBe(1);
-    expect(activeWordIndex(timedLine, 900)).toBe(-1);
+    expect(activeLineIndices(lines, 500)).toEqual([]);
+    expect(activeLineIndices(lines, 1_100)).toEqual([0]);
+    expect(activeLineIndices(lines, 1_500)).toEqual([0, 1]);
+    expect(activeLineIndices(lines, 2_500)).toEqual([1]);
+    expect(activeLineIndices(lines, 3_500)).toEqual([2]);
+  });
+
+  test('fills a word as it is sung, from nothing to all of it', () => {
+    const word = { text: 'line', startMs: 1_400, endMs: 2_000 };
+
+    expect(wordFillPercent(word, 1_300)).toBe(0);
+    expect(wordFillPercent(word, 1_700)).toBeCloseTo(50);
+    expect(wordFillPercent(word, 2_100)).toBe(100);
   });
 });
 

@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import EmptyState from '~/components/common/EmptyState.vue';
 import LyricLines from '~/components/lyrics/LyricLines.vue';
 import { lyricsLevel } from '~/lib/lyrics';
-import { lyricsScales, usePreferencesStore } from '~/stores/preferences';
+import { usePreferencesStore } from '~/stores/preferences';
 import { useHostStore } from '~/stores/host';
 
 const host = useHostStore();
@@ -12,7 +12,6 @@ const preferences = usePreferencesStore();
 const song = computed(() => host.current?.song ?? null);
 const document = computed(() => host.lyricsDocument);
 const level = computed(() => lyricsLevel(document.value));
-const scale = computed(() => lyricsScales[preferences.lyricsSize]);
 </script>
 
 <template>
@@ -44,7 +43,7 @@ const scale = computed(() => lyricsScales[preferences.lyricsSize]);
       :position-ms="host.positionMs"
       :timed="level >= 2"
       :word-timed="level === 3"
-      :scale="scale"
+      :size="preferences.lyricsSize"
       @seek="host.seekTo"
     />
   </section>
@@ -54,7 +53,7 @@ const scale = computed(() => lyricsScales[preferences.lyricsSize]);
 .lyrics-view {
   display: grid;
   gap: 8px;
-  max-width: 720px;
+  max-width: min(100%, 1200px);
   margin: 0 auto;
 }
 

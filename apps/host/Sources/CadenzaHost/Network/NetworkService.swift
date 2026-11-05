@@ -2,6 +2,13 @@ import Foundation
 import Network
 import Security
 
+// What a transport did with one frame. `full` keeps the frame queued until the transport reports that it drained.
+enum TransportSendResult: Equatable {
+    case accepted
+    case full
+    case failed
+}
+
 @MainActor
 final class NetworkService {
     @MainActor
@@ -13,7 +20,7 @@ final class NetworkService {
         let id = identifier()
         let connection: NWConnection?
         let transport: String
-        let sendTransport: ((Data) -> Bool)?
+        let sendTransport: ((Data) -> TransportSendResult)?
         let cancelTransport: () -> Void
         var remoteId: String?
         var remoteVersion: String?
@@ -23,11 +30,19 @@ final class NetworkService {
         var transportPolicy = TransportPolicy(
             mode: "lan_only", selection: "deterministic", primary: "lan", bulk: "lan")
         var supportsHeartbeat = false
+        // The last full state this Remote was sent, and when. Heartbeats are judged against it, not the latest snapshot.
+        var lastSnapshot: HostSnapshot?
+        var lastSnapshotAt: Int64 = 0
         var receivedAt: [Int64] = []
         var outbound: [Outbound] = []
         var pendingState: Outbound?
+        // Media waiting behind control frames and state. Queued a few at a time, see sendBulk.
+        var bulk: [Outbound] = []
+        var bulkBytes = 0
         var outboundBytes = 0
         var sending = false
+        // Set while a transport refuses frames. The queue resumes when the transport reports that it drained.
+        var transportWaiting = false
 
         init(_ connection: NWConnection) {
             self.connection = connection
@@ -38,7 +53,7 @@ final class NetworkService {
 
         init(
             transport: String,
-            send: @escaping (Data) -> Bool,
+            send: @escaping (Data) -> TransportSendResult,
             cancel: @escaping () -> Void,
         ) {
             connection = nil
@@ -209,7 +224,7 @@ final class NetworkService {
 
     func acceptBluetooth(
         centralID: UUID,
-        send: @escaping (Data) -> Bool,
+        send: @escaping (Data) -> TransportSendResult,
         cancel: @escaping () -> Void,
     ) {
         guard peers.count < 32 else {
@@ -225,6 +240,13 @@ final class NetworkService {
             guard let self, let peer, self.peers[peer.id]?.authenticated == false else { return }
             self.disconnect(peer.id)
         }
+    }
+
+    // The Bluetooth transport can take frames again. The Remote's queue resumes with its latest state.
+    func drainedBluetooth(_ centralID: UUID) {
+        guard let peerId = bluetoothPeers[centralID], let peer = peers[peerId] else { return }
+        peer.transportWaiting = false
+        flush(peer)
     }
 
     func receiveBluetooth(_ data: Data, from centralID: UUID) {
@@ -244,7 +266,7 @@ final class NetworkService {
             cancel()
             return nil
         }
-        let peer = Peer(transport: "lan", send: send, cancel: cancel)
+        let peer = Peer(transport: "lan", send: { send($0) ? .accepted : .failed }, cancel: cancel)
         peers[peer.id] = peer
         logger?.log(
             .info, category: "network", action: "peer.connected", "Remote connection opened",
@@ -284,7 +306,7 @@ final class NetworkService {
 
     func send(_ frame: Frame, to peer: Peer) {
         do {
-            send(try Wire.encode(frame), to: peer, priority: isPriority(frame.type))
+            send(try Wire.encode(frame), to: peer, lane: lane(for: frame.type))
         } catch {
             disconnect(peer.id)
             onIssue?("The Host could not encode a message for a Remote: " + error.localizedDescription)
@@ -292,6 +314,14 @@ final class NetworkService {
     }
 
     func broadcast(_ frame: Frame) {
+        broadcast(
+            frame,
+            to: peers.values.filter { $0.authenticated && (frame.type != "heartbeat" || $0.supportsHeartbeat) })
+    }
+
+    // Encodes the frame once for all recipients, so several Remotes do not each pay for the same JSON.
+    func broadcast(_ frame: Frame, to recipients: [Peer]) {
+        guard !recipients.isEmpty else { return }
         let data: Data
         do {
             data = try Wire.encode(frame)
@@ -300,23 +330,34 @@ final class NetworkService {
             onIssue?("The Host could not encode a state update: " + error.localizedDescription)
             return
         }
-        for peer in peers.values where peer.authenticated && (frame.type != "heartbeat" || peer.supportsHeartbeat) {
-            send(data, to: peer, priority: isPriority(frame.type))
+        for peer in recipients where peers[peer.id] != nil {
+            send(data, to: peer, lane: lane(for: frame.type))
         }
     }
 
-    private func isPriority(_ type: String) -> Bool {
-        type != "state" && type != "heartbeat"
+    // Control frames go first, then the newest state, then media. Media never holds back a state update or a command result.
+    private enum Lane {
+        case control
+        case state
+        case bulk
     }
 
-    private func send(_ data: Data, to peer: Peer, priority: Bool) {
+    private func lane(for type: String) -> Lane {
+        switch type {
+        case "state", "heartbeat": .state
+        case "artwork.chunk", "motion.chunk": .bulk
+        default: .control
+        }
+    }
+
+    private func send(_ data: Data, to peer: Peer, lane: Lane) {
         guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes else {
             disconnect(peer.id)
             onIssue?("The Host closed a Remote connection after an outbound message exceeded the safety limit.")
             return
         }
         let item = Peer.Outbound(data: data)
-        let replacedBytes = priority ? 0 : (peer.pendingState?.data.count ?? 0)
+        let replacedBytes = lane == .state ? (peer.pendingState?.data.count ?? 0) : 0
         let nextBytes = peer.outboundBytes - replacedBytes + data.count
         guard nextBytes <= 4_194_304
         else {
@@ -325,22 +366,45 @@ final class NetworkService {
             return
         }
         peer.outboundBytes = nextBytes
-        if priority {
-            peer.outbound.append(item)
-        } else {
-            peer.pendingState = item
+        switch lane {
+        case .control: peer.outbound.append(item)
+        case .state: peer.pendingState = item
+        case .bulk:
+            peer.bulk.append(item)
+            peer.bulkBytes += data.count
         }
         flush(peer)
     }
 
+    // Queues bulk frames a few at a time. A transfer waits while its backlog is large, so control frames interleave between
+    // its chunks and a long file cannot exhaust the peer's outbound budget.
+    func sendBulk(count: Int, makeFrame: (Int) -> Frame, to peer: Peer) async {
+        for index in 0..<count {
+            while peer.bulkBytes > Self.bulkBacklogBytes, peers[peer.id] != nil {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard peers[peer.id] != nil else { return }
+            send(makeFrame(index), to: peer)
+        }
+    }
+
+    private static let bulkBacklogBytes = 64 * 1024
+
     private func flush(_ peer: Peer) {
-        guard !peer.sending, peers[peer.id] != nil else { return }
+        guard !peer.sending, !peer.transportWaiting, peers[peer.id] != nil else { return }
         let item: Peer.Outbound
+        let lane: Lane
         if !peer.outbound.isEmpty {
             item = peer.outbound.removeFirst()
+            lane = .control
         } else if let pending = peer.pendingState {
             item = pending
             peer.pendingState = nil
+            lane = .state
+        } else if !peer.bulk.isEmpty {
+            item = peer.bulk.removeFirst()
+            peer.bulkBytes -= item.data.count
+            lane = .bulk
         } else {
             return
         }
@@ -363,19 +427,42 @@ final class NetworkService {
                     }
                 })
         } else if let sendTransport = peer.sendTransport {
-            guard sendTransport(item.data) else {
+            switch sendTransport(item.data) {
+            case .accepted:
+                peer.outboundBytes -= item.data.count
+                peer.sending = false
+                flush(peer)
+            case .full:
+                // Keep the frame until the transport drains. It goes back to the front of its own lane, so control
+                // frames keep their place, and a waiting state is superseded by a newer one.
+                peer.sending = false
+                peer.transportWaiting = true
+                restore(item, lane: lane, to: peer)
+            case .failed:
                 peer.outboundBytes -= item.data.count
                 peer.sending = false
                 disconnect(peer.id)
-                return
             }
-            peer.outboundBytes -= item.data.count
-            peer.sending = false
-            flush(peer)
         } else {
             peer.outboundBytes -= item.data.count
             peer.sending = false
             disconnect(peer.id)
+        }
+    }
+
+    private func restore(_ item: Peer.Outbound, lane: Lane, to peer: Peer) {
+        switch lane {
+        case .control:
+            peer.outbound.insert(item, at: 0)
+        case .state:
+            if peer.pendingState == nil {
+                peer.pendingState = item
+            } else {
+                peer.outboundBytes -= item.data.count
+            }
+        case .bulk:
+            peer.bulk.insert(item, at: 0)
+            peer.bulkBytes += item.data.count
         }
     }
 

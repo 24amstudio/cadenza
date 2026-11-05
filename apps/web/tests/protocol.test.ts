@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { decodeHostMessage } from '../app/lib/protocol/decode';
+import { encodeArtworkGet } from '../app/lib/protocol/encode';
 import type { JsonObject } from '../app/lib/protocol/json';
 import {
   encodeClock,
@@ -55,6 +56,73 @@ const snapshot = {
 function wire(message: JsonObject): string {
   return JSON.stringify({ version: 1, ...message });
 }
+
+describe('artwork frames', () => {
+  test('a preview and a chunk decode with their variant and integrity fields', () => {
+    expect(
+      decodeHostMessage(
+        JSON.stringify({
+          version: 1,
+          type: 'artwork',
+          request_id: remoteId,
+          artwork_url: 'https://example.com/a.jpg',
+          artwork_data_base64: '/9j/',
+          variant: 'preview',
+        }),
+      ),
+    ).toMatchObject({ type: 'artwork', variant: 'preview' });
+
+    expect(
+      decodeHostMessage(
+        JSON.stringify({
+          version: 1,
+          type: 'artwork.chunk',
+          request_id: remoteId,
+          artwork_url: 'https://example.com/a.jpg',
+          chunk_index: 2,
+          chunk_count: 5,
+          total_bytes: 4000,
+          sha256: 'ab',
+          data_base64: 'AAAA',
+        }),
+      ),
+    ).toMatchObject({
+      type: 'artwork.chunk',
+      index: 2,
+      count: 5,
+      totalBytes: 4000,
+    });
+  });
+
+  test('an artwork frame without a variant is the full image', () => {
+    expect(
+      decodeHostMessage(
+        JSON.stringify({
+          version: 1,
+          type: 'artwork',
+          request_id: remoteId,
+          artwork_url: 'https://example.com/a.jpg',
+          artwork_data_base64: '/9j/',
+        }),
+      ),
+    ).toMatchObject({ type: 'artwork', variant: 'full' });
+  });
+
+  test('a progressive request is marked, and a plain one is unchanged', () => {
+    expect(
+      JSON.parse(encodeArtworkGet(remoteId, 'https://example.com/a.jpg', true)),
+    ).toEqual({
+      version: 1,
+      type: 'artwork.get',
+      request_id: remoteId,
+      artwork_url: 'https://example.com/a.jpg',
+      progressive: true,
+    });
+    expect(
+      JSON.parse(encodeArtworkGet(remoteId, 'https://example.com/a.jpg')),
+    ).not.toHaveProperty('progressive');
+  });
+});
 
 describe('decodeHostMessage', () => {
   test('decodes a state snapshot into camelCase domain values', () => {
@@ -265,6 +333,7 @@ describe('outgoing frames', () => {
         secret: 's'.repeat(40),
         name: 'Mac',
         remote_version: 'cadenza-web 1',
+        heartbeat: true,
       },
     });
 
@@ -274,7 +343,12 @@ describe('outgoing frames', () => {
     ).toEqual({
       version: 1,
       type: 'pair',
-      pair: { pin: '4821', name: 'Desk', remote_version: 'cadenza-web 1' },
+      pair: {
+        pin: '4821',
+        name: 'Desk',
+        remote_version: 'cadenza-web 1',
+        heartbeat: true,
+      },
     });
 
     const hello = JSON.parse(
@@ -293,6 +367,7 @@ describe('outgoing frames', () => {
       last_credit_sequence: 3,
       name: 'Mac',
       remote_version: 'cadenza-web 1',
+      heartbeat: true,
     });
   });
 
@@ -302,7 +377,7 @@ describe('outgoing frames', () => {
       type: 'remote.configure',
       request_id: remoteId,
       name: 'Desk',
-      heartbeat: false,
+      heartbeat: true,
     });
     expect(JSON.parse(encodeClock(remoteId, 12))).toEqual({
       version: 1,
@@ -310,5 +385,12 @@ describe('outgoing frames', () => {
       request_id: remoteId,
       clock: { sent_at_remote_ms: 12 },
     });
+  });
+
+  test('clock probes send integer milliseconds, as the Host requires', () => {
+    const frame = JSON.parse(encodeClock(remoteId, 1234.56));
+
+    expect(frame.clock.sent_at_remote_ms).toBe(1235);
+    expect(Number.isInteger(frame.clock.sent_at_remote_ms)).toBe(true);
   });
 });

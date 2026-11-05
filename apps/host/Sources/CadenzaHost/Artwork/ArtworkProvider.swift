@@ -58,25 +58,35 @@ final class ArtworkProvider {
 
     // Scales Music's artwork to a JPEG well inside the transfer limit, then stores it under the playing occurrence.
     func storeMusicArtwork(_ source: Data, occurrenceId: String) throws -> String {
+        let encoded = try Self.jpeg(source, maxPixelSize: 600, quality: 0.85)
+        let url = Self.localArtworkURL(occurrenceId: occurrenceId)
+        try cache.put(encoded, for: "artwork:" + url, kind: "artwork")
+        return url
+    }
+
+    // A small JPEG of the cover. A browser on Bluetooth shows it while the full image is still crossing the link.
+    nonisolated static func preview(of source: Data) throws -> Data {
+        try jpeg(source, maxPixelSize: 160, quality: 0.7)
+    }
+
+    private nonisolated static func jpeg(_ source: Data, maxPixelSize: Int, quality: Double) throws -> Data {
         guard let image = CGImageSourceCreateWithData(source as CFData, nil),
             let scaled = CGImageSourceCreateThumbnailAtIndex(
                 image, 0,
                 [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 600,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
                 ] as CFDictionary)
-        else { throw CadenzaError.failure("artwork_unavailable", "Music's artwork is not an image.") }
+        else { throw CadenzaError.failure("artwork_unavailable", "The artwork is not an image.") }
         let encoded = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(encoded, "public.jpeg" as CFString, 1, nil)
-        else { throw CadenzaError.failure("artwork_unavailable", "Music's artwork could not be prepared.") }
+        else { throw CadenzaError.failure("artwork_unavailable", "The artwork could not be prepared.") }
         CGImageDestinationAddImage(
-            destination, scaled, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+            destination, scaled, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
-            throw CadenzaError.failure("artwork_unavailable", "Music's artwork could not be prepared.")
+            throw CadenzaError.failure("artwork_unavailable", "The artwork could not be prepared.")
         }
-        let url = Self.localArtworkURL(occurrenceId: occurrenceId)
-        try cache.put(encoded as Data, for: "artwork:" + url, kind: "artwork")
-        return url
+        return encoded as Data
     }
 }

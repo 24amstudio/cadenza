@@ -63,6 +63,9 @@ struct Frame: Codable, Sendable {
     var totalBytes: Int? = nil
     var sha256: String? = nil
     var dataBase64: String? = nil
+    // artwork.get asks for a preview first. An artwork frame says whether it is the "preview" or the "full" image.
+    var progressive: Bool? = nil
+    var variant: String? = nil
 }
 
 struct RecommendationQuery: Codable, Sendable {

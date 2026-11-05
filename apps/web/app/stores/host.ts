@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia';
 import { computed, ref, shallowRef, watch } from 'vue';
-import { bluetoothAvailable, openBluetoothSocket } from '~/lib/host/bluetooth';
+import {
+  bluetoothAvailable,
+  forgetBluetoothDevice,
+  openBluetoothSocket,
+  reconnectBluetoothLink,
+  rememberBluetoothDevice,
+  rememberedBluetoothDevice,
+} from '~/lib/host/bluetooth';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
 import {
   HostClient,
@@ -39,9 +46,17 @@ const progressIntervalMs = 250;
 
 export const useHostStore = defineStore('host', () => {
   const notices = useNoticesStore();
-  const phase = ref<HostPhase>('unpaired');
+
+  // A stored pairing starts in the connecting state, so the first render never shows the pairing view.
+  const phase = ref<HostPhase>(
+    createCredentialStore(browserStorage()).read() === null
+      ? 'unpaired'
+      : 'connecting',
+  );
+
   const attempt = ref(0);
   const phaseMessage = ref<string | null>(null);
+
   const hostName = ref<string | null>(null);
   const remoteName = ref('');
   const capabilities = shallowRef<string[]>([]);
@@ -60,6 +75,7 @@ export const useHostStore = defineStore('host', () => {
   const pairingFailure = ref<string | null>(null);
   let bluetoothLink: SocketLike | null = null;
   let client: HostClient | null = null;
+  let snapshotReceivedMs = 0;
   let ticker: ReturnType<typeof setInterval> | null = null;
 
   const current = computed(() => snapshot.value?.current ?? null);
@@ -95,6 +111,18 @@ export const useHostStore = defineStore('host', () => {
       !lyricsForCurrent.value.unavailable,
   );
 
+  // Lyrics are known to be absent only after Cadenza Host answers. A song that has just changed is still waiting.
+  const lyricsAbsent = computed(() => {
+    const state = lyricsForCurrent.value;
+
+    if (current.value === null || state === null) return false;
+
+    return (
+      state.unavailable ||
+      (state.document !== null && state.document.lines.length === 0)
+    );
+  });
+
   // The position ticks only while music is playing and the socket is connected. Each tick is a cheap recomputation of
   // the Host-anchored position, not a network request.
   const positionMs = computed(() => {
@@ -104,8 +132,12 @@ export const useHostStore = defineStore('host', () => {
     void clockTick.value;
     const offset = clockOffsetMs.value;
 
+    // Until the clock is known, progress continues from the local time the snapshot arrived. Holding the sample time
+    // instead froze the lyrics between snapshots, which is what made them jump.
     const hostNow =
-      offset === null ? song.sampledAtHostMs : performance.now() + offset;
+      offset === null
+        ? song.sampledAtHostMs + (performance.now() - snapshotReceivedMs)
+        : performance.now() + offset;
 
     return positionAt(song, isPlaying.value, hostNow);
   });
@@ -147,6 +179,7 @@ export const useHostStore = defineStore('host', () => {
       remoteVersion,
       defaultName: defaultRemoteName(navigator.userAgent),
       openSocket: openBrowserSocket,
+      progressiveArtwork: bluetoothSupported,
       credentials: createCredentialStore(browserStorage()),
       monotonicNow: () => performance.now(),
       schedule: scheduleTask,
@@ -155,8 +188,32 @@ export const useHostStore = defineStore('host', () => {
     });
     remoteName.value = client.remoteName();
 
-    if (bluetoothSupported) client.startBluetooth();
-    else client.start(secret);
+    if (bluetoothSupported) {
+      const deviceId = rememberedBluetoothDevice();
+
+      if (client.startBluetooth(deviceId !== null) && deviceId !== null) {
+        reconnectRemembered(deviceId);
+      }
+    } else {
+      client.start(secret);
+    }
+  }
+
+  // After a reload the page reconnects without the chooser when the browser still permits the device. A failure only
+  // shows the connect button, never the pairing view.
+  function reconnectRemembered(deviceId: string): void {
+    reconnectBluetoothLink(deviceId).then(
+      (link) => {
+        if (link === null) {
+          client?.bluetoothReconnectFailed();
+
+          return;
+        }
+
+        client?.connectOverBluetooth(link.socket);
+      },
+      () => client?.bluetoothReconnectFailed(),
+    );
   }
 
   function retry(): void {
@@ -170,8 +227,9 @@ export const useHostStore = defineStore('host', () => {
     bluetoothState.value = 'searching';
 
     openBluetoothSocket().then(
-      (socket) => {
+      ({ socket, deviceId }) => {
         bluetoothState.value = 'idle';
+        rememberBluetoothDevice(deviceId);
 
         if (phase.value === 'bluetooth-idle') {
           client?.connectOverBluetooth(socket);
@@ -315,6 +373,7 @@ export const useHostStore = defineStore('host', () => {
 
   function applySnapshot(next: Snapshot): void {
     snapshot.value = next;
+    snapshotReceivedMs = performance.now();
     const song = next.current;
 
     if (song === null) return;
@@ -432,6 +491,7 @@ export const useHostStore = defineStore('host', () => {
 
   function forgetBrowser(): void {
     closeBluetoothLink();
+    forgetBluetoothDevice();
     client?.forget();
     remoteName.value = '';
   }
@@ -453,6 +513,7 @@ export const useHostStore = defineStore('host', () => {
     lyricsDocument,
     lyricsStatus,
     lyricsLoading,
+    lyricsAbsent,
     busyAction,
     artworkFor,
     requestArtwork,

@@ -13,7 +13,14 @@ import {
 } from '../protocol/encode';
 import { decodeHostMessage, type HostMessage } from '../protocol/decode';
 import { artworkDataUrl } from './artwork';
+import {
+  ArtworkAssembly,
+  base64ToBytes,
+  bytesToBase64,
+  digestMatches,
+} from './artworkAssembly';
 import type { CredentialStore, StoredCredential } from './credentials';
+import { traceEvent, traceFrame, type TraceTransport } from './trace';
 import type {
   ClockSample,
   CommandAction,
@@ -62,7 +69,11 @@ export interface HostClientOptions {
   schedule: (callback: () => void, delayMs: number) => () => void;
   newId: () => string;
   onChange: (change: HostChange) => void;
+  // Asks for a preview before the full artwork. Only the Bluetooth page sets this, and only the Host's capability enables it.
+  progressiveArtwork?: boolean;
 }
+
+type ArtworkChunkMessage = Extract<HostMessage, { type: 'artwork.chunk' }>;
 
 interface PendingCommand {
   resolve: (result: CommandResult) => void;
@@ -85,6 +96,7 @@ const clockProbeCount = 4;
 const clockRefreshMs = 60_000;
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const artworkCapability = 'artwork.host-cache';
+const progressiveArtworkCapability = 'artwork.progressive';
 
 // Owns one browser Remote session. Mutations are sent once. If the socket closes before a result, the command is
 // reported as unconfirmed and only queried by its original ID after reconnecting; it is never sent again.
@@ -103,6 +115,7 @@ export class HostClient {
   private offsetMs: number | null = null;
   private probes: ClockProbe[] = [];
   private readonly pendingCommands = new Map<string, PendingCommand>();
+  private readonly artworkAssemblies = new Map<string, ArtworkAssembly>();
   private readonly orphanedCommands = new Set<string>();
   private readonly requests = new Map<string, PendingRequest>();
   private cancelHandshake: (() => void) | null = null;
@@ -131,12 +144,26 @@ export class HostClient {
     this.connect();
   }
 
-  // Bluetooth pages start with no socket. The store opens one from a click, then hands it to the client.
-  startBluetooth(): void {
-    this.setPhase(
-      this.credential === null ? 'unpaired' : 'bluetooth-idle',
-      null,
-    );
+  // Bluetooth pages start with no socket. With a stored credential and a remembered device, the page starts in the
+  // connecting state, so the pairing view never flashes while it reconnects silently. Returns true when the store
+  // should attempt that reconnect now.
+  startBluetooth(deviceRemembered: boolean): boolean {
+    if (this.credential === null) {
+      this.setPhase('unpaired', null);
+
+      return false;
+    }
+
+    this.setPhase(deviceRemembered ? 'connecting' : 'bluetooth-idle', null);
+
+    return deviceRemembered;
+  }
+
+  // The silent reconnect found no permitted device, so the user must choose the Host again.
+  bluetoothReconnectFailed(): void {
+    if (this.credential !== null && !this.welcomed) {
+      this.setPhase('bluetooth-idle', null);
+    }
   }
 
   pairOverBluetooth(socket: SocketLike, pin: string, name: string): void {
@@ -185,7 +212,8 @@ export class HostClient {
 
     return new Promise((resolve) => {
       this.pendingCommands.set(commandId, { resolve });
-      socket.send(
+      this.transmit(
+        socket,
         encodeCommand({
           commandId,
           hostEpoch: snapshot.hostEpoch,
@@ -204,7 +232,7 @@ export class HostClient {
     this.dropRequests('lyrics');
     const requestId = this.options.newId();
     this.requests.set(requestId, { kind: 'lyrics', occurrenceId });
-    socket.send(encodeLyricsGet(requestId));
+    this.transmit(socket, encodeLyricsGet(requestId));
   }
 
   requestArtwork(artworkUrl: string): void {
@@ -222,7 +250,15 @@ export class HostClient {
 
     const requestId = this.options.newId();
     this.requests.set(requestId, { kind: 'artwork', artworkUrl });
-    socket.send(encodeArtworkGet(requestId, artworkUrl));
+    this.transmit(
+      socket,
+      encodeArtworkGet(
+        requestId,
+        artworkUrl,
+        this.options.progressiveArtwork === true &&
+          this.capabilities.includes(progressiveArtworkCapability),
+      ),
+    );
   }
 
   renameRemote(name: string): void {
@@ -236,7 +272,7 @@ export class HostClient {
 
     const requestId = this.options.newId();
     this.requests.set(requestId, { kind: 'rename', name });
-    socket.send(encodeRemoteConfigure(requestId, name));
+    this.transmit(socket, encodeRemoteConfigure(requestId, name));
   }
 
   // Forgets this browser's credential locally. The Host keeps the pairing until its owner revokes it there.
@@ -301,7 +337,8 @@ export class HostClient {
     if (this.socket !== socket) return;
 
     if (this.pendingPairing !== null) {
-      socket.send(
+      this.transmit(
+        socket,
         encodePair(
           this.pendingPairing.proof,
           this.pendingPairing.name,
@@ -313,7 +350,8 @@ export class HostClient {
     }
 
     if (this.credential === null) return;
-    socket.send(
+    this.transmit(
+      socket,
       encodeHello({
         remoteId: this.credential.remoteId,
         token: this.credential.token,
@@ -326,10 +364,20 @@ export class HostClient {
 
   private receive(socket: SocketLike, text: string): void {
     if (this.socket !== socket) return;
+    traceFrame('in', this.transport(), text);
     const message = decodeHostMessage(text);
 
     if (message === null) return;
     this.dispatch(socket, message);
+  }
+
+  private transport(): TraceTransport {
+    return this.linkedOverBluetooth ? 'bluetooth' : 'websocket';
+  }
+
+  private transmit(socket: SocketLike, text: string): void {
+    traceFrame('out', this.transport(), text);
+    socket.send(text);
   }
 
   private dispatch(socket: SocketLike, message: HostMessage): void {
@@ -364,11 +412,23 @@ export class HostClient {
 
         return;
       case 'artwork':
-        this.onArtwork(
-          message.artworkUrl,
-          artworkDataUrl(message.dataBase64),
-          message.requestId,
-        );
+        if (message.variant === 'preview') {
+          this.onArtworkPreview(
+            message.artworkUrl,
+            artworkDataUrl(message.dataBase64),
+            message.requestId,
+          );
+        } else {
+          this.onArtwork(
+            message.artworkUrl,
+            artworkDataUrl(message.dataBase64),
+            message.requestId,
+          );
+        }
+
+        return;
+      case 'artwork.chunk':
+        this.onArtworkChunk(message);
 
         return;
       case 'artwork.unavailable':
@@ -503,6 +563,82 @@ export class HostClient {
     this.options.onChange({ kind: 'lyrics', lyrics });
   }
 
+  // The preview is shown at once. The request stays open, because the full image follows on it.
+  private onArtworkPreview(
+    artworkUrl: string,
+    dataUrl: string | null,
+    requestId: string,
+  ): void {
+    if (this.requests.get(requestId)?.kind !== 'artwork') return;
+
+    this.options.onChange({ kind: 'artwork', artworkUrl, dataUrl });
+  }
+
+  private onArtworkChunk(message: ArtworkChunkMessage): void {
+    const request = this.requests.get(message.requestId);
+
+    if (request?.kind !== 'artwork') return;
+    let assembly = this.artworkAssemblies.get(message.requestId);
+
+    if (assembly === undefined) {
+      if (!ArtworkAssembly.accepts(message.count, message.totalBytes)) return;
+      assembly = new ArtworkAssembly(
+        message.count,
+        message.totalBytes,
+        message.sha256,
+      );
+      this.artworkAssemblies.set(message.requestId, assembly);
+      traceEvent('artwork transfer started', {
+        requestId: message.requestId,
+        chunks: message.count,
+        bytes: message.totalBytes,
+      });
+    }
+
+    const file = assembly.add(message.index, base64ToBytes(message.dataBase64));
+
+    if (file === null) return;
+    this.artworkAssemblies.delete(message.requestId);
+    void this.deliverFullArtwork(
+      message.requestId,
+      request.artworkUrl,
+      file,
+      assembly.sha256,
+    );
+  }
+
+  // A file that fails its digest is dropped. The preview stays on screen, and the request is released.
+  private async deliverFullArtwork(
+    requestId: string,
+    artworkUrl: string,
+    file: Uint8Array,
+    sha256: string,
+  ): Promise<void> {
+    const verified = await digestMatches(file, sha256);
+
+    if (this.requests.get(requestId)?.kind !== 'artwork') return;
+
+    if (!verified) {
+      traceEvent('artwork failed verification; keeping the preview');
+      this.requests.delete(requestId);
+
+      return;
+    }
+
+    // A file that is not a recognised image keeps the preview on screen rather than clearing it.
+    const dataUrl = artworkDataUrl(bytesToBase64(file));
+
+    if (dataUrl === null) {
+      traceEvent('artwork is not a recognised image; keeping the preview');
+      this.requests.delete(requestId);
+
+      return;
+    }
+
+    traceEvent('artwork verified', { requestId, bytes: file.length });
+    this.onArtwork(artworkUrl, dataUrl, requestId);
+  }
+
   private onArtwork(
     artworkUrl: string,
     dataUrl: string | null,
@@ -534,6 +670,7 @@ export class HostClient {
 
     if (estimate === null) return;
     this.offsetMs = estimate.offsetMs;
+    traceEvent('clock offset estimated', { offsetMs: estimate.offsetMs });
     this.options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
   }
 
@@ -555,7 +692,7 @@ export class HostClient {
   }
 
   private onCredit(socket: SocketLike, sequence: number): void {
-    socket.send(encodeCreditAck(sequence));
+    this.transmit(socket, encodeCreditAck(sequence));
 
     if (
       this.credential === null ||
@@ -583,7 +720,7 @@ export class HostClient {
     const requestId = this.options.newId();
     const sentAtRemoteMs = this.options.monotonicNow();
     this.requests.set(requestId, { kind: 'clock', sentAtRemoteMs });
-    socket.send(encodeClock(requestId, sentAtRemoteMs));
+    this.transmit(socket, encodeClock(requestId, sentAtRemoteMs));
   }
 
   private reconcileOrphanedCommands(): void {
@@ -592,12 +729,13 @@ export class HostClient {
     if (socket === null) return;
 
     for (const commandId of this.orphanedCommands) {
-      socket.send(encodeCommandStatus(commandId));
+      this.transmit(socket, encodeCommandStatus(commandId));
     }
   }
 
   private handleClose(socket: SocketLike): void {
     if (this.socket !== socket) return;
+    traceEvent(`${this.transport()} socket closed`, { phase: this.phase });
     this.socket = null;
     this.welcomed = false;
     this.cancelHandshake?.();
@@ -607,6 +745,7 @@ export class HostClient {
     this.offsetMs = null;
     this.snapshot = null;
     this.requests.clear();
+    this.artworkAssemblies.clear();
     this.orphanCommands();
 
     if (this.phase === 'pairing-failed' || this.phase === 'unpaired') return;
@@ -707,6 +846,7 @@ export class HostClient {
 
   private setPhase(phase: HostPhase, message: string | null): void {
     this.phase = phase;
+    traceEvent(`phase: ${phase}`, { attempt: this.attempt, message });
     this.options.onChange({
       kind: 'phase',
       phase,

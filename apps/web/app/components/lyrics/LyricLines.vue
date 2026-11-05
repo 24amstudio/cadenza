@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { activeLineIndex, activeWordIndex } from '~/lib/lyrics';
-import type { LyricLine, LyricWord } from '~/lib/protocol/types';
+import type { LyricLine } from '~/lib/protocol/types';
 
 const props = defineProps<{
   lines: LyricLine[];
   positionMs: number;
   timed: boolean;
   wordTimed: boolean;
+  scale: number;
 }>();
+
+const emit = defineEmits<{ seek: [positionMs: number] }>();
+
+// Timed lines are the only seek targets. Untimed lyrics have no position to jump to.
+function seekToLine(line: LyricLine): void {
+  if (props.timed) emit('seek', line.startMs);
+}
 
 const container = ref<HTMLElement | null>(null);
 
@@ -56,29 +64,36 @@ function wordClass(index: number): string {
 
   return 'upcoming';
 }
-
-// Word text from the Host may or may not include its trailing space, so the separator is added only when missing.
-function wordLabel(word: LyricWord): string {
-  return /\s$/.test(word.text) ? word.text : `${word.text} `;
-}
 </script>
 
 <template>
-  <div ref="container" class="lyrics" :class="{ timed }">
+  <div
+    ref="container"
+    class="lyrics"
+    :class="{ timed }"
+    :style="{ '--lyrics-scale': scale }"
+  >
     <div
       v-for="(line, index) in lines"
       :key="line.id"
       class="line"
       :class="lineClass(index)"
+      :role="timed ? 'button' : undefined"
+      :tabindex="timed ? 0 : undefined"
+      @click="seekToLine(line)"
+      @keydown.enter="seekToLine(line)"
+      @keydown.space.prevent="seekToLine(line)"
     >
       <p class="line-text">
-        <template v-if="wordTimed && index === activeIndex">
+        <template
+          v-if="wordTimed && index === activeIndex && line.words.length > 0"
+        >
           <span
             v-for="(word, wordIndex) in line.words"
             :key="`${line.id}-${wordIndex}`"
             class="word"
             :class="wordClass(wordIndex)"
-            >{{ wordLabel(word) }}</span
+            >{{ word.text }}</span
           >
         </template>
         <template v-else>{{ line.text }}</template>
@@ -108,7 +123,7 @@ function wordLabel(word: LyricWord): string {
 
 .line-text {
   font-family: var(--font-display);
-  font-size: clamp(24px, 4.2vw, 34px);
+  font-size: calc(clamp(24px, 4.2vw, 34px) * var(--lyrics-scale, 1));
   font-weight: 700;
   line-height: 1.18;
   letter-spacing: -0.015em;
@@ -118,7 +133,16 @@ function wordLabel(word: LyricWord): string {
 .translation {
   margin-top: 4px;
   color: var(--color-text-secondary);
-  font-size: 17px;
+  font-size: calc(17px * var(--lyrics-scale, 1));
+}
+
+.line[role='button'] {
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.line[role='button']:hover .line-text {
+  color: var(--color-text);
 }
 
 .plain {

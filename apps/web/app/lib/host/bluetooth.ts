@@ -1,4 +1,5 @@
 import type { SocketLike } from './client';
+import { traceEvent } from './trace';
 
 // Same GATT layout as the native Remote. Each Host message is a 4-byte big-endian UTF-8 length followed by its bytes,
 // split into characteristic values. The Host sends its own chunks, so the reader accepts any split point.
@@ -36,54 +37,78 @@ export function bluetoothChunks(text: string): Uint8Array<ArrayBuffer>[] {
   return chunks;
 }
 
+// Bytes are written into one buffer that is compacted in place. Copying the whole backlog for every 20-byte value made
+// a large artwork response quadratic in the number of notifications.
 export class BluetoothFrameReader {
-  private buffer: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(0));
+  private storage: Uint8Array<ArrayBuffer> = new Uint8Array(
+    new ArrayBuffer(4096),
+  );
+  private start = 0;
+  private end = 0;
   private expectedBytes: number | null = null;
 
   // Returns every message completed by this chunk. A malformed length or encoding throws, and the caller ends the link.
   append(chunk: Uint8Array): string[] {
-    this.buffer = concat(this.buffer, chunk);
+    this.reserve(chunk.length);
+    this.storage.set(chunk, this.end);
+    this.end += chunk.length;
     const messages: string[] = [];
 
     for (;;) {
       if (this.expectedBytes === null) {
-        if (this.buffer.length < 4) return messages;
+        if (this.end - this.start < 4) return messages;
 
-        const length = new DataView(
-          this.buffer.buffer,
-          this.buffer.byteOffset,
-          4,
-        ).getUint32(0);
+        const length = readUint32(this.storage, this.start);
 
         if (length > maximumBluetoothFrameBytes) {
           throw new Error('Cadenza Host sent an invalid Bluetooth frame.');
         }
 
         this.expectedBytes = length;
-        this.buffer = this.buffer.slice(4);
+        this.start += 4;
       }
 
-      if (this.buffer.length < this.expectedBytes) return messages;
+      if (this.end - this.start < this.expectedBytes) return messages;
 
       messages.push(
-        decoder.decode(this.buffer.subarray(0, this.expectedBytes)),
+        decoder.decode(
+          this.storage.subarray(this.start, this.start + this.expectedBytes),
+        ),
       );
-      this.buffer = this.buffer.slice(this.expectedBytes);
+      this.start += this.expectedBytes;
       this.expectedBytes = null;
     }
   }
+
+  // Makes room for `extra` bytes. Unread bytes move to the front, or into a larger buffer if they still do not fit.
+  private reserve(extra: number): void {
+    if (this.end + extra <= this.storage.length) return;
+
+    const pending = this.end - this.start;
+
+    if (pending + extra > this.storage.length) {
+      const grown = new Uint8Array(
+        new ArrayBuffer(Math.max(this.storage.length * 2, pending + extra)),
+      );
+
+      grown.set(this.storage.subarray(this.start, this.end));
+      this.storage = grown;
+    } else {
+      this.storage.copyWithin(0, this.start, this.end);
+    }
+
+    this.start = 0;
+    this.end = pending;
+  }
 }
 
-function concat(
-  first: Uint8Array<ArrayBuffer>,
-  second: Uint8Array,
-): Uint8Array<ArrayBuffer> {
-  const joined = new Uint8Array(new ArrayBuffer(first.length + second.length));
-
-  joined.set(first);
-  joined.set(second, first.length);
-
-  return joined;
+function readUint32(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset] ?? 0) * 0x1000000 +
+    ((bytes[offset + 1] ?? 0) << 16) +
+    ((bytes[offset + 2] ?? 0) << 8) +
+    (bytes[offset + 3] ?? 0)
+  );
 }
 
 // Web Bluetooth types are not part of TypeScript's DOM library, so this declares only the calls the Remote makes.
@@ -91,9 +116,11 @@ interface BluetoothApi {
   requestDevice(options: {
     filters: { services: string[] }[];
   }): Promise<BluetoothDevice>;
+  getDevices(): Promise<BluetoothDevice[]>;
 }
 
 interface BluetoothDevice {
+  readonly id: string;
   readonly gatt?: BluetoothRemoteGATTServer;
   addEventListener(type: 'gattserverdisconnected', listener: () => void): void;
 }
@@ -145,7 +172,12 @@ function isBluetoothApi(value: unknown): value is BluetoothApi {
 
 // Opens a link to the Host's Bluetooth service. The device chooser needs a user gesture, so call this synchronously
 // from the click handler. Resolves once notifications are on and the link can carry pairing or hello.
-export async function openBluetoothSocket(): Promise<SocketLike> {
+export interface BluetoothLink {
+  socket: SocketLike;
+  deviceId: string;
+}
+
+export async function openBluetoothSocket(): Promise<BluetoothLink> {
   const api = bluetoothApi();
 
   if (api === null) {
@@ -156,11 +188,39 @@ export async function openBluetoothSocket(): Promise<SocketLike> {
     filters: [{ services: [bluetoothServiceUuid] }],
   });
 
+  return connectDevice(device);
+}
+
+// Reconnects to a device the browser already permits, so no chooser or user gesture is needed. Resolves to null when
+// the device is not among the permitted ones or the browser cannot list them.
+export async function reconnectBluetoothLink(
+  deviceId: string,
+): Promise<BluetoothLink | null> {
+  const api = bluetoothApi();
+
+  if (api === null) return null;
+
+  let devices: BluetoothDevice[];
+
+  try {
+    devices = await api.getDevices();
+  } catch {
+    return null;
+  }
+
+  const device = devices.find((candidate) => candidate.id === deviceId);
+
+  return device === undefined ? null : connectDevice(device);
+}
+
+async function connectDevice(device: BluetoothDevice): Promise<BluetoothLink> {
   const gatt = device.gatt;
 
   if (gatt === undefined) {
     throw new Error('The chosen device has no GATT server.');
   }
+
+  traceEvent('bluetooth: connecting to GATT server');
 
   try {
     const server = await gatt.connect();
@@ -170,11 +230,40 @@ export async function openBluetoothSocket(): Promise<SocketLike> {
     const socket = linkSocket(device, gatt, write, notify);
 
     await notify.startNotifications();
+    traceEvent('bluetooth: notifications on');
 
-    return socket;
+    return { socket, deviceId: device.id };
   } catch (error) {
+    traceEvent('bluetooth: connection failed', error);
     gatt.disconnect();
     throw error;
+  }
+}
+
+// The browser's device identifier for the Host this page paired with. It lets a reload reconnect silently.
+const rememberedDeviceKey = 'cadenza.web.bluetoothDevice';
+
+export function rememberedBluetoothDevice(): string | null {
+  try {
+    return localStorage.getItem(rememberedDeviceKey);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberBluetoothDevice(deviceId: string): void {
+  try {
+    localStorage.setItem(rememberedDeviceKey, deviceId);
+  } catch {
+    // Without storage the next visit asks for the device once more.
+  }
+}
+
+export function forgetBluetoothDevice(): void {
+  try {
+    localStorage.removeItem(rememberedDeviceKey);
+  } catch {
+    // Nothing else to clear when storage is unavailable.
   }
 }
 
@@ -198,7 +287,10 @@ function linkSocket(
         writes = writes.then(() => write.writeValueWithResponse(chunk));
       }
 
-      writes.catch(() => gatt.disconnect());
+      writes.catch((error) => {
+        traceEvent('bluetooth: write failed', error);
+        gatt.disconnect();
+      });
     },
     close() {
       gatt.disconnect();
@@ -226,6 +318,7 @@ function linkSocket(
   device.addEventListener('gattserverdisconnected', () => {
     if (closed) return;
     closed = true;
+    traceEvent('bluetooth: GATT server disconnected');
     socket.onClose?.();
   });
 

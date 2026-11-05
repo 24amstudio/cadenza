@@ -176,6 +176,12 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         if name == "span", let capture = wordCaptures.last, capture.depth == depth {
             wordCaptures.removeLast()
             let hasTrailingSpace = capture.text.last?.isWhitespace == true
+            // A space at the start of a span separates it from the word before, as a space between spans does.
+            if capture.text.first?.isWhitespace == true, let last = currentLine?.words.indices.last,
+                currentLine?.words[last].text.last?.isWhitespace != true
+            {
+                currentLine?.words[last].text += " "
+            }
             let text = capture.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
                 currentLine?.words.append(

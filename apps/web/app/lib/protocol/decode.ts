@@ -44,6 +44,17 @@ export type HostMessage =
       requestId: string;
       artworkUrl: string;
       dataBase64: string;
+      variant: 'preview' | 'full';
+    }
+  | {
+      type: 'artwork.chunk';
+      requestId: string;
+      artworkUrl: string;
+      index: number;
+      count: number;
+      totalBytes: number;
+      sha256: string;
+      dataBase64: string;
     }
   | { type: 'artwork.unavailable'; requestId: string; artworkUrl: string }
   | { type: 'clock'; requestId: string; sample: ClockSample }
@@ -74,6 +85,8 @@ export function decodeHostMessage(text: string): HostMessage | null {
       return decodeLyricsUnavailableMessage(value);
     case 'artwork':
       return decodeArtworkMessage(value);
+    case 'artwork.chunk':
+      return decodeArtworkChunkMessage(value);
     case 'artwork.unavailable':
       return decodeArtworkUnavailableMessage(value);
     case 'clock':
@@ -177,7 +190,43 @@ function decodeArtworkMessage(object: JsonObject): HostMessage | null {
   if (requestId === null || artworkUrl === null || dataBase64 === null)
     return null;
 
-  return { type: 'artwork', requestId, artworkUrl, dataBase64 };
+  // A frame without a variant is the whole image, which is what older Hosts send.
+  const variant =
+    stringField(object, 'variant') === 'preview' ? 'preview' : 'full';
+
+  return { type: 'artwork', requestId, artworkUrl, dataBase64, variant };
+}
+
+function decodeArtworkChunkMessage(object: JsonObject): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const artworkUrl = stringField(object, 'artwork_url');
+  const index = counterField(object, 'chunk_index');
+  const count = counterField(object, 'chunk_count');
+  const totalBytes = counterField(object, 'total_bytes');
+  const sha256 = stringField(object, 'sha256');
+  const dataBase64 = stringField(object, 'data_base64');
+
+  if (
+    requestId === null ||
+    artworkUrl === null ||
+    index === null ||
+    count === null ||
+    totalBytes === null ||
+    sha256 === null ||
+    dataBase64 === null
+  )
+    return null;
+
+  return {
+    type: 'artwork.chunk',
+    requestId,
+    artworkUrl,
+    index,
+    count,
+    totalBytes,
+    sha256,
+    dataBase64,
+  };
 }
 
 function decodeArtworkUnavailableMessage(

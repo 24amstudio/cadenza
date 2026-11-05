@@ -126,6 +126,7 @@ interface Harness {
 
 function harness(
   credentials: MemoryCredentials = new MemoryCredentials(),
+  progressiveArtwork = false,
 ): Harness {
   const clock = new Clock();
   const sockets: FakeSocket[] = [];
@@ -151,6 +152,7 @@ function harness(
       return `id-${ids}`;
     },
     onChange: (change) => changes.push(change),
+    progressiveArtwork,
   };
 
   return {
@@ -488,14 +490,19 @@ describe('HostClient over Bluetooth', () => {
     const { client, credentials, changes } = harness();
     const link = new FakeSocket();
 
-    client.startBluetooth();
+    client.startBluetooth(false);
     client.pairOverBluetooth(link, '4821', 'Desk');
 
     expect(link.framesOfType('pair')).toEqual([
       {
         version: 1,
         type: 'pair',
-        pair: { pin: '4821', name: 'Desk', remote_version: 'cadenza-web test' },
+        pair: {
+          pin: '4821',
+          name: 'Desk',
+          remote_version: 'cadenza-web test',
+          heartbeat: true,
+        },
       },
     ]);
 
@@ -509,7 +516,7 @@ describe('HostClient over Bluetooth', () => {
     const { client, credentials, changes } = harness();
     const link = new FakeSocket();
 
-    client.startBluetooth();
+    client.startBluetooth(false);
     client.pairOverBluetooth(link, '0000', 'Desk');
     link.receive({
       type: 'error',
@@ -531,7 +538,7 @@ describe('HostClient over Bluetooth', () => {
     const { client, sockets, clock, credentials, changes } = harness();
     const link = new FakeSocket();
 
-    client.startBluetooth();
+    client.startBluetooth(false);
     client.pairOverBluetooth(link, '4821', 'Desk');
     link.receive(welcome(token));
     link.serverDrop();
@@ -553,7 +560,7 @@ describe('HostClient over Bluetooth', () => {
     const { client, changes } = harness(credentials);
     const link = new FakeSocket();
 
-    client.startBluetooth();
+    client.startBluetooth(false);
     client.connectOverBluetooth(link);
 
     expect(link.framesOfType('hello')).toEqual([
@@ -566,6 +573,7 @@ describe('HostClient over Bluetooth', () => {
           last_credit_sequence: 4,
           name: 'Desk',
           remote_version: 'cadenza-web test',
+          heartbeat: true,
         },
       },
     ]);
@@ -579,14 +587,121 @@ describe('HostClient over Bluetooth', () => {
     ]);
   });
 
+  test('a stored credential with a remembered device reconnects without the pairing view', () => {
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 0,
+    };
+    const { client, changes } = harness(credentials);
+
+    expect(client.startBluetooth(true)).toBe(true);
+    expect(phases(changes)).toEqual(['connecting']);
+  });
+
+  test('a failed silent reconnect falls back to the connect button, not onboarding', () => {
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 0,
+    };
+    const { client, changes } = harness(credentials);
+
+    client.startBluetooth(true);
+    client.bluetoothReconnectFailed();
+
+    expect(phases(changes)).toEqual(['connecting', 'bluetooth-idle']);
+  });
+
   test('never opens a Bluetooth session without a stored credential', () => {
     const { client, changes } = harness();
     const link = new FakeSocket();
 
-    client.startBluetooth();
+    client.startBluetooth(false);
     client.connectOverBluetooth(link);
 
     expect(link.frames).toHaveLength(0);
     expect(phases(changes)).toEqual(['unpaired']);
   });
+
+  test('a progressive artwork request shows the preview, then the verified full image', async () => {
+    const { client, sockets, changes } = harness(new MemoryCredentials(), true);
+    client.start('S'.repeat(43));
+    socketAt(sockets, 0).open();
+    socketAt(sockets, 0).receive(
+      welcome(token, ['artwork.host-cache', 'artwork.progressive']),
+    );
+    const artworkUrl = 'https://example.com/cover.jpg';
+
+    client.requestArtwork(artworkUrl);
+
+    const request = socketAt(sockets, 0).framesOfType('artwork.get').at(-1);
+    expect(request?.progressive).toBe(true);
+    const requestId = String(request?.request_id);
+
+    const file = Uint8Array.from({ length: 2_500 }, (_, index) =>
+      index < 3 ? [0xff, 0xd8, 0xff][index]! : index % 251,
+    );
+
+    const digest = Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', file)),
+      (byte) => byte.toString(16).padStart(2, '0'),
+    ).join('');
+
+    const preview = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
+    const previewUrl = `data:image/jpeg;base64,${preview}`;
+
+    socketAt(sockets, 0).receive({
+      type: 'artwork',
+      request_id: requestId,
+      artwork_url: artworkUrl,
+      artwork_data_base64: preview,
+      variant: 'preview',
+    });
+
+    expect(latestArtwork(changes)).toBe(previewUrl);
+
+    const chunkSize = 1_000;
+    const count = Math.ceil(file.length / chunkSize);
+
+    for (let index = count - 1; index >= 0; index -= 1) {
+      socketAt(sockets, 0).receive({
+        type: 'artwork.chunk',
+        request_id: requestId,
+        artwork_url: artworkUrl,
+        chunk_index: index,
+        chunk_count: count,
+        total_bytes: file.length,
+        sha256: digest,
+        data_base64: Buffer.from(
+          file.subarray(index * chunkSize, (index + 1) * chunkSize),
+        ).toString('base64'),
+      });
+    }
+
+    // Verification is asynchronous, so the full image replaces the preview a moment after the last chunk.
+    for (
+      let attempt = 0;
+      attempt < 400 && latestArtwork(changes) === previewUrl;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const full = latestArtwork(changes);
+    expect(full?.startsWith('data:image/jpeg;base64,')).toBe(true);
+    expect(Buffer.from(String(full).split(',')[1] ?? '', 'base64')).toEqual(
+      Buffer.from(file),
+    );
+  });
 });
+
+function latestArtwork(changes: HostChange[]): string | null | undefined {
+  const artwork = changes.filter((change) => change.kind === 'artwork').at(-1);
+
+  return artwork?.kind === 'artwork' ? artwork.dataUrl : undefined;
+}

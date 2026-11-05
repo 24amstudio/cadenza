@@ -29,10 +29,11 @@ const needsPairing = computed(() =>
   ),
 );
 
+// Leave the Lyrics view only when the song has none. A song that just changed keeps the view open while its lyrics load.
 watch(
-  () => host.lyricsStatus,
-  (status) => {
-    if (status === 0 && ui.view === 'lyrics') ui.showView('now-playing');
+  () => host.lyricsAbsent,
+  (absent) => {
+    if (absent && ui.view === 'lyrics') ui.showView('now-playing');
   },
 );
 

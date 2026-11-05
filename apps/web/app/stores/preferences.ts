@@ -27,8 +27,44 @@ function writeTheme(value: ThemePreference): void {
   }
 }
 
+// Lyric text scale relative to the standard size. The default is 30% larger than the standard size.
+export type LyricsSize = 'standard' | 'large' | 'extra-large';
+
+export const lyricsScales: Record<LyricsSize, number> = {
+  standard: 1,
+  large: 1.3,
+  'extra-large': 1.6,
+};
+
+const lyricsSizeKey = 'cadenza.web.lyricsSize';
+
+function isLyricsSize(value: string | null): value is LyricsSize {
+  return value !== null && Object.hasOwn(lyricsScales, value);
+}
+
+function readLyricsSize(): LyricsSize {
+  try {
+    const value = localStorage.getItem(lyricsSizeKey);
+
+    return isLyricsSize(value) ? value : 'large';
+  } catch {
+    return 'large';
+  }
+}
+
+function writeLyricsSize(value: LyricsSize): void {
+  try {
+    localStorage.setItem(lyricsSizeKey, value);
+  } catch {
+    // The choice still applies for this page session.
+  }
+}
+
 export const usePreferencesStore = defineStore('preferences', () => {
   const theme = ref<ThemePreference>(readTheme());
+  const lyricsSize = ref<LyricsSize>(readLyricsSize());
+
+  watch(lyricsSize, writeLyricsSize);
 
   watch(
     theme,
@@ -46,5 +82,9 @@ export const usePreferencesStore = defineStore('preferences', () => {
     theme.value = value;
   }
 
-  return { theme, setTheme };
+  function setLyricsSize(value: LyricsSize): void {
+    lyricsSize.value = value;
+  }
+
+  return { theme, setTheme, lyricsSize, setLyricsSize };
 });

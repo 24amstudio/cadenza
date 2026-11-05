@@ -78,6 +78,7 @@ enum ProtocolValidation {
         let keys = Set(object.keys)
         var optionalFields = Set(["version", "type", "request_id"])
         if type == "song.prepare" { optionalFields.insert("song_metadata") }
+        if type == "artwork.get" { optionalFields.insert("progressive") }
         // log.report accepts either a batch or the single-entry fields, so the branch below checks which form arrived.
         if type == "log.report" { optionalFields.formUnion(["log_entries", "log_action", "log_level", "log_message"]) }
         guard keys.isSuperset(of: fields.union(["version", "type"])),
@@ -112,6 +113,9 @@ enum ProtocolValidation {
         if type == "artwork.get" {
             guard let value = object["artwork_url"] as? String, ArtworkProvider.isServableURL(value) else {
                 throw invalid("Invalid artwork address.")
+            }
+            if object["progressive"] != nil, !(object["progressive"] is Bool) {
+                throw invalid("Invalid artwork request.")
             }
         }
         if type == "hello" {

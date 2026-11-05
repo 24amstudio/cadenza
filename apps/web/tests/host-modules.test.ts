@@ -13,7 +13,13 @@ import {
   isValidRemoteName,
   socketUrlFor,
 } from '../app/lib/host/endpoint';
-import { activeLineIndices, lyricsLevel, wordFills } from '../app/lib/lyrics';
+import {
+  activeLineIndices,
+  lyricsLevel,
+  sweepEdgeWidth,
+  sweepTarget,
+  wordFills,
+} from '../app/lib/lyrics';
 import {
   formatClock,
   formatWait,
@@ -218,6 +224,51 @@ describe('lyrics', () => {
     expect(during[1]).toBeCloseTo(16.7, 1);
     expect(partial(during)).toHaveLength(1);
     expect(wordFills(overlapping, 1_500, false)).toEqual([100, 100]);
+  });
+
+  test('names one sweep target across overlapping lines: the latest started word of the newest line', () => {
+    const main = {
+      ...timedLine,
+      startMs: 0,
+      endMs: 4_000,
+      words: [
+        { text: 'a ', startMs: 0, endMs: 800 },
+        { text: 'b', startMs: 800, endMs: 1_600 },
+      ],
+    };
+
+    const background = {
+      ...timedLine,
+      startMs: 1_000,
+      endMs: 3_000,
+      words: [
+        { text: 'c ', startMs: 1_000, endMs: 1_500 },
+        { text: 'd', startMs: 1_500, endMs: 2_000 },
+      ],
+    };
+
+    const beforeFirstWord = {
+      ...background,
+      words: [{ text: 'c', startMs: 1_100, endMs: 1_500 }],
+    };
+
+    expect(sweepTarget([main, background], 500)).toEqual({ line: 0, word: 0 });
+    expect(sweepTarget([main, background], 1_200)).toEqual({
+      line: 1,
+      word: 0,
+    });
+    expect(sweepTarget([main, background], 1_700)).toEqual({
+      line: 1,
+      word: 1,
+    });
+    expect(sweepTarget([main, beforeFirstWord], 1_050)).toBeNull();
+  });
+
+  test('gives the sweeping edge no width at either end of a word, and the most halfway through', () => {
+    expect(sweepEdgeWidth(0)).toBe(0);
+    expect(sweepEdgeWidth(100)).toBe(0);
+    expect(sweepEdgeWidth(50)).toBeGreaterThan(sweepEdgeWidth(25));
+    expect(sweepEdgeWidth(50)).toBeGreaterThan(sweepEdgeWidth(75));
   });
 });
 

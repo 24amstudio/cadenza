@@ -97,6 +97,8 @@ final class QueueCoordinator {
     private func readState(deadline: Int64? = nil, includeQueue: Bool = true) async throws {
         let status = try await music.status(deadline: deadline)
         let now = monotonicMs()
+        // The position describes the moment Music read it, which the bridge has dated. Older scripts fall back to now.
+        let sampledAt = status.sampledAtMs ?? now
         if primingLyrics && status.song?.identity != lastStatus?.song?.identity { primingLyrics = false }
         let readNativeNow = includeQueue && !primingLyrics
         let nativeRead: Result<[NativeQueueRow], Error>
@@ -183,7 +185,7 @@ final class QueueCoordinator {
                     occurrenceId: occurrence, entryId: row["entry_id"]?.string,
                     requestedBy: row["requested_by"]?.string,
                     requesterName: try store.remoteName(row["requested_by"]?.string), song: store.song(row),
-                    positionMs: status.positionMs, sampledAtHostMs: now
+                    positionMs: status.positionMs, sampledAtHostMs: sampledAt
                 )
                 if let current { requestArtwork(for: current.song, occurrenceId: occurrence) }
             }
@@ -202,7 +204,7 @@ final class QueueCoordinator {
             current = CurrentPlayback(
                 occurrenceId: occurrence, entryId: entry, requestedBy: stored?["requested_by"]?.string,
                 requesterName: try store.remoteName(stored?["requested_by"]?.string),
-                song: actual, positionMs: status.positionMs, sampledAtHostMs: now
+                song: actual, positionMs: status.positionMs, sampledAtHostMs: sampledAt
             )
             try store.database.run("UPDATE host_state SET current_native_id=?", [.text(song.id)])
             lastObservation = nil
@@ -286,7 +288,7 @@ final class QueueCoordinator {
             lastQualityAt = now
         }
         current?.positionMs = status.positionMs
-        current?.sampledAtHostMs = now
+        current?.sampledAtHostMs = sampledAt
         lastStatus = status
         lastObservation = now
     }

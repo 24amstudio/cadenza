@@ -52,6 +52,11 @@ final class HostService {
     private var serviceRunning = false
     private let latencyLog = Logger(subsystem: "app.cadence.host", category: "latency")
     var onSnapshot: ((HostSnapshot) -> Void)?
+    // A song change waits briefly for its cover, so the title and the cover reach the Remote together.
+    private var pendingState: HostSnapshot?
+    private var coverWait: Task<Void, Never>?
+    // The last cover the state stopped waiting for, so a song whose cover never arrives is not held again.
+    private var waitedCover: String?
     var onDevicesChanged: (() -> Void)?
     var onIssue: ((String) -> Void)?
     var hostUpdate: ((String) async -> HostUpdateReply)?
@@ -106,31 +111,8 @@ final class HostService {
                 published.current = current
             }
             self.onSnapshot?(published)
-            if !self.network.peers.isEmpty {
-                let now = monotonicMs()
-                var heartbeatRecipients: [NetworkService.Peer] = []
-                var stateRecipients: [NetworkService.Peer] = []
-                for peer in self.network.peers.values where peer.authenticated {
-                    // A heartbeat says the state the Remote already has still holds, so it is sent only when no newer
-                    // state is waiting for that Remote. A heartbeat would otherwise replace the waiting state. Bluetooth
-                    // Remotes also get one while playback continues, with a full state at least every fifteen seconds,
-                    // because a full state every second saturates the link. Progress is extrapolated from the last state.
-                    if peer.supportsHeartbeat, peer.pendingState == nil, let sent = peer.lastSnapshot,
-                        published.permitsHeartbeat(comparedTo: sent)
-                            || (peer.transport == "ble" && now - peer.lastSnapshotAt < 15_000
-                                && published.changedOnlyByPlaybackTime(since: sent))
-                    {
-                        heartbeatRecipients.append(peer)
-                    } else {
-                        stateRecipients.append(peer)
-                        peer.lastSnapshot = published
-                        peer.lastSnapshotAt = now
-                    }
-                }
-                self.network.broadcast(
-                    Frame(type: "heartbeat", hostEpoch: published.hostEpoch), to: heartbeatRecipients)
-                self.network.broadcast(Frame(type: "state", snapshot: published), to: stateRecipients)
-            }
+            self.onSnapshot?(published)
+            self.deliverState(published)
             if published.current?.occurrenceId != self.lyricDocument?.occurrenceId {
                 self.lyricDocument = nil
                 if self.lyricOccurrence != published.current?.occurrenceId {
@@ -366,10 +348,12 @@ final class HostService {
                 network.send(
                     Frame(type: "transport.configured", requestId: frame.requestId, transport: policy), to: peer)
             case "log.report": try recordRemoteLogs(frame, peer: peer)
+            case "artwork.cancel": cancelArtwork(requestId: frame.requestId, peer: peer)
             case "artwork.get":
                 loadArtwork(
                     peer: peer, requestId: frame.requestId, url: frame.artworkUrl,
-                    progressive: frame.progressive == true)
+                    progressive: frame.progressive == true, previewOnly: frame.previewOnly == true,
+                    motionOccurrenceId: frame.motion == true ? frame.occurrenceId : nil)
             case "clock": try clock(frame, peer: peer)
             case "state.get": network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
             case "analytics.ack": try acknowledge(frame, peer: peer, actor: actor)
@@ -484,6 +468,67 @@ final class HostService {
             status.updateVersion = reply.version
             status.message = reply.message
             self.network.send(status, to: peer)
+        }
+    }
+
+    // The Remote gets the cover in the same state as the song when the cover is cached, so they arrive together.
+    private func broadcastState(_ published: HostSnapshot) {
+        var outgoing = published
+        if let url = outgoing.current?.song.artworkUrl {
+            outgoing.current?.artworkPreview = artwork.cachedPreview(for: url)
+        }
+        if !self.network.peers.isEmpty {
+            let now = monotonicMs()
+            var heartbeatRecipients: [NetworkService.Peer] = []
+            var stateRecipients: [NetworkService.Peer] = []
+            for peer in self.network.peers.values where peer.authenticated {
+                // A heartbeat says the state the Remote already has still holds, so it is sent only when no newer
+                // state is waiting for that Remote. A heartbeat would otherwise replace the waiting state. Bluetooth
+                // Remotes also get one while playback continues, with a full state at least every fifteen seconds,
+                // because a full state every second saturates the link. Progress is extrapolated from the last state.
+                if peer.supportsHeartbeat, peer.pendingState == nil, let sent = peer.lastSnapshot,
+                    outgoing.permitsHeartbeat(comparedTo: sent)
+                        || (peer.transport == "ble" && now - peer.lastSnapshotAt < 15_000
+                            && outgoing.changedOnlyByPlaybackTime(since: sent))
+                {
+                    heartbeatRecipients.append(peer)
+                } else {
+                    stateRecipients.append(peer)
+                    peer.lastSnapshot = outgoing
+                    peer.lastSnapshotAt = now
+                }
+            }
+            self.network.broadcast(
+                Frame(type: "heartbeat", hostEpoch: outgoing.hostEpoch), to: heartbeatRecipients)
+            self.network.broadcast(Frame(type: "state", snapshot: outgoing), to: stateRecipients)
+        }
+    }
+
+    // Sends a state now when its cover is cached, and holds it while the cover loads. A newer state replaces the held one.
+    private func deliverState(_ published: HostSnapshot) {
+        guard
+            let url = StateCover.coverToAwait(
+                artworkUrl: published.current?.song.artworkUrl,
+                isCached: { self.artwork.cachedPreview(for: $0) != nil }, alreadyWaited: waitedCover)
+        else {
+            pendingState = nil
+            broadcastState(published)
+            return
+        }
+        pendingState = published
+        guard coverWait == nil else { return }
+        coverWait = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // The fetch carries on in the background, so the cover is cached for the states after this one.
+            Task { _ = await self.artwork.preview(for: url) }
+            let deadline = monotonicMs() + StateCover.waitMs
+            while self.artwork.cachedPreview(for: url) == nil, monotonicMs() < deadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            self.coverWait = nil
+            if self.artwork.cachedPreview(for: url) == nil { self.waitedCover = url }
+            guard let waiting = self.pendingState else { return }
+            self.deliverState(waiting)
         }
     }
 
@@ -615,6 +660,9 @@ final class HostService {
     private func snapshot() throws -> HostSnapshot {
         var value = try queue.snapshot()
         value.sing = sing.session
+        if let url = value.current?.song.artworkUrl {
+            value.current?.artworkPreview = artwork.cachedPreview(for: url)
+        }
         return value
     }
 

@@ -109,18 +109,50 @@ describe('artwork frames', () => {
   });
 
   test('a progressive request is marked, and a plain one is unchanged', () => {
+    const url = 'https://example.com/a.jpg';
+    const plain = { previewOnly: false, occurrenceId: null, motion: false };
+
     expect(
-      JSON.parse(encodeArtworkGet(remoteId, 'https://example.com/a.jpg', true)),
+      JSON.parse(
+        encodeArtworkGet(remoteId, url, { ...plain, progressive: true }),
+      ),
     ).toEqual({
       version: 1,
       type: 'artwork.get',
       request_id: remoteId,
-      artwork_url: 'https://example.com/a.jpg',
+      artwork_url: url,
       progressive: true,
     });
     expect(
-      JSON.parse(encodeArtworkGet(remoteId, 'https://example.com/a.jpg')),
+      JSON.parse(
+        encodeArtworkGet(remoteId, url, { ...plain, progressive: false }),
+      ),
     ).not.toHaveProperty('progressive');
+  });
+
+  test('a preview-only request names no full image, and a motion request names its occurrence', () => {
+    const url = 'https://example.com/a.jpg';
+
+    expect(
+      JSON.parse(
+        encodeArtworkGet(remoteId, url, {
+          progressive: true,
+          previewOnly: true,
+          occurrenceId: null,
+          motion: false,
+        }),
+      ),
+    ).toMatchObject({ preview_only: true });
+    expect(
+      JSON.parse(
+        encodeArtworkGet(remoteId, url, {
+          progressive: true,
+          previewOnly: false,
+          occurrenceId,
+          motion: true,
+        }),
+      ),
+    ).toMatchObject({ motion: true, occurrence_id: occurrenceId });
   });
 });
 
@@ -142,6 +174,23 @@ describe('decodeHostMessage', () => {
         },
         queue: [{ id: 'entry-1', estimatedWaitMs: 360000 }],
       },
+    });
+  });
+
+  test('a state carries the song cover, so the title and the cover arrive together', () => {
+    const message = decodeHostMessage(
+      wire({
+        type: 'state',
+        snapshot: {
+          ...snapshot,
+          current: { ...snapshot.current, artwork_preview: '/9j/4AAQ' },
+        },
+      }),
+    );
+
+    expect(message).toMatchObject({
+      type: 'state',
+      snapshot: { current: { artworkPreview: '/9j/4AAQ' } },
     });
   });
 

@@ -158,6 +158,19 @@ async function toggleSongAlerts(): Promise<void> {
           </button>
         </div>
       </div>
+      <div class="row">
+        <span id="reduce-effects-label">Reduce animations and effects</span>
+        <button
+          class="switch"
+          type="button"
+          role="switch"
+          aria-labelledby="reduce-effects-label"
+          :aria-checked="preferences.reduceEffects"
+          @click="preferences.setReduceEffects(!preferences.reduceEffects)"
+        >
+          <span class="switch-thumb" aria-hidden="true"></span>
+        </button>
+      </div>
     </section>
 
     <section class="group" aria-labelledby="notifications-title">

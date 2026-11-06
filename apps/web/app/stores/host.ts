@@ -7,7 +7,14 @@ import {
   reconnectBluetoothLink,
   rememberBluetoothDevice,
   rememberedBluetoothDevice,
+  silentReconnectSupported,
 } from '~/lib/host/bluetooth';
+import { reconnectWithRetries } from '~/lib/host/bluetoothReconnect';
+import {
+  artworkDataUrl,
+  artworkStatus,
+  type ArtworkStatus,
+} from '~/lib/host/artwork';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
 import {
   HostClient,
@@ -29,6 +36,7 @@ import { positionAt } from '~/lib/playback';
 import type {
   CommandAction,
   CommandResult,
+  CurrentPlayback,
   LyricDocument,
   Snapshot,
 } from '~/lib/protocol/types';
@@ -42,6 +50,9 @@ interface LyricsState {
 
 // Artwork is kept for the current queue only so long sessions do not grow without bound.
 const artworkLimit = 48;
+// Motion videos are up to 8 MiB each, so only a few albums keep theirs.
+
+const motionLimit = 4;
 const progressIntervalMs = 250;
 
 export const useHostStore = defineStore('host', () => {
@@ -65,8 +76,14 @@ export const useHostStore = defineStore('host', () => {
   const clockTick = ref(0);
   const lyrics = shallowRef<LyricsState | null>(null);
   const artworks = shallowRef<Record<string, string | null>>({});
+  // Motion videos by artwork URL, so an album keeps its motion across its songs. Object URLs are revoked on eviction.
+  const motionVideos = shallowRef<Record<string, string>>({});
   const busyAction = ref<CommandAction['kind'] | null>(null);
-  const artworkRequests = new Set<string>();
+  // A row that is not playing asks only for the preview, so preview and full requests are tracked apart. settledArtwork
+  // holds the URLs whose full image or motion has arrived.
+  const previewRequests = new Set<string>();
+  const fullRequests = new Set<string>();
+  const settledArtwork = new Set<string>();
   // Web Bluetooth exists only in secure contexts and Chromium-based browsers. When it is absent, pairing uses the QR.
   const bluetoothSupported = bluetoothAvailable();
   // 'searching' while the browser's device chooser and GATT connection run. 'linked' once the Host's link waits for a PIN.
@@ -74,6 +91,8 @@ export const useHostStore = defineStore('host', () => {
   // Failures that need a decision open a dialog in the pairing view. Routine outcomes use a toast instead.
   const pairingFailure = ref<string | null>(null);
   let bluetoothLink: SocketLike | null = null;
+  // Bumped by forgetting the browser, so a reconnect that is still retrying cannot link a forgotten Host.
+  let reconnectGeneration = 0;
   let client: HostClient | null = null;
   let snapshotReceivedMs = 0;
   let ticker: ReturnType<typeof setInterval> | null = null;
@@ -110,6 +129,12 @@ export const useHostStore = defineStore('host', () => {
       lyricsDocument.value === null &&
       !lyricsForCurrent.value.unavailable,
   );
+
+  const motionUrl = computed(() => {
+    const url = current.value?.song.artworkUrl ?? null;
+
+    return url === null ? null : (motionVideos.value[url] ?? null);
+  });
 
   // The Host-anchored position at this instant. Per-frame views, such as the lyric sweep, read it directly.
   function livePositionMs(): number {
@@ -183,8 +208,10 @@ export const useHostStore = defineStore('host', () => {
 
     if (bluetoothSupported) {
       const deviceId = rememberedBluetoothDevice();
+      // Without a device list the browser cannot reconnect silently, so the connect button shows at once.
+      const silent = deviceId !== null && silentReconnectSupported();
 
-      if (client.startBluetooth(deviceId !== null) && deviceId !== null) {
+      if (client.startBluetooth(silent) && deviceId !== null) {
         reconnectRemembered(deviceId);
       }
     } else {
@@ -192,11 +219,19 @@ export const useHostStore = defineStore('host', () => {
     }
   }
 
-  // After a reload the page reconnects without the chooser when the browser still permits the device. A failure only
-  // shows the connect button, never the pairing view.
+  // After a reload the page reconnects without the chooser when the browser still permits the device, retrying for a
+  // short while. Only a reconnect that still fails shows the connect button, never the pairing view.
   function reconnectRemembered(deviceId: string): void {
-    reconnectBluetoothLink(deviceId).then(
+    const generation = ++reconnectGeneration;
+
+    void reconnectWithRetries(() => reconnectBluetoothLink(deviceId)).then(
       (link) => {
+        if (generation !== reconnectGeneration) {
+          link?.socket.close();
+
+          return;
+        }
+
         if (link === null) {
           client?.bluetoothReconnectFailed();
 
@@ -205,7 +240,6 @@ export const useHostStore = defineStore('host', () => {
 
         client?.connectOverBluetooth(link.socket);
       },
-      () => client?.bluetoothReconnectFailed(),
     );
   }
 
@@ -321,8 +355,11 @@ export const useHostStore = defineStore('host', () => {
 
         return;
       case 'artwork':
-        artworkRequests.delete(change.artworkUrl);
-        rememberArtwork(change.artworkUrl, change.dataUrl);
+        applyArtwork(change.artworkUrl, change.dataUrl, change.full);
+
+        return;
+      case 'motion':
+        showMotion(change.artworkUrl, change.video);
 
         return;
       case 'commandResolved':
@@ -347,7 +384,8 @@ export const useHostStore = defineStore('host', () => {
 
     if (next === 'connected') {
       // Requests in flight on the old socket were dropped. Clearing them lets the next snapshot ask again.
-      artworkRequests.clear();
+      previewRequests.clear();
+      fullRequests.clear();
       lyrics.value = null;
     }
 
@@ -368,8 +406,21 @@ export const useHostStore = defineStore('host', () => {
     snapshot.value = next;
     snapshotReceivedMs = performance.now();
     const song = next.current;
+    // The cover arrives with the song, so it is on screen with the title. A full image already here is not replaced.
+    const preview = song?.artworkPreview;
+    const previewUrl = song?.song.artworkUrl ?? null;
+    const previewDataUrl = preview ? artworkDataUrl(preview) : null;
 
-    if (song === null) return;
+    if (previewUrl !== null && previewDataUrl !== null) {
+      applyArtwork(previewUrl, previewDataUrl, false);
+    }
+
+    if (song === null) {
+      abandonFullArtwork(null);
+
+      return;
+    }
+
     const state = lyrics.value;
 
     if (state === null || state.occurrenceId !== song.occurrenceId) {
@@ -379,7 +430,89 @@ export const useHostStore = defineStore('host', () => {
         unavailable: false,
       };
       client?.requestLyrics(song.occurrenceId);
+      // A song that is no longer playing keeps no transfer, so the Host does not send its image or motion.
+      abandonFullArtwork(song.occurrenceId);
+      requestFullArtwork(song);
     }
+  }
+
+  function abandonFullArtwork(playingOccurrenceId: string | null): void {
+    client?.cancelFullArtwork(playingOccurrenceId);
+    fullRequests.clear();
+  }
+
+  // The playing song asks for its motion video in place of the full image, or for the full image when it has no motion.
+  function requestFullArtwork(song: CurrentPlayback): void {
+    const url = song.song.artworkUrl;
+
+    if (
+      url === null ||
+      settledArtwork.has(url) ||
+      fullRequests.has(url) ||
+      motionVideos.value[url] !== undefined
+    ) {
+      return;
+    }
+
+    fullRequests.add(url);
+    client?.requestArtwork(url, {
+      kind: 'full',
+      occurrenceId: song.occurrenceId,
+    });
+  }
+
+  function applyArtwork(
+    url: string,
+    dataUrl: string | null,
+    full: boolean,
+  ): void {
+    if (full) {
+      fullRequests.delete(url);
+      settledArtwork.add(url);
+      // A full image that fails to verify keeps the preview on screen.
+
+      if (dataUrl !== null || !(url in artworks.value)) {
+        rememberArtwork(url, dataUrl);
+      }
+
+      return;
+    }
+
+    previewRequests.delete(url);
+
+    if (!settledArtwork.has(url)) rememberArtwork(url, dataUrl);
+  }
+
+  // Motion is kept per album, so the album's next song needs no transfer. The oldest albums are evicted.
+  function showMotion(
+    artworkUrl: string,
+    video: Uint8Array<ArrayBuffer> | null,
+  ): void {
+    fullRequests.delete(artworkUrl);
+
+    if (video === null) return;
+
+    const next = { ...motionVideos.value };
+    const previous = next[artworkUrl];
+
+    if (previous !== undefined) URL.revokeObjectURL(previous);
+    delete next[artworkUrl];
+    next[artworkUrl] = URL.createObjectURL(
+      new Blob([video], { type: 'video/mp4' }),
+    );
+
+    for (const stale of Object.keys(next).slice(0, -motionLimit)) {
+      const url = next[stale];
+
+      if (url !== undefined) URL.revokeObjectURL(url);
+      delete next[stale];
+    }
+
+    motionVideos.value = next;
+  }
+
+  function artworkStatusFor(url: string | null): ArtworkStatus {
+    return artworkStatus(url, artworks.value);
   }
 
   function rememberArtwork(url: string, dataUrl: string | null): void {
@@ -402,10 +535,19 @@ export const useHostStore = defineStore('host', () => {
     return artworks.value[url] ?? null;
   }
 
+  // Rows ask for the small preview. The playing song's full image or motion is asked for by requestFullArtwork.
   function requestArtwork(url: string): void {
-    if (url in artworks.value || artworkRequests.has(url)) return;
-    artworkRequests.add(url);
-    client?.requestArtwork(url);
+    // A full request in flight does not cover the preview: one that does not run progressively sends no preview.
+    if (
+      url in artworks.value ||
+      previewRequests.has(url) ||
+      settledArtwork.has(url)
+    ) {
+      return;
+    }
+
+    previewRequests.add(url);
+    client?.requestArtwork(url, { kind: 'preview' });
   }
 
   function showCommandResult(result: CommandResult): void {
@@ -483,6 +625,7 @@ export const useHostStore = defineStore('host', () => {
   }
 
   function forgetBrowser(): void {
+    reconnectGeneration += 1;
     closeBluetoothLink();
     forgetBluetoothDevice();
     client?.forget();
@@ -509,6 +652,8 @@ export const useHostStore = defineStore('host', () => {
     lyricsLoading,
     busyAction,
     artworkFor,
+    artworkStatusFor,
+    motionUrl,
     requestArtwork,
     bluetoothSupported,
     bluetoothState,

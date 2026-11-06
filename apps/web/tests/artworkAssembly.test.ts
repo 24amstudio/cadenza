@@ -1,10 +1,22 @@
 import { describe, expect, test } from 'bun:test';
+import { artworkStatus } from '../app/lib/host/artwork';
 import {
   ArtworkAssembly,
   base64ToBytes,
   bytesToBase64,
   digestMatches,
 } from '../app/lib/host/artworkAssembly';
+
+describe('artwork display state', () => {
+  test('waits while bytes are on their way, and tells a missing image from an unavailable one', () => {
+    const known = { loaded: 'data:image/jpeg;base64,/9j/', missing: null };
+
+    expect(artworkStatus(null, known)).toBe('empty');
+    expect(artworkStatus('pending', known)).toBe('loading');
+    expect(artworkStatus('loaded', known)).toBe('ready');
+    expect(artworkStatus('missing', known)).toBe('unavailable');
+  });
+});
 
 const file = Uint8Array.from(
   { length: 2_500 },

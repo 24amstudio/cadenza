@@ -25,7 +25,7 @@ export class ArtworkAssembly {
   }
 
   // Returns the whole file once every chunk has arrived, and null until then. A repeated chunk is ignored.
-  add(index: number, bytes: Uint8Array): Uint8Array | null {
+  add(index: number, bytes: Uint8Array): Uint8Array<ArrayBuffer> | null {
     if (index < 0 || index >= this.count || this.parts[index] !== undefined) {
       return null;
     }

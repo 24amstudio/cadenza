@@ -507,9 +507,12 @@ final class QueueCoordinator {
                 }
             }
             try store.authorize(actor: actor, command: command, entryId: target)
-            // The Remote's deadline gates dispatch. Music's queue edits take seconds, so a dispatched edit gets a Host
-            // budget and finishes, instead of being cut off mid-edit. The Remote settles it by querying the command.
-            let nativeDeadline = action.kind.hasPrefix("queue.") ? max(deadline, monotonicMs() + 6_000) : deadline
+            // The Remote's deadline gates dispatch. A dispatched action gets a Host budget to finish and be verified, so a
+            // slow read after dispatch cannot report an action Music already applied as unconfirmed. Queue edits take
+            // seconds and get the longer budget. The Remote settles either by querying the command.
+            let nativeDeadline =
+                action.kind.hasPrefix("queue.")
+                ? max(deadline, monotonicMs() + 6_000) : max(deadline, monotonicMs() + 2_000)
             // Remote positions are on the delayed timeline. Music must seek to the position its audio is at.
             if action.kind == "playback.seek", let position = action.positionMs {
                 action.positionMs = position + playbackDelayMs()

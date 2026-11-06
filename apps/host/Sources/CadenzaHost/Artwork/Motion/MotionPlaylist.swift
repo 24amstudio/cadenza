@@ -4,8 +4,9 @@ import Foundation
 // Remote plays a single local file and never reads Apple's playlist or segments.
 enum MotionPlaylist {
     static let host = "mvod.itunes.apple.com"
-    // A loop this size is enough for artwork on a phone or tablet and keeps the LAN transfer small.
-    static let bitrateCeiling = 1_000_000
+    // Half the previous ceiling, so Apple's smallest H.264 rendition is chosen. A 1 MB video then stays small enough to
+    // cross a Bluetooth link within the motion deadline.
+    static let bitrateCeiling = 500_000
 
     /// The highest-bitrate H.264 rendition under the ceiling. H.264 decodes on every supported Remote.
     static func h264Rendition(_ master: String, base: URL) -> URL? {

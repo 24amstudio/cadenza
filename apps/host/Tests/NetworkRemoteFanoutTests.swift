@@ -113,4 +113,23 @@ struct NetworkRemoteFanoutTests {
         #expect(order[0].contains("epoch-1"))
         #expect(order[1].contains("art-0") && order[3].contains("art-2"))
     }
+
+    @Test func cancellingATransferDropsOnlyItsQueuedFrames() throws {
+        let network = NetworkService()
+        let remotes = connect(network, count: 1)
+        // A refusing transport holds every frame in the Host's queue, as a busy Bluetooth link does.
+        try #require(remotes.values.first).result = .full
+        let peer = try #require(network.peers.values.first)
+        for transfer in ["superseded", "current"] {
+            for _ in 0..<3 {
+                network.send(Frame(type: "artwork.chunk", requestId: transfer), to: peer)
+            }
+        }
+
+        network.cancelBulk(transfer: "superseded", to: peer)
+
+        #expect(peer.bulk.count == 3)
+        #expect(peer.bulk.allSatisfy { $0.transfer == "current" })
+        #expect(peer.bulkBytes == peer.outboundBytes)
+    }
 }

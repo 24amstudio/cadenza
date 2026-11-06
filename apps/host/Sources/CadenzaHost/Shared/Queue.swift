@@ -18,6 +18,8 @@ struct CurrentPlayback: Codable, Equatable, Sendable {
     var song: Song
     var positionMs: Int64
     var sampledAtHostMs: Int64
+    // The song's cover at most 32 by 32 pixels, base64 JPEG. It arrives with the song, so both appear together.
+    var artworkPreview: String? = nil
 }
 
 struct HostSnapshot: Codable, Equatable, Sendable {

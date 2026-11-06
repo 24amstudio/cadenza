@@ -19,9 +19,10 @@ struct MotionArtworkTests {
             "rendition/360.m3u8",
         ].joined(separator: "\n")
 
+        // The 887 kbps rendition is over the ceiling, so the 293 kbps one is the largest that fits.
         #expect(
             MotionPlaylist.h264Rendition(master, base: base)?.absoluteString
-                == "https://mvod.itunes.apple.com/a/486.m3u8")
+                == "https://mvod.itunes.apple.com/itunes-assets/HLSMusic126/v4/rendition/360.m3u8")
     }
 
     @Test func refusesMastersWithoutAnAffordableH264RenditionOrWithAnotherHost() {
@@ -79,5 +80,14 @@ struct MotionArtworkTests {
 
         #expect(CatalogAlbums.motionMaster(album) == "https://mvod.itunes.apple.com/square.m3u8")
         #expect(CatalogAlbums.motionMaster(withoutMotion) == nil)
+    }
+
+    @MainActor @Test func theLargestVideoFitsTheChunkLimitOverBluetooth() {
+        // The Remote accepts at most 4,096 chunks, and the Host sends a video of at most 1 MiB.
+        let largestVideo = MotionProvider.videoLimit
+        let chunks =
+            (largestVideo + HostService.bluetoothMotionChunkBytes - 1) / HostService.bluetoothMotionChunkBytes
+
+        #expect(chunks <= 4_096)
     }
 }

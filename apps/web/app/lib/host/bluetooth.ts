@@ -134,7 +134,8 @@ interface BluetoothApi {
   requestDevice(options: {
     filters: { services: string[] }[];
   }): Promise<BluetoothDevice>;
-  getDevices(): Promise<BluetoothDevice[]>;
+  // Older or flagged browsers do not offer the device list, so it is optional.
+  getDevices?(): Promise<BluetoothDevice[]>;
 }
 
 interface BluetoothDevice {
@@ -214,8 +215,16 @@ export async function openBluetoothSocket(): Promise<BluetoothLink> {
   return connectDevice(device);
 }
 
+// A silent reconnect needs the browser to list the devices this origin may already use. Without that list, only the
+// chooser, which needs a user gesture, can connect.
+export function silentReconnectSupported(): boolean {
+  const api = bluetoothApi();
+
+  return api?.getDevices !== undefined;
+}
+
 // Reconnects to a device the browser already permits, so no chooser or user gesture is needed. Resolves to null when
-// the device is not among the permitted ones or the browser cannot list them.
+// the device is not among the permitted ones or the browser cannot list them. A failed GATT connection rejects.
 export async function reconnectBluetoothLink(
   deviceId: string,
 ): Promise<BluetoothLink | null> {
@@ -223,17 +232,35 @@ export async function reconnectBluetoothLink(
 
   if (api === null) return null;
 
+  const listDevices = api.getDevices;
+
+  if (listDevices === undefined) {
+    traceEvent('bluetooth: this browser cannot list permitted devices');
+
+    return null;
+  }
+
   let devices: BluetoothDevice[];
 
   try {
-    devices = await api.getDevices();
-  } catch {
+    devices = await listDevices.call(api);
+  } catch (error) {
+    traceEvent('bluetooth: cannot list permitted devices', error);
+
     return null;
   }
 
   const device = devices.find((candidate) => candidate.id === deviceId);
 
-  return device === undefined ? null : connectDevice(device);
+  if (device === undefined) {
+    traceEvent(
+      `bluetooth: remembered device is not permitted (${devices.length} listed)`,
+    );
+
+    return null;
+  }
+
+  return connectDevice(device);
 }
 
 async function connectDevice(device: BluetoothDevice): Promise<BluetoothLink> {

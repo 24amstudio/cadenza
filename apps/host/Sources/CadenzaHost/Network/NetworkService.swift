@@ -15,6 +15,8 @@ final class NetworkService {
     final class Peer {
         struct Outbound: Sendable {
             let data: Data
+            // The request a bulk frame belongs to, so a cancelled transfer can drop the frames it has not started.
+            var transfer: String? = nil
         }
 
         let id = identifier()
@@ -306,7 +308,7 @@ final class NetworkService {
 
     func send(_ frame: Frame, to peer: Peer) {
         do {
-            send(try Wire.encode(frame), to: peer, lane: lane(for: frame.type))
+            send(try Wire.encode(frame), to: peer, lane: lane(for: frame.type), transfer: frame.requestId)
         } catch {
             disconnect(peer.id)
             onIssue?("The Host could not encode a message for a Remote: " + error.localizedDescription)
@@ -350,13 +352,13 @@ final class NetworkService {
         }
     }
 
-    private func send(_ data: Data, to peer: Peer, lane: Lane) {
+    private func send(_ data: Data, to peer: Peer, lane: Lane, transfer: String? = nil) {
         guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes else {
             disconnect(peer.id)
             onIssue?("The Host closed a Remote connection after an outbound message exceeded the safety limit.")
             return
         }
-        let item = Peer.Outbound(data: data)
+        let item = Peer.Outbound(data: data, transfer: transfer)
         let replacedBytes = lane == .state ? (peer.pendingState?.data.count ?? 0) : 0
         let nextBytes = peer.outboundBytes - replacedBytes + data.count
         guard nextBytes <= 4_194_304
@@ -377,15 +379,27 @@ final class NetworkService {
     }
 
     // Queues bulk frames a few at a time. A transfer waits while its backlog is large, so control frames interleave between
-    // its chunks and a long file cannot exhaust the peer's outbound budget.
-    func sendBulk(count: Int, makeFrame: (Int) -> Frame, to peer: Peer) async {
+    // its chunks and a long file cannot exhaust the peer's outbound budget. A nil frame ends the transfer, such as when the
+    // song it belongs to has changed, and so does a cancelled task.
+    func sendBulk(count: Int, makeFrame: (Int) -> Frame?, to peer: Peer) async {
         for index in 0..<count {
-            while peer.bulkBytes > Self.bulkBacklogBytes, peers[peer.id] != nil {
+            while peer.bulkBytes > Self.bulkBacklogBytes, peers[peer.id] != nil, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(50))
             }
-            guard peers[peer.id] != nil else { return }
-            send(makeFrame(index), to: peer)
+            guard peers[peer.id] != nil, !Task.isCancelled, let frame = makeFrame(index) else { return }
+            send(frame, to: peer)
         }
+    }
+
+    // Drops the bulk frames of a transfer that have not started going out. A frame already handed to the transport finishes,
+    // because cutting it short would break the Remote's framing.
+    func cancelBulk(transfer: String, to peer: Peer) {
+        let cancelled = peer.bulk.filter { $0.transfer == transfer }
+        guard !cancelled.isEmpty else { return }
+        let bytes = cancelled.reduce(0) { $0 + $1.data.count }
+        peer.bulk.removeAll { $0.transfer == transfer }
+        peer.bulkBytes -= bytes
+        peer.outboundBytes -= bytes
     }
 
     private static let bulkBacklogBytes = 64 * 1024

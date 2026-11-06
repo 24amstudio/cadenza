@@ -7,6 +7,23 @@
       "if": {
         "properties": {
           "type": {
+            "const": "artwork.cancel"
+          }
+        }
+      },
+      "then": {
+        "required": ["request_id"],
+        "properties": {
+          "request_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
             "const": "artwork.get"
           }
         }
@@ -24,6 +41,12 @@
           },
           "progressive": {
             "type": "boolean"
+          },
+          "motion": {
+            "type": "boolean"
+          },
+          "occurrence_id": {
+            "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
           }
         }
       }
@@ -168,7 +191,7 @@
           "total_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 8388608
+            "maximum": 1048576
           },
           "sha256": {
             "type": "string",

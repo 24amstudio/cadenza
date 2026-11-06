@@ -79,10 +79,29 @@ function writeSongNotifications(value: boolean): void {
   }
 }
 
+const reduceEffectsKey = 'cadenza.web.reduceEffects';
+
+function readReduceEffects(): boolean {
+  try {
+    return localStorage.getItem(reduceEffectsKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeReduceEffects(value: boolean): void {
+  try {
+    localStorage.setItem(reduceEffectsKey, String(value));
+  } catch {
+    // The choice still applies for this page session.
+  }
+}
+
 export const usePreferencesStore = defineStore('preferences', () => {
   const theme = ref<ThemePreference>(readTheme());
   const lyricsSize = ref<LyricsSize>(readLyricsSize());
   const songNotifications = ref(readSongNotifications());
+  const reduceEffects = ref(readReduceEffects());
 
   watch(lyricsSize, writeLyricsSize);
   watch(songNotifications, writeSongNotifications);
@@ -99,6 +118,18 @@ export const usePreferencesStore = defineStore('preferences', () => {
     { immediate: true },
   );
 
+  // The attribute lets one stylesheet rule switch off transitions, animations and blur everywhere.
+  watch(
+    reduceEffects,
+    (value) => {
+      writeReduceEffects(value);
+
+      if (value) document.documentElement.dataset.effects = 'reduced';
+      else delete document.documentElement.dataset.effects;
+    },
+    { immediate: true },
+  );
+
   function setTheme(value: ThemePreference): void {
     theme.value = value;
   }
@@ -111,6 +142,10 @@ export const usePreferencesStore = defineStore('preferences', () => {
     songNotifications.value = value;
   }
 
+  function setReduceEffects(value: boolean): void {
+    reduceEffects.value = value;
+  }
+
   return {
     theme,
     setTheme,
@@ -118,5 +153,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     setLyricsSize,
     songNotifications,
     setSongNotifications,
+    reduceEffects,
+    setReduceEffects,
   };
 });

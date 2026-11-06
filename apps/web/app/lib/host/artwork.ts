@@ -7,6 +7,23 @@ const signatures: [prefix: string, mediaType: string][] = [
   ['R0lGOD', 'image/gif'],
 ];
 
+export type ArtworkStatus = 'empty' | 'loading' | 'ready' | 'unavailable';
+
+// Waiting for the Host is a different state from a Host that has no artwork, so a placeholder can animate only while
+// bytes are still on their way.
+export function artworkStatus(
+  url: string | null,
+  known: Record<string, string | null>,
+): ArtworkStatus {
+  if (url === null) return 'empty';
+
+  const dataUrl: string | null | undefined = known[url];
+
+  if (dataUrl === undefined) return 'loading';
+
+  return dataUrl === null ? 'unavailable' : 'ready';
+}
+
 export function artworkDataUrl(dataBase64: string): string | null {
   for (const [prefix, mediaType] of signatures) {
     if (dataBase64.startsWith(prefix)) {

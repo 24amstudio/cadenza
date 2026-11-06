@@ -36,7 +36,8 @@ enum ProtocolValidation {
         } else if ![
             "pair", "hello", "clock", "search", "search.suggest", "song.prepare", "operation.cancel", "lyrics.get",
             "analytics.ack",
-            "state.get", "command.status", "remote.configure", "log.report", "artwork.get", "motion.get",
+            "state.get", "command.status", "remote.configure", "log.report", "artwork.get", "artwork.cancel",
+            "motion.get",
             "transport.configure", "session.status", "host.update",
             "recommendation.passport", "recommendation.query", "recommendation.feedback", "recommendation.plan",
             "recommendation.shadow_observation",
@@ -66,6 +67,7 @@ enum ProtocolValidation {
             "session.status": ["status"],
             "log.report": [],
             "artwork.get": ["request_id", "artwork_url"],
+            "artwork.cancel": ["request_id"],
             "recommendation.passport": ["recommendation_passport"],
             "recommendation.query": ["recommendation_query"],
             "recommendation.feedback": ["recommendation_feedback"],
@@ -78,7 +80,9 @@ enum ProtocolValidation {
         let keys = Set(object.keys)
         var optionalFields = Set(["version", "type", "request_id"])
         if type == "song.prepare" { optionalFields.insert("song_metadata") }
-        if type == "artwork.get" { optionalFields.insert("progressive") }
+        if type == "artwork.get" {
+            optionalFields.formUnion(["progressive", "motion", "occurrence_id", "preview_only"])
+        }
         // log.report accepts either a batch or the single-entry fields, so the branch below checks which form arrived.
         if type == "log.report" { optionalFields.formUnion(["log_entries", "log_action", "log_level", "log_message"]) }
         guard keys.isSuperset(of: fields.union(["version", "type"])),
@@ -116,6 +120,17 @@ enum ProtocolValidation {
             }
             if object["progressive"] != nil, !(object["progressive"] is Bool) {
                 throw invalid("Invalid artwork request.")
+            }
+            if object["motion"] != nil, !(object["motion"] is Bool) {
+                throw invalid("Invalid artwork request.")
+            }
+            if object["preview_only"] != nil, !(object["preview_only"] is Bool) {
+                throw invalid("Invalid artwork request.")
+            }
+            if object["motion"] as? Bool == true,
+                !((object["occurrence_id"] as? String).map(Wire.isIdentifier) ?? false)
+            {
+                throw invalid("Motion artwork needs the song's playback occurrence.")
             }
         }
         if type == "hello" {

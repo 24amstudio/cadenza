@@ -3,6 +3,7 @@ import ImageIO
 
 @MainActor
 final class ArtworkProvider {
+    private var previews: [String: String] = [:]
     // Music supplies artwork for the track it plays, including streams with no catalog match. That artwork has no
     // catalog address, so it is stored in the cache under this scheme and is never fetched from the network.
     nonisolated static let musicScheme = "cadenza-music-artwork://"
@@ -65,8 +66,33 @@ final class ArtworkProvider {
     }
 
     // A small JPEG of the cover. A browser on Bluetooth shows it while the full image is still crossing the link.
+    // The small cover, at most 32 by 32 pixels, that a song's state carries.
     nonisolated static func preview(of source: Data) throws -> Data {
-        try jpeg(source, maxPixelSize: 160, quality: 0.7)
+        try jpeg(source, maxPixelSize: 32, quality: 0.7)
+    }
+
+    func cachedPreview(for url: String) -> String? { previews[url] }
+
+    // Fetches the cover once and keeps its preview. Nil when the cover cannot be fetched or decoded.
+    func preview(for url: String) async -> String? {
+        if let cached = previews[url] { return cached }
+        guard let source = try? await self.data(for: url), let small = try? Self.preview(of: source) else { return nil }
+        if previews.count >= 64 { previews.removeAll() }
+        previews[url] = small.base64EncodedString()
+        return previews[url]
+    }
+
+    // Album art travels at most 256 by 256 pixels, so a Bluetooth link carries a small image. A smaller image is sent as it is.
+    nonisolated static let albumArtSide = 256
+
+    nonisolated static func fullSize(of source: Data) throws -> Data {
+        guard let image = CGImageSourceCreateWithData(source as CFData, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { throw CadenzaError.failure("artwork_unavailable", "The artwork is not an image.") }
+        guard max(width, height) > albumArtSide else { return source }
+        return try jpeg(source, maxPixelSize: albumArtSide, quality: 0.85)
     }
 
     private nonisolated static func jpeg(_ source: Data, maxPixelSize: Int, quality: Double) throws -> Data {

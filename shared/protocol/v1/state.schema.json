@@ -51,6 +51,10 @@
         },
         "sampled_at_host_ms": {
           "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "artwork_preview": {
+          "type": "string",
+          "maxLength": 4096
         }
       },
       "additionalProperties": false

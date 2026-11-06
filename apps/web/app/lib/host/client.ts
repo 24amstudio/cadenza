@@ -1,5 +1,6 @@
 import { bestClockEstimate, type ClockProbe } from './clock';
 import {
+  encodeArtworkCancel,
   encodeArtworkGet,
   encodeClock,
   encodeCommand,
@@ -9,16 +10,13 @@ import {
   encodeLyricsGet,
   encodePair,
   encodeRemoteConfigure,
+  encodeSessionStatus,
   type PairingProof,
 } from '../protocol/encode';
 import { decodeHostMessage, type HostMessage } from '../protocol/decode';
 import { artworkDataUrl } from './artwork';
-import {
-  ArtworkAssembly,
-  base64ToBytes,
-  bytesToBase64,
-  digestMatches,
-} from './artworkAssembly';
+import { ArtworkChunks } from './artworkTransfer';
+import { MotionTransfer } from './motionTransfer';
 import type { CredentialStore, StoredCredential } from './credentials';
 import { traceEvent, traceFrame, type TraceTransport } from './trace';
 import type {
@@ -46,7 +44,18 @@ export type HostChange =
   | { kind: 'clock'; offsetMs: number }
   | { kind: 'lyrics'; lyrics: LyricDocument }
   | { kind: 'lyricsUnavailable'; occurrenceId: string | null }
-  | { kind: 'artwork'; artworkUrl: string; dataUrl: string | null }
+  // A preview has full: false. The full image, or nothing more to wait for, has full: true.
+  | {
+      kind: 'artwork';
+      artworkUrl: string;
+      dataUrl: string | null;
+      full: boolean;
+    }
+  | {
+      kind: 'motion';
+      artworkUrl: string;
+      video: Uint8Array<ArrayBuffer> | null;
+    }
   | { kind: 'commandResolved'; result: CommandResult }
   | { kind: 'notice'; message: string };
 
@@ -73,10 +82,9 @@ export interface HostClientOptions {
   progressiveArtwork?: boolean;
 }
 
-type ArtworkChunkMessage = Extract<HostMessage, { type: 'artwork.chunk' }>;
-
 interface PendingCommand {
   resolve: (result: CommandResult) => void;
+  cancelSettle: () => void;
 }
 
 interface PendingPairing {
@@ -87,14 +95,29 @@ interface PendingPairing {
 type PendingRequest =
   | { kind: 'clock'; sentAtRemoteMs: number }
   | { kind: 'lyrics'; occurrenceId: string }
-  | { kind: 'artwork'; artworkUrl: string }
+  | {
+      kind: 'artwork';
+      artworkUrl: string;
+      previewOnly: boolean;
+      occurrenceId: string | null;
+      motion: boolean;
+    }
   | { kind: 'rename'; name: string };
+
+// What the page asks an artwork for. A preview is the small image alone. A full request also asks for the playing
+// song's motion video, which the Host sends in place of the full image when the song has one.
+export type ArtworkMode =
+  { kind: 'preview' } | { kind: 'full'; occurrenceId: string };
 
 const handshakeTimeoutMs = 8_000;
 
 // The Host refuses a command whose deadline is more than one second ahead of its clock. Cadenza Remote uses 900 ms
 // less the clock uncertainty, and so does this page. A longer deadline is rejected as invalid_deadline.
 const commandDeadlineMs = 900;
+
+// The Host gates dispatch by the deadline, then gives a dispatched playback change up to 2 s to verify it. A result that
+// still has not arrived after both windows settles as unconfirmed, which frees the controls. A late result is still shown.
+const commandSettleMs = 4_000;
 
 // The first probes come back to back and set the offset. After that one probe runs every few seconds, so the offset
 // follows the link as its round trip changes.
@@ -107,6 +130,17 @@ const clockWindowSize = 12;
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const artworkCapability = 'artwork.host-cache';
 const progressiveArtworkCapability = 'artwork.progressive';
+const motionCapability = 'motion.host-cache';
+
+function unconfirmedResult(commandId: string, message: string): CommandResult {
+  return {
+    commandId,
+    outcome: 'unconfirmed',
+    revision: 0,
+    message,
+    errorCode: 'outcome_unknown',
+  };
+}
 
 // Owns one browser Remote session. Mutations are sent once. If the socket closes before a result, the command is
 // reported as unconfirmed and only queried by its original ID after reconnecting; it is never sent again.
@@ -124,9 +158,33 @@ export class HostClient {
   private snapshot: Snapshot | null = null;
   private offsetMs: number | null = null;
   private uncertaintyMs = 0;
+  private roundTripMs: number | null = null;
   private probes: ClockProbe[] = [];
   private readonly pendingCommands = new Map<string, PendingCommand>();
-  private readonly artworkAssemblies = new Map<string, ArtworkAssembly>();
+  private readonly artworkChunks = new ArtworkChunks({
+    artworkRequest: (requestId) => {
+      const request = this.requests.get(requestId);
+
+      return request?.kind === 'artwork' ? request.artworkUrl : null;
+    },
+    deliver: (requestId, artworkUrl, dataUrl) =>
+      this.onArtwork(artworkUrl, dataUrl, requestId),
+  });
+  private readonly motion = new MotionTransfer({
+    motionRequest: (requestId, occurrenceId) => {
+      const request = this.requests.get(requestId);
+
+      return request?.kind === 'artwork' &&
+        request.motion &&
+        request.occurrenceId === occurrenceId
+        ? request.artworkUrl
+        : null;
+    },
+    finish: (requestId, artworkUrl, video) => {
+      this.requests.delete(requestId);
+      this.options.onChange({ kind: 'motion', artworkUrl, video });
+    },
+  });
   private readonly orphanedCommands = new Set<string>();
   private readonly requests = new Map<string, PendingRequest>();
   private cancelHandshake: (() => void) | null = null;
@@ -222,7 +280,12 @@ export class HostClient {
     const commandId = this.options.newId();
 
     return new Promise((resolve) => {
-      this.pendingCommands.set(commandId, { resolve });
+      const cancelSettle = this.options.schedule(
+        () => this.settleUnanswered(commandId),
+        commandSettleMs,
+      );
+
+      this.pendingCommands.set(commandId, { resolve, cancelSettle });
       this.transmit(
         socket,
         encodeCommand({
@@ -249,7 +312,7 @@ export class HostClient {
     this.transmit(socket, encodeLyricsGet(requestId));
   }
 
-  requestArtwork(artworkUrl: string): void {
+  requestArtwork(artworkUrl: string, mode: ArtworkMode): void {
     const socket = this.socket;
 
     if (
@@ -257,22 +320,75 @@ export class HostClient {
       socket === null ||
       !this.capabilities.includes(artworkCapability)
     ) {
-      this.options.onChange({ kind: 'artwork', artworkUrl, dataUrl: null });
+      this.options.onChange({
+        kind: 'artwork',
+        artworkUrl,
+        dataUrl: null,
+        full: true,
+      });
 
       return;
     }
 
+    // The Host sends motion in small frames over Bluetooth, so commands are not held behind it. The still image stays
+    // on screen until the motion video verifies.
+    const previewOnly = mode.kind === 'preview';
+    const occurrenceId = mode.kind === 'full' ? mode.occurrenceId : null;
+
+    const motion =
+      occurrenceId !== null && this.capabilities.includes(motionCapability);
+
     const requestId = this.options.newId();
-    this.requests.set(requestId, { kind: 'artwork', artworkUrl });
+
+    this.requests.set(requestId, {
+      kind: 'artwork',
+      artworkUrl,
+      previewOnly,
+      occurrenceId,
+      motion,
+    });
     this.transmit(
       socket,
-      encodeArtworkGet(
-        requestId,
-        artworkUrl,
-        this.options.progressiveArtwork === true &&
-          this.capabilities.includes(progressiveArtworkCapability),
-      ),
+      encodeArtworkGet(requestId, artworkUrl, {
+        progressive:
+          previewOnly ||
+          (this.options.progressiveArtwork === true &&
+            this.capabilities.includes(progressiveArtworkCapability)),
+        previewOnly,
+        occurrenceId,
+        motion,
+      }),
     );
+  }
+
+  // Abandons the full images and motion of every song but the playing one, and tells the Host to stop them. A preview is
+  // small, so it is kept.
+  cancelFullArtwork(playingOccurrenceId: string | null): void {
+    const socket = this.socket;
+    let cancelled = false;
+
+    for (const [requestId, request] of this.requests) {
+      if (
+        request.kind !== 'artwork' ||
+        request.previewOnly ||
+        request.occurrenceId === playingOccurrenceId
+      ) {
+        continue;
+      }
+
+      this.requests.delete(requestId);
+
+      if (socket !== null) {
+        this.transmit(socket, encodeArtworkCancel(requestId));
+      }
+
+      cancelled = true;
+    }
+
+    if (cancelled) {
+      this.artworkChunks.reset();
+      this.motion.reset();
+    }
   }
 
   renameRemote(name: string): void {
@@ -442,11 +558,15 @@ export class HostClient {
 
         return;
       case 'artwork.chunk':
-        this.onArtworkChunk(message);
+        this.artworkChunks.receive(message);
 
         return;
       case 'artwork.unavailable':
         this.onArtwork(message.artworkUrl, null, message.requestId);
+
+        return;
+      case 'motion.chunk':
+        this.motion.receive(message);
 
         return;
       case 'clock':
@@ -501,6 +621,7 @@ export class HostClient {
 
     if (pending !== undefined) {
       this.pendingCommands.delete(result.commandId);
+      pending.cancelSettle();
       pending.resolve(result);
 
       return;
@@ -561,6 +682,7 @@ export class HostClient {
           kind: 'artwork',
           artworkUrl: request.artworkUrl,
           dataUrl: null,
+          full: true,
         });
 
         return;
@@ -583,74 +705,18 @@ export class HostClient {
     dataUrl: string | null,
     requestId: string,
   ): void {
-    if (this.requests.get(requestId)?.kind !== 'artwork') return;
-
-    this.options.onChange({ kind: 'artwork', artworkUrl, dataUrl });
-  }
-
-  private onArtworkChunk(message: ArtworkChunkMessage): void {
-    const request = this.requests.get(message.requestId);
+    const request = this.requests.get(requestId);
 
     if (request?.kind !== 'artwork') return;
-    let assembly = this.artworkAssemblies.get(message.requestId);
+    // A preview-only request is answered by its preview.
 
-    if (assembly === undefined) {
-      if (!ArtworkAssembly.accepts(message.count, message.totalBytes)) return;
-      assembly = new ArtworkAssembly(
-        message.count,
-        message.totalBytes,
-        message.sha256,
-      );
-      this.artworkAssemblies.set(message.requestId, assembly);
-      traceEvent('artwork transfer started', {
-        requestId: message.requestId,
-        chunks: message.count,
-        bytes: message.totalBytes,
-      });
-    }
-
-    const file = assembly.add(message.index, base64ToBytes(message.dataBase64));
-
-    if (file === null) return;
-    this.artworkAssemblies.delete(message.requestId);
-    void this.deliverFullArtwork(
-      message.requestId,
-      request.artworkUrl,
-      file,
-      assembly.sha256,
-    );
-  }
-
-  // A file that fails its digest is dropped. The preview stays on screen, and the request is released.
-  private async deliverFullArtwork(
-    requestId: string,
-    artworkUrl: string,
-    file: Uint8Array,
-    sha256: string,
-  ): Promise<void> {
-    const verified = await digestMatches(file, sha256);
-
-    if (this.requests.get(requestId)?.kind !== 'artwork') return;
-
-    if (!verified) {
-      traceEvent('artwork failed verification; keeping the preview');
-      this.requests.delete(requestId);
-
-      return;
-    }
-
-    // A file that is not a recognised image keeps the preview on screen rather than clearing it.
-    const dataUrl = artworkDataUrl(bytesToBase64(file));
-
-    if (dataUrl === null) {
-      traceEvent('artwork is not a recognised image; keeping the preview');
-      this.requests.delete(requestId);
-
-      return;
-    }
-
-    traceEvent('artwork verified', { requestId, bytes: file.length });
-    this.onArtwork(artworkUrl, dataUrl, requestId);
+    if (request.previewOnly) this.requests.delete(requestId);
+    this.options.onChange({
+      kind: 'artwork',
+      artworkUrl,
+      dataUrl,
+      full: false,
+    });
   }
 
   private onArtwork(
@@ -659,7 +725,7 @@ export class HostClient {
     requestId: string,
   ): void {
     this.requests.delete(requestId);
-    this.options.onChange({ kind: 'artwork', artworkUrl, dataUrl });
+    this.options.onChange({ kind: 'artwork', artworkUrl, dataUrl, full: true });
   }
 
   private onClock(requestId: string, sample: ClockSample): void {
@@ -695,12 +761,29 @@ export class HostClient {
     if (estimate === null) return;
     this.offsetMs = estimate.offsetMs;
     this.uncertaintyMs = estimate.uncertaintyMs;
+    this.roundTripMs = estimate.roundTripMs;
     traceEvent('clock offset estimated', {
       offsetMs: estimate.offsetMs,
       roundTripMs: estimate.roundTripMs,
       uncertaintyMs: estimate.uncertaintyMs,
     });
     this.options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
+    this.reportStatus();
+  }
+
+  // Each estimate refreshes the path the Host shows for this Remote, so its status stays current while connected.
+  private reportStatus(): void {
+    const socket = this.socket;
+
+    if (!this.welcomed || socket === null || this.roundTripMs === null) return;
+    this.transmit(
+      socket,
+      encodeSessionStatus({
+        reportedAtMs: Math.round(this.options.monotonicNow()),
+        transport: this.linkedOverBluetooth ? 'ble' : 'lan',
+        rttMs: Math.round(this.roundTripMs),
+      }),
+    );
   }
 
   private onRemoteConfigured(requestId: string | null): void {
@@ -770,7 +853,8 @@ export class HostClient {
     this.offsetMs = null;
     this.snapshot = null;
     this.requests.clear();
-    this.artworkAssemblies.clear();
+    this.artworkChunks.reset();
+    this.motion.reset();
     this.orphanCommands();
 
     if (this.phase === 'pairing-failed' || this.phase === 'unpaired') return;
@@ -803,18 +887,33 @@ export class HostClient {
 
   private orphanCommands(): void {
     for (const [commandId, pending] of this.pendingCommands) {
+      pending.cancelSettle();
       this.orphanedCommands.add(commandId);
-      pending.resolve({
-        commandId,
-        outcome: 'unconfirmed',
-        revision: 0,
-        message:
+      pending.resolve(
+        unconfirmedResult(
+          commandId,
           'The connection closed before Cadenza Host confirmed this change.',
-        errorCode: 'outcome_unknown',
-      });
+        ),
+      );
     }
 
     this.pendingCommands.clear();
+  }
+
+  // A command whose result never arrives on a live link, such as one whose Bluetooth frame was dropped, settles as
+  // unconfirmed so the controls unlock. It stays orphaned, so its late result is still reported.
+  private settleUnanswered(commandId: string): void {
+    const pending = this.pendingCommands.get(commandId);
+
+    if (pending === undefined) return;
+    this.pendingCommands.delete(commandId);
+    this.orphanedCommands.add(commandId);
+    pending.resolve(
+      unconfirmedResult(
+        commandId,
+        'Cadenza Host has not confirmed this change yet.',
+      ),
+    );
   }
 
   private scheduleReconnect(): void {

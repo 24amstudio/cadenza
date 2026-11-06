@@ -51,21 +51,29 @@ defineExpose({ reveal });
       </button>
     </header>
 
-    <p v-if="host.lyricsLoading" class="quiet">
-      Cadenza Host is getting the lyrics for this song.
-    </p>
-    <div v-else-if="host.lyricsDocument" class="lyrics-scroll">
-      <LyricLines
-        :lines="host.lyricsDocument.lines"
-        :position-ms="host.positionMs"
-        :live-position-ms="host.livePositionMs"
-        :playing="host.isPlaying"
-        :timed="level >= 2"
-        :word-timed="level === 3"
-        :size="preferences.lyricsSize"
-        @seek="host.seekTo"
-      />
-    </div>
+    <Transition name="fade" mode="out-in">
+      <div v-if="host.lyricsLoading" key="loading" class="lyrics-loading">
+        <p class="visually-hidden" role="status">
+          Cadenza Host is getting the lyrics for this song.
+        </p>
+        <span class="lyrics-bar skeleton" aria-hidden="true"></span>
+        <span class="lyrics-bar skeleton" aria-hidden="true"></span>
+        <span class="lyrics-bar skeleton" aria-hidden="true"></span>
+        <span class="lyrics-bar skeleton" aria-hidden="true"></span>
+      </div>
+      <div v-else-if="host.lyricsDocument" key="lyrics" class="lyrics-scroll">
+        <LyricLines
+          :lines="host.lyricsDocument.lines"
+          :position-ms="host.positionMs"
+          :live-position-ms="host.livePositionMs"
+          :playing="host.isPlaying"
+          :timed="level >= 2"
+          :word-timed="level === 3"
+          :size="preferences.lyricsSize"
+          @seek="host.seekTo"
+        />
+      </div>
+    </Transition>
   </section>
 </template>
 
@@ -73,6 +81,31 @@ defineExpose({ reveal });
 .lyrics-panel {
   display: grid;
   gap: 8px;
+}
+
+/* Bars stand in for lines of lyrics, with the lengths of a typical verse. */
+.lyrics-loading {
+  display: grid;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.lyrics-bar {
+  width: 72%;
+  height: 20px;
+  border-radius: 999px;
+}
+
+.lyrics-bar:nth-of-type(2) {
+  width: 88%;
+}
+
+.lyrics-bar:nth-of-type(3) {
+  width: 60%;
+}
+
+.lyrics-bar:nth-of-type(4) {
+  width: 78%;
 }
 
 .section-header {

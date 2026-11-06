@@ -86,19 +86,63 @@ export function encodeLyricsGet(requestId: string): string {
   });
 }
 
-// A progressive request asks for a small preview first, then the full image in chunks.
+export interface ArtworkRequestOptions {
+  // A progressive request sends a small preview before the full image.
+  progressive: boolean;
+  // The preview alone, for a row that is not playing yet.
+  previewOnly: boolean;
+  // The song a full image is for. The Host stops the request when that song is no longer playing.
+  occurrenceId: string | null;
+  // Whether the song's motion video may replace the full image.
+  motion: boolean;
+}
+
 export function encodeArtworkGet(
   requestId: string,
   artworkUrl: string,
-  progressive = false,
+  options: ArtworkRequestOptions,
 ): string {
-  // JSON.stringify drops the undefined key, so the Host sees progressive only when it was requested.
+  // JSON.stringify drops undefined keys, so the Host sees a flag only when it was requested.
   return JSON.stringify({
     version: 1,
     type: 'artwork.get',
     request_id: requestId,
     artwork_url: artworkUrl,
-    progressive: progressive ? true : undefined,
+    progressive: options.progressive ? true : undefined,
+    preview_only: options.previewOnly ? true : undefined,
+    motion: options.motion ? true : undefined,
+    occurrence_id: options.occurrenceId ?? undefined,
+  });
+}
+
+export function encodeArtworkCancel(requestId: string): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'artwork.cancel',
+    request_id: requestId,
+  });
+}
+
+// The Host shows a Remote as connected only after the Remote reports a path, with the round trip it measured.
+export function encodeSessionStatus(report: {
+  reportedAtMs: number;
+  transport: 'ble' | 'lan';
+  rttMs: number;
+}): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'session.status',
+    status: {
+      reported_at_ms: report.reportedAtMs,
+      device: 'remote',
+      paths: [
+        {
+          transport: report.transport,
+          state: 'connected',
+          rtt_ms: report.rttMs,
+        },
+      ],
+    },
   });
 }
 

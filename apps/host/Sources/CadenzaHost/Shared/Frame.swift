@@ -65,6 +65,10 @@ struct Frame: Codable, Sendable {
     var dataBase64: String? = nil
     // artwork.get asks for a preview first. An artwork frame says whether it is the "preview" or the "full" image.
     var progressive: Bool? = nil
+    // artwork.get with motion asks for the song's motion video in place of the full image, when Apple has one.
+    var motion: Bool? = nil
+    // artwork.get with previewOnly sends the preview and nothing more, for rows that are not playing yet.
+    var previewOnly: Bool? = nil
     var variant: String? = nil
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import EmptyState from '~/components/common/EmptyState.vue';
@@ -7,6 +7,7 @@ import LyricsPanel from '~/components/lyrics/LyricsPanel.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
 import QueueRow from '~/components/queue/QueueRow.vue';
+import { IdleTimer } from '~/lib/idleTimer';
 import { useHostStore } from '~/stores/host';
 import { useUiStore } from '~/stores/ui';
 
@@ -26,6 +27,30 @@ const hasLyrics = computed(
 const showLyrics = computed(
   () => host.current !== null && (host.lyricsLoading || host.lyricsStatus > 0),
 );
+
+// A playing song with lyrics shows only its lyrics after 10 s without interaction. Any touch, pointer, or key brings the
+// controls back. Paused songs and songs without lyrics keep their controls.
+const lyricsOnly = ref(false);
+
+const idle = new IdleTimer({
+  timeoutMs: 10_000,
+  schedule: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs);
+
+    return () => clearTimeout(handle);
+  },
+  onChange: (value) => {
+    lyricsOnly.value = value;
+  },
+});
+
+watch(
+  () => host.isPlaying && hasLyrics.value,
+  (enabled) => idle.setEnabled(enabled),
+  { immediate: true },
+);
+
+onBeforeUnmount(() => idle.setEnabled(false));
 
 const lyricsPanel = ref<InstanceType<typeof LyricsPanel> | null>(null);
 
@@ -70,8 +95,17 @@ const ambientStyle = computed(() => {
   <div
     v-else
     class="now-playing"
-    :class="{ immersive, 'without-lyrics': immersive && !showLyrics }"
+    :class="{
+      immersive: immersive || lyricsOnly,
+      'lyrics-only': lyricsOnly,
+      'without-lyrics': immersive && !showLyrics,
+    }"
     :style="ambientStyle"
+    @pointermove="idle.activity()"
+    @pointerdown="idle.activity()"
+    @touchstart.passive="idle.activity()"
+    @keydown="idle.activity()"
+    @focusin="idle.activity()"
   >
     <button
       v-if="immersive"
@@ -87,6 +121,7 @@ const ambientStyle = computed(() => {
       <ArtworkImage
         class="cover"
         :url="song.artworkUrl"
+        :motion-url="host.motionUrl"
         :alt="`${song.title} by ${song.artist}`"
       />
 
@@ -132,7 +167,7 @@ const ambientStyle = computed(() => {
     <LyricsPanel
       v-if="showLyrics"
       ref="lyricsPanel"
-      :immersive="immersive"
+      :immersive="immersive || lyricsOnly"
       @expand="ui.setImmersive(true)"
     />
 
@@ -151,7 +186,7 @@ const ambientStyle = computed(() => {
     </div>
 
     <section
-      v-if="!immersive"
+      v-if="!immersive && !lyricsOnly"
       class="up-next"
       aria-labelledby="up-next-heading"
     >
@@ -593,5 +628,27 @@ h2 {
   .now-playing.immersive.without-lyrics .scrubber {
     width: auto;
   }
+}
+
+/* Controls collapse out of the layout in lyrics-only mode, so the lyrics take their rows. Each row keeps its height
+   limit in both states, so the change animates. */
+.now-playing .scrubber,
+.now-playing .transport-row,
+.now-playing .immersive-tools {
+  max-height: 480px;
+  transition:
+    max-height 320ms var(--ease-standard),
+    opacity 240ms var(--ease-standard),
+    visibility 320ms;
+}
+
+.now-playing.lyrics-only .scrubber,
+.now-playing.lyrics-only .transport-row,
+.now-playing.lyrics-only .immersive-tools {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  pointer-events: none;
 }
 </style>

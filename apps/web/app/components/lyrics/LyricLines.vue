@@ -375,6 +375,11 @@ onUnmounted(() => {
   );
 }
 
+/* Reduced effects keep the opacity recede and drop the scale, which is the only transform on a line. */
+:root[data-effects='reduced'] .lyrics.timed .line {
+  transform: none;
+}
+
 .line-text {
   font-family: var(--font-display);
   font-size: calc(clamp(24px, 4.2vw, 34px) * var(--lyrics-scale, 1));

@@ -57,6 +57,16 @@ export type HostMessage =
       dataBase64: string;
     }
   | { type: 'artwork.unavailable'; requestId: string; artworkUrl: string }
+  | {
+      type: 'motion.chunk';
+      requestId: string;
+      occurrenceId: string;
+      index: number;
+      count: number;
+      totalBytes: number;
+      sha256: string;
+      dataBase64: string;
+    }
   | { type: 'clock'; requestId: string; sample: ClockSample }
   | { type: 'analytics.credit'; sequence: number };
 
@@ -89,6 +99,8 @@ export function decodeHostMessage(text: string): HostMessage | null {
       return decodeArtworkChunkMessage(value);
     case 'artwork.unavailable':
       return decodeArtworkUnavailableMessage(value);
+    case 'motion.chunk':
+      return decodeMotionChunkMessage(value);
     case 'clock':
       return decodeClockMessage(value);
     case 'analytics.credit':
@@ -240,6 +252,38 @@ function decodeArtworkUnavailableMessage(
   return { type: 'artwork.unavailable', requestId, artworkUrl };
 }
 
+function decodeMotionChunkMessage(object: JsonObject): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const occurrenceId = stringField(object, 'occurrence_id');
+  const index = counterField(object, 'chunk_index');
+  const count = counterField(object, 'chunk_count');
+  const totalBytes = counterField(object, 'total_bytes');
+  const sha256 = stringField(object, 'sha256');
+  const dataBase64 = stringField(object, 'data_base64');
+
+  if (
+    requestId === null ||
+    occurrenceId === null ||
+    index === null ||
+    count === null ||
+    totalBytes === null ||
+    sha256 === null ||
+    dataBase64 === null
+  )
+    return null;
+
+  return {
+    type: 'motion.chunk',
+    requestId,
+    occurrenceId,
+    index,
+    count,
+    totalBytes,
+    sha256,
+    dataBase64,
+  };
+}
+
 function decodeClockMessage(object: JsonObject): HostMessage | null {
   const requestId = stringField(object, 'request_id');
   const clock = objectField(object, 'clock');
@@ -335,6 +379,7 @@ function decodeCurrent(object: JsonObject): CurrentPlayback | null {
     song: decodedSong,
     positionMs,
     sampledAtHostMs,
+    artworkPreview: stringField(object, 'artwork_preview'),
   };
 }
 

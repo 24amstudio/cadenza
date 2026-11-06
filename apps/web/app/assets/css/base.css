@@ -63,6 +63,41 @@ img {
   white-space: nowrap;
 }
 
+/* A placeholder for content that is still arriving from the Host. The sweep stops under reduced motion. */
+.skeleton {
+  background-color: var(--color-fill);
+  background-image: linear-gradient(
+    105deg,
+    transparent 35%,
+    var(--color-fill-strong) 50%,
+    transparent 65%
+  );
+  background-repeat: no-repeat;
+  background-size: 250% 100%;
+  animation: skeleton-sweep 1.6s linear infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* Replaces a placeholder with content in place, so the swap does not jump. */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 280ms var(--ease-standard);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -70,4 +105,15 @@ img {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Settings > Reduce animations and effects. Nothing transitions, animates or blurs, so no layer is kept for a blur. */
+:root[data-effects='reduced'] *,
+:root[data-effects='reduced'] *::before,
+:root[data-effects='reduced'] *::after {
+  transition: none !important;
+  animation: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }

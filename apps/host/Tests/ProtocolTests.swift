@@ -177,4 +177,42 @@ struct ProtocolTests {
         #expect(!ArtworkProvider.isAllowedURL("https://example.com/image.jpg"))
         #expect(!ArtworkProvider.isAllowedURL("https://mzstatic.com/image.jpg"))
     }
+
+    @Test func aBrowserRemoteStatusReportIsAcceptedWithItsBluetoothPath() throws {
+        // The browser reports no power or constraints, and its round trip is a whole number of milliseconds.
+        let report =
+            #"{"version":1,"type":"session.status","status":{"reported_at_ms":1200,"device":"remote","#
+            + #""paths":[{"transport":"ble","state":"connected","rtt_ms":42}]}}"#
+        let status = try #require(try ProtocolValidation.decode(Data(report.utf8)).status)
+
+        #expect(status.device == "remote")
+        #expect(status.paths.first?.transport == "ble")
+        #expect(status.paths.first?.rttMs == 42)
+    }
+
+    @Test func artworkMayAskForTheSongsMotionOnlyWithItsOccurrence() throws {
+        let asked =
+            #"{"version":1,"type":"artwork.get","request_id":"\#(id)","artwork_url":"https://is1-ssl.mzstatic.com/image/thumb/Music.jpg","progressive":true,"motion":true,"occurrence_id":"\#(id)"}"#
+        let withoutOccurrence =
+            #"{"version":1,"type":"artwork.get","request_id":"\#(id)","artwork_url":"https://is1-ssl.mzstatic.com/image/thumb/Music.jpg","motion":true}"#
+
+        #expect(try ProtocolValidation.decode(Data(asked.utf8)).motion == true)
+        #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(withoutOccurrence.utf8)) }
+    }
+
+    @Test func artworkCanAskForThePreviewAlone() throws {
+        let preview =
+            #"{"version":1,"type":"artwork.get","request_id":"\#(id)","artwork_url":"https://is1-ssl.mzstatic.com/image/thumb/Music.jpg","preview_only":true}"#
+
+        #expect(try ProtocolValidation.decode(Data(preview.utf8)).previewOnly == true)
+    }
+
+    @Test func artworkCancelNamesTheRequestItStops() throws {
+        let cancel = #"{"version":1,"type":"artwork.cancel","request_id":"\#(id)"}"#
+
+        #expect(try ProtocolValidation.decode(Data(cancel.utf8)).requestId == id)
+        #expect(throws: (any Error).self) {
+            try ProtocolValidation.decode(Data(#"{"version":1,"type":"artwork.cancel"}"#.utf8))
+        }
+    }
 }

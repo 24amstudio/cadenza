@@ -18,6 +18,8 @@ export interface CurrentPlayback {
   song: Song;
   positionMs: number;
   sampledAtHostMs: number;
+  // The song's cover at most 32 by 32 pixels, as base64 JPEG. It arrives with the song.
+  artworkPreview?: string | null;
 }
 
 export interface QueueEntry {

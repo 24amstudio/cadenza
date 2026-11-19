@@ -70,13 +70,12 @@ fun MotionArtwork(
         onPauseOrDispose { player.playWhenReady = false }
     }
     Box(modifier) {
-        // The video surface exists only once its view is composed, and no frame renders without it. So the view is composed
-        // from the start, with a transparent shutter, and the still cover stays over it until the first frame is on screen.
+        // No frame renders without the video surface, so the view is composed from the start. The still cover stays on top
+        // until the first frame is on screen, which also hides the player's own shutter.
         AndroidView(
             factory = { viewContext ->
                 PlayerView(viewContext).apply {
                     useController = false
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                     this.player = player
                 }
             },

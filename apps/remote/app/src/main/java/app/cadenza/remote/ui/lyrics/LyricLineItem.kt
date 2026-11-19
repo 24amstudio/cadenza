@@ -26,7 +26,8 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -145,7 +146,9 @@ private fun LyricLineText(
 // multiplier applies on top, so lyrics fill a phone or a tablet without a fixed size that suits only one of them.
 @Composable
 private fun lyricTextStyle(size: LyricsTextSize): TextStyle {
-    val standardSp = (LocalConfiguration.current.screenWidthDp * 28f / 390f).coerceIn(24f, 32f)
+    val density = LocalDensity.current
+    val screenWidthDp = LocalWindowInfo.current.containerSize.width / density.density
+    val standardSp = (screenWidthDp * 28f / 390f).coerceIn(24f, 32f)
     val fontSize = (standardSp * size.scale).sp
     return MaterialTheme.typography.headlineMedium.copy(
         fontWeight = FontWeight.Bold,

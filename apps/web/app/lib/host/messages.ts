@@ -7,7 +7,7 @@ export function describeCommandResult(result: CommandResult): string | null {
     case 'applied':
       return null;
     case 'expired':
-      return 'That change expired before Cadenza Host applied it.';
+      return 'That change reached Cadenza Host too late. Check the connection and try again.';
     case 'unconfirmed':
       return 'Cadenza Host has not confirmed that change yet. It will not be sent again automatically.';
     case 'rejected':
@@ -21,6 +21,8 @@ function describeRejection(errorCode: string | null): string {
     case 'stale_occurrence':
     case 'invalid_anchor':
       return 'Playback changed on Cadenza Host. Try again.';
+    case 'invalid_deadline':
+      return 'This browser and Cadenza Host disagree about the time. Try again in a moment.';
     case 'busy':
       return 'Cadenza Host is busy with another change. Try again in a moment.';
     case 'music_permission':

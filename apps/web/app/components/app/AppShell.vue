@@ -6,12 +6,15 @@ import MobileTabBar from '~/components/app/MobileTabBar.vue';
 import ToastRegion from '~/components/app/ToastRegion.vue';
 import PlayerBar from '~/components/player/PlayerBar.vue';
 import PairingView from '~/components/pairing/PairingView.vue';
+import LibraryView from '~/components/views/LibraryView.vue';
 import NowPlayingView from '~/components/views/NowPlayingView.vue';
+import SearchView from '~/components/views/SearchView.vue';
 import SettingsView from '~/components/views/SettingsView.vue';
 import UpNextView from '~/components/views/UpNextView.vue';
 import { showNotification } from '~/lib/browserNotifications';
 import { createSongChangeDetector, documentTitle } from '~/lib/songAlerts';
 import { useHostStore } from '~/stores/host';
+import { useLibraryStore } from '~/stores/library';
 import { usePreferencesStore } from '~/stores/preferences';
 import { useUiStore } from '~/stores/ui';
 
@@ -20,6 +23,9 @@ const ui = useUiStore();
 
 // Creating the store applies the saved theme at startup, not only when Settings opens.
 const preferences = usePreferencesStore();
+
+// Creating the library store starts recording plays, so a song heard before the Library page opens is still kept.
+useLibraryStore();
 
 // The tab title names the song that is playing, so a background tab still shows it.
 watch(
@@ -103,6 +109,8 @@ onUnmounted(() => {
           :immersive="immersive"
         />
         <UpNextView v-else-if="ui.view === 'up-next'" />
+        <SearchView v-else-if="ui.view === 'search'" />
+        <LibraryView v-else-if="ui.view === 'library'" />
         <SettingsView v-else />
       </template>
     </main>

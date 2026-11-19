@@ -14,10 +14,6 @@ const ui = useUiStore();
 const song = computed(() => host.current?.song ?? null);
 const duration = computed(() => song.value?.durationMs ?? null);
 
-const controlsDisabled = computed(
-  () => !host.canControl || host.busyAction !== null,
-);
-
 const showLyricsToggle = computed(
   () => host.current !== null && host.lyricsStatus > 0,
 );
@@ -62,7 +58,8 @@ const showLyricsToggle = computed(
       <TransportControls
         compact
         :is-playing="host.isPlaying"
-        :disabled="controlsDisabled"
+        :disabled="!host.canControl"
+        :pending="host.pendingControls"
         @previous="host.skipPrevious"
         @toggle="host.togglePlayback"
         @next="host.skipNext"
@@ -71,10 +68,20 @@ const showLyricsToggle = computed(
 
     <div class="utilities">
       <VolumeSlider
-        class="volume"
-        :percent="host.snapshot?.volume ?? 0"
+        class="volume-full"
+        :percent="host.volumePercent"
+        :muted="host.muted"
         :disabled="!host.connected"
         @change="host.setVolume"
+        @toggle-mute="host.toggleMute"
+      />
+      <VolumeSlider
+        compact
+        class="volume-compact"
+        :percent="host.volumePercent"
+        :muted="host.muted"
+        :disabled="!host.connected"
+        @toggle-mute="host.toggleMute"
       />
       <button
         v-if="showLyricsToggle"
@@ -193,7 +200,13 @@ const showLyricsToggle = computed(
     padding: 0 12px;
   }
 
-  .utilities .volume {
+  .utilities .volume-full {
+    display: none;
+  }
+}
+
+@media (min-width: 720px) {
+  .utilities .volume-compact {
     display: none;
   }
 }

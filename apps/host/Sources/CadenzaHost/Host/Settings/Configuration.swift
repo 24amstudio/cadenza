@@ -88,3 +88,44 @@ struct HostConfiguration: Codable {
         UserDefaults.standard.set(try JSONEncoder().encode(self), forKey: "configuration")
     }
 }
+
+/// Settings the running service reads only when it starts. A change to one takes effect after Host restarts.
+enum RestartSetting: Hashable {
+    case name, port, storefront, advertisedAddress, web, lyrics, cache
+}
+
+extension HostConfiguration {
+    func differs(in settings: Set<RestartSetting>, from running: HostConfiguration) -> Bool {
+        settings.contains { setting in
+            switch setting {
+            case .name: name != running.name
+            case .port: port != running.port
+            case .storefront: storefront != running.storefront
+            case .advertisedAddress: advertisedAddress != running.advertisedAddress
+            case .web: webEnabled != running.webEnabled
+            case .lyrics: lyricsProviderEnabled != running.lyricsProviderEnabled
+            case .cache: cacheLimitBytes != running.cacheLimitBytes
+            }
+        }
+    }
+}
+
+/// Parsers for typed settings. Each accepts exactly the values `isUsable` accepts, so a committed value always loads.
+enum SettingValue {
+    static func name(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !value.isEmpty && value.utf8.count <= 63 ? value : nil
+    }
+
+    static func port(_ text: String) -> UInt16? {
+        guard let value = UInt16(text.trimmingCharacters(in: .whitespaces)), (1024...65_535).contains(value) else {
+            return nil
+        }
+        return value
+    }
+
+    static func storefront(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespaces).lowercased()
+        return value.range(of: "^[a-z]{2}$", options: .regularExpression) == nil ? nil : value
+    }
+}

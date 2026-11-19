@@ -14,7 +14,6 @@ import {
 describe('HostClient motion', () => {
   const motionCapabilities = ['artwork.host-cache', 'motion.host-cache'];
   const artworkUrl = 'https://example.com/album.jpg';
-  const nextOccurrenceId = '1b2c3d4e-1111-4222-8333-444455556666';
 
   const video = Uint8Array.from({ length: 2_500 }, (_, index) =>
     index < 8
@@ -22,56 +21,32 @@ describe('HostClient motion', () => {
       : (index * 13) % 256,
   );
 
-  test('asks for the playing song with its artwork, so its motion video can replace the full image', () => {
+  test('asks for the motion video apart from the still image', () => {
     const { client, sockets } = harness();
     client.start('S'.repeat(43));
     socketAt(sockets, 0).open();
     socketAt(sockets, 0).receive(welcome(token, motionCapabilities));
 
-    client.requestArtwork(artworkUrl, {
-      kind: 'full',
+    const requestId = client.requestArtwork(artworkUrl, {
+      kind: 'motion',
       occurrenceId,
     });
 
     expect(
-      socketAt(sockets, 0).framesOfType('artwork.get').at(-1),
-    ).toMatchObject({
-      artwork_url: artworkUrl,
-      motion: true,
-      occurrence_id: occurrenceId,
-    });
+      socketAt(sockets, 0).framesOfType('motion.get').at(-1),
+    ).toMatchObject({ request_id: requestId, occurrence_id: occurrenceId });
+    expect(socketAt(sockets, 0).framesOfType('artwork.get')).toHaveLength(0);
   });
 
-  test('shows the preview first, then the verified motion video under the same request', async () => {
+  test('shows the verified motion video under its request', async () => {
     const { client, sockets, changes } = harness();
     client.start('S'.repeat(43));
     socketAt(sockets, 0).open();
     socketAt(sockets, 0).receive(welcome(token, motionCapabilities));
-    client.requestArtwork(artworkUrl, {
-      kind: 'full',
-      occurrenceId,
-    });
 
     const requestId = String(
-      socketAt(sockets, 0).framesOfType('artwork.get').at(-1)?.request_id,
+      client.requestArtwork(artworkUrl, { kind: 'motion', occurrenceId }),
     );
-
-    const preview = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
-
-    socketAt(sockets, 0).receive({
-      type: 'artwork',
-      request_id: requestId,
-      artwork_url: artworkUrl,
-      artwork_data_base64: preview,
-      variant: 'preview',
-    });
-
-    expect(changes).toContainEqual({
-      kind: 'artwork',
-      artworkUrl,
-      dataUrl: `data:image/jpeg;base64,${preview}`,
-      full: false,
-    });
 
     await sendMotion(
       socketAt(sockets, 0),
@@ -81,7 +56,11 @@ describe('HostClient motion', () => {
     );
     await waitForMotion(changes);
 
-    expect(latestMotion(changes)).toMatchObject({ artworkUrl });
+    expect(latestMotion(changes)).toMatchObject({
+      artworkUrl,
+      requestId,
+      unavailable: false,
+    });
     expect(latestMotion(changes)?.video).toEqual(video);
   });
 
@@ -90,13 +69,9 @@ describe('HostClient motion', () => {
     client.start('S'.repeat(43));
     socketAt(sockets, 0).open();
     socketAt(sockets, 0).receive(welcome(token, motionCapabilities));
-    client.requestArtwork(artworkUrl, {
-      kind: 'full',
-      occurrenceId,
-    });
 
     const requestId = String(
-      socketAt(sockets, 0).framesOfType('artwork.get').at(-1)?.request_id,
+      client.requestArtwork(artworkUrl, { kind: 'motion', occurrenceId }),
     );
 
     const otherDigest = await sha256Hex(video.slice(1));
@@ -104,7 +79,33 @@ describe('HostClient motion', () => {
     await sendMotion(socketAt(sockets, 0), requestId, video, otherDigest);
     await waitForMotion(changes);
 
-    expect(latestMotion(changes)?.video).toBeNull();
+    expect(latestMotion(changes)).toMatchObject({
+      video: null,
+      unavailable: false,
+    });
+  });
+
+  test('a song without motion is reported as unavailable, not as a failure', () => {
+    const { client, sockets, changes } = harness();
+    client.start('S'.repeat(43));
+    socketAt(sockets, 0).open();
+    socketAt(sockets, 0).receive(welcome(token, motionCapabilities));
+
+    const requestId = String(
+      client.requestArtwork(artworkUrl, { kind: 'motion', occurrenceId }),
+    );
+
+    socketAt(sockets, 0).receive({
+      type: 'motion.unavailable',
+      request_id: requestId,
+      occurrence_id: occurrenceId,
+    });
+
+    expect(latestMotion(changes)).toMatchObject({
+      video: null,
+      unavailable: true,
+      requestId,
+    });
   });
 
   test('a preview-only request asks for the small image alone', () => {
@@ -125,19 +126,19 @@ describe('HostClient motion', () => {
   });
 
   test('does not ask for motion the Host did not advertise', () => {
-    const { client, sockets } = harness();
+    const { client, sockets, changes } = harness();
     client.start('S'.repeat(43));
     socketAt(sockets, 0).open();
     socketAt(sockets, 0).receive(welcome(token, ['artwork.host-cache']));
 
-    client.requestArtwork(artworkUrl, {
-      kind: 'full',
+    const requestId = client.requestArtwork(artworkUrl, {
+      kind: 'motion',
       occurrenceId,
     });
 
-    expect(
-      socketAt(sockets, 0).framesOfType('artwork.get').at(-1),
-    ).not.toHaveProperty('motion');
+    expect(requestId).toBeNull();
+    expect(socketAt(sockets, 0).framesOfType('motion.get')).toHaveLength(0);
+    expect(latestMotion(changes)).toMatchObject({ unavailable: true });
   });
 
   test('asks for motion over Bluetooth, the only transport the web page has', () => {
@@ -154,32 +155,24 @@ describe('HostClient motion', () => {
     client.startBluetooth(false);
     client.connectOverBluetooth(link);
     link.receive(welcome(null, motionCapabilities));
-    client.requestArtwork(artworkUrl, {
-      kind: 'full',
-      occurrenceId,
-    });
+    client.requestArtwork(artworkUrl, { kind: 'motion', occurrenceId });
 
-    expect(link.framesOfType('artwork.get').at(-1)).toMatchObject({
-      motion: true,
+    expect(link.framesOfType('motion.get').at(-1)).toMatchObject({
       occurrence_id: occurrenceId,
     });
   });
 
-  test('a song change abandons the old full image, and its late chunks are ignored', async () => {
+  test('a cancelled request tells the Host to stop, and its late chunks are ignored', async () => {
     const { client, sockets, changes } = harness();
     client.start('S'.repeat(43));
     socketAt(sockets, 0).open();
     socketAt(sockets, 0).receive(welcome(token, motionCapabilities));
-    client.requestArtwork(artworkUrl, { kind: 'full', occurrenceId });
 
     const requestId = String(
-      socketAt(sockets, 0).framesOfType('artwork.get').at(-1)?.request_id,
+      client.requestArtwork(artworkUrl, { kind: 'motion', occurrenceId }),
     );
 
-    client.cancelFullArtwork(occurrenceId);
-    expect(socketAt(sockets, 0).framesOfType('artwork.cancel')).toHaveLength(0);
-
-    client.cancelFullArtwork(nextOccurrenceId);
+    client.cancelArtwork(requestId);
     expect(socketAt(sockets, 0).framesOfType('artwork.cancel')).toMatchObject([
       { type: 'artwork.cancel', request_id: requestId },
     ]);

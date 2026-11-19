@@ -34,6 +34,8 @@ Host creates a fresh epoch for every service start. Clock exchanges include the 
 
 `search` and `song.prepare` are asynchronous preparation operations with identified results or errors. A control mutation has a separate deadline and visible Remote feedback by 1,000 ms. Preparation is not mislabeled as completed playback.
 
+`search.suggest` asks for Apple Music completions for text being typed, and `search.suggestions` answers with `terms` and the top `songs`; an empty query is answered with empty suggestions. A `song.prepare` may carry `song_metadata` (the song's title, artist, album, and optional duration and artwork). The Host uses it only to find a library song whose persistent ID no longer resolves, and only when its identity matches `song`. When the Host cannot decode a frame, it answers with `error` carrying the request's `request_id`, or the command's `command_id` for a `command`, when that ID is a valid identifier. The Remote settles that request or command at once.
+
 ## Commands and ownership
 
 Commands contain a unique command ID, Host epoch, expiry, expected revision, and action. They contain no actor, owner, or trusted song metadata. Host derives the actor from the authenticated connection and resolves song metadata itself.

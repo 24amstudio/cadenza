@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import AppIcon from '~/components/common/AppIcon.vue';
+import type { ControlKey } from '~/lib/host/controlQueue';
 
-defineProps<{ isPlaying: boolean; disabled: boolean; compact?: boolean }>();
+// A pending control stays pressable: a press while its command is in flight is queued, never ignored. Only the pressed
+// control shows the pending ring.
+defineProps<{
+  isPlaying: boolean;
+  disabled: boolean;
+  pending: ReadonlySet<ControlKey>;
+  compact?: boolean;
+}>();
 
 const emit = defineEmits<{
   previous: [];
@@ -14,8 +22,10 @@ const emit = defineEmits<{
   <div class="transport" :class="{ compact }">
     <button
       class="transport-button"
+      :class="{ pending: pending.has('previous') }"
       type="button"
       aria-label="Previous"
+      :aria-busy="pending.has('previous')"
       :disabled="disabled"
       @click="emit('previous')"
     >
@@ -23,8 +33,10 @@ const emit = defineEmits<{
     </button>
     <button
       class="play-button"
+      :class="{ pending: pending.has('toggle') }"
       type="button"
       :aria-label="isPlaying ? 'Pause' : 'Play'"
+      :aria-busy="pending.has('toggle')"
       :disabled="disabled"
       @click="emit('toggle')"
     >
@@ -32,8 +44,10 @@ const emit = defineEmits<{
     </button>
     <button
       class="transport-button"
+      :class="{ pending: pending.has('next') }"
       type="button"
       aria-label="Next"
+      :aria-busy="pending.has('next')"
       :disabled="disabled"
       @click="emit('next')"
     >
@@ -94,6 +108,38 @@ const emit = defineEmits<{
 
 .play-button .icon {
   margin-left: 2px;
+}
+
+/* The ring pulses until the Host answers. It sits outside the button, so the control keeps its size. */
+.pending {
+  position: relative;
+}
+
+.pending::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 2px solid var(--color-accent);
+  border-radius: 999px;
+  opacity: 0.7;
+  animation: pending-pulse 900ms var(--ease-standard) infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes pending-pulse {
+  from {
+    opacity: 0.15;
+  }
+
+  to {
+    opacity: 0.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending::after {
+    animation: none;
+  }
 }
 
 .compact {

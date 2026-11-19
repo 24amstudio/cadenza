@@ -20,6 +20,8 @@
         "clock",
         "search",
         "search.result",
+        "search.suggest",
+        "search.suggestions",
         "song.prepare",
         "song.ready",
         "operation.started",
@@ -234,8 +236,12 @@
         "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
       }
     },
+    "terms": { "type": "array", "maxItems": 8, "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
     "song": {
       "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
+    },
+    "song_metadata": {
+      "$ref": "urn:cadence:protocol:v1:state#/$defs/songMetadata"
     },
     "snapshot": {
       "$ref": "urn:cadence:protocol:v1:state#/$defs/snapshot"
@@ -708,6 +714,31 @@
       }
     },
     {
+      "if": { "properties": { "type": { "const": "search.suggest" } } },
+      "then": {
+        "required": ["request_id", "query"],
+        "properties": {
+          "request_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+          "query": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "search.suggestions" } } },
+      "then": {
+        "required": ["request_id", "terms", "songs"],
+        "properties": {
+          "request_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+          "terms": { "$ref": "#/properties/terms" },
+          "songs": { "$ref": "#/properties/songs" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "song.prepare" } } },
+      "else": { "properties": { "song_metadata": false } }
+    },
+    {
       "if": {
         "properties": {
           "type": {
@@ -813,6 +844,17 @@
           "command_id": {
             "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid"
           }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "error" } } },
+      "then": {
+        "required": ["error_code"],
+        "properties": {
+          "error_code": { "$ref": "#/properties/error_code" },
+          "request_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+          "command_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" }
         }
       }
     },

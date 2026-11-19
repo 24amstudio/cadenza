@@ -3,9 +3,11 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import EmptyState from '~/components/common/EmptyState.vue';
+import FavoriteToggle from '~/components/library/FavoriteToggle.vue';
 import LyricsPanel from '~/components/lyrics/LyricsPanel.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
+import VolumeSlider from '~/components/player/VolumeSlider.vue';
 import QueueRow from '~/components/queue/QueueRow.vue';
 import { IdleTimer } from '~/lib/idleTimer';
 import { useHostStore } from '~/stores/host';
@@ -71,10 +73,6 @@ function openQueue(): void {
   ui.setImmersive(false);
   ui.showView('up-next');
 }
-
-const controlsDisabled = computed(
-  () => !host.canControl || host.busyAction !== null,
-);
 
 // Sampled artwork tints the background. It is a decorative layer, so it stays out of the accessibility tree.
 const ambientStyle = computed(() => {
@@ -142,23 +140,39 @@ const ambientStyle = computed(() => {
         />
 
         <div class="transport-row">
-          <button
-            v-if="hasLyrics && !immersive"
-            class="lyrics-button"
-            type="button"
-            aria-label="Show lyrics"
-            @click="ui.revealLyrics()"
-          >
-            <AppIcon name="lyrics" />
-          </button>
+          <span class="transport-slot">
+            <button
+              v-if="hasLyrics && !immersive"
+              class="lyrics-button"
+              type="button"
+              aria-label="Show lyrics"
+              @click="ui.revealLyrics()"
+            >
+              <AppIcon name="lyrics" />
+            </button>
+          </span>
           <TransportControls
             :is-playing="host.isPlaying"
-            :disabled="controlsDisabled"
+            :disabled="!host.canControl"
+            :pending="host.pendingControls"
             @previous="host.skipPrevious"
             @toggle="host.togglePlayback"
             @next="host.skipNext"
           />
+          <span class="transport-slot">
+            <FavoriteToggle v-if="song" :song="song" />
+          </span>
         </div>
+
+        <VolumeSlider
+          class="volume-row"
+          wide
+          :percent="host.volumePercent"
+          :muted="host.muted"
+          :disabled="!host.connected"
+          @change="host.setVolume"
+          @toggle-mute="host.toggleMute"
+        />
 
         <p class="requester">Requested by {{ host.current?.requesterName }}</p>
       </div>
@@ -284,6 +298,15 @@ h1 {
   gap: 18px;
 }
 
+/* Both sides of the transport get the same slot, so the controls stay centred whether or not lyrics are shown. */
+.transport-slot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
 .lyrics-button,
 .exit-button {
   display: grid;
@@ -300,6 +323,11 @@ h1 {
 .lyrics-button:hover,
 .exit-button:hover {
   background: var(--color-fill-strong);
+}
+
+.volume-row {
+  width: min(100%, 360px);
+  justify-self: center;
 }
 
 .requester {
@@ -383,12 +411,13 @@ h2 {
   color: var(--color-text);
   box-sizing: border-box;
   grid-template-columns: 96px minmax(0, 1fr) auto;
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
   grid-template-areas:
     'cover titles exit'
     'lyrics lyrics lyrics'
     'scrubber scrubber scrubber'
     'transport transport transport'
+    'volume volume volume'
     'tools tools tools';
   align-items: center;
   gap: clamp(12px, 2.4vh, 26px);
@@ -468,6 +497,10 @@ h2 {
   justify-content: center;
 }
 
+.now-playing.immersive .volume-row {
+  grid-area: volume;
+}
+
 .now-playing.immersive .immersive-tools {
   grid-area: tools;
   display: flex;
@@ -515,13 +548,14 @@ h2 {
 /* Without lyrics the artwork takes the middle of the screen, with the controls under it. */
 .now-playing.immersive.without-lyrics {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto;
   grid-template-areas:
     'exit'
     'cover'
     'titles'
     'scrubber'
     'transport'
+    'volume'
     'tools';
 }
 
@@ -549,12 +583,13 @@ h2 {
 @media (max-width: 899px) {
   .now-playing.immersive {
     grid-template-columns: 48px minmax(0, 1fr) auto;
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
     grid-template-areas:
       'cover titles exit'
       'lyrics lyrics lyrics'
       'scrubber scrubber scrubber'
-      'transport transport transport';
+      'transport transport transport'
+      'volume volume volume';
     align-items: center;
     gap: 14px;
     padding-top: 0;
@@ -604,13 +639,14 @@ h2 {
   }
 
   .now-playing.immersive.without-lyrics {
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
     grid-template-areas:
       'exit'
       'cover'
       'titles'
       'scrubber'
-      'transport';
+      'transport'
+      'volume';
   }
 
   .now-playing.immersive.without-lyrics .cover {
@@ -634,6 +670,7 @@ h2 {
    limit in both states, so the change animates. */
 .now-playing .scrubber,
 .now-playing .transport-row,
+.now-playing .volume-row,
 .now-playing .immersive-tools {
   max-height: 480px;
   transition:
@@ -644,6 +681,7 @@ h2 {
 
 .now-playing.lyrics-only .scrubber,
 .now-playing.lyrics-only .transport-row,
+.now-playing.lyrics-only .volume-row,
 .now-playing.lyrics-only .immersive-tools {
   max-height: 0;
   opacity: 0;

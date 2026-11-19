@@ -18,7 +18,7 @@ const ui = useUiStore();
       @click="ui.showView(item.view)"
     >
       <AppIcon :name="item.icon" />
-      <span>{{ item.label }}</span>
+      <span>{{ item.shortLabel }}</span>
     </button>
   </nav>
 </template>
@@ -39,12 +39,20 @@ const ui = useUiStore();
   display: grid;
   justify-items: center;
   gap: 3px;
+  min-width: 0;
   padding: 4px 0;
   border: 0;
   background: transparent;
   color: var(--color-text-tertiary);
   font-size: 11px;
   font-weight: 560;
+}
+
+.tab span {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .tab .icon {

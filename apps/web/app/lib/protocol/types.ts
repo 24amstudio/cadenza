@@ -86,6 +86,21 @@ export interface CommandResult {
   errorCode: string | null;
 }
 
+// The identity the Host uses to find a song. A catalog ID is an Apple Music ID; a library ID is a persistent ID.
+export interface SongIdentity {
+  source: 'catalog' | 'library';
+  id: string;
+}
+
+export type SearchScope = 'catalog' | 'library';
+
+export type QueueActionKind = 'queue.enqueue' | 'queue.play_next';
+
+export interface SongSuggestions {
+  terms: string[];
+  songs: Song[];
+}
+
 export type CommandAction =
   | {
       kind:
@@ -96,7 +111,8 @@ export type CommandAction =
       occurrenceId: string;
     }
   | { kind: 'playback.seek'; occurrenceId: string; positionMs: number }
-  | { kind: 'playback.volume'; percent: number };
+  | { kind: 'playback.volume'; percent: number }
+  | { kind: QueueActionKind; song: SongIdentity };
 
 export interface ClockSample {
   sentAtRemoteMs: number;

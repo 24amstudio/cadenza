@@ -8,8 +8,11 @@ const source = readFileSync(
   'utf8',
 );
 
-/** @param {string} [persistentId] */
-function nativeBoundary(persistentId = 'AB1234567890CDEF') {
+/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean }} [options] */
+function nativeBoundary(
+  persistentId = 'AB1234567890CDEF',
+  { trackClass = 'sharedTrack', inLibrary = true } = {},
+) {
   let volume = 50;
   let position = 1.25;
   let playing = true;
@@ -17,6 +20,7 @@ function nativeBoundary(persistentId = 'AB1234567890CDEF') {
 
   const track = {
     persistentID: () => persistentId,
+    class: () => trackClass,
     duration: () => 183.125,
     name: () => 'A "quoted"\nsong ||| title',
     artist: () => 'Example artist',
@@ -31,9 +35,11 @@ function nativeBoundary(persistentId = 'AB1234567890CDEF') {
     currentTrack: () => track,
     libraryPlaylists: [
       {
-        tracks: Object.assign([track], {
+        tracks: Object.assign(inLibrary ? [track] : [], {
           whose: (/** @type {{ persistentID: string }} */ value) =>
-            value.persistentID === track.persistentID() ? [track] : [],
+            inLibrary && value.persistentID === track.persistentID()
+              ? [track]
+              : [],
         }),
       },
     ],
@@ -159,4 +165,21 @@ test('a stream without a library identity remains displayable without becoming a
   assert.equal(song.source, 'unknown');
   assert.match(song.id, /^native-[0-9a-f]+$/);
   assert.equal(boundary.invoke(['status']).song.id, song.id);
+});
+
+test('a streamed catalog song that the library does not hold is not labelled as a library track', () => {
+  const streamed = nativeBoundary('958A4478EDBDEEF8', {
+    trackClass: 'urlTrack',
+    inLibrary: false,
+  });
+
+  const song = streamed.invoke(['status']).song;
+
+  assert.equal(song.source, 'unknown');
+  assert.match(song.id, /^native-[0-9a-f]+$/);
+
+  const kept = nativeBoundary('958A4478EDBDEEF8', { trackClass: 'urlTrack' });
+
+  assert.equal(kept.invoke(['status']).song.source, 'library');
+  assert.equal(kept.invoke(['status']).song.id, '958A4478EDBDEEF8');
 });

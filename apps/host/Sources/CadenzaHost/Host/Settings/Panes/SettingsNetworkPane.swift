@@ -5,27 +5,42 @@ struct SettingsNetworkPane: View {
 
     var body: some View {
         Form {
+            RestartHostSection(model: model, settings: [.port, .advertisedAddress, .web])
             Section {
-                TextField("Host name", text: $model.configuration.name)
-                TextField("Port", value: $model.configuration.port, format: .number)
-                TextField("Catalog storefront", text: $model.configuration.storefront)
-                Picker("Address shown in pairing", selection: $model.configuration.advertisedAddress) {
+                ValidatedSettingField(
+                    title: "Port",
+                    value: model.configuration.port,
+                    format: { String($0) },
+                    parse: SettingValue.port,
+                    invalidMessage: "Use a port from 1024 to 65535.",
+                    commit: { port in
+                        model.configuration.port = port
+                        model.persistConfiguration()
+                    })
+                Picker("Address shown to Remotes (optional)", selection: model.committedBinding(\.advertisedAddress)) {
                     Text("Automatic").tag("")
                     ForEach(LANAddresses.all(), id: \.self) { Text($0).tag($0) }
                 }
-            } footer: {
-                Text("The storefront is a two-letter country code, such as id or us.")
-            }
-            Section {
-                Toggle("Cadenza Web", isOn: $model.configuration.webEnabled)
+            } header: {
+                Text("Connection")
             } footer: {
                 Text(
-                    "Lets a browser on this network control Cadenza Host through port \(model.configuration.webPort). "
-                        + "Pairing codes then also open the web remote."
+                    "Remotes reach this Mac on this port. Choose an address only if Automatic doesn't work on your network."
                 )
             }
+            Section {
+                Toggle("Cadenza Web", isOn: model.committedBinding(\.webEnabled))
+            } footer: {
+                Text(
+                    "Cadenza Web is a browser remote. It lets a browser on this network control Cadenza Host through port "
+                        + "\(model.configuration.webPort), and pairing codes also open it."
+                )
+            }
+            ConnectionPreferenceSections(model: model)
         }
         .formStyle(.grouped)
-        .navigationTitle("Network")
+        .onChange(of: model.hostTransportPolicy) { _, _ in model.saveTransportPolicy() }
+        .onChange(of: model.remoteTransportPreferences) { _, _ in model.saveTransportPolicy() }
+        .onChange(of: model.remoteTransportManualPaths) { _, _ in model.saveTransportPolicy() }
     }
 }

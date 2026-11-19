@@ -88,6 +88,11 @@ final class MusicBridge {
         return data
     }
 
+    /// Music's own next-track command. It needs no focus, and plays the first queued request.
+    func skipToNext(deadline: Int64) async throws {
+        _ = try await script(["skip"], deadline: deadline)
+    }
+
     func control(_ action: CommandAction, deadline: Int64) async throws {
         let operation = action.kind.replacingOccurrences(of: "playback.", with: "")
         guard ["pause", "resume", "skip", "previous", "stop", "seek", "volume"].contains(operation) else {
@@ -117,15 +122,21 @@ final class MusicBridge {
                 throw CadenzaError.failure("invalid_command", "This catalog result has no verified Music link.")
             }
             components.scheme = "music"
-            guard let url = components.url, NSWorkspace.shared.open(url) else {
+            guard let url = components.url else {
                 throw CadenzaError.failure("music_unavailable", "Music could not open this song.")
             }
-            // Opening a music:// URL can leave Music behind another app. Bring its
-            // document window forward so Accessibility can select the exact track.
-            NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
-                .first?.activate(options: [.activateAllWindows])
+            // Music is opened in the background so the user's current app keeps focus. If Music then exposes no
+            // window to Accessibility, selectSong brings it forward once and hands focus back afterwards.
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = false
+            do {
+                _ = try await NSWorkspace.shared.open(url, configuration: configuration)
+            } catch {
+                throw CadenzaError.failure("music_unavailable", "Music could not open this song.")
+            }
         }
-        // The music:// link already opens the album with this track selected, so only the selection is checked here.
+        // The music:// link already opens the album with this track selected, so only the selection is checked here. Each
+        // pass has its own budget, so one slow Accessibility read cannot consume the whole wait.
         let started = monotonicMs()
         let deadline = started + 12_000
         var lastStep: String?
@@ -134,13 +145,14 @@ final class MusicBridge {
             guard isCurrent() else {
                 throw CadenzaError.failure("busy", "A newer Music action took priority. Prepare this song again.")
             }
-            guard let issue = accessibility.preparationIssue(song, deadline: deadline) else {
+            let pass = min(deadline, monotonicMs() + 1_800)
+            guard let issue = try await accessibility.preparationIssue(song, deadline: pass) else {
                 logger?.log(
                     .info, category: "music", action: "prepare.completed", "Prepared \(song.title) in Music",
                     metadata: songDetails.merging(["ms": String(monotonicMs() - started)]) { $1 })
                 return
             }
-            // Each distinct reason is written once, so a long wait does not repeat the same line every 150 ms.
+            // Each distinct reason is written once, so a long wait does not repeat the same line every pass.
             if issue != lastStep {
                 logger?.log(
                     .debug, category: "music", action: "prepare.waiting", issue, metadata: songDetails)

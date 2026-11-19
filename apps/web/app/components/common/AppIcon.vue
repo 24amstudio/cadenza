@@ -11,12 +11,18 @@ export type IconName =
   | 'now'
   | 'settings'
   | 'speaker'
+  | 'speaker-muted'
   | 'refresh'
   | 'qr'
   | 'host'
   | 'check'
   | 'fullscreen'
-  | 'collapse';
+  | 'collapse'
+  | 'search'
+  | 'library'
+  | 'heart'
+  | 'heart-filled'
+  | 'close';
 
 // Paths are drawn on a 24-unit grid. Transport glyphs are solid; everything else is a 1.8-unit outline.
 const iconPaths: Record<IconName, string[]> = {
@@ -55,6 +61,11 @@ const iconPaths: Record<IconName, string[]> = {
     'M15.5 9.2a4 4 0 0 1 0 5.6',
     'M18.2 6.6a7.8 7.8 0 0 1 0 10.8',
   ],
+  'speaker-muted': [
+    'M4 9.5h3.2L12 6v12l-4.8-3.5H4Z',
+    'M16 9.8l4.4 4.4',
+    'M20.4 9.8L16 14.2',
+  ],
   refresh: ['M19 12a7 7 0 1 1-2.1-5', 'M19 4.8V8.6h-3.8'],
   qr: [
     'M4 4h6v6H4z',
@@ -72,9 +83,24 @@ const iconPaths: Record<IconName, string[]> = {
     'M8.5 19.5H4V15',
   ],
   collapse: ['M6 9.5l6 6 6-6'],
+  search: ['M17 11a6 6 0 1 1-12 0a6 6 0 1 1 12 0Z', 'M15.5 15.5L20 20'],
+  library: ['M8.5 4.5h11v11h-11z', 'M4.5 8.5v11h11'],
+  heart: [
+    'M12 19.2s-7.2-4.3-7.2-9.4A4 4 0 0 1 12 7.4a4 4 0 0 1 7.2 2.4c0 5.1-7.2 9.4-7.2 9.4Z',
+  ],
+  'heart-filled': [
+    'M12 19.2s-7.2-4.3-7.2-9.4A4 4 0 0 1 12 7.4a4 4 0 0 1 7.2 2.4c0 5.1-7.2 9.4-7.2 9.4Z',
+  ],
+  close: ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11'],
 };
 
-const solid = new Set<IconName>(['play', 'pause', 'previous', 'next']);
+const solid = new Set<IconName>([
+  'play',
+  'pause',
+  'previous',
+  'next',
+  'heart-filled',
+]);
 
 const props = defineProps<{ name: IconName }>();
 

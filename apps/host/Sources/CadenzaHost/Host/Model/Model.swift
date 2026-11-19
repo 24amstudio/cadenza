@@ -150,6 +150,12 @@ final class HostModel {
         }
     }
 
+    // Dismissing the sheet must end the service's pairing window too, or its PIN rotation re-presents the sheet.
+    func closePairing() {
+        service?.endInvitation()
+        invitation = nil
+    }
+
     func revoke(_ remote: PairedRemote) {
         do {
             try service?.revoke(remote.id)

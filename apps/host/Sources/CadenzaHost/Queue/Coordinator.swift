@@ -399,7 +399,8 @@ final class QueueCoordinator {
             incoming: incoming, mixing: lastMixing,
             synchronized: synchronized, issue: issue,
             observationGap: try store.database.query("SELECT observation_gap FROM host_state").first?[
-                "observation_gap"]?.integer == 1
+                "observation_gap"]?.integer == 1,
+            autoPlay: autoPlay.prefix(AutoPlayItem.shownLimit).map { AutoPlayItem(title: $0.title, artist: $0.artist) }
         )
     }
 

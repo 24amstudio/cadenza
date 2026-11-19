@@ -26,7 +26,7 @@ struct HostWindow: View {
         .sheet(
             item: Binding(
                 get: { model.invitation.map(PairingSheetItem.init) },
-                set: { if $0 == nil { model.invitation = nil } }
+                set: { if $0 == nil { model.closePairing() } }
             )
         ) { item in
             PairingSheet(invitation: item.invitation)

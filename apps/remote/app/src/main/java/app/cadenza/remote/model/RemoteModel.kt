@@ -11,6 +11,7 @@ import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.HostSnapshot
 import app.cadenza.remote.data.LyricDocument
+import app.cadenza.remote.data.LyricsTextSize
 import app.cadenza.remote.data.PairingInvitation
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
@@ -313,6 +314,9 @@ class RemoteModel(
                         transportPreference = preferences.getString("transport_preference", "balanced") ?: "balanced",
                         songChangeNotifications = preferences.getString("song_change_notifications", "true") != "false",
                         theme = theme,
+                        lyricsTextSize =
+                            LyricsTextSize.entries.firstOrNull { it.name == preferences.getString("lyrics_text_size", null) }
+                                ?: LyricsTextSize.LARGE,
                         favorites = library.songs,
                         unreadableFavorites = library.unreadable,
                         profile = profile,
@@ -448,6 +452,11 @@ class RemoteModel(
     fun setSongChangeNotifications(enabled: Boolean) {
         mutable.update { it.copy(songChangeNotifications = enabled) }
         viewModelScope.launch(ioDispatcher) { preferences.write("song_change_notifications" to enabled.toString()) }
+    }
+
+    fun setLyricsTextSize(size: LyricsTextSize) {
+        mutable.update { it.copy(lyricsTextSize = size) }
+        viewModelScope.launch(ioDispatcher) { preferences.write("lyrics_text_size" to size.name) }
     }
 
     fun disconnect() {

@@ -55,6 +55,11 @@ data class SingSession(
     val issue: String?,
 )
 
+data class AutoPlayItem(
+    val title: String,
+    val artist: String,
+)
+
 data class HostSnapshot(
     val hostId: String,
     val hostEpoch: String,
@@ -74,6 +79,7 @@ data class HostSnapshot(
     val issue: String?,
     val observationGap: Boolean,
     val sing: SingSession? = null,
+    val autoPlay: List<AutoPlayItem> = emptyList(),
 )
 
 data class LyricLine(
@@ -250,11 +256,20 @@ object Wire {
             value.nullableString("issue"),
             value.optBoolean("observation_gap"),
             sing,
+            value.optJSONArray("auto_play")?.let(::autoPlayItems).orEmpty(),
         ).also {
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos")) {
                 "Invalid playback format or volume."
             }
             require(queue.map { entry -> entry.id }.toSet().size == queue.size) { "Duplicate queue request identity." }
+        }
+    }
+
+    private fun autoPlayItems(array: JSONArray): List<AutoPlayItem> {
+        require(array.length() <= 8) { "Too many AutoPlay songs." }
+        return List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            AutoPlayItem(item.getString("title"), item.getString("artist"))
         }
     }
 

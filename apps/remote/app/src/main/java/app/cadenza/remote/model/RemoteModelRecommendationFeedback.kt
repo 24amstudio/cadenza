@@ -11,6 +11,9 @@ import org.json.JSONObject
 
 internal fun RemoteModel.recordRecommendationCommand(action: JSONObject) {
     val current = mutable.value.snapshot?.current ?: return
+    // Native Music songs carry the source "unknown", which the local event store rejects. Recording one would throw inside
+    // the launched coroutine and close the app on every skip, so only catalog and library songs get feedback.
+    if (current.song.source != "catalog" && current.song.source != "library") return
     val outcome =
         when (action.optString("kind")) {
             "playback.skip" -> {

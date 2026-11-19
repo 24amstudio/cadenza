@@ -13,6 +13,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.LyricDocument
+import app.cadenza.remote.data.LyricsTextSize
 
 private const val LINE_WITH_WORDS = "words"
 private const val LINE_PLAIN = "plain"
@@ -38,6 +39,7 @@ internal fun LyricList(
     userScroll: NestedScrollConnection,
     reduced: Boolean,
     translationRevealed: Boolean,
+    textSize: LyricsTextSize,
     canSeek: (Int) -> Boolean,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -81,6 +83,7 @@ internal fun LyricList(
                     translationRevealed = translationRevealed,
                     seekable = canSeek(index),
                     onSeek = { onSeek(line.startMs) },
+                    textSize = textSize,
                 )
             }
         }

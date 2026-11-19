@@ -26,13 +26,17 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.cadenza.remote.data.LyricLine
+import app.cadenza.remote.data.LyricsTextSize
 
 // Quick start, long settle: the tier of a line eases like Cadenza Web's lyric transition.
 private val lyricEase = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
@@ -64,6 +68,7 @@ internal fun LyricLineItem(
     translationRevealed: Boolean,
     seekable: Boolean,
     onSeek: () -> Unit,
+    textSize: LyricsTextSize,
     modifier: Modifier = Modifier,
 ) {
     // Opacity, blur and scale all follow this one value. They are read inside the graphicsLayer lambda, so a
@@ -96,11 +101,11 @@ internal fun LyricLineItem(
             },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LyricLineText(line, state, clock, reduced)
+        LyricLineText(line, state, clock, reduced, textSize)
         line.romanized?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(it, style = detailTextStyle(textSize), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        LyricTranslation(line.translation, translationRevealed)
+        LyricTranslation(line.translation, translationRevealed, textSize)
     }
 }
 
@@ -110,9 +115,10 @@ private fun LyricLineText(
     state: LyricLineState,
     clock: LyricsClock,
     reduced: Boolean,
+    textSize: LyricsTextSize,
 ) {
     val colors = MaterialTheme.colorScheme
-    val style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+    val style = lyricTextStyle(textSize)
     if (state.wordTimed && line.words.isNotEmpty()) {
         LyricWordsText(
             line = line,
@@ -135,10 +141,31 @@ private fun LyricLineText(
     Text(line.text, style = style, color = color)
 }
 
+// The standard lyric size is 28 sp on a 390 dp screen. It follows the screen width between 24 and 32 sp, and the chosen
+// multiplier applies on top, so lyrics fill a phone or a tablet without a fixed size that suits only one of them.
+@Composable
+private fun lyricTextStyle(size: LyricsTextSize): TextStyle {
+    val standardSp = (LocalConfiguration.current.screenWidthDp * 28f / 390f).coerceIn(24f, 32f)
+    val fontSize = (standardSp * size.scale).sp
+    return MaterialTheme.typography.headlineMedium.copy(
+        fontWeight = FontWeight.Bold,
+        fontSize = fontSize,
+        lineHeight = fontSize * 1.22f,
+    )
+}
+
+@Composable
+private fun detailTextStyle(size: LyricsTextSize): TextStyle =
+    MaterialTheme.typography.titleMedium.copy(
+        fontSize = (16f * size.scale).sp,
+        lineHeight = (24f * size.scale).sp,
+    )
+
 @Composable
 private fun LyricTranslation(
     translation: String?,
     revealed: Boolean,
+    textSize: LyricsTextSize,
 ) {
     AnimatedVisibility(
         visible = translation != null && revealed,
@@ -149,7 +176,7 @@ private fun LyricTranslation(
     ) {
         Text(
             translation.orEmpty(),
-            style = MaterialTheme.typography.titleMedium,
+            style = detailTextStyle(textSize),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

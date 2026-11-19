@@ -81,6 +81,7 @@ internal fun PlaybackTransport(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val snapshot = state.snapshot ?: return
     val current = snapshot.current ?: return
@@ -124,5 +125,7 @@ internal fun PlaybackTransport(
         ) {
             Icon(cadenzaVector(CadenzaIcon.NEXT), "Next song")
         }
+        if (trailingContent != null) Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
+        trailingContent?.invoke()
     }
 }

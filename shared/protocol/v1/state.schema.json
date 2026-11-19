@@ -27,6 +27,15 @@
       },
       "additionalProperties": false
     },
+    "autoPlayItem": {
+      "type": "object",
+      "required": ["title", "artist"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 500 },
+        "artist": { "type": "string", "maxLength": 500 }
+      },
+      "additionalProperties": false
+    },
     "songMetadata": {
       "type": "object",
       "required": ["source", "id", "title", "artist", "album"],

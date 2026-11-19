@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.BuildConfig
+import app.cadenza.remote.data.LyricsTextSize
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
@@ -137,6 +138,7 @@ fun SettingsScreen(
                     state = state,
                     chooseTransport = ::chooseTransport,
                 )
+                LyricsCard(model = model, state = state)
                 NotificationsCard(model = model, state = state)
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
@@ -254,6 +256,25 @@ private fun HostCard(
             style = MaterialTheme.typography.bodyMedium,
         )
         Text("Change this setting in Cadenza Host.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun LyricsCard(
+    model: RemoteModel,
+    state: RemoteState,
+) {
+    SettingsCard(
+        icon = CadenzaIcon.LYRICS,
+        title = "Lyrics",
+        supporting = "Choose how large lyrics are drawn. The size still follows the screen width.",
+    ) {
+        Text("Text size", style = MaterialTheme.typography.labelLarge)
+        ChoiceRow(
+            options = LyricsTextSize.entries.map { it.name to it.label },
+            selected = state.lyricsTextSize.name,
+            onSelected = { model.setLyricsTextSize(LyricsTextSize.valueOf(it)) },
+        )
     }
 }
 

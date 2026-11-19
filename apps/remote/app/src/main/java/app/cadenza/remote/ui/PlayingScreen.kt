@@ -236,6 +236,7 @@ private fun QueuePreview(state: RemoteState) {
             ?.queue
             .orEmpty()
             .take(8)
+    val autoPlay = state.snapshot?.autoPlay.orEmpty()
     Surface(
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -243,16 +244,25 @@ private fun QueuePreview(state: RemoteState) {
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Up next", style = MaterialTheme.typography.titleLarge)
-            if (entries.isEmpty()) {
+            if (entries.isEmpty() && autoPlay.isEmpty()) {
                 Text("Queue is empty", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                entries.forEachIndexed { index, entry ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("${index + 1}", color = MaterialTheme.colorScheme.primary)
-                        Column(Modifier.weight(1f)) {
-                            Text(entry.song.title, style = MaterialTheme.typography.titleMedium)
-                            Text(entry.song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+            }
+            entries.forEachIndexed { index, entry ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("${index + 1}", color = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.song.title, style = MaterialTheme.typography.titleMedium)
+                        Text(entry.song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            // Music plays these once the queue is empty, so they are the next songs the Host will play.
+            if (autoPlay.isNotEmpty()) {
+                Text("AutoPlay", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                autoPlay.forEach { song ->
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(song.title, style = MaterialTheme.typography.bodyLarge)
+                        Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

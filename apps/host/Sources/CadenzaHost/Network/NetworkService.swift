@@ -351,7 +351,9 @@ final class NetworkService {
     }
 
     private func send(_ data: Data, to peer: Peer, lane: Lane, transfer: String? = nil) {
-        guard peers[peer.id] != nil, data.count <= Wire.maximumMessageBytes else {
+        // A Remote that has already gone away is not an oversized message, so it gets no alert.
+        guard peers[peer.id] != nil else { return }
+        guard data.count <= Wire.maximumMessageBytes else {
             disconnect(peer.id)
             onIssue?("The Host closed a Remote connection after an outbound message exceeded the safety limit.")
             return

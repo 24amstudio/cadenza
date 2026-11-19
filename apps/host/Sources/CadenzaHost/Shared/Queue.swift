@@ -41,4 +41,12 @@ struct HostSnapshot: Codable, Equatable, Sendable {
     var issue: String? = nil
     var observationGap: Bool = false
     var sing: SingSession? = nil
+    var autoPlay: [AutoPlayItem] = []
+}
+
+// Music's AutoPlay songs, which play after the queue. Only the first few travel, so a state frame stays small.
+struct AutoPlayItem: Codable, Equatable, Sendable {
+    static let shownLimit = 8
+    var title: String
+    var artist: String
 }

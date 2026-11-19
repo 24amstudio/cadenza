@@ -24,7 +24,7 @@ import androidx.media3.ui.PlayerView
 import java.io.File
 
 // Album motion loops silently in the cover slot. It plays only while this screen is resumed and the Host is playing.
-// The still cover stays underneath and fades out only once the first video frame is on screen, so the switch never
+// The still cover stays on top and fades out only once the first video frame is on screen, so the switch never
 // flashes black. Reduced motion keeps the still cover. The Host sends the square rendition, so the default fit fills the slot.
 @Composable
 fun MotionArtwork(
@@ -70,18 +70,21 @@ fun MotionArtwork(
         onPauseOrDispose { player.playWhenReady = false }
     }
     Box(modifier) {
-        fallback()
-        AnimatedVisibility(visible = rendered, enter = fadeIn(), exit = fadeOut()) {
-            AndroidView(
-                factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        useController = false
-                        this.player = player
-                    }
-                },
-                update = { it.player = player },
-                modifier = Modifier.fillMaxSize(),
-            )
+        // The video surface exists only once its view is composed, and no frame renders without it. So the view is composed
+        // from the start, with a transparent shutter, and the still cover stays over it until the first frame is on screen.
+        AndroidView(
+            factory = { viewContext ->
+                PlayerView(viewContext).apply {
+                    useController = false
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    this.player = player
+                }
+            },
+            update = { it.player = player },
+            modifier = Modifier.fillMaxSize(),
+        )
+        AnimatedVisibility(visible = !rendered, enter = fadeIn(), exit = fadeOut()) {
+            fallback()
         }
     }
 }

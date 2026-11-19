@@ -4,6 +4,7 @@ import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.HostSnapshot
 import app.cadenza.remote.data.LyricDocument
+import app.cadenza.remote.data.LyricsTextSize
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
@@ -50,6 +51,7 @@ data class RemoteState(
     val loaded: Boolean = false,
     val clientName: String = "Android Remote",
     val theme: ThemePreference = ThemePreference.SYSTEM,
+    val lyricsTextSize: LyricsTextSize = LyricsTextSize.LARGE,
     val favorites: List<Song> = emptyList(),
     val capabilities: Set<String> = emptySet(),
     val sessionActive: Boolean = false,

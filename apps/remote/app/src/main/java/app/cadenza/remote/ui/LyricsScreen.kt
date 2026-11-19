@@ -123,7 +123,7 @@ fun LyricsScreen(
                         TrackIdentity(current, state.profile?.remoteId)
                         Spacer(Modifier.weight(1f))
                         PlaybackTimeline(model, state, currentPosition)
-                        PlaybackTransport(model, state, compact = true)
+                        LyricsTransport(model, state, current)
                         SingControls(model, state, current)
                     }
                     LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(0.58f).fillMaxHeight())
@@ -133,12 +133,28 @@ fun LyricsScreen(
                 LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
                 if (current != null) {
                     PlaybackTimeline(model, state, currentPosition)
-                    PlaybackTransport(model, state, compact = true)
+                    LyricsTransport(model, state, current)
                     SingControls(model, state, current)
                 }
             }
         }
     }
+}
+
+// Favorite sits after Next. The matching spacer before Previous keeps the transport centred on the screen.
+@Composable
+private fun LyricsTransport(
+    model: RemoteModel,
+    state: RemoteState,
+    current: CurrentPlayback,
+) {
+    PlaybackTransport(
+        model,
+        state,
+        compact = true,
+        leadingContent = { Spacer(Modifier.size(56.dp)) },
+        trailingContent = { FavoriteIconButton(model, state, current.song) },
+    )
 }
 
 @Composable
@@ -251,6 +267,7 @@ internal fun LyricsContent(
                         userScroll = userScroll,
                         reduced = reduced,
                         translationRevealed = translationReveal.targetState,
+                        textSize = state.lyricsTextSize,
                         canSeek = { index ->
                             val line = document.lines[index]
                             state.connected && !stale && mayInterruptPlayback(state) && line.endMs > line.startMs

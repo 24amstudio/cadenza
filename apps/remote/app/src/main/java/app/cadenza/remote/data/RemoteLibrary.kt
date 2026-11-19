@@ -14,6 +14,16 @@ enum class ThemePreference(
     DARK("Dark"),
 }
 
+// Lyric text as a multiple of the standard size, which itself follows the screen width. Large is the default.
+enum class LyricsTextSize(
+    val label: String,
+    val scale: Float,
+) {
+    STANDARD("Standard", 1f),
+    LARGE("Large", 1.5f),
+    EXTRA_LARGE("Extra large", 2f),
+}
+
 fun deviceName(context: Context): String {
     val configured = runCatching { Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull()
     return configured?.trim()?.takeIf { it.isNotEmpty() }?.take(80)

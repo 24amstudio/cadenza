@@ -23,7 +23,7 @@ Back up the private update key and APK keystore securely before publishing a bas
 
 ## Configure automatic Build CI publishing
 
-The `Build` workflow runs after a successful static `Checking` push to `main`. It repeats those checks, builds both apps with the `production` profile, signs the release metadata, and creates a unique stable release for every checked revision. Remote jobs have a six-minute limit; Host jobs have a fifteen-minute limit for the native archive and its bundled resources. CI derives a release version such as `0.1.4_20261101.260-e7ba37dcd30e` from the checked-in semantic version, the Checking run number, the UTC commit date, and the commit hash. The GitHub title is shown as `Cadenza 0.1.4_20261101.260 (e7ba37dcd30e)`. No manual version bump or tag is required for ordinary builds.
+The `Build` workflow runs on each push to `main`. Checking has already run on the pull request, so Build does not repeat it; it builds both apps with the `production` profile, signs the release metadata, and creates a unique stable release for every checked revision. Remote jobs have a six-minute limit; Host jobs have a fifteen-minute limit for the native archive and its bundled resources. CI derives a release version such as `0.1.4_20261101.260-e7ba37dcd30e` from the checked-in semantic version, the Build run number plus 393, the UTC commit date, and the commit hash. The GitHub title is shown as `Cadenza 0.1.4_20261101.260 (e7ba37dcd30e)`. No manual version bump or tag is required for ordinary builds.
 
 Generate the Android release keystore on a trusted machine with JDK `keytool`; never use the disposable debug keystore:
 
@@ -77,7 +77,7 @@ This file contains public configuration. Both native builds include it. Host set
 
 ## Build the release
 
-1. Change `VERSION_NAME` only when the user explicitly authorizes another product version. Ordinary CI builds leave `shared/version.properties` unchanged; CI supplies a strictly increasing Checking run number as the build code and derives the unique release version automatically.
+1. Change `VERSION_NAME` only when the user explicitly authorizes another product version. Ordinary CI builds leave `shared/version.properties` unchanged; CI supplies the Build run number plus 393 as the strictly increasing build code and derives the unique release version automatically.
 2. Run all required local portable and native checks.
 3. Build both apps with the explicit `production` profile, from identical source, using the preserved signing identities. Development and CI profiles cannot self-update.
 4. Put both versioned artifacts in `dist`.
@@ -106,4 +106,4 @@ Test a real upgrade from the previous signed installation on both targets. Exerc
 
 Ad-hoc macOS updates may require privacy-permission reauthorization. Huawei may require an install confirmation. Neither platform is promised permanently silent installation.
 
-Run the complete local gates before publishing. Checking runs on branches/PRs, and Build follows only successful same-repository `main` push checks for the exact SHA. Build uses Production signing secrets and publishes the signed APK, Host ZIP, release manifest, and detached signature. Real device, accessibility, security and resource verification remain local acceptance requirements. No DMG is required because the updater distributes a verified ZIP containing the native `.app`.
+Run the complete local gates before publishing. Checking runs on pull requests into `main`, and Build runs on each `main` push for the exact SHA. Build uses Production signing secrets and publishes the signed APK, Host ZIP, release manifest, and detached signature. Real device, accessibility, security and resource verification remain local acceptance requirements. No DMG is required because the updater distributes a verified ZIP containing the native `.app`.

@@ -15,7 +15,7 @@ if [[ "$#" -ge 1 ]]; then variant="$1"; fi
 [[ "$variant" == Debug || "$variant" == Release ]] || { printf '%s\n' 'Usage: build.sh [Debug|Release] [development|ci|production]' >&2; exit 2; }
 profile="${2:-development}"
 [[ "$profile" != production || "$variant" == Release ]] || { printf '%s\n' 'Production packaging requires Release.' >&2; exit 2; }
-[[ -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ]] || { printf '%s\n' 'Install Android SDK platform android-37.0 first; see docs/BUILDING.md. No SDK was downloaded.' >&2; exit 2; }
+[[ -f "$ANDROID_HOME/platforms/android-37.1/android.jar" ]] || { printf '%s\n' 'Install Android SDK platform android-37.1 first; see docs/BUILDING.md. No SDK was downloaded.' >&2; exit 2; }
 command -v javac >/dev/null || { printf '%s\n' 'An existing JDK 17+ is required.' >&2; exit 2; }
 cd "$remote_root"
 bash ./gradlew :app:ktlintCheck :app:testDebugUnitTest :app:lintDebug ":app:assemble$variant" "-Pcadenza.profile=$profile" --no-daemon

@@ -5,7 +5,7 @@ export ANDROID_USER_HOME="$project_root/.cache/android-user"
 mkdir -p "$ANDROID_USER_HOME"
 sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 [[ -x "$sdkmanager" ]] || { printf '%s\n' 'The runner must provide Android SDK command-line tools.' >&2; exit 2; }
-"$sdkmanager" --install 'platforms;android-37.0' 'build-tools;36.0.0'
+"$sdkmanager" --install 'platforms;android-37.1' 'build-tools;36.0.0'
 debug_keystore="$ANDROID_USER_HOME/debug.keystore"
 if [[ ! -f "$debug_keystore" ]]; then
   command -v keytool >/dev/null || { printf '%s\n' 'The runner must provide JDK keytool for the CI debug signer.' >&2; exit 2; }

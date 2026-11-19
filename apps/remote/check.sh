@@ -10,7 +10,7 @@ export ANDROID_HOME="$configured_sdk"
 export ANDROID_SDK_ROOT="$configured_sdk"
 export TMPDIR="$project_root/.cache/tmp"
 mkdir -p "$TMPDIR"
-[[ -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ]] || { printf '%s\n' 'Android SDK platform android-37.0 is required for native checks. Nothing was downloaded.' >&2; exit 2; }
+[[ -f "$ANDROID_HOME/platforms/android-37.1/android.jar" ]] || { printf '%s\n' 'Android SDK platform android-37.1 is required for native checks. Nothing was downloaded.' >&2; exit 2; }
 command -v javac >/dev/null || { printf '%s\n' 'An existing JDK 17+ is required.' >&2; exit 2; }
 cd "$remote_root"
 bash ./gradlew :app:ktlintCheck :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:compileDebugKotlin :app:compileReleaseKotlin --no-daemon

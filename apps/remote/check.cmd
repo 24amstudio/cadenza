@@ -1,8 +1,8 @@
 @echo off
 setlocal
 call "%~dp0..\..\tools\windows-env.cmd"
-if not exist "%ANDROID_HOME%\platforms\android-37.0\android.jar" (
-  echo Android SDK platform android-37.0 is missing. See docs/BUILDING.md. Nothing was downloaded.
+if not exist "%ANDROID_HOME%\platforms\android-37.1\android.jar" (
+  echo Android SDK platform android-37.1 is missing. See docs/BUILDING.md. Nothing was downloaded.
   exit /b 2
 )
 where javac >nul 2>nul

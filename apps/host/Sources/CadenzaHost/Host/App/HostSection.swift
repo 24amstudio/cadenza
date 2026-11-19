@@ -1,7 +1,7 @@
 /// Every pane the main window can show. The selection lives on the model, so it survives closing and reopening the
 /// window, and menu-bar commands can choose a pane.
 enum HostSection: Hashable, Identifiable {
-    case nowPlaying, remotes
+    case nowPlaying, remotes, logs
     case general, network, music, lyrics, storage, updates
 
     static let settings: [HostSection] = [.general, .network, .music, .lyrics, .storage, .updates]
@@ -12,6 +12,7 @@ enum HostSection: Hashable, Identifiable {
         switch self {
         case .nowPlaying: "Now Playing"
         case .remotes: "Remotes"
+        case .logs: "Logs"
         case .general: "General"
         case .network: "Network"
         case .music: "Music"
@@ -25,6 +26,7 @@ enum HostSection: Hashable, Identifiable {
         switch self {
         case .nowPlaying: "music.note"
         case .remotes: "ipad.and.iphone"
+        case .logs: "list.bullet.rectangle"
         case .general: "gearshape"
         case .network: "network"
         case .music: "music.note.list"

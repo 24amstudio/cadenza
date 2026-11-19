@@ -92,7 +92,7 @@ fun AnalyticsScreen(
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Your listening history will appear here", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Play a song from Search or Queue to start tracking plays on this Remote.",
+                            "Play a song from Search or Home to start tracking plays on this Remote.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -101,14 +101,22 @@ fun AnalyticsScreen(
         } else {
             item { Text("Songs", style = MaterialTheme.typography.titleLarge) }
             items(ordered, key = { it.source + ":" + it.songId }) { item ->
-                StatisticCard(model, state, item, ordered.maxOf { it.plays }.coerceAtLeast(1), onClick = { selected = item })
+                StatisticCard(
+                    model,
+                    state,
+                    item,
+                    ordered.maxOf { it.plays }.coerceAtLeast(1),
+                    onClick = {
+                        selected = item
+                        model.prepare(statisticSong(state, item))
+                    },
+                )
             }
         }
     }
     selected?.let { item ->
-        val song = Song(source = item.source, id = item.songId, title = item.title, artist = item.artist)
         ModalBottomSheet(onDismissRequest = { selected = null }) {
-            SongActions(model, state, song, Modifier.fillMaxWidth())
+            SongActions(model, state, statisticSong(state, item), Modifier.fillMaxWidth())
             androidx.compose.material3.TextButton(
                 onClick = {
                     model.removeHistory(item)
@@ -149,7 +157,7 @@ private fun StatisticCard(
     maximumPlays: Long,
     onClick: () -> Unit,
 ) {
-    val song = Song(source = item.source, id = item.songId, title = item.title, artist = item.artist)
+    val song = statisticSong(state, item)
     val saved = state.favorites.any { it.identity == song.identity }
     Surface(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -178,3 +186,12 @@ private fun StatisticCard(
         }
     }
 }
+
+// Music resolves a song by its identity first, then falls back to its title, artist and album when the identity is
+// stale. A Favorite carries the whole song, so it is preferred over the title and artist the history remembers.
+private fun statisticSong(
+    state: RemoteState,
+    item: SongStatistic,
+): Song =
+    state.favorites.firstOrNull { it.source == item.source && it.id == item.songId }
+        ?: Song(source = item.source, id = item.songId, title = item.title, artist = item.artist)

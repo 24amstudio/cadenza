@@ -9,6 +9,21 @@ const notifyCharacteristicUuid = '9f4c0003-4b9c-4f2d-9c2a-1c8f8b3d4a10';
 
 export const maximumBluetoothFrameBytes = 1_048_576;
 
+// The stream has no markers to resync on, so a lost fragment cannot be skipped: the declared length would swallow the
+// frames behind it. A frame that stops growing for this long is treated as damaged and the link is ended, so the page
+// reconnects from a clean state instead of staying silent behind a frame that can never finish.
+export const stalledBluetoothFrameMs = 10_000;
+
+// Web Bluetooth has no connect timeout of its own. Setting up the link (GATT connection, service lookup, notification
+// start) must finish inside this deadline, or the attempt fails and the caller retries.
+export const bluetoothSetupDeadlineMs = 12_000;
+
+// Frames waiting for the radio. A page that keeps sending while the link is stuck would otherwise grow without bound.
+export const maximumQueuedBluetoothBytes = 65_536;
+
+// One frame's writes must finish in this time. A write that never settles would otherwise hold every later frame.
+export const bluetoothWriteDeadlineMs = 15_000;
+
 // Web Bluetooth exposes no MTU negotiation, so writes use the 20 bytes that every link supports (ATT MTU 23 less its
 // 3-byte header).
 const writeChunkBytes = 20;
@@ -64,9 +79,24 @@ export class BluetoothFrameReader {
   private start = 0;
   private end = 0;
   private expectedBytes: number | null = null;
+  private lastProgressAt = 0;
 
-  // Returns every message completed by this chunk. A malformed length or encoding throws, and the caller ends the link.
+  constructor(private readonly now: () => number = () => performance.now()) {}
+
+  // Returns every message completed by this chunk. A malformed length, malformed encoding, or a frame that stalled
+  // throws, and the caller ends the link.
   append(chunk: Uint8Array): string[] {
+    const time = this.now();
+
+    if (
+      (this.expectedBytes !== null || this.end > this.start) &&
+      time - this.lastProgressAt > stalledBluetoothFrameMs
+    ) {
+      this.reset();
+      throw new Error('Cadenza Host stalled in the middle of a message.');
+    }
+
+    this.lastProgressAt = time;
     this.reserve(chunk.length);
     this.storage.set(chunk, this.end);
     this.end += chunk.length;
@@ -79,6 +109,7 @@ export class BluetoothFrameReader {
         const length = readUint32(this.storage, this.start);
 
         if (length > maximumBluetoothFrameBytes) {
+          this.reset();
           throw new Error('Cadenza Host sent an invalid Bluetooth frame.');
         }
 
@@ -96,6 +127,12 @@ export class BluetoothFrameReader {
       this.start += this.expectedBytes;
       this.expectedBytes = null;
     }
+  }
+
+  private reset(): void {
+    this.start = 0;
+    this.end = 0;
+    this.expectedBytes = null;
   }
 
   // Makes room for `extra` bytes. Unread bytes move to the front, or into a larger buffer if they still do not fit.
@@ -273,20 +310,52 @@ async function connectDevice(device: BluetoothDevice): Promise<BluetoothLink> {
   traceEvent('bluetooth: connecting to GATT server');
 
   try {
-    const server = await gatt.connect();
-    const service = await server.getPrimaryService(bluetoothServiceUuid);
-    const write = await service.getCharacteristic(writeCharacteristicUuid);
-    const notify = await service.getCharacteristic(notifyCharacteristicUuid);
-    const socket = linkSocket(device, gatt, write, notify);
+    // Notifications start last, and only after the value listener is attached, so the first Host frame is not missed.
+    const setup = (async () => {
+      const server = await gatt.connect();
+      const service = await server.getPrimaryService(bluetoothServiceUuid);
+      const write = await service.getCharacteristic(writeCharacteristicUuid);
+      const notify = await service.getCharacteristic(notifyCharacteristicUuid);
+      const socket = linkSocket(device, gatt, write, notify);
 
-    await notify.startNotifications();
-    traceEvent('bluetooth: notifications on');
+      await notify.startNotifications();
+      traceEvent('bluetooth: notifications on');
 
-    return { socket, deviceId: device.id };
+      return { socket, deviceId: device.id };
+    })();
+
+    return await withDeadline(setup, bluetoothSetupDeadlineMs, () =>
+      gatt.disconnect(),
+    );
   } catch (error) {
     traceEvent('bluetooth: connection failed', error);
     gatt.disconnect();
     throw error;
+  }
+}
+
+// Rejects when `promise` has not settled in time, and runs `onTimeout` so a stuck GATT attempt is abandoned.
+export async function withDeadline<T>(
+  promise: Promise<T>,
+  deadlineMs: number,
+  onTimeout: () => void,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+
+      reject(new Error('Bluetooth did not answer in time.'));
+    }, deadlineMs);
+  });
+
+  try {
+    return await Promise.race([promise, expired]);
+  } finally {
+    clearTimeout(timer);
+    // The abandoned attempt may still reject later, and nothing is waiting for it.
+    promise.catch(() => undefined);
   }
 }
 
@@ -326,18 +395,43 @@ function linkSocket(
   const reader = new BluetoothFrameReader();
   let closed = false;
   let writes: Promise<void> = Promise.resolve();
+  let queuedBytes = 0;
 
   const socket: SocketLike = {
     onOpen: null,
     onMessage: null,
     onClose: null,
     send(text) {
+      if (closed) return;
+
       const chunks = bluetoothChunks(text);
+      const bytes = chunks.reduce((total, chunk) => total + chunk.length, 0);
+
+      // A link that is not draining ends instead of buffering without bound. The page reconnects and asks for state.
+      if (queuedBytes + bytes > maximumQueuedBluetoothBytes) {
+        traceEvent('bluetooth: write queue is full');
+        gatt.disconnect();
+
+        return;
+      }
+
+      queuedBytes += bytes;
 
       // Writes run one at a time, because a Bluetooth link accepts one pending write at once.
-      writes = writes.then(() => writeFrameChunks(write, chunks));
+      writes = writes
+        .then(() =>
+          withDeadline(
+            writeFrameChunks(write, chunks),
+            bluetoothWriteDeadlineMs,
+            () => gatt.disconnect(),
+          ),
+        )
+        .finally(() => {
+          queuedBytes -= bytes;
+        });
 
       writes.catch((error) => {
+        if (closed) return;
         traceEvent('bluetooth: write failed', error);
         gatt.disconnect();
       });

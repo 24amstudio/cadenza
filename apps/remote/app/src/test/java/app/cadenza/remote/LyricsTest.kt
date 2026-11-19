@@ -6,9 +6,11 @@ import app.cadenza.remote.data.LyricWord
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.model.id
 import app.cadenza.remote.ui.activeLyricIndices
+import app.cadenza.remote.ui.lyricsSourceLabel
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -135,5 +137,13 @@ class LyricsTest {
                 .single()
                 .endMs,
         )
+    }
+
+    @Test
+    fun onlyTheFallbackProviderIsNamedAsALyricsSource() {
+        val document = LyricDocument("a", "b", "original", listOf(LyricLine("1", "Line", 0, 1_000, null)), null)
+        assertNull(lyricsSourceLabel(document))
+        assertNull(lyricsSourceLabel(document.copy(source = "apple_music")))
+        assertEquals("Lyrics from LRCLIB", lyricsSourceLabel(document.copy(source = "lrclib")))
     }
 }

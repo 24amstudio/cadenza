@@ -131,6 +131,8 @@
         "allow_cross_remote_edits",
         "playing",
         "volume",
+        "shuffle",
+        "repeat",
         "queue",
         "quality",
         "synchronized",
@@ -147,6 +149,8 @@
         "allow_cross_remote_edits": { "type": "boolean" },
         "playing": { "type": "boolean" },
         "volume": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "shuffle": { "type": "boolean" },
+        "repeat": { "enum": ["off", "one", "all"] },
         "current": { "$ref": "#/$defs/current" },
         "queue": {
           "type": "array",
@@ -178,6 +182,7 @@
         "start_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
         "end_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
         "translation": { "type": "string", "maxLength": 20000 },
+        "align": { "enum": ["start", "end"] },
         "words": {
           "type": "array",
           "maxItems": 1000,

@@ -4,21 +4,27 @@ import Foundation
 @MainActor
 final class MusicBridge {
     let accessibility = MusicAccessibility()
+    /// Replaces the osascript process in tests, so the coordinator's dispatch and verification run without Music.
+    var scriptRunner: (@MainActor ([String]) async throws -> Data)?
     var logger: HostLogger? {
         didSet { accessibility.logger = logger }
     }
 
+    /// `deadline` is the last moment the action may still be dispatched. Unless `boundsRuntime` is false it also caps how
+    /// long the script may run, which suits reads. A dispatched action is never cut short by the dispatch deadline.
     private func script(
-        _ arguments: [String], deadline: Int64? = nil, timeout limit: TimeInterval = 2
+        _ arguments: [String], deadline: Int64? = nil, timeout limit: TimeInterval = 2, boundsRuntime: Bool = true
     ) async throws -> Data {
         if let deadline, monotonicMs() >= deadline {
             throw CadenzaError.failure("expired", "The action expired before dispatch.")
         }
+        if let scriptRunner { return try await scriptRunner(arguments) }
         guard let url = HostResources.bundle.url(forResource: "music", withExtension: "js", subdirectory: "Resources")
         else {
             throw CadenzaError.failure("music_unavailable", "The Music automation script is missing.")
         }
-        let timeout = deadline.map { min(0.9, max(0.01, Double($0 - monotonicMs()) / 1_000)) } ?? limit
+        let timeout =
+            deadline.flatMap { boundsRuntime ? min(1.5, max(0.05, Double($0 - monotonicMs()) / 1_000)) : nil } ?? limit
         let started = monotonicMs()
         do {
             let data = try await Subprocess.run(
@@ -52,24 +58,35 @@ final class MusicBridge {
     func status(deadline: Int64? = nil) async throws -> MusicStatus {
         let started = monotonicMs()
         var status = try await Wire.decode(MusicStatus.self, from: script(["status"], deadline: deadline))
-        let finished = monotonicMs()
 
         status.sampledAtMs = MusicStatus.sampleTime(
-            readAtMs: status.readAtMs, startedMs: started, finishedMs: finished, nowWallMs: wallMs())
+            readAtMs: status.readAtMs, startedMs: started, finishedMs: monotonicMs(), nowWallMs: wallMs())
 
         return status
     }
 
     func librarySearch(_ query: String) async throws -> [Song] {
         // Broad queries scan the whole library and take over 2 seconds to describe their results.
-        try await Wire.decode([Song].self, from: script(["search", query], timeout: 8))
+        do {
+            return try await Wire.decode([Song].self, from: script(["search", query], timeout: 8))
+        } catch { throw Self.libraryFailure(error) }
     }
 
     func resolve(_ identity: SongIdentity) async throws -> Song {
         guard identity.source == "library", Wire.validate(identity) else {
             throw CadenzaError.failure("invalid_command", "Invalid library track.")
         }
-        return try await Wire.decode(Song.self, from: script(["resolve", identity.id]))
+        do {
+            return try await Wire.decode(Song.self, from: script(["resolve", identity.id]))
+        } catch { throw Self.libraryFailure(error) }
+    }
+
+    /// Music reports a library track it cannot find as an Apple event error. A Remote gets a plain answer instead.
+    private static func libraryFailure(_ error: Error) -> Error {
+        guard let failure = error as? CadenzaError, failure.code == "music_unavailable" else { return error }
+        let text = failure.localizedDescription
+        guard text.contains("(-2700)") || text.contains("library track is unavailable") else { return error }
+        return CadenzaError.failure("not_found", "This song is no longer in your Music library.")
     }
 
     // Music's own artwork is the authority for the track it plays, including streams with no catalog match.
@@ -93,15 +110,44 @@ final class MusicBridge {
         _ = try await script(["skip"], deadline: deadline)
     }
 
-    func control(_ action: CommandAction, deadline: Int64) async throws {
+    /// Dispatches one transport action and returns Music's state read right after it, when the script could read it.
+    /// `deadline` gates dispatch only: once Music has the action, the script runs to its own limit.
+    @discardableResult
+    func control(_ action: CommandAction, deadline: Int64) async throws -> MusicStatus? {
+        let arguments = try Self.controlArguments(action)
+        let started = monotonicMs()
+        let output = try await script(arguments, deadline: deadline, timeout: 3, boundsRuntime: false)
+        guard var status = try? Wire.decode(ControlReply.self, from: output).status else { return nil }
+
+        status.sampledAtMs = MusicStatus.sampleTime(
+            readAtMs: status.readAtMs, startedMs: started, finishedMs: monotonicMs(), nowWallMs: wallMs())
+
+        return status
+    }
+
+    private struct ControlReply: Decodable {
+        var status: MusicStatus?
+    }
+
+    static func controlArguments(_ action: CommandAction) throws -> [String] {
         let operation = action.kind.replacingOccurrences(of: "playback.", with: "")
-        guard ["pause", "resume", "skip", "previous", "stop", "seek", "volume"].contains(operation) else {
-            throw CadenzaError.failure("invalid_command", "Unknown playback action.")
+        switch operation {
+        case "pause", "resume", "skip", "previous", "stop": return [operation]
+        case "seek":
+            guard let position = action.positionMs else { break }
+            return [operation, String(position)]
+        case "volume":
+            guard let percent = action.percent else { break }
+            return [operation, String(percent)]
+        case "shuffle":
+            guard let enabled = action.enabled else { break }
+            return [operation, enabled ? "true" : "false"]
+        case "repeat":
+            guard let mode = action.mode, ["off", "one", "all"].contains(mode) else { break }
+            return [operation, mode]
+        default: break
         }
-        var arguments = [operation]
-        if let position = action.positionMs { arguments.append(String(position)) }
-        if let percent = action.percent { arguments.append(String(percent)) }
-        _ = try await script(arguments, deadline: deadline)
+        throw CadenzaError.failure("invalid_command", "Unknown playback action.")
     }
 
     func prepare(_ song: Song, isCurrent: () -> Bool) async throws {
@@ -111,7 +157,7 @@ final class MusicBridge {
             .info, category: "music", action: "prepare.started", "Preparing \(song.title) in Music",
             metadata: songDetails)
         if song.source == "library" {
-            _ = try await script(["reveal", song.id])
+            do { _ = try await script(["reveal", song.id]) } catch { throw Self.libraryFailure(error) }
         } else {
             guard let value = song.url, var components = URLComponents(string: value),
                 components.scheme == "https", components.host == "music.apple.com",

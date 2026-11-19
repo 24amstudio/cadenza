@@ -2,6 +2,7 @@ package app.cadenza.remote.model
 
 import android.os.SystemClock
 import androidx.lifecycle.viewModelScope
+import app.cadenza.remote.data.ClockSync
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.Wire
@@ -35,7 +36,7 @@ internal suspend fun RemoteModel.sendCommand(
                 .frame("command")
                 .put("command_id", id())
                 .put("host_epoch", snapshot.hostEpoch)
-                .put("expires_at_host_ms", clock.deadline(SystemClock.elapsedRealtime()))
+                .put("expires_at_host_ms", clock.deadline(SystemClock.elapsedRealtime(), deadlineWindow(action)))
                 .put("expected_revision", snapshot.revision)
                 .put("action", action)
         val commandId = command.getString("command_id")
@@ -69,8 +70,14 @@ internal suspend fun RemoteModel.sendCommand(
     }
 }
 
-// The Host normally answers within about a second. Past that the Remote asks for the status of the request.
-// After a grace period it stops showing the intent and says so. Either way it never blocks the screen.
+private fun deadlineWindow(action: JSONObject): Long =
+    if (action.optString("kind").startsWith("playback.")) ClockSync.TRANSPORT_WINDOW_MS else ClockSync.DEFAULT_WINDOW_MS
+
+// The Host normally answers within about a second, and the optimistic intent covers that wait. Past a second the
+// Remote asks for the request's status every second. The "outcome unknown" notice appears only when the Host itself
+// reports the outcome unconfirmed and still has no answer after a grace period: the Host gives the same answer for a
+// command it is still applying, which usually resolves within a second or two. Silence from the Host shows nothing;
+// the intent just stops being predicted once it is old, and the Host's snapshot shows what happened.
 internal fun RemoteModel.trackPending(
     command: JSONObject,
     key: String,
@@ -79,18 +86,36 @@ internal fun RemoteModel.trackPending(
     val commandId = command.getString("command_id")
     val timer =
         viewModelScope.launch {
-            delay(1_000)
-            if (pending.containsKey(commandId)) queryRequest(commandId)
-            delay(4_000)
-            val item = pending[commandId] ?: return@launch
-            if (item.unconfirmed) return@launch
-            item.unconfirmed = true
-            publishOptimisticInternal()
-            showWarning(UNCONFIRMED_MESSAGE)
+            while (true) {
+                delay(STATUS_QUERY_MS)
+                val item = pending[commandId] ?: return@launch
+                val age = SystemClock.elapsedRealtime() - item.trackedAtElapsedMs
+                queryRequest(commandId)
+                if (item.hostUnconfirmed) {
+                    warnUnconfirmedIfDue(item)
+                } else if (age >= INTENT_LIFETIME_MS && !item.unconfirmed) {
+                    item.unconfirmed = true
+                    publishOptimisticInternal()
+                }
+                if (age >= GIVE_UP_MS) return@launch
+            }
         }
     pending[commandId] = PendingCommand(command, key, timer, intent)
     publishOptimisticInternal()
 }
+
+internal fun RemoteModel.warnUnconfirmedIfDue(item: PendingCommand) {
+    if (item.warned || SystemClock.elapsedRealtime() - item.trackedAtElapsedMs < UNCONFIRMED_GRACE_MS) return
+    item.warned = true
+    item.unconfirmed = true
+    publishOptimisticInternal()
+    showWarning(UNCONFIRMED_MESSAGE)
+}
+
+private const val STATUS_QUERY_MS = 1_000L
+private const val UNCONFIRMED_GRACE_MS = 3_000L
+private const val INTENT_LIFETIME_MS = 10_000L
+private const val GIVE_UP_MS = 30_000L
 
 internal fun RemoteModel.optimisticIntents(): List<OptimisticIntent> = pending.values.filterNot { it.unconfirmed }.mapNotNull { it.intent }
 

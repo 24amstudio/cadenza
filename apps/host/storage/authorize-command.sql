@@ -46,9 +46,11 @@ SELECT CASE
   WHEN :kind IS NULL OR :kind NOT IN (
     'queue.enqueue', 'queue.remove', 'queue.move', 'playback.pause',
     'playback.resume', 'playback.skip', 'playback.previous',
-    'playback.stop', 'playback.seek', 'playback.volume', 'queue.play_now', 'queue.play_next'
+    'playback.stop', 'playback.seek', 'playback.volume', 'playback.shuffle', 'playback.repeat',
+    'queue.play_now', 'queue.play_next'
   ) THEN 'invalid_command'
-  WHEN :kind IN ('queue.enqueue', 'queue.play_next', 'playback.volume') THEN 'allowed'
+  WHEN :kind IN ('queue.enqueue', 'queue.play_next', 'playback.volume', 'playback.shuffle', 'playback.repeat')
+    THEN 'allowed'
   WHEN :kind = 'queue.play_now' AND :entry_id IS NULL THEN 'allowed'
   WHEN :kind IN ('playback.pause', 'playback.resume') AND :entry_id IS NULL THEN 'allowed'
   -- A current Music track without a Cadenza Host queue binding is external

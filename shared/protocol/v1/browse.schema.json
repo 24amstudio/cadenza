@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:browse",
+  "$defs": {
+    "getFrame": {
+      "type": "object",
+      "required": ["request_id", "browse"],
+      "properties": {
+        "request_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "browse": { "$ref": "#/$defs/request" }
+      }
+    },
+    "resultFrame": {
+      "type": "object",
+      "required": ["request_id", "browse"],
+      "properties": {
+        "request_id": { "$ref": "urn:cadence:protocol:v1:common#/$defs/uuid" },
+        "browse": { "$ref": "#/$defs/result" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["album", "artist", "playlists", "playlist"]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "song": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "playlists"
+            },
+            "id": false,
+            "song": false
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "playlist"
+            },
+            "id": {
+              "pattern": "^[0-9A-F]{16}$",
+              "type": "string"
+            },
+            "song": false
+          },
+          "required": ["id"]
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": ["album", "artist"]
+            },
+            "id": {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            "song": false
+          },
+          "required": ["id"]
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": ["album", "artist"]
+            },
+            "id": false,
+            "song": {}
+          },
+          "required": ["song"]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "artworkUrl": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https://[^/]+\\.mzstatic\\.com/"
+    },
+    "item": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "song"],
+          "properties": {
+            "type": {
+              "const": "song"
+            },
+            "song": {
+              "$ref": "urn:cadence:protocol:v1:state#/$defs/song"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "id", "title"],
+          "properties": {
+            "type": {
+              "enum": ["album", "artist", "playlist"]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "subtitle": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "artwork_url": {
+              "$ref": "#/$defs/artworkUrl"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "section": {
+      "type": "object",
+      "required": ["id", "title", "items"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["kind", "id", "title", "sections"],
+      "properties": {
+        "kind": {
+          "enum": ["album", "artist", "playlists", "playlist"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "artwork_url": {
+          "$ref": "#/$defs/artworkUrl"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/section"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -13,6 +13,8 @@ import org.json.JSONObject
 // video is published only after its digest verifies and the song is still playing.
 internal fun RemoteModel.requestMotion(occurrenceId: String) {
     if (transportMode == "ble" || "motion.host-cache" !in mutable.value.capabilities) return
+    // Animated cover video is the largest download and decode of a song, so Saver skips it unless the user allows it.
+    if (!energy.profile.value.motionArtwork) return
     motionRequestId = id()
     motionStartedAtElapsedMs = SystemClock.elapsedRealtime()
     motionAssembly = null

@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.data.LyricsTextSize
 import app.cadenza.remote.data.ThemePreference
@@ -51,6 +52,7 @@ import app.cadenza.remote.model.installHostUpdate
 import app.cadenza.remote.model.installing
 import app.cadenza.remote.model.showChangelog
 import app.cadenza.remote.model.showError
+import app.cadenza.remote.ui.settings.EnergyCard
 import app.cadenza.remote.updates.Changelog
 
 @Composable
@@ -87,7 +89,7 @@ fun SettingsScreen(
     }
 
     if (debugOpen) {
-        DebugScreen(state, onBack = { debugOpen = false })
+        DebugScreen(state, onBack = { debugOpen = false }, energy = model.energyState.collectAsStateWithLifecycle().value)
         return
     }
 
@@ -139,6 +141,7 @@ fun SettingsScreen(
                     chooseTransport = ::chooseTransport,
                 )
                 LyricsCard(model = model, state = state)
+                EnergyCard(model)
                 NotificationsCard(model = model, state = state)
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
@@ -445,7 +448,7 @@ private fun SupportUpdatesCard(
 }
 
 @Composable
-private fun SettingsCard(
+internal fun SettingsCard(
     icon: CadenzaIcon,
     title: String,
     supporting: String,
@@ -489,7 +492,7 @@ private fun SettingsCard(
 }
 
 @Composable
-private fun ChoiceRow(
+internal fun ChoiceRow(
     options: List<Pair<String, String>>,
     selected: String,
     onSelected: (String) -> Unit,

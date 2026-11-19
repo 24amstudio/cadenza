@@ -1,42 +1,57 @@
 <script setup lang="ts">
-import { nextTick, ref, useTemplateRef } from 'vue';
+import { computed, nextTick, ref, useTemplateRef } from 'vue';
+import PlaylistsPanel from '~/components/browse/PlaylistsPanel.vue';
 import FavoritesPanel from '~/components/library/FavoritesPanel.vue';
 import HistoryPanel from '~/components/library/HistoryPanel.vue';
+import { useHostStore } from '~/stores/host';
 
-type Tab = 'favorites' | 'history';
+type Tab = 'favorites' | 'history' | 'playlists';
 
-const tabs: { id: Tab; label: string }[] = [
+const host = useHostStore();
+
+// Playlists come from the Host, so the tab is there only when the Host can browse.
+const tabs = computed<{ id: Tab; label: string }[]>(() => [
   { id: 'favorites', label: 'Favorites' },
   { id: 'history', label: 'History' },
-];
+  ...(host.supportsBrowse
+    ? [{ id: 'playlists' as const, label: 'Playlists' }]
+    : []),
+]);
 
-const selected = ref<Tab>('favorites');
+const chosen = ref<Tab>('favorites');
+
+const selected = computed(() =>
+  tabs.value.some((tab) => tab.id === chosen.value)
+    ? chosen.value
+    : 'favorites',
+);
+
 const tabButtons = useTemplateRef<HTMLButtonElement[]>('tab');
 
 // The tab pattern moves between tabs with the arrow keys, and Home and End jump to the first and last.
 function tabIndexAfter(key: string, index: number): number | null {
   switch (key) {
     case 'ArrowRight':
-      return (index + 1) % tabs.length;
+      return (index + 1) % tabs.value.length;
     case 'ArrowLeft':
-      return (index + tabs.length - 1) % tabs.length;
+      return (index + tabs.value.length - 1) % tabs.value.length;
     case 'Home':
       return 0;
     case 'End':
-      return tabs.length - 1;
+      return tabs.value.length - 1;
     default:
       return null;
   }
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  const index = tabs.findIndex((tab) => tab.id === selected.value);
+  const index = tabs.value.findIndex((tab) => tab.id === selected.value);
   const next = tabIndexAfter(event.key, index);
-  const tab = next === null ? undefined : tabs[next];
+  const tab = next === null ? undefined : tabs.value[next];
 
   if (next === null || tab === undefined) return;
   event.preventDefault();
-  selected.value = tab.id;
+  chosen.value = tab.id;
   void nextTick(() => tabButtons.value?.[next]?.focus());
 }
 </script>
@@ -64,7 +79,7 @@ function onKeydown(event: KeyboardEvent): void {
         :aria-selected="selected === tab.id"
         :aria-controls="`panel-${tab.id}`"
         :tabindex="selected === tab.id ? 0 : -1"
-        @click="selected = tab.id"
+        @click="chosen = tab.id"
       >
         {{ tab.label }}
       </button>
@@ -87,6 +102,15 @@ function onKeydown(event: KeyboardEvent): void {
       tabindex="0"
     >
       <HistoryPanel />
+    </div>
+    <div
+      v-if="selected === 'playlists'"
+      id="panel-playlists"
+      role="tabpanel"
+      aria-labelledby="tab-playlists"
+      tabindex="0"
+    >
+      <PlaylistsPanel />
     </div>
   </section>
 </template>
@@ -115,7 +139,7 @@ h1 {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 2px;
-  max-width: 320px;
+  max-width: 440px;
   padding: 4px;
   border-radius: 12px;
   background: var(--color-fill);

@@ -19,6 +19,22 @@ internal fun lyricTier(
     return distance.coerceAtMost(TIER_FAR.toInt()).toFloat()
 }
 
+/**
+ * Whether a receding line is close enough to the active lines to deserve a blur. Lines past [blurLines] are already
+ * faint, so they recede by opacity alone and the GPU blurs only the few lines that are readable. Before the first line
+ * starts, the opening lines count as near.
+ */
+internal fun inBlurWindow(
+    index: Int,
+    active: List<Int>,
+    blurLines: Int,
+): Boolean =
+    when {
+        blurLines <= 0 -> false
+        active.isEmpty() -> index < blurLines
+        else -> active.any { abs(index - it) <= blurLines }
+    }
+
 private fun tierValue(
     tier: Float,
     active: Float,

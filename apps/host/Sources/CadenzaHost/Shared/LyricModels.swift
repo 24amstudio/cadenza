@@ -14,6 +14,8 @@ struct LyricLine: Codable, Identifiable, Sendable {
     var words: [LyricWord] = []
     var romanized: String? = nil
     var translation: String? = nil
+    // "end" places a second singer's line at the end; absent means start.
+    var align: String? = nil
 }
 
 struct LyricDocument: Codable, Sendable {

@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-enum HostLogLevel: String, Sendable {
+enum HostLogLevel: String, Sendable, Codable {
     case debug, info, warning, error
 }
 
@@ -39,7 +39,10 @@ final class HostLogger: @unchecked Sendable {
 
     private let buffer = OSAllocatedUnfairLock(initialState: Buffer())
     // Only the main actor touches the database; the buffer is the only state shared across threads.
-    private let database: Database
+    let database: Database
+    /// Receives each batch after it is stored, with the id of its first row. Only a visible log viewer sets it, so
+    /// logging does no extra work while nobody is watching.
+    var onFlush: (@MainActor (_ firstId: Int64, _ batch: [Entry]) -> Void)?
     private var lastPurgeAt = Int64.min
 
     @MainActor
@@ -108,17 +111,23 @@ final class HostLogger: @unchecked Sendable {
         }
         if !batch.isEmpty {
             // Logging must never take down playback or control, so a failed write drops the batch.
-            try? database.transaction {
-                for entry in batch {
-                    try database.run(
-                        "INSERT INTO system_logs(created_at_ms,unix_timestamp,host_version,remote_version,source,action,level,category,message,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                        [
-                            .integer(entry.createdAtMs), .integer(entry.unixTimestamp), .text(HostBuild.version),
-                            entry.remoteVersion.map(SQLValue.text) ?? .null, .text(entry.source),
-                            .text(entry.action), .text(entry.level.rawValue), .text(entry.category),
-                            .text(entry.message), entry.metadataJSON.map(SQLValue.text) ?? .null,
-                        ])
-                }
+            let stored: Bool =
+                (try? database.transaction {
+                    for entry in batch {
+                        try database.run(
+                            "INSERT INTO system_logs(created_at_ms,unix_timestamp,host_version,remote_version,source,action,level,category,message,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            [
+                                .integer(entry.createdAtMs), .integer(entry.unixTimestamp), .text(HostBuild.version),
+                                entry.remoteVersion.map(SQLValue.text) ?? .null, .text(entry.source),
+                                .text(entry.action), .text(entry.level.rawValue), .text(entry.category),
+                                .text(entry.message), entry.metadataJSON.map(SQLValue.text) ?? .null,
+                            ])
+                    }
+                    return true
+                }) ?? false
+            if stored, let onFlush {
+                // Rows of one batch are contiguous: the transaction holds the write lock until it commits.
+                onFlush(database.lastInsertedRowId - Int64(batch.count) + 1, batch)
             }
         }
         if monotonicMs() - lastPurgeAt > 3_600_000 { try? purge() }

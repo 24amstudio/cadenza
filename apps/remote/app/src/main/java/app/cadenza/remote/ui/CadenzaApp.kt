@@ -33,6 +33,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,12 +48,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.energy.LocalEnergyProfile
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.dismissNotice
 import app.cadenza.remote.model.dismissPrompt
 import app.cadenza.remote.model.id
 import app.cadenza.remote.model.recordUserAction
 import app.cadenza.remote.model.requestArtwork
+import app.cadenza.remote.ui.browse.BrowseNavigator
+import app.cadenza.remote.ui.browse.BrowseScreen
+import app.cadenza.remote.ui.browse.LocalBrowseNavigator
 
 private data class Destination(
     val id: Int,
@@ -64,7 +69,6 @@ private val destinations =
     listOf(
         Destination(0, "Home", CadenzaIcon.HOME),
         Destination(1, "Search", CadenzaIcon.SEARCH),
-        Destination(2, "Queue", CadenzaIcon.QUEUE),
         Destination(4, "Analytics", CadenzaIcon.ANALYTICS),
         Destination(5, "Settings", CadenzaIcon.SETTINGS),
     )
@@ -76,12 +80,14 @@ fun CadenzaApp(
     installUpdate: (String) -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
+    val energyProfile by model.energyProfile.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var destination by rememberSaveable { mutableIntStateOf(0) }
     var lyricsMode by rememberSaveable { mutableStateOf(false) }
     var restoreLyricsFocus by remember { mutableStateOf(false) }
     var nowPlayingOpen by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
+    val browseNavigator = rememberSaveable(saver = BrowseNavigator.Saver) { BrowseNavigator() }
 
     fun closeLyrics() {
         lyricsMode = false
@@ -110,7 +116,11 @@ fun CadenzaApp(
             StartupScreen()
             return@MaterialExpressiveTheme
         }
-        CompositionLocalProvider(LocalArtworkHost provides ArtworkHost(state.artwork) { url -> model.requestArtwork(url) }) {
+        CompositionLocalProvider(
+            LocalArtworkHost provides ArtworkHost(state.artwork) { url -> model.requestArtwork(url) },
+            LocalEnergyProfile provides energyProfile,
+            LocalBrowseNavigator provides browseNavigator,
+        ) {
             LaunchedEffect(state.notice?.id) {
                 state.notice?.let {
                     snackbar.showSnackbar(it.message)
@@ -124,6 +134,9 @@ fun CadenzaApp(
                     lyricsMode = true
                 }
             }
+            // A browse page opens over the current tab. Opening one from Now Playing closes the player first.
+            LaunchedEffect(browseNavigator.stack.size) { if (browseNavigator.stack.isNotEmpty()) nowPlayingOpen = false }
+            BackHandler(enabled = browseNavigator.stack.isNotEmpty() && !lyricsMode && !nowPlayingOpen) { browseNavigator.back() }
             BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
             BackHandler(enabled = nowPlayingOpen && !lyricsMode && state.profile != null) { nowPlayingOpen = false }
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -146,6 +159,7 @@ fun CadenzaApp(
                                             onClick = {
                                                 destination = item.id
                                                 nowPlayingOpen = false
+                                                browseNavigator.clear()
                                             },
                                             icon = {
                                                 Icon(
@@ -161,10 +175,13 @@ fun CadenzaApp(
                         }
                     },
                 ) { outerPadding ->
-                    Box(Modifier.fillMaxSize().padding(outerPadding)) {
-                        if (lyricsMode && state.profile != null) {
+                    SurfaceHost(
+                        surfaceOf(state.profile != null, lyricsMode, nowPlayingOpen),
+                        Modifier.fillMaxSize().padding(outerPadding),
+                    ) { surface ->
+                        if (surface == Surface.Lyrics) {
                             LyricsScreen(model, state, onExit = ::closeLyrics)
-                        } else if (nowPlayingOpen && state.profile != null) {
+                        } else if (surface == Surface.NowPlaying) {
                             PlayingScreen(
                                 model,
                                 state,
@@ -185,6 +202,7 @@ fun CadenzaApp(
                                                     onClick = {
                                                         destination = item.id
                                                         nowPlayingOpen = false
+                                                        browseNavigator.clear()
                                                     },
                                                     icon = { Icon(cadenzaVector(item.icon), contentDescription = null) },
                                                     label = { Text(item.label) },
@@ -193,8 +211,13 @@ fun CadenzaApp(
                                         }
                                     }
                                     Box(Modifier.weight(1f).fillMaxHeight()) {
+                                        val browseTarget = browseNavigator.current
                                         if (state.profile == null) {
                                             PairingScreen(model, state)
+                                        } else if (browseTarget != null) {
+                                            key(browseTarget.key) {
+                                                BrowseScreen(model, state, browseTarget, onBack = { browseNavigator.back() })
+                                            }
                                         } else {
                                             screenState.SaveableStateProvider(destination) {
                                                 when (destination) {
@@ -208,7 +231,6 @@ fun CadenzaApp(
                                                             onOpenLyrics = { lyricsMode = true },
                                                         )
                                                     1 -> SearchScreen(model, state)
-                                                    2 -> QueueScreen(model, state)
                                                     4 -> AnalyticsScreen(model, state)
                                                     else -> SettingsScreen(model, state, installUpdate)
                                                 }

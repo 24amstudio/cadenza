@@ -12,7 +12,8 @@ struct QueueReadPolicy {
         case blocked(String)
     }
 
-    static let verifiedIntervalMs: Int64 = 10_000
+    // Each read walks Music's interface through Accessibility. Track changes and queue edits read sooner.
+    static let verifiedIntervalMs: Int64 = 30_000
     static let retryIntervalMs: Int64 = 3_000
     static let permissionMessage =
         "Allow Cadenza Host in Privacy & Security → Accessibility so it can read Music's queue."

@@ -1,4 +1,9 @@
-import type { CommandAction, SearchScope, SongIdentity } from './types';
+import type {
+  BrowseRequest,
+  CommandAction,
+  SearchScope,
+  SongIdentity,
+} from './types';
 
 // Outgoing frames carry exactly the keys the Host accepts for each message type. Unknown or extra keys are rejected by
 // the Host, so these builders never spread caller-provided objects into a frame.
@@ -214,6 +219,32 @@ export function encodeSongPrepare(
   });
 }
 
+// The answer is browse.result with this request ID, or an error carrying it.
+export function encodeBrowseGet(
+  requestId: string,
+  request: BrowseRequest,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'browse.get',
+    request_id: requestId,
+    browse: {
+      kind: request.kind,
+      id: request.id,
+      song:
+        request.song === undefined ? undefined : encodeIdentity(request.song),
+    },
+  });
+}
+
+export function encodeOperationCancel(requestId: string): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'operation.cancel',
+    request_id: requestId,
+  });
+}
+
 export function encodeCommand(envelope: CommandEnvelope): string {
   return JSON.stringify({
     version: 1,
@@ -236,6 +267,10 @@ function encodeAction(action: CommandAction) {
       };
     case 'playback.volume':
       return { kind: action.kind, percent: action.percent };
+    case 'playback.shuffle':
+      return { kind: action.kind, enabled: action.enabled };
+    case 'playback.repeat':
+      return { kind: action.kind, mode: action.mode };
     case 'playback.pause':
     case 'playback.resume':
     case 'playback.skip':

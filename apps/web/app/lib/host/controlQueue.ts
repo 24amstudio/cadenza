@@ -3,6 +3,7 @@ import type {
   CommandAction,
   CommandResult,
   QueueActionKind,
+  RepeatMode,
   SongIdentity,
 } from '../protocol/types';
 import { traceEvent } from './trace';
@@ -10,12 +11,21 @@ import type { Readiness } from './client';
 
 // The controls a person can press. Each one shows its own pending state while its command is queued or in flight.
 export type ControlKey =
-  'toggle' | 'next' | 'previous' | 'seek' | 'volume' | 'queue';
+  | 'toggle'
+  | 'next'
+  | 'previous'
+  | 'seek'
+  | 'volume'
+  | 'shuffle'
+  | 'repeat'
+  | 'queue';
 
 type Intent =
   | { key: 'toggle' | 'next' | 'previous' }
   | { key: 'seek'; positionMs: number; occurrenceId: string }
   | { key: 'volume'; percent: number }
+  | { key: 'shuffle'; enabled: boolean }
+  | { key: 'repeat'; mode: RepeatMode }
   // Each song the person asked for is sent. Requests are never merged, and settled gets null when nothing was sent.
   | {
       key: 'queue';
@@ -64,7 +74,7 @@ function retryable(result: CommandResult): boolean {
 // - Next and Previous keep at most one waiting press each. More presses while one is waiting add nothing the person
 //   could see, and an unbounded backlog would keep skipping songs after they stop pressing.
 // - Two Play/Pause presses cancel out, which is what pressing twice does.
-// - Seek and volume send only the latest value. An older target has been overtaken.
+// - Seek, volume, shuffle and repeat send only the latest value. An older target has been overtaken.
 export class ControlQueue {
   private readonly port: ControlPort;
   private readonly output: ControlOutput;
@@ -104,7 +114,12 @@ export class ControlQueue {
       return;
     }
 
-    if (intent.key === 'seek' || intent.key === 'volume') {
+    if (
+      intent.key === 'seek' ||
+      intent.key === 'volume' ||
+      intent.key === 'shuffle' ||
+      intent.key === 'repeat'
+    ) {
       this.waiting[index] = intent;
     }
   }
@@ -218,6 +233,14 @@ export class ControlQueue {
       return actionOf({ kind: 'playback.volume', percent: intent.percent });
     }
 
+    if (intent.key === 'shuffle') {
+      return actionOf({ kind: 'playback.shuffle', enabled: intent.enabled });
+    }
+
+    if (intent.key === 'repeat') {
+      return actionOf({ kind: 'playback.repeat', mode: intent.mode });
+    }
+
     // A request names its song, and the Host decides where it goes, so nothing needs to be playing.
     if (intent.key === 'queue') {
       return actionOf({ kind: intent.kind, song: intent.song });
@@ -263,10 +286,12 @@ function actionOf(action: CommandAction): BuiltAction {
   return { action, reason: null };
 }
 
-// A playback change is tied to the song it was chosen on. Volume and requests are not.
+// A playback change is tied to the song it was chosen on. Volume, modes and requests are not.
 function isOccurrenceBound(action: CommandAction): boolean {
   return (
     action.kind !== 'playback.volume' &&
+    action.kind !== 'playback.shuffle' &&
+    action.kind !== 'playback.repeat' &&
     action.kind !== 'queue.enqueue' &&
     action.kind !== 'queue.play_next'
   );

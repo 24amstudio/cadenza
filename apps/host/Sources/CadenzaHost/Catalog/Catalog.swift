@@ -61,7 +61,7 @@ actor Catalog {
         return song
     }
 
-    private func remember(_ found: [Song]) -> [Song] {
+    func remember(_ found: [Song]) -> [Song] {
         if songs.count > 1_000 { songs.removeAll(keepingCapacity: true) }
         for song in found { songs[song.identity] = song }
         return found
@@ -88,14 +88,16 @@ actor Catalog {
         }
     }
 
-    private static func safeArtwork(_ value: String?) -> String? {
+    static func safeArtwork(_ value: String?) -> String? {
         guard let value, let url = URL(string: value), url.scheme == "https",
             let host = url.host, host.hasSuffix(".mzstatic.com")
         else { return nil }
         return value
     }
 
-    func request(path: String, query: [URLQueryItem], retry: Bool = true) async throws -> Data {
+    func request(
+        path: String, query: [URLQueryItem], retry: Bool = true, missingIsNotFound: Bool = false
+    ) async throws -> Data {
         let credential = try await developerToken()
         var components = URLComponents(string: "https://amp-api.music.apple.com/v1/catalog/\(storefront)/\(path)")!
         components.queryItems = query
@@ -108,7 +110,11 @@ actor Catalog {
             token = nil
             tokenExpiry = 0
             try? credentials.delete("catalog.public-token")
-            return try await self.request(path: path, query: query, retry: false)
+            return try await self.request(
+                path: path, query: query, retry: false, missingIsNotFound: missingIsNotFound)
+        }
+        if response.statusCode == 404 && missingIsNotFound {
+            throw CadenzaError.failure("not_found", "Apple's catalog has no such item in this storefront.")
         }
         guard response.statusCode == 200 else {
             throw CadenzaError.failure(

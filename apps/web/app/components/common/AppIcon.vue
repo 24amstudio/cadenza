@@ -22,6 +22,10 @@ export type IconName =
   | 'library'
   | 'heart'
   | 'heart-filled'
+  | 'shuffle'
+  | 'repeat'
+  | 'repeat-one'
+  | 'back'
   | 'close';
 
 // Paths are drawn on a 24-unit grid. Transport glyphs are solid; everything else is a 1.8-unit outline.
@@ -91,6 +95,27 @@ const iconPaths: Record<IconName, string[]> = {
   'heart-filled': [
     'M12 19.2s-7.2-4.3-7.2-9.4A4 4 0 0 1 12 7.4a4 4 0 0 1 7.2 2.4c0 5.1-7.2 9.4-7.2 9.4Z',
   ],
+  shuffle: [
+    'M4 17h2.2c1.5 0 2.5-.6 3.3-1.9l4.5-6.4c.8-1.2 1.8-1.8 3.3-1.8H20',
+    'M4 7h2.2c1.2 0 2.1.4 2.9 1.3',
+    'M14.9 15.7c.7.8 1.6 1.2 2.8 1.2H20',
+    'M17.7 4.6L20.3 7l-2.6 2.4',
+    'M17.7 14.6l2.6 2.4-2.6 2.4',
+  ],
+  repeat: [
+    'M5 11V9.5A2.5 2.5 0 0 1 7.5 7H19',
+    'M16.5 4.5L19 7l-2.5 2.5',
+    'M19 13v1.5a2.5 2.5 0 0 1-2.5 2.5H5',
+    'M7.5 14.5L5 17l2.5 2.5',
+  ],
+  'repeat-one': [
+    'M5 11V9.5A2.5 2.5 0 0 1 7.5 7H19',
+    'M16.5 4.5L19 7l-2.5 2.5',
+    'M19 13v1.5a2.5 2.5 0 0 1-2.5 2.5H5',
+    'M7.5 14.5L5 17l2.5 2.5',
+    'M11 10.8l1.4-.9v4.4',
+  ],
+  back: ['M14.5 5.5L8 12l6.5 6.5'],
   close: ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11'],
 };
 

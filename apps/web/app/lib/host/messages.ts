@@ -7,9 +7,9 @@ export function describeCommandResult(result: CommandResult): string | null {
     case 'applied':
       return null;
     case 'expired':
-      return 'That change reached Cadenza Host too late. Check the connection and try again.';
+      return 'The request expired before it could be applied.';
     case 'unconfirmed':
-      return 'Cadenza Host has not confirmed that change yet. It will not be sent again automatically.';
+      return 'Music may still apply this request. Cadenza is checking.';
     case 'rejected':
       return describeRejection(result.errorCode);
   }

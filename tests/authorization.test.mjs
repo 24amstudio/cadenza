@@ -41,6 +41,14 @@ test('request protection covers pending requests and the current song, including
     );
   }
 
+  for (const kind of ['playback.shuffle', 'playback.repeat']) {
+    assert.equal(
+      query.get({ ...base, kind, entry_id: null })?.['decision'],
+      'allowed',
+      kind,
+    );
+  }
+
   assert.equal(
     query.get({ ...base, kind: 'queue.play_next', entry_id: null })?.[
       'decision'

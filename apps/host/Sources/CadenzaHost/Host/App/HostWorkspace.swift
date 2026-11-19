@@ -11,6 +11,7 @@ struct HostWorkspace: View {
                 Section("Cadenza Host") {
                     sidebarRow(.nowPlaying)
                     sidebarRow(.remotes)
+                    sidebarRow(.logs)
                 }
                 Section("Settings") {
                     ForEach(HostSection.settings) { section in
@@ -47,6 +48,7 @@ struct HostWorkspace: View {
         switch model.selectedSection {
         case .nowPlaying: NowPlayingScreen(model: model)
         case .remotes: RemotesScreen(model: model)
+        case .logs: LogsScreen(model: model)
         case .general: SettingsGeneralPane(model: model)
         case .network: SettingsNetworkPane(model: model)
         case .music: SettingsMusicPane(model: model)

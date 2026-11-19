@@ -21,6 +21,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import app.cadenza.remote.energy.LocalEnergyProfile
 import java.io.File
 
 // Album motion loops silently in the cover slot. It plays only while this screen is resumed and the Host is playing.
@@ -38,7 +39,8 @@ fun MotionArtwork(
         remember(context) {
             Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         }
-    if (video == null || reducedMotion) {
+    // Saver skips the video entirely, so no player or decoder is created for it.
+    if (video == null || reducedMotion || !LocalEnergyProfile.current.motionArtwork) {
         Box(modifier) { fallback() }
         return
     }

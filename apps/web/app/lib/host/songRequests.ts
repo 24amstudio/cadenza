@@ -1,11 +1,15 @@
 import type { HostMessage } from '../protocol/decode';
 import {
+  encodeBrowseGet,
+  encodeOperationCancel,
   encodeSearch,
   encodeSearchSuggest,
   encodeSongPrepare,
   type SongDetails,
 } from '../protocol/encode';
 import type {
+  BrowsePage,
+  BrowseRequest,
   SearchScope,
   Song,
   SongIdentity,
@@ -38,6 +42,7 @@ const queryLimit = 200;
 const searchTimeoutMs = 20_000;
 const prepareTimeoutMs = 20_000;
 const suggestTimeoutMs = 6_000;
+const browseTimeoutMs = 25_000;
 
 // Each request is sent once and settles once: with the Host's reply, with its error, or with a failure when the link
 // closes or the deadline passes. Nothing here is sent again. A lost request is reported, and the person asks again.
@@ -92,8 +97,29 @@ export class SongRequests {
     );
   }
 
+  browse(request: BrowseRequest, settle: Settle<BrowsePage>): string | null {
+    return this.start(
+      browseTimeoutMs,
+      (requestId) => encodeBrowseGet(requestId, request),
+      (message) =>
+        message.type === 'browse.result'
+          ? succeed(message.browse)
+          : hostFailure(message),
+      settle,
+    );
+  }
+
   cancel(requestId: string): void {
     this.pending.get(requestId)?.drop();
+  }
+
+  // Stops waiting and tells the Host to stop working on it, so a page left behind costs the Host nothing more.
+  abort(requestId: string): void {
+    const entry = this.pending.get(requestId);
+
+    if (entry === undefined) return;
+    entry.drop();
+    this.options.send(encodeOperationCancel(requestId));
   }
 
   // True when the message answered one of these requests, so the client does not handle it again.
@@ -170,6 +196,7 @@ function answerIdOf(message: HostMessage): string | null {
     case 'search.result':
     case 'search.suggestions':
     case 'song.ready':
+    case 'browse.result':
     case 'error':
       return message.requestId;
     default:

@@ -21,18 +21,24 @@ final class QueueCoordinator {
     // Music's AutoPlay list, shown for information. It plays after the queue and is never changed by Cadenza.
     private(set) var autoPlay: [NativeQueueRow] = []
     // An enqueue takes a moment to appear in Music. A request younger than this is never cancelled as missing.
-    private static let unboundGraceMs: Int64 = 60_000
-    private var bindings: [String: String] = [:]
+    static let unboundGraceMs: Int64 = 60_000
+    private(set) var bindings: [String: String] = [:]
     private var current: CurrentPlayback?
-    private var lastStatus: MusicStatus?
+    private(set) var lastStatus: MusicStatus?
+    // Music's clock reading at the previous poll, on the Host's monotonic timeline.
     private var lastObservation: Int64?
+    // Polling is slow while Music is playing, so a sample pair this far apart still counts as continuous listening.
+    static let maximumSampleGapMs: Int64 = 8_000
+    // The audio badge and AutoMix state are read through Accessibility, which is costly and only Remotes show it.
+    private static let qualityIntervalMs: Int64 = 10_000
+    private var needsPublish = false
     private var sequence: Int64 = 0
     private(set) var synchronized = false
     // Queue state is trusted only after an explicit read, so a fresh coordinator never reports an unread queue as synced.
-    private var queueVerified = false
-    private var queuePolicy = QueueReadPolicy()
-    private var queuePid: pid_t?
-    private var lastQueueReadAt: Int64?
+    private(set) var queueVerified = false
+    var queuePolicy = QueueReadPolicy()
+    private(set) var queuePid: pid_t?
+    private(set) var lastQueueReadAt: Int64?
     // Why Music's queue is unverified, shown only while it is. A healthy session never has one.
     private var queueUnreadReason: String?
     private(set) var issue: String?
@@ -60,6 +66,7 @@ final class QueueCoordinator {
     }
 
     var busy: Bool { locked || draining || !waiting.isEmpty }
+    var commandsIdle: Bool { activeCommand == nil && waiting.isEmpty }
     var isPlaying: Bool { lastStatus?.playing == true }
     var nativeAssignments: [String: String] { bindings }
 
@@ -80,8 +87,11 @@ final class QueueCoordinator {
         for song in songs { knownSongs[song.identity] = song }
     }
 
-    func refresh() async {
+    /// Reads Music's state. `hintedAt` is the Host time of the change notification that asked for this read. A state
+    /// sampled after that moment already shows the change, so a command's own notification does not cost a second read.
+    func refresh(hintedAt: Int64? = nil) async {
         guard !locked else { return }
+        if let hintedAt, let sampled = lastStatus?.sampledAtMs, sampled >= hintedAt { return }
         locked = true
         defer { locked = false }
         do { try await readState(includeQueue: needsStaleRequestSettlement(), background: true) } catch {
@@ -99,8 +109,14 @@ final class QueueCoordinator {
         publish()
     }
 
-    private func readState(deadline: Int64? = nil, includeQueue: Bool = true, background: Bool = false) async throws {
-        let status = try await music.status(deadline: deadline)
+    /// Reads Music's state and brings the coordinator in line with it. `status` is a state a caller already read, which
+    /// saves a second Music process. Commands skip the Accessibility quality read, which their deadlines cannot afford.
+    private func readState(
+        deadline: Int64? = nil, includeQueue: Bool = true, background: Bool = false,
+        status prefetched: MusicStatus? = nil, refreshQuality: Bool = true
+    ) async throws {
+        let status: MusicStatus
+        if let prefetched { status = prefetched } else { status = try await music.status(deadline: deadline) }
         let now = monotonicMs()
         // The position describes the moment Music read it, which the bridge has dated. Older scripts fall back to now.
         let sampledAt = status.sampledAtMs ?? now
@@ -263,10 +279,11 @@ final class QueueCoordinator {
         if let occurrence = current?.occurrenceId, let last = lastObservation, let previous = lastStatus,
             status.playing, previous.playing, !songChanged
         {
-            let elapsed = now - last
+            // Both ends are the moments Music read its position, so a slow script does not skew the comparison.
+            let elapsed = sampledAt - last
             let progress = status.positionMs - previous.positionMs
-            if elapsed > 2_000 { try store.recordObservationGap() }
-            if elapsed > 0 && elapsed <= 2_000 && progress > 0 && abs(progress - elapsed) <= 350 {
+            if elapsed > Self.maximumSampleGapMs { try store.recordObservationGap() }
+            if elapsed > 0 && elapsed <= Self.maximumSampleGapMs && progress > 0 && abs(progress - elapsed) <= 350 {
                 if pendingPlaybackOccurrence != occurrence { try flushCredits() }
                 pendingPlaybackOccurrence = occurrence
                 pendingPlaybackMs += min(elapsed, progress)
@@ -312,7 +329,9 @@ final class QueueCoordinator {
                     unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil
             }
         }
-        if now - lastQualityAt > 5_000, let title = status.song?.title {
+        if refreshQuality, now - lastQualityAt > Self.qualityIntervalMs, !connectedRemoteIds().isEmpty,
+            let title = status.song?.title
+        {
             let quality = music.accessibility.quality(currentTitle: title)
             if quality != lastQuality {
                 logger?.log(
@@ -328,7 +347,7 @@ final class QueueCoordinator {
         current?.positionMs = status.positionMs
         current?.sampledAtHostMs = sampledAt
         lastStatus = status
-        lastObservation = now
+        lastObservation = sampledAt
     }
 
     private func requestArtwork(for song: Song, occurrenceId: String) {
@@ -400,11 +419,13 @@ final class QueueCoordinator {
             synchronized: synchronized, issue: issue,
             observationGap: try store.database.query("SELECT observation_gap FROM host_state").first?[
                 "observation_gap"]?.integer == 1,
-            autoPlay: autoPlay.prefix(AutoPlayItem.shownLimit).map { AutoPlayItem(title: $0.title, artist: $0.artist) }
+            autoPlay: autoPlay.prefix(AutoPlayItem.shownLimit).map { AutoPlayItem(title: $0.title, artist: $0.artist) },
+            shuffle: lastStatus?.shuffle ?? false, repeat: lastStatus?.repeat ?? "off"
         )
     }
 
     func publish() {
+        needsPublish = false
         sequence += 1
         // Only changes are written. A steady state is already visible in the snapshot the Remotes receive.
         if issue != loggedIssue {
@@ -452,7 +473,16 @@ final class QueueCoordinator {
                 next.continuation.resume(throwing: error)
             }
             activeCommand = nil
+            // Queued after the result, so the Remote reads its outcome before the larger state frame.
+            if needsPublish { Task { @MainActor [weak self] in self?.publishPending() } }
         }
+    }
+
+    /// Publishes the snapshot a finished command left unsent. Safe to call when there is nothing to send.
+    func publishPending() {
+        guard needsPublish else { return }
+        needsPublish = false
+        publish()
     }
 
     private func perform(_ command: Frame, actor: String) async throws -> Frame {
@@ -469,24 +499,23 @@ final class QueueCoordinator {
         locked = true
         defer {
             locked = false
-            publish()
+            // The result reaches the Remote first. The snapshot follows once drain has handed the result over.
+            needsPublish = true
         }
         primingLyrics = false
         preparationToken = nil
-        // Playback state is independently readable from Music. Avoid an Accessibility
-        // queue walk for controls that cannot reorder or remove requests.
-        let needsQueueRead =
-            action.kind.hasPrefix("queue.")
-            || action.kind == "playback.skip"
-            || action.kind == "playback.previous"
-        // Queue requests are checked against the cached queue revision, because reading Music's queue before dispatch
-        // would take longer than the Remote's deadline.
+        let isQueueAction = action.kind.hasPrefix("queue.")
+        // Transport actions are checked against the cached state and dispatched at once. Reading Music before dispatch,
+        // let alone walking its queue through Accessibility, would spend the Remote's ~900 ms deadline before Music
+        // heard the request. The state is read after dispatch instead, inside the Host's verification budget.
         // A queue command can arrive before the first explicit queue read completes. Refresh that baseline here so
         // Play Now does not stay blocked behind a stale unsynchronized snapshot; external changes still leave the
         // coordinator unsynchronized and are rejected below.
-        try await readState(
-            deadline: deadline,
-            includeQueue: needsQueueRead && (!action.kind.hasPrefix("queue.") || !synchronized))
+        if isQueueAction || lastStatus == nil {
+            try await readState(
+                deadline: deadline, includeQueue: isQueueAction && !synchronized, refreshQuality: false)
+        }
+        let before = lastStatus
         let target = action.entryId ?? current?.entryId
         if let occurrence = action.occurrenceId, occurrence != current?.occurrenceId {
             throw CadenzaError.failure("stale_occurrence", "The current song changed.")
@@ -557,10 +586,12 @@ final class QueueCoordinator {
             if action.kind == "playback.seek", let position = action.positionMs {
                 action.positionMs = position + playbackDelayMs()
             }
-            if action.kind.hasPrefix("queue.") {
+            if isQueueAction {
                 try await editQueue(
                     action, actor: actor, deadline: nativeDeadline, plannedEntry: plannedEntry,
                     beforeEffect: beforeEffect)
+                try await readState(deadline: nativeDeadline, includeQueue: true, refreshQuality: false)
+                try verifyQueueAction(action, expectedEntry: plannedEntry)
             } else {
                 try flushCredits()
                 lastObservation = nil
@@ -570,10 +601,11 @@ final class QueueCoordinator {
                 {
                     onPlaybackInterrupted()
                 }
-                try await music.control(action, deadline: deadline)
+                let dispatchedAt = monotonicMs()
+                let immediate = try await music.control(action, deadline: deadline)
+                try await confirmTransport(
+                    action, before: before, first: immediate, dispatchedAt: dispatchedAt, deadline: nativeDeadline)
             }
-            try await readState(deadline: nativeDeadline, includeQueue: needsQueueRead)
-            try verifyPlayback(action, expectedEntry: plannedEntry)
             let result = try journal.result(command, outcome: "applied")
             try journal.finish(command, actor: actor, result: result)
             return result
@@ -596,24 +628,32 @@ final class QueueCoordinator {
         }
     }
 
-    private func verifyPlayback(_ action: CommandAction, expectedEntry: String?) throws {
+    private func verifyQueueAction(_ action: CommandAction, expectedEntry: String?) throws {
         guard let status = lastStatus else {
             throw CadenzaError.failure("outcome_unknown", "Music state could not be confirmed.")
         }
-        let confirmed: Bool
-        switch action.kind {
-        case "queue.play_now": confirmed = current?.entryId == expectedEntry && status.playing
-        case "playback.pause": confirmed = !status.playing
-        case "playback.resume": confirmed = status.playing
-        case "playback.stop": confirmed = status.state == "stopped"
-        case "playback.seek": confirmed = abs(status.positionMs - (action.positionMs ?? 0)) <= 1_000
-        case "playback.volume": confirmed = status.volume == action.percent
-        case "playback.skip", "playback.previous": confirmed = current?.occurrenceId != action.occurrenceId
-        default: confirmed = true
-        }
-        guard confirmed else {
+        guard action.kind != "queue.play_now" || (current?.entryId == expectedEntry && status.playing) else {
             throw CadenzaError.failure("outcome_unknown", "Music has not confirmed the requested playback state.")
         }
+    }
+
+    /// Waits for Music to show a transport action, reading its state again for as long as the budget allows. The state
+    /// that confirms the action is then taken in, so the snapshot shows what Music reports.
+    private func confirmTransport(
+        _ action: CommandAction, before: MusicStatus?, first: MusicStatus?, dispatchedAt: Int64, deadline: Int64
+    ) async throws {
+        let outcome = await TransportConfirmation.awaitConfirmation(
+            action, before: before, first: first, dispatchedAtMs: dispatchedAt, deadline: deadline,
+            read: { [music] in try await music.status(deadline: deadline) })
+        guard let status = outcome.confirmed else {
+            if let last = outcome.last { try? await readState(deadline: deadline, includeQueue: false, status: last) }
+            throw CadenzaError.failure("outcome_unknown", "Music has not confirmed the requested playback state.")
+        }
+        // A skip may have consumed a request, which only Music's queue shows. Without saved requests there is none.
+        let changedSong = action.kind == "playback.skip" || action.kind == "playback.previous"
+        try await readState(
+            deadline: deadline, includeQueue: changedSong && !nativeRows.isEmpty, status: status,
+            refreshQuality: false)
     }
 
     private func editQueue(
@@ -746,102 +786,6 @@ final class QueueCoordinator {
         try store.bump()
     }
 
-    /// Saved requests that never reached a Music row and are old enough that their enqueue has finished.
-    private func unboundRequestIds() throws -> [String] {
-        let bound = Set(bindings.values)
-        let cutoff = wallMs() - Self.unboundGraceMs
-        return try store.pending().compactMap { row in
-            guard let id = row["entry_id"]?.string, row["native_token"]?.string == nil, !bound.contains(id),
-                let created = row["created_at_ms"]?.integer, created < cutoff
-            else { return nil }
-            return id
-        }
-    }
-
-    /// Cancels unbound requests that no visible row matches. A request a visible row matches is left alone, because
-    /// binding it would guess who requested that row.
-    private func settleUnboundRequests(observed: [NativeQueueRow]) throws -> Bool {
-        let stale = try unboundRequestIds().filter { id in
-            guard let entry = try store.entry(id), let title = entry["title"]?.string,
-                let artist = entry["artist"]?.string
-            else { return false }
-            return !observed.contains { $0.title == title && $0.artist == artist && bindings[$0.token] == nil }
-        }
-        guard !stale.isEmpty else { return false }
-        let assigned = Set(bindings.values)
-        for id in stale { try store.remove(id) }
-        try store.bump()
-        try journal.reconcileQueue(assignments: assigned)
-        logger?.log(
-            .warning, category: "queue", action: "queue.settled",
-            "Cancelled \(stale.count) saved request(s) that Music no longer lists.",
-            metadata: ["count": String(stale.count)])
-        return true
-    }
-
-    /// The background refresh reads the queue only while it is unsynchronized and Music already shows its queue, so the
-    /// Host never opens Music's panels for this.
-    private func needsStaleRequestSettlement() -> Bool {
-        guard !synchronized, activeCommand == nil, waiting.isEmpty,
-            ((try? unboundRequestIds()) ?? []).isEmpty == false
-        else { return false }
-        return music.accessibility.queuePanelOpen()
-    }
-
-    private func backgroundQueueDecision(status: MusicStatus, now: Int64) -> QueueReadPolicy.Decision {
-        queuePolicy.decide(
-            now: now, lastReadAt: lastQueueReadAt, verified: queueVerified,
-            trackChanged: status.song?.identity != lastStatus?.song?.identity,
-            idle: activeCommand == nil && waiting.isEmpty, permitted: music.accessibility.permitted,
-            musicPid: queuePid, panelOpen: { [music] in music.accessibility.queuePanelOpen() })
-    }
-
-    /// Reads Music's queue on an explicit action. The Playing Next list is opened first when it is closed, and the read
-    /// waits for it only within the deadline. The status poll reads the queue only for the settlement above.
-    private func readNativeQueue(deadline: Int64, openPanel: Bool = true) async throws -> [NativeQueueRow] {
-        if !music.accessibility.queuePanelOpen() {
-            guard openPanel else {
-                throw CadenzaError.failure("native_queue_unavailable", QueueReadPolicy.panelClosedMessage)
-            }
-            try await music.accessibility.requestQueuePanel()
-        }
-        while true {
-            do {
-                return try music.accessibility.rows(deadline: deadline)
-            } catch let error as CadenzaError where ["music_permission", "music_unavailable"].contains(error.code) {
-                throw error
-            } catch {
-                guard monotonicMs() < deadline else { throw error }
-                try await Task.sleep(for: .milliseconds(120))
-            }
-        }
-    }
-
-    /// Polls Music's queue until `condition` holds. A read that fails inside the window is retried, because Music
-    /// redraws its list right after an edit.
-    private func waitForQueue(
-        deadline: Int64, matching condition: ([NativeQueueRow]) -> Bool
-    ) async throws -> [NativeQueueRow] {
-        var lastFailure: String?
-        repeat {
-            do {
-                let rows = try music.accessibility.rows(deadline: min(deadline, monotonicMs() + 1_000))
-                if condition(rows) { return rows }
-                lastFailure = nil
-            } catch let error as CadenzaError where error.code == "native_queue_unavailable" {
-                lastFailure = error.localizedDescription
-            }
-            try await Task.sleep(for: .milliseconds(35))
-        } while monotonicMs() < deadline
-        throw CadenzaError.failure(
-            "outcome_unknown",
-            "Music's native queue has not confirmed the action." + (lastFailure.map { " Last read: \($0)" } ?? ""))
-    }
-
-    private static func rowKeys(_ rows: [NativeQueueRow]) -> [String] {
-        rows.map { "\($0.title)|\($0.artist)" }
-    }
-
     func prepare(_ identity: SongIdentity, metadata: Song? = nil) async throws {
         guard activeCommand == nil, waiting.isEmpty else {
             throw CadenzaError.failure(
@@ -853,16 +797,14 @@ final class QueueCoordinator {
         if identity.source == "library" {
             do {
                 song = try await music.resolve(identity)
-            } catch {
-                guard let metadata, metadata.identity == identity else { throw error }
-                let query = "\(metadata.title) \(metadata.artist)".trimmingCharacters(in: .whitespacesAndNewlines)
-                let candidates = try await music.librarySearch(query)
-                guard
-                    let replacement = candidates.first(where: {
-                        $0.title.caseInsensitiveCompare(metadata.title) == .orderedSame
-                            && $0.artist.caseInsensitiveCompare(metadata.artist) == .orderedSame
-                    })
-                else { throw error }
+            } catch let error as CadenzaError where ["not_found", "music_unavailable"].contains(error.code) {
+                // The Remote's copy of a library song can outlive the persistent ID Music gave it. The song is found
+                // again by its own details, and only a match for the identity the Remote asked for is accepted.
+                guard let metadata, metadata.identity == identity,
+                    let replacement = try await librarySong(matching: metadata)
+                else {
+                    throw CadenzaError.failure("not_found", "This song is no longer in your Music library.")
+                }
                 song = replacement
             }
         } else if let known = knownSongs[identity] {
@@ -881,6 +823,19 @@ final class QueueCoordinator {
         // readState updates the coordinator's baseline but does not broadcast it. Publish here so the Remote receives
         // the synchronized queue revision together with the song.ready response.
         publish()
+    }
+
+    /// The library song whose title and artist, and album when the Remote knows it, are those of `metadata`.
+    func librarySong(matching metadata: Song) async throws -> Song? {
+        let query = "\(metadata.title) \(metadata.artist)".trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return nil }
+        func same(_ left: String, _ right: String) -> Bool {
+            left.compare(right, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        return try await music.librarySearch(query).first {
+            same($0.title, metadata.title) && same($0.artist, metadata.artist)
+                && (metadata.album.isEmpty || same($0.album, metadata.album))
+        }
     }
 
     func flushCredits() throws {

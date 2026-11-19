@@ -2,6 +2,18 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.3.0",
+      "build": 10,
+      "changes": [
+        "Adds album, artist and playlist browsing, and shuffle and repeat controls, to the native and web Remotes.",
+        "Shows left and right lyric placement, smoother overlapping word timing and calmer lyric spacing and transitions.",
+        "Adds an Energy Assessor that adapts the native Remote to battery saver and power state.",
+        "Adds a live Logs window to Cadenza Host with source and time filters.",
+        "Fixes intermittent previous and next failures and removes false unconfirmed warnings after transport controls.",
+        "Reduces Host and Remote CPU, memory and power use and improves Bluetooth reliability."
+      ]
+    },
+    {
       "version": "0.1.4",
       "build": 9,
       "changes": [

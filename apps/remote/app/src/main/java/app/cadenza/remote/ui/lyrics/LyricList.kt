@@ -14,6 +14,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricsTextSize
+import app.cadenza.remote.energy.LocalEnergyProfile
 
 private const val LINE_WITH_WORDS = "words"
 private const val LINE_PLAIN = "plain"
@@ -22,7 +23,7 @@ private const val LINE_PLAIN = "plain"
 internal class LyricPlayback(
     val positionMs: Long,
     val active: List<Int>,
-    val sweep: SweepTarget?,
+    val sweep: Sweeps,
     val synced: Boolean,
     val clock: LyricsClock,
 )
@@ -46,14 +47,17 @@ internal fun LyricList(
 ) {
     val timed = document.level >= 2
     val wordTimed = document.level == 3
+    val energy = LocalEnergyProfile.current
     BoxWithConstraints(modifier) {
-        // Timed lyrics pad both ends so the first and last lines can reach the centre of the viewport.
-        val edge = if (timed) maxHeight * 0.4f else 0.dp
+        // Timed lyrics pad both ends so the first and last lines can reach the follow position, which sits near the
+        // top (see leadAlignDelta). The top pad is where line 0 rests until two lines precede the active one.
+        val topEdge = if (timed) maxHeight * LEAD_REST_FRACTION else 0.dp
+        val bottomEdge = if (timed) maxHeight * END_PAD_FRACTION else 24.dp
         LazyColumn(
             modifier = Modifier.fillMaxSize().nestedScroll(userScroll),
             state = list,
-            contentPadding = PaddingValues(top = edge, bottom = maxOf(edge, 24.dp)),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(top = topEdge, bottom = bottomEdge),
+            verticalArrangement = Arrangement.spacedBy(lineGap),
         ) {
             itemsIndexed(
                 document.lines,
@@ -66,8 +70,10 @@ internal fun LyricList(
                         tier = if (receding) lyricTier(index, playback.active) else TIER_ACTIVE,
                         active = index in playback.active,
                         receding = receding,
+                        blur = receding && inBlurWindow(index, playback.active, energy.lyricBlurLines),
+                        instant = energy.reduceTransitions,
                         wordTimed = wordTimed,
-                        sweepWord = playback.sweep?.takeIf { it.line == index }?.word ?: -1,
+                        sweep = playback.sweep[index] ?: IntRange.EMPTY,
                         litWords =
                             when {
                                 !wordTimed -> 0

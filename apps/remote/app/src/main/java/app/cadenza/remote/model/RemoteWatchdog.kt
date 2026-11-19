@@ -25,12 +25,12 @@ internal fun RemoteModel.watchdogHostUnavailable(
         "message=${message.take(240)} connected=$wasConnected heartbeat_age_ms=$elapsedSinceHeartbeat",
     )
     if (invitation != null || pairingPin != null ||
-        (transportMode == "ble" && !wasConnected) ||
         !maintainBackgroundSessionInternal() || mutable.value.profile == null
     ) {
         return null
     }
-    startDiscovery()
+    // Bluetooth finds the Host by scanning, so LAN discovery would only cost power.
+    if (transportMode != "ble") startDiscovery()
     reconnect?.cancel()
     return viewModelScope
         .launch {

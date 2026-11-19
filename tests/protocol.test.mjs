@@ -114,6 +114,38 @@ test('unsafe counters, invalid volume, missing boot identity, and unguarded tran
   );
 });
 
+test('playback modes carry only a boolean or an off/one/all mode', () => {
+  /** @param {Record<string, unknown>} body */
+  const action = (body) => ({ ...base, action: body });
+
+  assert.equal(
+    validateCommand(action({ kind: 'playback.shuffle', enabled: true })),
+    true,
+  );
+  assert.equal(
+    validateCommand(action({ kind: 'playback.repeat', mode: 'one' })),
+    true,
+  );
+  assert.equal(
+    validateCommand(action({ kind: 'playback.shuffle', enabled: 'yes' })),
+    false,
+  );
+  assert.equal(
+    validateCommand(action({ kind: 'playback.repeat', mode: 'forever' })),
+    false,
+  );
+  assert.equal(
+    validateCommand(
+      action({
+        kind: 'playback.repeat',
+        mode: 'all',
+        occurrence_id: occurrence,
+      }),
+    ),
+    false,
+  );
+});
+
 test('Sing controls are occurrence-bound and keep audio local to Host', () => {
   const enable = {
     ...base,

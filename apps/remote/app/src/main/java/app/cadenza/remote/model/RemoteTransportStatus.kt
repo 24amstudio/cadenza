@@ -95,6 +95,6 @@ internal fun RemoteModel.publishStatus() {
                 ),
             )
         }
-    connection?.send(statusPublisher.frame(preference = transportPreference, paths = measured))
+    connection?.send(statusPublisher.frame(preference = energy.profile.value.reportedPreference(transportPreference), paths = measured))
     lastStatusSentAt = SystemClock.elapsedRealtime()
 }

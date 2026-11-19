@@ -74,6 +74,9 @@ defineExpose({ reveal });
         />
       </div>
     </Transition>
+    <p v-if="host.lyricsDocument?.source === 'lrclib'" class="provider">
+      Lyrics from LRCLIB
+    </p>
   </section>
 </template>
 
@@ -139,9 +142,10 @@ h2 {
   background: var(--color-fill-strong);
 }
 
-.quiet {
+.provider {
   padding: 0 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
+  font-size: 13px;
 }
 
 /* The lyric list scrolls inside a fixed window, so the rest of the page keeps its place while the lyrics follow. */
@@ -160,7 +164,7 @@ h2 {
 
 /* Full screen: the lyrics fill the column beside the song data. */
 .lyrics-panel.immersive {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
 }

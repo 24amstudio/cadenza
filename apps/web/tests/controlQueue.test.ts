@@ -41,6 +41,8 @@ function snapshotOf(occurrenceId: string, revision = 18): Snapshot {
     queue: [],
     synchronized: true,
     issue: null,
+    shuffle: false,
+    repeat: 'off',
   };
 }
 

@@ -1,7 +1,10 @@
 package app.cadenza.remote.network
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import org.json.JSONObject
+import kotlin.random.Random
 
 /** Keeps both authenticated paths alive and routes bulk frames to BLE when available. */
 class HybridConnection(
@@ -13,8 +16,15 @@ class HybridConnection(
     closed: (String) -> Unit,
 ) : RemoteConnection {
     private val onOpened = opened
-    private var lanReady = false
-    private var bleReady = false
+
+    @Volatile private var lanReady = false
+
+    @Volatile private var bleReady = false
+
+    @Volatile private var stopped = false
+
+    @Volatile private var bleRetries = 0
+    private val timers = Handler(Looper.getMainLooper())
     private var openedOnce = false
     private var pendingPair: JSONObject? = null
     private var handshake: JSONObject? = null
@@ -26,8 +36,16 @@ class HybridConnection(
     private val ble =
         BleConnection(context, ::bleOpened, received) {
             bleReady = false
-            if (!lanReady) closed(it)
+            if (!lanReady) closed(it) else retryBleLater()
         }
+
+    // The LAN path carries the session while Bluetooth is down, so a lost link is retried quietly and only a few times.
+    // Each retry scans for a few seconds, which is not worth repeating on a Host that has Bluetooth off.
+    private fun retryBleLater() {
+        if (stopped || bleRetries >= BleLinkPolicy.BACKGROUND_RETRIES) return
+        val delay = BleLinkPolicy.backgroundRetryDelayMs(++bleRetries, Random.nextDouble())
+        timers.postDelayed({ if (!stopped && lanReady && !bleReady) ble.connect() }, delay)
+    }
 
     private fun lanOpened() {
         lanReady = true
@@ -41,6 +59,7 @@ class HybridConnection(
 
     private fun bleOpened() {
         bleReady = true
+        bleRetries = 0
         handshake?.let { ble.send(it) }
         if (!openedOnce) {
             openedOnce = true
@@ -76,6 +95,8 @@ class HybridConnection(
     }
 
     override fun disconnect() {
+        stopped = true
+        timers.removeCallbacksAndMessages(null)
         lanReady = false
         bleReady = false
         lan.disconnect()

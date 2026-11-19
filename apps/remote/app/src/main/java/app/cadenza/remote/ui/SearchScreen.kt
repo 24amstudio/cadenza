@@ -5,6 +5,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -35,6 +37,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
@@ -45,6 +48,7 @@ import app.cadenza.remote.search.SongSignals
 import app.cadenza.remote.search.SuggestionKind
 import app.cadenza.remote.search.composeSuggestions
 import app.cadenza.remote.search.rankSearch
+import app.cadenza.remote.ui.browse.LocalBrowseNavigator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +63,7 @@ fun SearchScreen(
     var focused by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Song?>(null) }
     val focusManager = LocalFocusManager.current
+    val browse = LocalBrowseNavigator.current
     val signals = remember(state.favorites, state.statistics) { SearchSignals(state.favorites, state.statistics) }
     val correction = state.correctedQuery.takeIf { state.correctedResults.isNotEmpty() }
     val ranked =
@@ -115,9 +120,19 @@ fun SearchScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { submit(query) }),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         FilterChip(selected = !library, onClick = { library = false }, label = { Text("Apple Music") })
                         FilterChip(selected = library, onClick = { library = true }, label = { Text("Host library") })
+                        if ("library.browse" in state.capabilities) {
+                            AssistChip(
+                                onClick = { browse.open(BrowseTarget.playlists) },
+                                label = { Text("Playlists") },
+                                leadingIcon = {
+                                    Icon(cadenzaVector(CadenzaIcon.PLAYLIST), contentDescription = null, modifier = Modifier.size(18.dp))
+                                },
+                                enabled = state.connected,
+                            )
+                        }
                     }
                     if (focused && query.isNotBlank() && suggestions.isNotEmpty()) {
                         SuggestionList(suggestions) { suggestion ->

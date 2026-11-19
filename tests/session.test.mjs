@@ -4,6 +4,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import common from '../shared/protocol/v1/common.schema.json' with { type: 'json' };
 import state from '../shared/protocol/v1/state.schema.json' with { type: 'json' };
 import media from '../shared/protocol/v1/media.schema.json' with { type: 'json' };
+import browse from '../shared/protocol/v1/browse.schema.json' with { type: 'json' };
 import session from '../shared/protocol/v1/session.schema.json' with { type: 'json' };
 import command from '../shared/protocol/v1/command.schema.json' with { type: 'json' };
 
@@ -14,6 +15,8 @@ ajv.addSchema(common);
 ajv.addSchema(state);
 
 ajv.addSchema(media);
+
+ajv.addSchema(browse);
 
 const validateSession = ajv.compile(session);
 const validateCommand = ajv.compile(command);
@@ -138,6 +141,8 @@ test('state preserves unknown quality and durations without presenting invented 
     allow_cross_remote_edits: false,
     playing: false,
     volume: 50,
+    shuffle: false,
+    repeat: 'off',
     queue: [],
     quality: 'unknown',
     synchronized: false,
@@ -161,6 +166,166 @@ test('state preserves unknown quality and durations without presenting invented 
     }),
     false,
   );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'state',
+      snapshot: { ...snapshot, repeat: 'forever' },
+    }),
+    false,
+  );
+  const { shuffle: _shuffle, ...withoutShuffle } = snapshot;
+  assert.equal(
+    validateSession({ version: 1, type: 'state', snapshot: withoutShuffle }),
+    false,
+  );
+});
+
+test('browse requests name exactly one source and results stay within their bounds', () => {
+  /** @param {Record<string, unknown>} browse */
+  const request = (browse) => ({
+    version: 1,
+    type: 'browse.get',
+    request_id: uuid,
+    browse,
+  });
+
+  const song = { source: 'library', id: 'AB1234567890CDEF' };
+
+  assert.equal(validateSession(request({ kind: 'playlists' })), true);
+  assert.equal(
+    validateSession(request({ kind: 'playlist', id: 'AB1234567890CDEF' })),
+    true,
+  );
+  assert.equal(
+    validateSession(request({ kind: 'artist', id: '159260351' })),
+    true,
+  );
+  assert.equal(validateSession(request({ kind: 'album', song })), true);
+  assert.equal(validateSession(request({ kind: 'playlist' })), false);
+  assert.equal(validateSession(request({ kind: 'playlists', id: '1' })), false);
+  assert.equal(
+    validateSession(request({ kind: 'album', id: '1', song })),
+    false,
+  );
+  assert.equal(validateSession(request({ kind: 'album' })), false);
+  assert.equal(
+    validateSession(request({ kind: 'artist', id: '1; drop' })),
+    false,
+  );
+
+  const result = {
+    version: 1,
+    type: 'browse.result',
+    request_id: uuid,
+    browse: {
+      kind: 'artist',
+      id: '159260351',
+      title: 'Artist',
+      detail: 'Pop',
+      sections: [
+        {
+          id: 'top_songs',
+          title: 'Top Songs',
+          items: [
+            {
+              type: 'song',
+              song: {
+                source: 'catalog',
+                id: '1',
+                title: 'Song',
+                artist: 'Artist',
+                album: 'Album',
+              },
+            },
+          ],
+        },
+        {
+          id: 'albums',
+          title: 'Albums',
+          items: [
+            {
+              type: 'album',
+              id: '2',
+              title: 'Album',
+              artwork_url: 'https://is1-ssl.mzstatic.com/image/thumb/a.jpg',
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  assert.equal(
+    validateSession(result),
+    true,
+    JSON.stringify(validateSession.errors),
+  );
+  assert.equal(
+    validateSession({
+      ...result,
+      browse: {
+        ...result.browse,
+        sections: Array.from({ length: 9 }, (_, index) => ({
+          id: `s${index}`,
+          title: 'Section',
+          items: [],
+        })),
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      ...result,
+      browse: {
+        ...result.browse,
+        sections: [
+          {
+            id: 'albums',
+            title: 'Albums',
+            items: [
+              {
+                type: 'album',
+                id: '2',
+                title: 'Album',
+                artwork_url: 'https://example.com/a.jpg',
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('lyric lines may be placed at the end only by an explicit alignment', () => {
+  const line = {
+    id: 'l1',
+    text: 'Hello',
+    start_ms: 0,
+    end_ms: 1000,
+    words: [],
+  };
+
+  /** @param {Record<string, unknown>[]} lines */
+  const lyrics = (lines) => ({
+    version: 1,
+    type: 'lyrics',
+    request_id: uuid,
+    lyrics: {
+      occurrence_id: uuid,
+      revision: uuid,
+      translation_source: 'none',
+      source: 'apple_music',
+      lines,
+    },
+  });
+
+  assert.equal(validateSession(lyrics([line])), true);
+  assert.equal(validateSession(lyrics([{ ...line, align: 'end' }])), true);
+  assert.equal(validateSession(lyrics([{ ...line, align: 'middle' }])), false);
 });
 
 test('Sing state is bounded and exposes failure without carrying audio', () => {
@@ -173,6 +338,8 @@ test('Sing state is bounded and exposes failure without carrying audio', () => {
     allow_cross_remote_edits: false,
     playing: true,
     volume: 50,
+    shuffle: true,
+    repeat: 'all',
     queue: [],
     quality: 'unknown',
     synchronized: true,

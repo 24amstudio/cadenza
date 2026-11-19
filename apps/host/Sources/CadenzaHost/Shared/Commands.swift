@@ -27,9 +27,11 @@ struct CommandAction: Codable, Sendable {
     var positionMs: Int64? = nil
     var percent: Int? = nil
     var vocalPercent: Int? = nil
+    var enabled: Bool? = nil
+    var mode: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case kind, song, entryId, beforeEntryId, occurrenceId, positionMs, percent, vocalPercent
+        case kind, song, entryId, beforeEntryId, occurrenceId, positionMs, percent, vocalPercent, enabled, mode
     }
 
     func encode(to encoder: Encoder) throws {
@@ -46,5 +48,7 @@ struct CommandAction: Codable, Sendable {
         try container.encodeIfPresent(positionMs, forKey: .positionMs)
         try container.encodeIfPresent(percent, forKey: .percent)
         try container.encodeIfPresent(vocalPercent, forKey: .vocalPercent)
+        try container.encodeIfPresent(enabled, forKey: .enabled)
+        try container.encodeIfPresent(mode, forKey: .mode)
     }
 }

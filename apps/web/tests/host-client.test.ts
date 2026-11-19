@@ -297,7 +297,7 @@ describe('HostClient commands', () => {
     ]);
   });
 
-  test('settles a command the Host never answers as unconfirmed, then reports its late result', async () => {
+  test('asks the Host about a command it never answers, then calls it unconfirmed and still reports its late result', async () => {
     const { client, sockets, clock, changes } = harness();
     client.start('S'.repeat(43));
     socketAt(sockets, 0).open();
@@ -315,7 +315,12 @@ describe('HostClient commands', () => {
     );
 
     clock.advance(4_000);
+    expect(socketAt(sockets, 0).framesOfType('command.status')).toMatchObject([
+      { command_id: commandId },
+    ]);
 
+    // Neither the command nor the question was answered, so the outcome is unknown.
+    clock.advance(1_500);
     expect(await pending).toMatchObject({ commandId, outcome: 'unconfirmed' });
 
     socketAt(sockets, 0).receive({

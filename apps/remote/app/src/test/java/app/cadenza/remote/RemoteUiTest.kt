@@ -157,8 +157,9 @@ class RemoteUiTest {
             }
         }
         compose.onNodeWithText("Device usage").assertIsDisplayed()
-        compose.onNodeWithText("Errors in the last hour").assertIsDisplayed()
-        compose.onNodeWithText("Connection failed").assertIsDisplayed()
+        // The Energy readout sits above the error list, so the list is scrolled into view.
+        compose.onNodeWithText("Errors in the last hour").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Connection failed").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Copy").performClick()
         compose.onNodeWithText("Copied").assertIsDisplayed()
         capture("debug-tablet")
@@ -233,16 +234,9 @@ class RemoteUiTest {
     fun cachedQueueShowsAttributionAndWaitsWithMutationsDisabled() {
         seedProfile()
         openApp(keyboard = true)
-        compose.onNodeWithText("Queue").performClick()
-        compose.onNodeWithText("Requested by you").assertIsDisplayed()
-        compose.onNodeWithText("Requested by Living room").assertIsDisplayed()
-        compose.onNodeWithText("Wait ≈ 2:30").assertIsDisplayed()
-        compose.onNodeWithText("Wait ≈ 6:00").assertIsDisplayed()
-        compose.onNodeWithText("Total remaining ≈ 7:30").assertIsDisplayed()
-        compose.onAllNodesWithText("Remove").assertCountEquals(2)
-        compose.onAllNodesWithText("Remove")[0].assertIsNotEnabled()
-        compose.onAllNodesWithText("Remove")[1].assertIsNotEnabled()
-        capture("queue-tablet")
+        compose.onNodeWithText("Android Remote · Wait ≈ 2:30").assertIsDisplayed()
+        compose.onNodeWithText("Living room · Wait ≈ 6:00").assertIsDisplayed()
+        compose.onNodeWithText("2 requests • 7:30 total").assertIsDisplayed()
         val queueBefore =
             model.state.value.snapshot
                 ?.queue
@@ -250,11 +244,10 @@ class RemoteUiTest {
         compose.onAllNodesWithText("Sing along").assertCountEquals(0)
         navigate("Home")
         compose.onRoot().performKeyInput { pressKey(Key.Tab) }
-        compose.onNodeWithText("Lyrics").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithContentDescription("Lyrics").performSemanticsAction(SemanticsActions.RequestFocus)
         compose
-            .onNodeWithText("Lyrics")
+            .onNodeWithContentDescription("Lyrics")
             .assertIsFocused()
-            .assertIsNotSelected()
             .performClick()
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithText("Synchronization paused.").assertIsDisplayed()
@@ -263,7 +256,15 @@ class RemoteUiTest {
         compose.onNodeWithText("Requested by Living room").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsNotEnabled()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithText("Lyrics").assertIsNotSelected().assertIsFocused()
+        compose.onNodeWithContentDescription("Lyrics").assertIsFocused()
+        // Reorder and remove live with the request in Up next, and stay off while the Host is unreachable.
+        compose.onNodeWithText("A long requested song title with several words").performClick()
+        compose.onNodeWithText("Requested by you").assertIsDisplayed()
+        compose.onNodeWithText("Remove").assertIsNotEnabled()
+        compose.onNodeWithText("Second request").performClick()
+        compose.onNodeWithText("Requested by Living room").assertIsDisplayed()
+        compose.onNodeWithText("Remove").assertIsNotEnabled()
+        capture("queue-tablet")
         assertEquals(
             queueBefore,
             model.state.value.snapshot
@@ -380,7 +381,7 @@ class RemoteUiTest {
     fun lyricsModeUsesDarkSystemTheme() {
         seedProfile()
         openApp()
-        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithContentDescription("Lyrics").performClick()
         compose.onNodeWithText("Synchronization paused.").assertIsDisplayed()
         capture("integrated-lyrics-tablet-dark")
     }
@@ -469,9 +470,9 @@ class RemoteUiTest {
     fun narrowPhoneCanNavigateAndDisplayEmptyQueue() {
         seedProfile(emptyQueue = true)
         openApp()
-        compose.onNodeWithContentDescription("Queue").performClick()
+        compose.onNodeWithText("Queue and Favorites").performClick()
         capture("queue-phone")
-        compose.onNodeWithText("Queue is empty").assertIsDisplayed()
+        compose.onNodeWithText("Your queue is clear").assertIsDisplayed()
     }
 
     @Test
@@ -635,12 +636,13 @@ class RemoteUiTest {
         compose.waitUntil(5_000) {
             model.state.value.loaded
         }
-        val sourceLabel = "Apple Music · English machine translation"
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithText(sourceLabel).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("Synchronization paused.").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(sourceLabel).assertIsDisplayed()
         compose.onNodeWithText("Synchronization paused.").assertIsDisplayed()
+        // The music provider's own lyrics carry no source label, and no timing placeholder is shown.
+        compose.onAllNodesWithText("Apple Music", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Timed by", substring = true).assertCountEquals(0)
         compose.onNodeWithText("I sing with you").assertIsNotSelected()
         compose.onNodeWithText("The night awakens").assertIsNotSelected()
         capture("lyrics-tablet")
@@ -697,7 +699,6 @@ class RemoteUiTest {
             compose.onAllNodesWithText("It is hard to believe that darkness has fallen").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("It is hard to believe that darkness has fallen").assertIsDisplayed()
-        compose.onNodeWithText("Apple Music · English machine translation").assertIsDisplayed()
         compose.onNodeWithText("Tak terasa gelap pun jatuh").assertIsDisplayed()
         capture("lyrics-translation-arrived")
     }
@@ -736,7 +737,7 @@ class RemoteUiTest {
         compose.waitUntil(5_000) { model.state.value.loaded }
         compose.onNodeWithText("Current song").assertIsDisplayed()
         compose.onAllNodesWithText("A little further to the other side").assertCountEquals(0)
-        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithContentDescription("Lyrics").performClick()
         assertTrue(lyricsOpened)
         capture("now-playing-tablet-separate-lyrics")
     }
@@ -759,7 +760,7 @@ class RemoteUiTest {
             MaterialExpressiveTheme { LyricsScreen(model, state.copy(lyrics = document)) }
         }
         compose.waitUntil(5_000) { model.state.value.loaded }
-        compose.onNodeWithText("Lyrics without timing").assertIsDisplayed()
+        compose.onNodeWithText("Line 1").assertIsDisplayed()
         compose.onNode(hasScrollAction()).performTouchInput { swipeUp() }
         compose.onNodeWithText("Follow current line").assertIsDisplayed().performClick()
         compose.onAllNodesWithText("Follow current line").assertCountEquals(0)
@@ -770,9 +771,9 @@ class RemoteUiTest {
     fun queueTimingRemainsReadableWithDoubleSizeText() {
         seedProfile()
         openApp(fontScale = 2f)
-        navigate("Queue")
-        compose.onNodeWithText("Wait ≈ 2:30").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Total remaining ≈ 7:30").assertIsDisplayed()
+        compose.onNodeWithText("Queue and Favorites").performClick()
+        compose.onNodeWithText("Android Remote · Wait ≈ 2:30").assertIsDisplayed()
+        compose.onNodeWithText("2 requests • 7:30 total").assertIsDisplayed()
         capture("queue-phone-large-text")
     }
 
@@ -826,7 +827,7 @@ class RemoteUiTest {
         assertEquals(0, compose.onAllNodes(hasContentDescription("Music volume")).fetchSemanticsNodes().size)
         assertEquals(emptyList<String>(), viewsKeepingScreenOn())
         navigate("Home")
-        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithContentDescription("Lyrics").performClick()
         assertTrue(viewsKeepingScreenOn().isNotEmpty())
     }
 

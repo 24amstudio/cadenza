@@ -365,6 +365,13 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         return SingAudioBuffer(format: singFormat, frameCount: left.count, samples: buffer)
     }
 
+    func unload() {
+        guard model != nil else { return }
+        model = nil
+        resetStream()
+        Memory.clearCache()
+    }
+
     private func resetStream() {
         left.removeAll(keepingCapacity: true)
         right.removeAll(keepingCapacity: true)

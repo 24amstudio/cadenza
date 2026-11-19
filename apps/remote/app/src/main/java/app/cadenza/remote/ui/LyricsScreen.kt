@@ -1,11 +1,6 @@
 package app.cadenza.remote.ui
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -37,12 +33,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
+import app.cadenza.remote.energy.LocalEnergyProfile
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
@@ -53,7 +49,7 @@ import app.cadenza.remote.ui.lyrics.LyricPlayback
 import app.cadenza.remote.ui.lyrics.LyricsClock
 import app.cadenza.remote.ui.lyrics.activeLineIndices
 import app.cadenza.remote.ui.lyrics.rememberReducedMotion
-import app.cadenza.remote.ui.lyrics.rememberSweepTarget
+import app.cadenza.remote.ui.lyrics.rememberSweeps
 import app.cadenza.remote.ui.lyrics.rememberUserScrollConnection
 
 internal fun activeLyricIndices(
@@ -75,24 +71,22 @@ fun LyricsScreen(
     val current = state.snapshot?.current
     KeepScreenAwake(state.snapshot?.playing == true && current != null)
     val occurrence = current?.occurrenceId
-    val document = state.lyrics?.takeIf { it.occurrenceId == occurrence }
     val stale = !state.connected || model.isStale()
     // A small lead compensates for the Host sample and Compose frame boundary so the
     // highlighted line changes when the performer hears the cue instead of after it.
-    val currentPosition = (position(model, 100) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
-    val artwork = rememberArtwork(current?.song?.artworkUrl)
+    val currentPosition = (position(model, LocalEnergyProfile.current.lyricTickMs) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
+    // The song on screen trails the playing one until its artwork is ready, so a song change swaps both together.
+    val shown = rememberShownSong(current)
+    val shownOccurrence = shown?.current?.occurrenceId
+    val document = rememberHeldLyrics(shownOccurrence, state.lyrics?.takeIf { it.occurrenceId == shownOccurrence })
     val backdrop =
-        artwork?.accent?.let {
-            Brush.verticalGradient(
-                listOf(
-                    it.copy(alpha = 0.30f),
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                    MaterialTheme.colorScheme.surface,
-                ),
-            )
-        } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surface))
+        rememberBackdrop(
+            accent = shown?.artwork?.accent,
+            accentAlpha = 0.30f,
+            fallbackTop = MaterialTheme.colorScheme.primaryContainer,
+        )
     LaunchedEffect(occurrence, state.connected) {
-        if (occurrence != null && state.connected && document == null && !state.lyricsLoading) {
+        if (occurrence != null && state.connected && state.lyrics?.occurrenceId != occurrence && !state.lyricsLoading) {
             model.loadLyrics(userInitiated = false)
         }
     }
@@ -116,21 +110,37 @@ fun LyricsScreen(
                     leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
                 )
             }
-            if (expanded && current != null) {
+            val song = shown
+            if (expanded && song != null && current != null) {
                 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     Column(Modifier.weight(0.42f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Artwork(artwork, Modifier.widthIn(max = 260.dp).fillMaxWidth().aspectRatio(1f))
-                        TrackIdentity(current, state.profile?.remoteId)
+                        SongSwap(song, { it.current.occurrenceId }) { entry ->
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Artwork(
+                                    entry.artwork,
+                                    Modifier
+                                        .sharedArtwork(entry.current.occurrenceId)
+                                        .widthIn(max = 260.dp)
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f),
+                                )
+                                TrackIdentity(entry.current, state.profile?.remoteId)
+                            }
+                        }
                         Spacer(Modifier.weight(1f))
                         PlaybackTimeline(model, state, currentPosition)
                         LyricsTransport(model, state, current)
                         SingControls(model, state, current)
                     }
-                    LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(0.58f).fillMaxHeight())
+                    LyricsPane(model, state, document, shownOccurrence, currentPosition, stale, Modifier.weight(0.58f).fillMaxHeight())
                 }
             } else {
-                current?.let { CompactTrackIdentity(it, state.profile?.remoteId, artwork) }
-                LyricsContent(model, state, document, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
+                song?.let { entry ->
+                    SongSwap(entry, { it.current.occurrenceId }) {
+                        CompactTrackIdentity(it.current, state.profile?.remoteId, it.artwork)
+                    }
+                }
+                LyricsPane(model, state, document, shownOccurrence, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
                 if (current != null) {
                     PlaybackTimeline(model, state, currentPosition)
                     LyricsTransport(model, state, current)
@@ -141,7 +151,7 @@ fun LyricsScreen(
     }
 }
 
-// Favorite sits after Next. The matching spacer before Previous keeps the transport centred on the screen.
+// Previous, Play/Pause, Next and Favorite share the row evenly, so the group stays on screen at any width.
 @Composable
 private fun LyricsTransport(
     model: RemoteModel,
@@ -152,7 +162,6 @@ private fun LyricsTransport(
         model,
         state,
         compact = true,
-        leadingContent = { Spacer(Modifier.size(56.dp)) },
         trailingContent = { FavoriteIconButton(model, state, current.song) },
     )
 }
@@ -178,21 +187,62 @@ private fun CompactTrackIdentity(
     artwork: ArtworkData?,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Artwork(artwork, Modifier.size(56.dp))
+        Artwork(artwork, Modifier.sharedArtwork(current.occurrenceId).size(56.dp))
         TrackIdentity(current, remoteId, Modifier.weight(1f))
     }
 }
 
+/** The lyrics of one song, held so the pane can finish fading out while the next song's lyrics load. */
+@Immutable
+private class LyricsFrame(
+    val occurrence: String?,
+    val document: LyricDocument?,
+    val positionMs: Long,
+)
+
+/** Keeps [live] until the occurrence changes, since the model clears its lyrics as soon as the next song starts. */
+@Composable
+private fun rememberHeldLyrics(
+    occurrence: String?,
+    live: LyricDocument?,
+): LyricDocument? {
+    var held by remember(occurrence) { mutableStateOf(live) }
+    LaunchedEffect(live) { if (live != null) held = live }
+    return live ?: held
+}
+
+@Composable
+private fun LyricsPane(
+    model: RemoteModel,
+    state: RemoteState,
+    document: LyricDocument?,
+    occurrence: String?,
+    currentPosition: Long,
+    stale: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val frame = LyricsFrame(occurrence, document, currentPosition)
+    val liveOccurrence = state.snapshot?.current?.occurrenceId
+    SongSwap(frame, { it.occurrence.orEmpty() }, modifier) { entry ->
+        LyricsContent(model, state, entry.document, entry.occurrence, entry.positionMs, stale, frozen = entry.occurrence != liveOccurrence)
+    }
+}
+
+/**
+ * The lyric lines of [occurrence]. A [frozen] pane belongs to a song that is no longer playing and only finishes its
+ * exit: it keeps its position and runs no sweep.
+ */
 @Composable
 internal fun LyricsContent(
     model: RemoteModel,
     state: RemoteState,
     document: LyricDocument?,
+    occurrence: String?,
     currentPosition: Long,
     stale: Boolean,
     modifier: Modifier = Modifier,
+    frozen: Boolean = false,
 ) {
-    val occurrence = state.snapshot?.current?.occurrenceId
     key(occurrence) {
         val list = rememberLazyListState()
         var following by rememberSaveable { mutableStateOf(true) }
@@ -202,18 +252,20 @@ internal fun LyricsContent(
         val translationReveal = remember { MutableTransitionState(false) }
         LaunchedEffect(document != null) { translationReveal.targetState = document != null }
         val active = activeLyricIndices(document, occurrence, currentPosition, !stale)
-        // Follow the newest sounding line; an overlapping background line stays visible just above it.
-        val anchor = active.maxOrNull() ?: -1
+        // Follow the oldest sounding line: an overlapping background line starting later does not move the list.
+        val anchor = active.minOrNull() ?: -1
         val userScroll = rememberUserScrollConnection { following = false }
-        FollowActiveLine(list, anchor, document?.revision, following, reduced)
+        val energy = LocalEnergyProfile.current
+        FollowActiveLine(list, anchor, document?.revision, following, reduced || energy.reduceTransitions)
         // The sweep reads a frame-sampled position while the song plays and this screen is started.
         val clock = remember(model) { LyricsClock { now -> (model.position(now) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0) } }
-        val sweep by rememberSweepTarget(
+        val sweep by rememberSweeps(
             lines = document?.lines.orEmpty(),
             clock = clock,
-            enabled = document?.level == 3 && !stale && !reduced,
+            enabled = document?.level == 3 && !stale && !reduced && !frozen,
             playing = state.snapshot?.playing == true,
             pausedPositionMs = currentPosition,
+            frameCapFps = energy.lyricFrameCapFps,
         )
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stale) {
@@ -247,11 +299,8 @@ internal fun LyricsContent(
                     }
                 }
                 else -> {
-                    LyricsSource(document)
-                    when (document.level) {
-                        1 -> Text("Lyrics without timing", style = MaterialTheme.typography.bodyMedium)
-                        2 -> Text("Timed by line", style = MaterialTheme.typography.bodyMedium)
-                        3 -> Text("Timed by line and word", style = MaterialTheme.typography.bodyMedium)
+                    lyricsSourceLabel(document)?.let {
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     document.issue?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium)
@@ -294,32 +343,5 @@ internal fun LyricsContent(
 // Keep word emphasis ahead of that boundary so it does not visibly trail the singer.
 internal const val LYRIC_VISUAL_LEAD_MS = 280L
 
-@Composable
-private fun LyricsSource(document: LyricDocument) {
-    val source =
-        when (document.source) {
-            "lrclib" -> "LRCLIB"
-            "apple_music" -> "Apple Music"
-            else -> "Host provider"
-        }
-    val label =
-        "$source · " +
-            when (document.translationSource) {
-                "apple" -> "English translation from Apple Music"
-                "machine" -> "English machine translation"
-                "apple_and_machine" -> "English translation from Apple Music and on-device translation"
-                "original" -> "Original lyrics"
-                else -> "Lyrics"
-            }
-    AnimatedContent(
-        targetState = label,
-        transitionSpec = { fadeIn(tween(320)) togetherWith fadeOut(tween(160)) },
-        label = "lyrics-source",
-    ) { text ->
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
+/** Lyrics from the music provider need no label. Only the fallback provider is named. */
+internal fun lyricsSourceLabel(document: LyricDocument): String? = if (document.source == "lrclib") "Lyrics from LRCLIB" else null

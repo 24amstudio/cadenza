@@ -13,6 +13,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import app.cadenza.remote.energy.LocalEnergyProfile
 import kotlinx.coroutines.withContext
 import android.graphics.Color as AndroidColor
 
@@ -50,42 +51,61 @@ private object ArtworkCache {
     }
 }
 
+// Rows and small covers never show more than about 300 px, so they decode far smaller than a Now Playing cover.
+internal const val THUMBNAIL_EDGE_PX = 320
+
+/** Decodes the cover of [url] no larger than [maxEdgePx], or the energy profile's cover size when it is null. */
 @Composable
-internal fun rememberArtwork(url: String?): ArtworkData? {
+internal fun rememberArtwork(
+    url: String?,
+    maxEdgePx: Int? = null,
+): ArtworkData? {
     val host = LocalArtworkHost.current
+    val edge = maxEdgePx ?: LocalEnergyProfile.current.artworkMaxEdgePx
     val bytes = url?.let { host?.cached?.get(it) }
-    var artwork by remember(url, bytes) { mutableStateOf<ArtworkData?>(null) }
-    LaunchedEffect(url, bytes) {
+    var artwork by remember(url, bytes, edge) { mutableStateOf<ArtworkData?>(null) }
+    LaunchedEffect(url, bytes, edge) {
         if (url == null) {
             artwork = null
         } else if (bytes != null) {
             artwork =
                 try {
-                    loadArtwork(url, bytes)
+                    loadArtwork(url, bytes, edge)
                 } catch (_: Exception) {
                     null
                 }
         } else {
-            artwork = ArtworkCache.get(url)?.toArtworkData()
+            artwork = ArtworkCache.get(cacheKey(url, edge))?.toArtworkData()
             if (artwork == null) host?.request(url)
         }
     }
     return artwork
 }
 
+// The decoded size is part of the key, so a cover decoded small for Saver is never shown large after the tier rises.
+private fun cacheKey(
+    url: String,
+    edge: Int,
+) = "$url#$edge"
+
 private suspend fun loadArtwork(
     url: String,
     bytes: ByteArray,
+    edge: Int,
 ): ArtworkData =
     withContext(kotlinx.coroutines.Dispatchers.Default) {
-        ArtworkCache.get(url)?.toArtworkData() ?: decode(bytes).also { image -> ArtworkCache.put(url, image) }.toArtworkData()
+        val key = cacheKey(url, edge)
+        ArtworkCache.get(key)?.toArtworkData() ?: decode(bytes, edge).also { image -> ArtworkCache.put(key, image) }.toArtworkData()
     }
 
-private fun decode(bytes: ByteArray): Bitmap {
+private fun decode(
+    bytes: ByteArray,
+    edge: Int,
+): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     require(bounds.outWidth in 1..2_048 && bounds.outHeight in 1..2_048)
-    val sample = sampleSize(bounds.outWidth, bounds.outHeight)
+    val sample = sampleSize(bounds.outWidth, bounds.outHeight, edge)
     val options =
         BitmapFactory.Options().apply {
             inSampleSize = sample
@@ -96,12 +116,14 @@ private fun decode(bytes: ByteArray): Bitmap {
     }
 }
 
+// The largest power-of-two reduction whose result still has at least three quarters of the wanted edge.
 private fun sampleSize(
     width: Int,
     height: Int,
+    edge: Int,
 ): Int {
     var sample = 1
-    while (width / sample > 1_024 || height / sample > 1_024) sample *= 2
+    while (minOf(width, height) / (sample * 2) >= edge * 3 / 4) sample *= 2
     return sample
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import BrowseLink from '~/components/browse/BrowseLink.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import FavoriteToggle from '~/components/library/FavoriteToggle.vue';
 import { identityOf } from '~/lib/library/identity';
@@ -54,8 +55,10 @@ function label(action: RowAction): string {
     />
     <div class="meta">
       <strong>{{ song.title }}</strong>
-      <span>{{ song.artist }}</span>
-      <small v-if="album !== ''">{{ album }}</small>
+      <span><BrowseLink kind="artist" :song="song" /></span>
+      <small v-if="album !== ''"
+        ><BrowseLink kind="album" :song="song"
+      /></small>
     </div>
     <div class="side">
       <span v-if="duration !== ''">{{ duration }}</span>

@@ -19,11 +19,26 @@ export function traceEvent(message: string, ...details: unknown[]): void {
   console.debug(`[cadenza] ${message}`, ...details);
 }
 
+// A frame this large is an artwork or motion chunk. Parsing it only to hide its payload costs a copy of every transfer,
+// so it is logged by type and size alone.
+const parseLimitChars = 8_192;
+
 export function traceFrame(
   direction: TraceDirection,
   transport: TraceTransport,
   text: string,
 ): void {
+  if (text.length > parseLimitChars) {
+    const type = /"type":"([^"]{1,64})"/.exec(text.slice(0, 256))?.[1];
+
+    traceEvent(
+      `${direction} ${transport} ${type ?? 'unknown'}`,
+      `${text.length} characters`,
+    );
+
+    return;
+  }
+
   const frame = parseJson(text);
 
   if (frame === null) {

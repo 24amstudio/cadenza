@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import BrowseLink from '~/components/browse/BrowseLink.vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import EmptyState from '~/components/common/EmptyState.vue';
 import FavoriteToggle from '~/components/library/FavoriteToggle.vue';
 import LyricsPanel from '~/components/lyrics/LyricsPanel.vue';
+import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
 import VolumeSlider from '~/components/player/VolumeSlider.vue';
@@ -126,8 +128,10 @@ const ambientStyle = computed(() => {
       <div class="details">
         <div class="titles">
           <h1>{{ song.title }}</h1>
-          <p class="artist">{{ song.artist }}</p>
-          <p class="album">{{ song.album }}</p>
+          <p class="artist"><BrowseLink kind="artist" :song="song" /></p>
+          <p v-if="song.album.trim() !== ''" class="album">
+            <BrowseLink kind="album" :song="song" />
+          </p>
         </div>
 
         <ProgressScrubber
@@ -164,15 +168,26 @@ const ambientStyle = computed(() => {
           </span>
         </div>
 
-        <VolumeSlider
-          class="volume-row"
-          wide
-          :percent="host.volumePercent"
-          :muted="host.muted"
-          :disabled="!host.connected"
-          @change="host.setVolume"
-          @toggle-mute="host.toggleMute"
-        />
+        <div class="volume-row">
+          <VolumeSlider
+            class="volume-slider"
+            wide
+            :percent="host.volumePercent"
+            :muted="host.muted"
+            :disabled="!host.connected"
+            @change="host.setVolume"
+            @toggle-mute="host.toggleMute"
+          />
+          <PlaybackModes
+            v-if="host.supportsModes"
+            :shuffle="host.shuffleEnabled"
+            :repeat="host.repeatMode"
+            :pending="host.pendingControls"
+            :disabled="!host.connected"
+            @shuffle="host.toggleShuffle"
+            @repeat="host.cycleRepeat"
+          />
+        </div>
 
         <p class="requester">Requested by {{ host.current?.requesterName }}</p>
       </div>
@@ -326,8 +341,13 @@ h1 {
 }
 
 .volume-row {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.volume-slider {
   width: min(100%, 360px);
-  justify-self: center;
 }
 
 .requester {
@@ -499,6 +519,15 @@ h2 {
 
 .now-playing.immersive .volume-row {
   grid-area: volume;
+  grid-auto-flow: column;
+  grid-template-columns: minmax(0, 360px) auto;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.now-playing.immersive .volume-slider {
+  width: 100%;
 }
 
 .now-playing.immersive .immersive-tools {

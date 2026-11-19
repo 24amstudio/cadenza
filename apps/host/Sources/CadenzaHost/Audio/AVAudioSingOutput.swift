@@ -3,7 +3,8 @@ import Foundation
 
 /// Plays processed buffers through the user's current macOS output device.
 final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
-    private let engine = AVAudioEngine()
+    // Created when Sing first plays, so a Host that never uses Sing holds no audio engine.
+    private lazy var engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private var attached = false
     private var started = false
@@ -12,7 +13,8 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
     private var configurationObserver: NSObjectProtocol?
     var onFailure: (@Sendable (String) -> Void)?
 
-    init() {
+    private func observeConfigurationChanges() {
+        guard configurationObserver == nil else { return }
         configurationObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name.AVAudioEngineConfigurationChange,
             object: engine,
@@ -36,6 +38,7 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
     func start(format: SingAudioFormat) throws {
         let audioFormat = try makeFormat(format)
         activeFormat = format
+        observeConfigurationChanges()
         if !attached {
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: audioFormat)
@@ -66,6 +69,8 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
     }
 
     func stop() {
+        // Nothing was ever started, so there is no engine to stop and none is created for this.
+        guard configurationObserver != nil else { return }
         player.stop()
         engine.stop()
         if attached {

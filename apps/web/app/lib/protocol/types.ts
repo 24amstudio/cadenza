@@ -29,6 +29,8 @@ export interface QueueEntry {
   estimatedWaitMs: number | null;
 }
 
+export type RepeatMode = 'off' | 'one' | 'all';
+
 export interface Snapshot {
   hostId: string;
   hostEpoch: string;
@@ -36,6 +38,8 @@ export interface Snapshot {
   sequence: number;
   playing: boolean;
   volume: number;
+  shuffle: boolean;
+  repeat: RepeatMode;
   current: CurrentPlayback | null;
   queue: QueueEntry[];
   synchronized: boolean;
@@ -55,6 +59,8 @@ export interface LyricLine {
   endMs: number;
   translation: string | null;
   words: LyricWord[];
+  // 'end' marks a second voice, which the lyrics show right-aligned.
+  align: 'start' | 'end';
 }
 
 export interface LyricDocument {
@@ -112,10 +118,49 @@ export type CommandAction =
     }
   | { kind: 'playback.seek'; occurrenceId: string; positionMs: number }
   | { kind: 'playback.volume'; percent: number }
+  | { kind: 'playback.shuffle'; enabled: boolean }
+  | { kind: 'playback.repeat'; mode: RepeatMode }
   | { kind: QueueActionKind; song: SongIdentity };
 
 export interface ClockSample {
   sentAtRemoteMs: number;
   receivedAtHostMs: number;
   sentAtHostMs: number;
+}
+
+export type BrowseKind = 'album' | 'artist' | 'playlists' | 'playlist';
+
+// An album or artist is named by its ID or by a song the Host resolves itself. A playlist needs its ID.
+export interface BrowseRequest {
+  kind: BrowseKind;
+  id?: string;
+  song?: SongIdentity;
+}
+
+export type BrowseCollectionKind = 'album' | 'artist' | 'playlist';
+
+export type BrowseItem =
+  | { type: 'song'; song: Song }
+  | {
+      type: BrowseCollectionKind;
+      id: string;
+      title: string;
+      subtitle: string | null;
+      artworkUrl: string | null;
+    };
+
+export interface BrowseSection {
+  id: string;
+  title: string;
+  items: BrowseItem[];
+}
+
+export interface BrowsePage {
+  kind: BrowseKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  artworkUrl: string | null;
+  detail: string | null;
+  sections: BrowseSection[];
 }

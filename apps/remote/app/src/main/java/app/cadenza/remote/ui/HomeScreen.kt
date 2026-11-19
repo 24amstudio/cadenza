@@ -1,5 +1,6 @@
 package app.cadenza.remote.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -33,7 +34,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.AutoPlayItem
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
@@ -60,21 +63,12 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var favorites by rememberSaveable { mutableStateOf(false) }
     val selected = navigator.currentDestination?.contentKey ?: "playing"
-    val songs =
-        if (favorites) {
-            state.favorites
-        } else {
-            state.snapshot
-                ?.queue
-                .orEmpty()
-                .map { it.song }
-        }
+    val queue = state.snapshot?.queue.orEmpty()
+    val autoPlay = if (favorites) emptyList() else state.snapshot?.autoPlay.orEmpty()
+    val nothingToShow = if (favorites) state.favorites.isEmpty() else queue.isEmpty() && autoPlay.isEmpty()
     val selectedSong =
         state.favorites.firstOrNull { "favorite:" + it.source + ":" + it.id == selected }
-            ?: state.snapshot
-                ?.queue
-                ?.firstOrNull { it.id == selected }
-                ?.song
+            ?: queue.firstOrNull { it.id == selected }?.song
 
     fun select(
         key: String,
@@ -97,7 +91,7 @@ fun HomeScreen(
                         FilterChip(
                             selected = !favorites,
                             onClick = { favorites = false },
-                            label = { Text("Up next · ${state.snapshot?.queue?.size ?: 0}") },
+                            label = { Text("Up next · ${queue.size + (state.snapshot?.autoPlay?.size ?: 0)}") },
                         )
                         FilterChip(
                             selected = favorites,
@@ -108,43 +102,39 @@ fun HomeScreen(
                     if (favorites && state.unreadableFavorites > 0) {
                         UnreadableFavoritesCard(state.unreadableFavorites)
                     }
-                    if (songs.isEmpty()) {
+                    if (nothingToShow) {
                         EmptyCollectionCard(favorites)
                     } else {
                         LazyColumn(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            items(songs.withIndex().toList(), key = { (index, song) ->
-                                "$index:${song.source}:${song.id}"
-                            }) { (index, song) ->
-                                val itemKey =
-                                    if (favorites) {
-                                        "favorite:" + song.source + ":" + song.id
-                                    } else {
-                                        state.snapshot
-                                            ?.queue
-                                            ?.getOrNull(index)
-                                            ?.id
-                                            .orEmpty()
-                                    }
-                                LibrarySongRow(
-                                    song = song,
-                                    favorites = favorites,
-                                    selected = itemKey == selected,
-                                    detail =
-                                        if (favorites) {
-                                            songDetails(song)
-                                        } else {
-                                            state.snapshot
-                                                ?.queue
-                                                ?.getOrNull(index)
-                                                ?.let {
-                                                    it.requesterName + " · Wait ≈ " + duration(it.estimatedWaitMs)
-                                                }.orEmpty()
-                                        },
-                                    onClick = { select(itemKey, song) },
-                                )
+                            if (favorites) {
+                                itemsIndexed(state.favorites, key = { index, song -> "$index:${song.source}:${song.id}" }) { _, song ->
+                                    val itemKey = "favorite:" + song.source + ":" + song.id
+                                    LibrarySongRow(
+                                        song = song,
+                                        favorites = true,
+                                        selected = itemKey == selected,
+                                        detail = songDetails(song),
+                                        onClick = { select(itemKey, song) },
+                                    )
+                                }
+                            } else {
+                                itemsIndexed(queue, key = { _, entry -> entry.id }) { _, entry ->
+                                    LibrarySongRow(
+                                        song = entry.song,
+                                        favorites = false,
+                                        selected = entry.id == selected,
+                                        detail = entry.requesterName + " · Wait ≈ " + duration(entry.estimatedWaitMs),
+                                        onClick = { select(entry.id, entry.song) },
+                                    )
+                                }
+                                // Music plays these once the requests above are done. They are not Host requests, so
+                                // there is nothing to select, reorder or remove.
+                                itemsIndexed(autoPlay, key = { index, item -> "autoplay:$index:${item.title}" }) { _, item ->
+                                    AutoPlayRow(item)
+                                }
                             }
                         }
                     }
@@ -180,7 +170,11 @@ fun HomeScreen(
                                 onOpenLyrics,
                                 onClose = { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.List) } },
                             )
-                        selectedSong != null -> SongActions(model, state, selectedSong, Modifier.fillMaxSize())
+                        selectedSong != null ->
+                            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                QueueEntryControls(model, state, selected, Modifier.padding(horizontal = 20.dp))
+                                SongActions(model, state, selectedSong, Modifier.weight(1f).fillMaxWidth())
+                            }
                         else -> EmptySelectionCard(Modifier.fillMaxSize())
                     }
                 }
@@ -256,6 +250,40 @@ private fun LibrarySongRow(
                     modifier = Modifier.size(20.dp),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AutoPlayRow(item: AutoPlayItem) {
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                cadenzaVector(CadenzaIcon.MUSIC),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    item.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text("AutoPlay", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

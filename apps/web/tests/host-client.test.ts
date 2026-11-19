@@ -346,6 +346,7 @@ describe('HostClient commands', () => {
       artworkUrl: 'https://example.com/cover.jpg',
       dataUrl: null,
       full: true,
+      requestId: null,
     });
   });
 });
@@ -502,13 +503,11 @@ describe('HostClient over Bluetooth', () => {
     );
     const artworkUrl = 'https://example.com/cover.jpg';
 
-    client.requestArtwork(artworkUrl, {
-      kind: 'full',
-      occurrenceId,
-    });
+    client.requestArtwork(artworkUrl, { kind: 'still' });
 
     const request = socketAt(sockets, 0).framesOfType('artwork.get').at(-1);
     expect(request?.progressive).toBe(true);
+    expect(request).not.toHaveProperty('motion');
     const requestId = String(request?.request_id);
 
     const file = Uint8Array.from({ length: 2_500 }, (_, index) =>

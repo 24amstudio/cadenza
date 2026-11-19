@@ -24,7 +24,7 @@ struct HostMenu: View {
             Label("Host is running", systemImage: "circle.fill").foregroundStyle(.green)
         }
         Button("Settings...") {
-            model.selectedTab = 2
+            model.selectedSection = .general
             openWindow(id: "host")
             NSApplication.shared.activate()
         }

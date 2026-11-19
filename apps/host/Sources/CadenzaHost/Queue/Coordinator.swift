@@ -30,6 +30,11 @@ final class QueueCoordinator {
     private(set) var synchronized = false
     // Queue state is trusted only after an explicit read, so a fresh coordinator never reports an unread queue as synced.
     private var queueVerified = false
+    private var queuePolicy = QueueReadPolicy()
+    private var queuePid: pid_t?
+    private var lastQueueReadAt: Int64?
+    // Why Music's queue is unverified, shown only while it is. A healthy session never has one.
+    private var queueUnreadReason: String?
     private(set) var issue: String?
     private var publishIssueReported = false
     private var locked = false
@@ -79,7 +84,7 @@ final class QueueCoordinator {
         guard !locked else { return }
         locked = true
         defer { locked = false }
-        do { try await readState(includeQueue: needsStaleRequestSettlement()) } catch {
+        do { try await readState(includeQueue: needsStaleRequestSettlement(), background: true) } catch {
             synchronized = false
             issue = error.localizedDescription
             if current?.requestedBy != nil {
@@ -94,27 +99,60 @@ final class QueueCoordinator {
         publish()
     }
 
-    private func readState(deadline: Int64? = nil, includeQueue: Bool = true) async throws {
+    private func readState(deadline: Int64? = nil, includeQueue: Bool = true, background: Bool = false) async throws {
         let status = try await music.status(deadline: deadline)
         let now = monotonicMs()
         // The position describes the moment Music read it, which the bridge has dated. Older scripts fall back to now.
         let sampledAt = status.sampledAtMs ?? now
         if primingLyrics && status.song?.identity != lastStatus?.song?.identity { primingLyrics = false }
-        let readNativeNow = includeQueue && !primingLyrics
+        // A relaunched Music has a queue Cadenza has not read, whatever it read from the previous process.
+        let pid = music.accessibility.musicProcessId
+        if pid != queuePid {
+            queuePid = pid
+            queueVerified = false
+            queueUnreadReason = nil
+            lastQueueReadAt = nil
+        }
+        var readQueue = includeQueue
+        var openPanel = true
+        if background, !includeQueue, !primingLyrics {
+            switch backgroundQueueDecision(status: status, now: now) {
+            case .skip: break
+            case .read:
+                readQueue = true
+                openPanel = false
+            case .openPanelThenRead: readQueue = true
+            case .blocked(let message): queueUnreadReason = message
+            }
+        }
+        let readNativeNow = readQueue && !primingLyrics
+        var freshRead = false
         let nativeRead: Result<[NativeQueueRow], Error>
-        if !includeQueue || primingLyrics {
+        if !readNativeNow {
             // Background refreshes keep the last queue read. Each edit reads the queue again after it runs and fails if the
             // result does not match, so a change made in Music while the list is closed cannot be applied silently.
             nativeRead = .success(nativeRows)
         } else {
+            lastQueueReadAt = now
             do {
-                nativeRead = .success(try await readNativeQueue(deadline: deadline ?? monotonicMs() + 4_000))
+                let rows = try await readNativeQueue(
+                    deadline: deadline ?? monotonicMs() + (openPanel ? 4_000 : 1_500), openPanel: openPanel)
+                nativeRead = .success(rows)
                 autoPlay = (try? music.accessibility.autoPlayRows(deadline: monotonicMs() + 1_500)) ?? []
+                freshRead = true
+                queueVerified = true
+                queueUnreadReason = nil
             } catch {
-                nativeRead = .failure(error)
-                autoPlay = []
+                if background && queueVerified {
+                    // A slow Accessibility answer in the background must not flip a verified queue to a warning.
+                    nativeRead = .success(nativeRows)
+                } else {
+                    nativeRead = .failure(error)
+                    autoPlay = []
+                    queueVerified = false
+                    queueUnreadReason = error.localizedDescription
+                }
             }
-            queueVerified = (try? nativeRead.get()) != nil
         }
         let observed = (try? nativeRead.get()) ?? nativeRows
         guard observed.count <= 256, Set(observed.map(\.token)).count == observed.count else {
@@ -244,7 +282,7 @@ final class QueueCoordinator {
         }
         // A saved request with no Music row and no visible row it could be is no longer in Music's queue. Cancelling it
         // here stops it blocking every request until someone reconciles by hand.
-        if readNativeNow, queueVerified, activeCommand == nil, waiting.isEmpty, case .success = nativeRead {
+        if freshRead, activeCommand == nil, waiting.isEmpty {
             _ = try settleUnboundRequests(observed: observed)
         }
         let unresolved = try store.pending().contains { entry in
@@ -268,7 +306,7 @@ final class QueueCoordinator {
         } else {
             synchronized = queueVerified && !unresolved
             if !queueVerified {
-                issue = "Music's queue has not been read yet. Prepare the song to verify the queue."
+                issue = queueUnreadReason
             } else {
                 issue =
                     unresolved ? "Some saved requests cannot be matched to Music. Reconcile them in Cadenza Host." : nil
@@ -470,7 +508,6 @@ final class QueueCoordinator {
         guard !action.kind.hasPrefix("queue.") || synchronized else {
             throw CadenzaError.failure("native_queue_unavailable", issue ?? "Reconcile Music's native queue first.")
         }
-        if action.kind.hasPrefix("queue.") { try music.accessibility.requireFrontmost() }
         // Music ignores these requests while no song is loaded, so dispatching one could never be confirmed.
         if ["queue.enqueue", "queue.play_next"].contains(action.kind), current == nil {
             throw CadenzaError.failure(
@@ -501,9 +538,11 @@ final class QueueCoordinator {
         }
         do {
             if let identity = action.song, let song = knownSongs[identity] {
-                guard music.accessibility.isPrepared(song) else {
+                if let reason = try await music.accessibility.preparationIssue(
+                    song, deadline: max(deadline, monotonicMs() + 2_500))
+                {
                     throw CadenzaError.failure(
-                        "song_not_ready", "Prepare this exact song again before requesting playback.")
+                        "song_not_ready", "Prepare this exact song again before requesting playback. " + reason)
                 }
             }
             try store.authorize(actor: actor, command: command, entryId: target)
@@ -591,7 +630,7 @@ final class QueueCoordinator {
             let immediate = action.kind == "queue.play_now"
             let insertNext = immediate || action.kind == "queue.play_next"
             try await beforeEffect()
-            try music.accessibility.append(song, deadline: deadline, next: insertNext)
+            try await music.accessibility.append(song, deadline: deadline, next: insertNext)
             let after = try await waitForQueue(deadline: deadline) { rows in
                 let added = insertNext ? rows.first : rows.last
                 let remainder = insertNext ? Array(rows.dropFirst()) : Array(rows.dropLast())
@@ -616,8 +655,19 @@ final class QueueCoordinator {
             if insertNext { try store.reorder(after.compactMap { bindings[$0.token] }) }
             if immediate {
                 forcedEntry = id
-                try music.accessibility.play(added, deadline: deadline)
-                _ = try await waitForQueue(deadline: deadline) { $0.map(\.token) == before.map(\.token) }
+                let expected = Self.rowKeys(before)
+                // Music redraws the list after the insert, so the row is read again to click its current element.
+                let target =
+                    (try? music.accessibility.rows(deadline: monotonicMs() + 800))?.first {
+                        $0.title == added.title
+                    } ?? added
+                try await music.accessibility.play(
+                    target, deadline: deadline,
+                    skipToNext: { [music] in try await music.skipToNext(deadline: deadline) },
+                    confirmed: { [music] in
+                        (try? music.accessibility.rows(deadline: monotonicMs() + 800)).map(Self.rowKeys) == expected
+                    })
+                _ = try await waitForQueue(deadline: deadline) { Self.rowKeys($0) == expected }
             }
         case "queue.remove":
             guard let entry = action.entryId, try nativeRow(for: entry, in: before) != nil else {
@@ -630,7 +680,7 @@ final class QueueCoordinator {
                 throw CadenzaError.failure("native_queue_unavailable", "The request is no longer in Music's queue.")
             }
             do {
-                try music.accessibility.remove(current, deadline: deadline)
+                try await music.accessibility.remove(current, deadline: deadline)
             } catch {
                 // A context menu can open after its wait has ended, so the queue decides whether the removal happened.
                 let after = try await readNativeQueue(deadline: deadline)
@@ -686,7 +736,10 @@ final class QueueCoordinator {
             freshAnchor.flatMap { target in expected.firstIndex { $0.token == target.token } } ?? expected.count
         expected.insert(current, at: freshIndex)
         let expectedKeys = expected.map { "\($0.title)|\($0.artist)" }
-        try music.accessibility.move(current, before: freshAnchor, deadline: deadline)
+        try await music.accessibility.move(current, before: freshAnchor, deadline: deadline) { [music] in
+            (try? music.accessibility.rows(deadline: monotonicMs() + 800))?.map { "\($0.title)|\($0.artist)" }
+                == expectedKeys
+        }
         _ = try await waitForQueue(deadline: deadline) { $0.map { "\($0.title)|\($0.artist)" } == expectedKeys }
         // The read that follows the action rebinds the rows to their requests and keeps the stored order in step.
         try store.bump()
@@ -734,15 +787,28 @@ final class QueueCoordinator {
         return music.accessibility.queuePanelOpen()
     }
 
+    private func backgroundQueueDecision(status: MusicStatus, now: Int64) -> QueueReadPolicy.Decision {
+        queuePolicy.decide(
+            now: now, lastReadAt: lastQueueReadAt, verified: queueVerified,
+            trackChanged: status.song?.identity != lastStatus?.song?.identity,
+            idle: activeCommand == nil && waiting.isEmpty, permitted: music.accessibility.permitted,
+            musicPid: queuePid, panelOpen: { [music] in music.accessibility.queuePanelOpen() })
+    }
+
     /// Reads Music's queue on an explicit action. The Playing Next list is opened first when it is closed, and the read
     /// waits for it only within the deadline. The status poll reads the queue only for the settlement above.
-    private func readNativeQueue(deadline: Int64) async throws -> [NativeQueueRow] {
+    private func readNativeQueue(deadline: Int64, openPanel: Bool = true) async throws -> [NativeQueueRow] {
         if !music.accessibility.queuePanelOpen() {
-            try music.accessibility.requestQueuePanel()
+            guard openPanel else {
+                throw CadenzaError.failure("native_queue_unavailable", QueueReadPolicy.panelClosedMessage)
+            }
+            try await music.accessibility.requestQueuePanel()
         }
         while true {
             do {
                 return try music.accessibility.rows(deadline: deadline)
+            } catch let error as CadenzaError where ["music_permission", "music_unavailable"].contains(error.code) {
+                throw error
             } catch {
                 guard monotonicMs() < deadline else { throw error }
                 try await Task.sleep(for: .milliseconds(120))
@@ -750,15 +816,29 @@ final class QueueCoordinator {
         }
     }
 
+    /// Polls Music's queue until `condition` holds. A read that fails inside the window is retried, because Music
+    /// redraws its list right after an edit.
     private func waitForQueue(
         deadline: Int64, matching condition: ([NativeQueueRow]) -> Bool
     ) async throws -> [NativeQueueRow] {
+        var lastFailure: String?
         repeat {
-            let rows = try music.accessibility.rows(deadline: deadline)
-            if condition(rows) { return rows }
+            do {
+                let rows = try music.accessibility.rows(deadline: min(deadline, monotonicMs() + 1_000))
+                if condition(rows) { return rows }
+                lastFailure = nil
+            } catch let error as CadenzaError where error.code == "native_queue_unavailable" {
+                lastFailure = error.localizedDescription
+            }
             try await Task.sleep(for: .milliseconds(35))
         } while monotonicMs() < deadline
-        throw CadenzaError.failure("outcome_unknown", "Music's native queue has not confirmed the action.")
+        throw CadenzaError.failure(
+            "outcome_unknown",
+            "Music's native queue has not confirmed the action." + (lastFailure.map { " Last read: \($0)" } ?? ""))
+    }
+
+    private static func rowKeys(_ rows: [NativeQueueRow]) -> [String] {
+        rows.map { "\($0.title)|\($0.artist)" }
     }
 
     func prepare(_ identity: SongIdentity, metadata: Song? = nil) async throws {
@@ -859,6 +939,8 @@ final class QueueCoordinator {
         nativeRows = rows
         try store.reorder(rows.compactMap { assignments[$0.token] })
         try journal.reconcileQueue(assignments: Set(assignments.values))
+        queueVerified = true
+        queueUnreadReason = nil
         synchronized = true
         issue = nil
         publish()

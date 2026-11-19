@@ -1,4 +1,4 @@
-import type { CommandAction } from './types';
+import type { CommandAction, SearchScope, SongIdentity } from './types';
 
 // Outgoing frames carry exactly the keys the Host accepts for each message type. Unknown or extra keys are rejected by
 // the Host, so these builders never spread caller-provided objects into a frame.
@@ -91,10 +91,6 @@ export interface ArtworkRequestOptions {
   progressive: boolean;
   // The preview alone, for a row that is not playing yet.
   previewOnly: boolean;
-  // The song a full image is for. The Host stops the request when that song is no longer playing.
-  occurrenceId: string | null;
-  // Whether the song's motion video may replace the full image.
-  motion: boolean;
 }
 
 export function encodeArtworkGet(
@@ -110,8 +106,19 @@ export function encodeArtworkGet(
     artwork_url: artworkUrl,
     progressive: options.progressive ? true : undefined,
     preview_only: options.previewOnly ? true : undefined,
-    motion: options.motion ? true : undefined,
-    occurrence_id: options.occurrenceId ?? undefined,
+  });
+}
+
+// The song's motion video, sent as motion chunks under this request. A song without one is answered with motion.unavailable.
+export function encodeMotionGet(
+  requestId: string,
+  occurrenceId: string,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'motion.get',
+    request_id: requestId,
+    occurrence_id: occurrenceId,
   });
 }
 
@@ -158,6 +165,55 @@ export function encodeCreditAck(sequence: number): string {
   return JSON.stringify({ version: 1, type: 'analytics.ack', sequence });
 }
 
+// The answer is search.result with this request ID, or an error carrying it.
+export function encodeSearch(
+  requestId: string,
+  query: string,
+  scope: SearchScope,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'search',
+    request_id: requestId,
+    query,
+    scope,
+  });
+}
+
+// Apple Music completions for text being typed. The answer is search.suggestions with this request ID.
+export function encodeSearchSuggest(requestId: string, query: string): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'search.suggest',
+    request_id: requestId,
+    query,
+  });
+}
+
+// Preparation makes the Host know a song well enough to queue it. The answer is song.ready or an error.
+// What the Host needs to find a library song whose ID no longer resolves. The Host reads it only for the song in `song`.
+export interface SongDetails {
+  title: string;
+  artist: string;
+  album: string;
+  durationMs: number | null;
+}
+
+export function encodeSongPrepare(
+  requestId: string,
+  song: SongIdentity,
+  details?: SongDetails,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'song.prepare',
+    request_id: requestId,
+    song: encodeIdentity(song),
+    song_metadata:
+      details === undefined ? undefined : encodeMetadata(song, details),
+  });
+}
+
 export function encodeCommand(envelope: CommandEnvelope): string {
   return JSON.stringify({
     version: 1,
@@ -185,5 +241,24 @@ function encodeAction(action: CommandAction) {
     case 'playback.skip':
     case 'playback.previous':
       return { kind: action.kind, occurrence_id: action.occurrenceId };
+    case 'queue.enqueue':
+    case 'queue.play_next':
+      return { kind: action.kind, song: encodeIdentity(action.song) };
   }
+}
+
+// Commands and searches take exactly the source and ID. Only song.prepare adds metadata, through encodeMetadata.
+function encodeIdentity(song: SongIdentity) {
+  return { source: song.source, id: song.id };
+}
+
+function encodeMetadata(song: SongIdentity, details: SongDetails) {
+  return {
+    source: song.source,
+    id: song.id,
+    title: details.title,
+    artist: details.artist,
+    album: details.album,
+    duration_ms: details.durationMs,
+  };
 }

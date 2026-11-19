@@ -27,6 +27,30 @@
       },
       "additionalProperties": false
     },
+    "songMetadata": {
+      "type": "object",
+      "required": ["source", "id", "title", "artist", "album"],
+      "properties": {
+        "source": { "enum": ["catalog", "library"] },
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 500 },
+        "artist": { "type": "string", "maxLength": 500 },
+        "album": { "type": "string", "maxLength": 500 },
+        "duration_ms": {
+          "anyOf": [
+            { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
+            { "type": "null" }
+          ]
+        },
+        "artwork_url": {
+          "anyOf": [
+            { "type": "string", "maxLength": 4096, "pattern": "^https://" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "current": {
       "type": "object",
       "required": [

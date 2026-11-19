@@ -21,6 +21,7 @@ import type {
   QueueEntry,
   Snapshot,
   Song,
+  SongSuggestions,
   Welcome,
 } from './types';
 
@@ -34,6 +35,7 @@ export type HostMessage =
   | {
       type: 'error';
       requestId: string | null;
+      commandId: string | null;
       errorCode: string;
       message: string;
     }
@@ -67,8 +69,16 @@ export type HostMessage =
       sha256: string;
       dataBase64: string;
     }
+  | { type: 'motion.unavailable'; requestId: string; occurrenceId: string }
   | { type: 'clock'; requestId: string; sample: ClockSample }
-  | { type: 'analytics.credit'; sequence: number };
+  | { type: 'analytics.credit'; sequence: number }
+  | { type: 'search.result'; requestId: string; songs: Song[] }
+  | {
+      type: 'search.suggestions';
+      requestId: string;
+      suggestions: SongSuggestions;
+    }
+  | { type: 'song.ready'; requestId: string };
 
 export function decodeHostMessage(text: string): HostMessage | null {
   const value = parseJson(text);
@@ -101,10 +111,18 @@ export function decodeHostMessage(text: string): HostMessage | null {
       return decodeArtworkUnavailableMessage(value);
     case 'motion.chunk':
       return decodeMotionChunkMessage(value);
+    case 'motion.unavailable':
+      return decodeMotionUnavailableMessage(value);
     case 'clock':
       return decodeClockMessage(value);
     case 'analytics.credit':
       return decodeCreditMessage(value);
+    case 'search.result':
+      return decodeSearchResultMessage(value);
+    case 'search.suggestions':
+      return decodeSearchSuggestionsMessage(value);
+    case 'song.ready':
+      return decodeSongReadyMessage(value);
     default:
       return null;
   }
@@ -168,6 +186,7 @@ function decodeErrorMessage(object: JsonObject): HostMessage | null {
   return {
     type: 'error',
     requestId: stringField(object, 'request_id'),
+    commandId: stringField(object, 'command_id'),
     errorCode,
     message: stringField(object, 'message') ?? '',
   };
@@ -252,6 +271,17 @@ function decodeArtworkUnavailableMessage(
   return { type: 'artwork.unavailable', requestId, artworkUrl };
 }
 
+function decodeMotionUnavailableMessage(
+  object: JsonObject,
+): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const occurrenceId = stringField(object, 'occurrence_id');
+
+  if (requestId === null || occurrenceId === null) return null;
+
+  return { type: 'motion.unavailable', requestId, occurrenceId };
+}
+
 function decodeMotionChunkMessage(object: JsonObject): HostMessage | null {
   const requestId = stringField(object, 'request_id');
   const occurrenceId = stringField(object, 'occurrence_id');
@@ -311,6 +341,37 @@ function decodeCreditMessage(object: JsonObject): HostMessage | null {
   const sequence = counterField(object, 'sequence');
 
   return sequence === null ? null : { type: 'analytics.credit', sequence };
+}
+
+function decodeSearchResultMessage(object: JsonObject): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const songs = decodeList(arrayField(object, 'songs'), decodeSong);
+
+  return requestId === null || songs === null
+    ? null
+    : { type: 'search.result', requestId, songs };
+}
+
+function decodeSearchSuggestionsMessage(
+  object: JsonObject,
+): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const terms = stringArrayField(object, 'terms');
+  const songs = decodeList(arrayField(object, 'songs'), decodeSong);
+
+  if (requestId === null || terms === null || songs === null) return null;
+
+  return {
+    type: 'search.suggestions',
+    requestId,
+    suggestions: { terms, songs },
+  };
+}
+
+function decodeSongReadyMessage(object: JsonObject): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+
+  return requestId === null ? null : { type: 'song.ready', requestId };
 }
 
 export function decodeSnapshot(object: JsonObject): Snapshot | null {

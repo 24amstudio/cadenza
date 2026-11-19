@@ -1,24 +1,15 @@
 package app.cadenza.remote.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -28,8 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -46,36 +35,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.lerp
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
-import kotlin.math.abs
+import app.cadenza.remote.model.position
+import app.cadenza.remote.ui.lyrics.FollowActiveLine
+import app.cadenza.remote.ui.lyrics.LyricList
+import app.cadenza.remote.ui.lyrics.LyricPlayback
+import app.cadenza.remote.ui.lyrics.LyricsClock
+import app.cadenza.remote.ui.lyrics.activeLineIndices
+import app.cadenza.remote.ui.lyrics.rememberReducedMotion
+import app.cadenza.remote.ui.lyrics.rememberSweepTarget
+import app.cadenza.remote.ui.lyrics.rememberUserScrollConnection
 
 internal fun activeLyricIndices(
     document: LyricDocument?,
@@ -84,148 +63,7 @@ internal fun activeLyricIndices(
     synchronized: Boolean,
 ): List<Int> {
     if (!synchronized || occurrence == null || document?.occurrenceId != occurrence) return emptyList()
-    // Background vocals are timed as separate lines that overlap their main line, so every line
-    // sounding at this position stays active. Provider end markers can leave short gaps between
-    // lines; then the most recently started line stays active to keep highlighting and following
-    // aligned with the playback timeline.
-    val sounding =
-        document.lines.indices.filter { index ->
-            val line = document.lines[index]
-            line.endMs > line.startMs && line.startMs <= positionMs && positionMs < line.endMs
-        }
-    if (sounding.isNotEmpty()) return sounding
-    val latest = document.lines.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
-    return if (latest >= 0) listOf(latest) else emptyList()
-}
-
-// Distance from the nearest active line. Lyrics with no active line use the dimmest tier.
-private fun lyricDistance(
-    index: Int,
-    active: List<Int>,
-): Int = active.minOfOrNull { abs(index - it) } ?: 3
-
-private fun activeWordIndex(
-    line: app.cadenza.remote.data.LyricLine,
-    positionMs: Long,
-): Int = line.words.indexOfLast { it.endMs > it.startMs && it.startMs <= positionMs }
-
-@Composable
-private fun LyricText(
-    line: app.cadenza.remote.data.LyricLine,
-    currentPosition: Long,
-    distanceFromActive: Int,
-    onWordClick: ((Long) -> Unit)? = null,
-) {
-    val activeLine = distanceFromActive == 0
-    val activeWord = if (activeLine) activeWordIndex(line, currentPosition) else -1
-    val activeLineColor by animateColorAsState(
-        if (activeLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        animationSpec = tween(220, easing = FastOutSlowInEasing),
-        label = "lyric-line-color",
-    )
-    val inactiveBlur by animateDpAsState(
-        when {
-            distanceFromActive == 0 -> 0.dp
-            distanceFromActive == 1 -> 2.dp
-            else -> 4.dp
-        },
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "lyric-line-blur",
-    )
-    val lineAlpha by animateFloatAsState(
-        when (distanceFromActive) {
-            0 -> 1f
-            1 -> 0.72f
-            2 -> 0.48f
-            else -> 0.28f
-        },
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "lyric-line-alpha",
-    )
-    val lineScale by animateFloatAsState(
-        if (activeLine) 1.04f else 1f,
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "lyric-line-scale",
-    )
-    val wordFocus by animateFloatAsState(
-        activeWord.toFloat(),
-        animationSpec = tween(180, easing = FastOutSlowInEasing),
-        label = "lyric-word-focus",
-    )
-    val text: AnnotatedString =
-        if (line.words.isEmpty()) {
-            AnnotatedString(line.text)
-        } else {
-            buildAnnotatedString {
-                line.words.forEachIndexed { index, word ->
-                    val passed = activeWord >= 0 && index <= activeWord
-                    val emphasis = if (passed) 1f else (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
-                    val wordColor =
-                        lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
-                    val wordAlpha = if (passed) 1f else 0.62f + (0.38f * emphasis)
-                    withStyle(
-                        SpanStyle(
-                            color = wordColor.copy(alpha = wordAlpha),
-                            fontWeight = if (index <= activeWord) FontWeight.Bold else FontWeight.Normal,
-                        ),
-                    ) { append(word.text) }
-                }
-            }
-        }
-    if (line.words.isNotEmpty() && onWordClick != null) {
-        FlowRow(
-            Modifier
-                .fillMaxWidth()
-                .graphicsLayer {
-                    alpha = lineAlpha
-                    scaleX = lineScale
-                    scaleY = lineScale
-                },
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            line.words.forEachIndexed { index, word ->
-                val passed = activeWord >= 0 && index <= activeWord
-                val emphasisTarget = if (passed) 1f else (1f - abs(index - wordFocus)).coerceIn(0f, 1f)
-                val emphasis by animateFloatAsState(
-                    emphasisTarget,
-                    animationSpec = tween(180, easing = FastOutSlowInEasing),
-                    label = "lyric-word-emphasis-$index",
-                )
-                Text(
-                    word.text,
-                    style = if (activeLine) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
-                    fontWeight = if (index <= activeWord) FontWeight.Bold else FontWeight.Normal,
-                    color =
-                        lerp(MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.primary, emphasis)
-                            .copy(alpha = if (passed) 1f else 0.62f + 0.38f * emphasis),
-                    modifier =
-                        Modifier
-                            .blur(inactiveBlur)
-                            .clickable(role = Role.Button) { onWordClick(word.startMs) }
-                            .semantics { contentDescription = "Seek to ${word.text.trim()}" },
-                )
-            }
-        }
-    } else {
-        Text(
-            text,
-            style =
-                when (distanceFromActive) {
-                    0 -> MaterialTheme.typography.headlineLarge
-                    1 -> MaterialTheme.typography.headlineMedium
-                    else -> MaterialTheme.typography.titleLarge
-                },
-            fontWeight = if (activeLine && activeWord < 0) FontWeight.Bold else FontWeight.Normal,
-            color = activeLineColor,
-            modifier =
-                Modifier
-                    .graphicsLayer {
-                        alpha = lineAlpha
-                        scaleX = lineScale
-                        scaleY = lineScale
-                    }.blur(inactiveBlur),
-        )
-    }
+    return activeLineIndices(document.lines, positionMs)
 }
 
 @Composable
@@ -330,55 +168,6 @@ private fun CompactTrackIdentity(
 }
 
 @Composable
-private fun LyricTranslation(
-    translation: String?,
-    distanceFromActive: Int,
-    revealed: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val activeLine = distanceFromActive == 0
-    // Lines nearest the active line lead the reveal.
-    val revealDelay = distanceFromActive.coerceAtMost(6) * 40
-    val emphasis by animateFloatAsState(
-        if (activeLine) 1f else 0f,
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "lyric-translation-emphasis",
-    )
-    val translationAlpha by animateFloatAsState(
-        if (activeLine) 1f else 0.68f,
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "lyric-translation-alpha",
-    )
-    val translationBlur by animateDpAsState(
-        when (distanceFromActive) {
-            0 -> 0.dp
-            1 -> 2.dp
-            else -> 4.dp
-        },
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "lyric-translation-blur",
-    )
-    AnimatedVisibility(
-        visible = translation != null && revealed,
-        modifier = modifier,
-        enter =
-            fadeIn(tween(320, delayMillis = revealDelay, easing = FastOutSlowInEasing)) +
-                expandVertically(
-                    tween(320, delayMillis = revealDelay, easing = FastOutSlowInEasing),
-                    expandFrom = Alignment.Top,
-                ),
-        exit = fadeOut(tween(160)) + shrinkVertically(tween(160)),
-    ) {
-        Text(
-            translation.orEmpty(),
-            style = lerp(MaterialTheme.typography.titleMedium, MaterialTheme.typography.titleLarge, emphasis),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.graphicsLayer { alpha = translationAlpha }.blur(translationBlur),
-        )
-    }
-}
-
-@Composable
 internal fun LyricsContent(
     model: RemoteModel,
     state: RemoteState,
@@ -391,6 +180,7 @@ internal fun LyricsContent(
     key(occurrence) {
         val list = rememberLazyListState()
         var following by rememberSaveable { mutableStateOf(true) }
+        val reduced = rememberReducedMotion()
         // Translations already in the document reveal together when this song's lyrics first appear.
         // Later arrivals animate on their own, and lines that scroll into view afterward appear as-is.
         val translationReveal = remember { MutableTransitionState(false) }
@@ -398,36 +188,17 @@ internal fun LyricsContent(
         val active = activeLyricIndices(document, occurrence, currentPosition, !stale)
         // Follow the newest sounding line; an overlapping background line stays visible just above it.
         val anchor = active.maxOrNull() ?: -1
-        val userScroll =
-            remember {
-                object : NestedScrollConnection {
-                    override fun onPreScroll(
-                        available: Offset,
-                        source: NestedScrollSource,
-                    ): Offset {
-                        if (source == NestedScrollSource.UserInput && available.y != 0f) following = false
-                        return Offset.Zero
-                    }
-                }
-            }
-        LaunchedEffect(anchor, document?.revision, following) {
-            if (following && anchor >= 0) {
-                // Wait for the lazy list to report a real viewport before seeking it.
-                // A single frame is not enough when artwork and lyrics enter together;
-                // otherwise the first active line can be missed until a manual scroll.
-                repeat(3) {
-                    withFrameNanos { }
-                }
-                val viewport = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
-                if (viewport > 0) {
-                    // Keep one previous line visible while leaving most of the viewport
-                    // for upcoming lyrics. A negative offset keeps the active row below
-                    // the top edge instead of pinning it against the container boundary.
-                    val offset = -(viewport * 0.18f).toInt()
-                    list.animateScrollToItem(anchor, offset)
-                }
-            }
-        }
+        val userScroll = rememberUserScrollConnection { following = false }
+        FollowActiveLine(list, anchor, document?.revision, following, reduced)
+        // The sweep reads a frame-sampled position while the song plays and this screen is started.
+        val clock = remember(model) { LyricsClock { now -> (model.position(now) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0) } }
+        val sweep by rememberSweepTarget(
+            lines = document?.lines.orEmpty(),
+            clock = clock,
+            enabled = document?.level == 3 && !stale && !reduced,
+            playing = state.snapshot?.playing == true,
+            pausedPositionMs = currentPosition,
+        )
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stale) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -473,80 +244,29 @@ internal fun LyricsContent(
                     if (!following) {
                         TextButton(onClick = { following = true }) { Text("Follow current line") }
                     }
-                    LazyColumn(
-                        modifier = Modifier.weight(1f).fillMaxWidth().nestedScroll(userScroll),
-                        state = list,
-                        verticalArrangement = Arrangement.spacedBy(24.dp),
-                    ) {
-                        itemsIndexed(document.lines, key = { _, line -> line.id }) { index, line ->
-                            val isActive = index in active
-                            val canSeek =
-                                state.connected && !stale && mayInterruptPlayback(state) &&
-                                    line.endMs > line.startMs
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable(
-                                        enabled = canSeek && line.words.isEmpty(),
-                                        role = Role.Button,
-                                    ) {
-                                        model.command(
-                                            org.json
-                                                .JSONObject()
-                                                .put("kind", "playback.seek")
-                                                .put("occurrence_id", occurrence)
-                                                .put("position_ms", line.startMs),
-                                            "playback.seek",
-                                        )
-                                    }.padding(vertical = 6.dp)
-                                    .semantics(mergeDescendants = true) {
-                                        selected = isActive
-                                        if (canSeek) contentDescription = "Seek to ${line.text}"
-                                    },
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                LyricText(
-                                    line,
-                                    currentPosition,
-                                    lyricDistance(index, active),
-                                    onWordClick =
-                                        if (canSeek && line.words.isNotEmpty()) {
-                                            { time ->
-                                                model.command(
-                                                    org.json
-                                                        .JSONObject()
-                                                        .put("kind", "playback.seek")
-                                                        .put("occurrence_id", occurrence)
-                                                        .put("position_ms", time),
-                                                    "playback.seek",
-                                                )
-                                            }
-                                        } else {
-                                            null
-                                        },
-                                )
-                                line.romanized?.takeIf { it.isNotBlank() }?.let {
-                                    val romanizedStyle =
-                                        if (isActive) {
-                                            MaterialTheme.typography.titleLarge
-                                        } else {
-                                            MaterialTheme.typography.titleMedium
-                                        }
-                                    Text(
-                                        it,
-                                        style = romanizedStyle,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.blur(if (isActive) 0.dp else 2.dp),
-                                    )
-                                }
-                                LyricTranslation(
-                                    translation = line.translation,
-                                    distanceFromActive = lyricDistance(index, active),
-                                    revealed = translationReveal.targetState,
-                                )
-                            }
-                        }
-                    }
+                    LyricList(
+                        document = document,
+                        playback = LyricPlayback(currentPosition, active, sweep, !stale, clock),
+                        list = list,
+                        userScroll = userScroll,
+                        reduced = reduced,
+                        translationRevealed = translationReveal.targetState,
+                        canSeek = { index ->
+                            val line = document.lines[index]
+                            state.connected && !stale && mayInterruptPlayback(state) && line.endMs > line.startMs
+                        },
+                        onSeek = { positionMs ->
+                            model.command(
+                                org.json
+                                    .JSONObject()
+                                    .put("kind", "playback.seek")
+                                    .put("occurrence_id", occurrence)
+                                    .put("position_ms", positionMs),
+                                "playback.seek",
+                            )
+                        },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
                 }
             }
         }

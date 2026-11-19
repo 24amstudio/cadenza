@@ -57,6 +57,26 @@ internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
     }
 }
 
+// The Host could not decode a command, so it refused it before anything ran. The refusal names the command and carries no
+// host_epoch; command IDs are unique to this Remote's pending commands, so the refusal settles that command directly.
+internal suspend fun RemoteModel.commandRefusedInternal(frame: JSONObject): Boolean {
+    val commandId = frame.nullableString("command_id") ?: return false
+    val original = pending[commandId] ?: return false
+    original.timer.cancel()
+    reportLog(
+        "info",
+        "command.result",
+        "command_id=$commandId outcome=rejected error=${frame.optString("error_code")}",
+    )
+    finishCommand(commandId)
+    reportFailure(
+        frame.nullableString("error_code"),
+        "Request blocked",
+        frame.optString("message", "The queue changed or Host settings protect this request."),
+    )
+    return true
+}
+
 private suspend fun RemoteModel.finishCommand(commandId: String) {
     val profile = mutable.value.profile
     if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }

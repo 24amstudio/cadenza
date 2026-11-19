@@ -38,6 +38,10 @@ export class ArtworkChunks {
     this.assemblies.clear();
   }
 
+  drop(requestId: string): void {
+    this.assemblies.delete(requestId);
+  }
+
   receive(frame: ArtworkChunkFrame): void {
     const artworkUrl = this.sink.artworkRequest(frame.requestId);
 

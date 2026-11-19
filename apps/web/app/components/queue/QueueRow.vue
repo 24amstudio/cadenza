@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
+import FavoriteToggle from '~/components/library/FavoriteToggle.vue';
 import { formatWait } from '~/lib/playback';
 import type { QueueEntry } from '~/lib/protocol/types';
 
@@ -21,13 +22,14 @@ defineProps<{ entry: QueueEntry }>();
       <span>{{ formatWait(entry.estimatedWaitMs) }}</span>
       <small>Added by {{ entry.requesterName }}</small>
     </div>
+    <FavoriteToggle class="favorite" :song="entry.song" />
   </li>
 </template>
 
 <style scoped>
 .queue-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 14px;
   padding: 10px 12px;

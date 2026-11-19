@@ -215,4 +215,30 @@ struct ProtocolTests {
             try ProtocolValidation.decode(Data(#"{"version":1,"type":"artwork.cancel"}"#.utf8))
         }
     }
+
+    @Test func rejectedCommandAnswersWithItsCommandIdAndNoRequestId() throws {
+        let command =
+            #"{"version":1,"type":"command","command_id":"\#(id)","host_epoch":"\#(id)","expires_at_host_ms":900,"expected_revision":0,"action":{"kind":"playback.volume","percent":101}}"#
+        #expect(throws: (any Error).self) { try ProtocolValidation.decode(Data(command.utf8)) }
+
+        let rejection = ProtocolValidation.rejection(of: Data(command.utf8), message: "Invalid volume.")
+        let reply = try #require(JSONSerialization.jsonObject(with: Wire.encode(rejection)) as? [String: Any])
+        #expect(reply["type"] as? String == "error")
+        #expect(reply["command_id"] as? String == id)
+        #expect(reply["request_id"] == nil)
+        #expect(reply["error_code"] as? String == "invalid_command")
+    }
+
+    @Test func rejectedRequestAnswersWithItsRequestIdAndNeverEchoesUnvalidatedIds() {
+        let oversized = String(repeating: "x", count: 5_000)
+        let search = #"{"version":1,"type":"search.suggest","request_id":"\#(id)","query":"\#(oversized)"}"#
+        let answered = ProtocolValidation.rejection(
+            of: Data(search.utf8), message: "Search is limited to 200 characters.")
+        #expect(answered.requestId == id)
+        #expect(answered.commandId == nil)
+
+        let odd = #"{"version":1,"type":"command","command_id":"\#(oversized)","action":{}}"#
+        #expect(ProtocolValidation.rejection(of: Data(odd.utf8), message: "Invalid command.").commandId == nil)
+        #expect(ProtocolValidation.rejection(of: Data("not json".utf8), message: "Invalid.").requestId == nil)
+    }
 }

@@ -305,3 +305,127 @@ test('host update frames accept only the check and install actions', () => {
     false,
   );
 });
+
+test('search suggestions use the search query bound and answer with terms and songs', () => {
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'search.suggest',
+      request_id: uuid,
+      query: 'akad',
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'search.suggest',
+      request_id: uuid,
+      query: 'x'.repeat(201),
+    }),
+    false,
+  );
+  assert.equal(
+    validateSession({ version: 1, type: 'search.suggest', query: 'akad' }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'search.suggestions',
+      request_id: uuid,
+      terms: ['Breathe', 'Breathe Deeper'],
+      songs: [],
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'search.suggestions',
+      request_id: uuid,
+      songs: [],
+    }),
+    false,
+  );
+});
+
+test('song metadata rides only on song.prepare and uses the song field bounds', () => {
+  const song = { source: 'library', id: '0123456789ABCDEF' };
+
+  const metadata = {
+    source: 'library',
+    id: '0123456789ABCDEF',
+    title: 'Saved song',
+    artist: 'Artist',
+    album: 'Album',
+    duration_ms: null,
+    artwork_url: null,
+  };
+
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'song.prepare',
+      request_id: uuid,
+      song,
+      song_metadata: metadata,
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'song.ready',
+      request_id: uuid,
+      song,
+      song_metadata: metadata,
+    }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'song.prepare',
+      request_id: uuid,
+      song,
+      song_metadata: { ...metadata, source: 'unknown' },
+    }),
+    false,
+  );
+});
+
+test('an error frame may name the request or command it refuses, and must give its code', () => {
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'error',
+      command_id: uuid,
+      error_code: 'invalid_command',
+      message: 'The command contains unexpected or missing fields.',
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'error',
+      request_id: uuid,
+      error_code: 'busy',
+    }),
+    true,
+  );
+  assert.equal(
+    validateSession({ version: 1, type: 'error', command_id: uuid }),
+    false,
+  );
+  assert.equal(
+    validateSession({
+      version: 1,
+      type: 'error',
+      command_id: 'not-an-id',
+      error_code: 'invalid_command',
+    }),
+    false,
+  );
+});

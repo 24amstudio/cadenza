@@ -9,22 +9,42 @@ function readValue(action, fallback) {
   }
 }
 
-/** @param {MusicTrack} track */
-function describeTrack(track) {
+/**
+ * A streamed catalog song reports a persistent ID too, but only as a urlTrack that the library does not hold, so
+ * resolving it in the library fails. Library tracks are file or shared tracks, or a urlTrack the library lists.
+ * @param {MusicTrack} track @param {MusicApplication | undefined} music @param {string} persistent
+ */
+function inLibrary(track, music, persistent) {
+  if (!/^[0-9A-F]{16}$/.test(persistent)) return false;
+
+  if (String(readValue(() => track.class(), '')) !== 'urlTrack') return true;
+
+  const library = music?.libraryPlaylists[0];
+
+  return Boolean(
+    library &&
+    readValue(
+      () => library.tracks.whose({ persistentID: persistent }).length === 1,
+      false,
+    ),
+  );
+}
+
+/** @param {MusicTrack} track @param {MusicApplication} [music] */
+function describeTrack(track, music) {
   const persistent = String(
     readValue(() => track.persistentID(), ''),
   ).toUpperCase();
 
+  const library = inLibrary(track, music, persistent);
   const duration = Number(readValue(() => track.duration(), 0));
   const title = String(readValue(() => track.name(), ''));
   const artist = String(readValue(() => track.artist(), ''));
   const album = String(readValue(() => track.album(), ''));
 
   return {
-    source: /^[0-9A-F]{16}$/.test(persistent) ? 'library' : 'unknown',
-    id: /^[0-9A-F]{16}$/.test(persistent)
-      ? persistent
-      : opaqueIdentity([title, artist, album, duration]),
+    source: library ? 'library' : 'unknown',
+    id: library ? persistent : opaqueIdentity([title, artist, album, duration]),
     title,
     artist,
     album,
@@ -76,7 +96,7 @@ function readStatus(music) {
     ),
     // Read straight after the position, so the Host can date the position to this moment rather than to process exit.
     read_at_ms: Date.now(),
-    song: readValue(() => describeTrack(music.currentTrack()), null),
+    song: readValue(() => describeTrack(music.currentTrack(), music), null),
   });
 }
 
@@ -95,7 +115,7 @@ function searchLibrary(music, query) {
 
     if (!track) continue;
 
-    const song = describeTrack(track);
+    const song = describeTrack(track, music);
 
     if (song.source === 'library') songs.push(song);
   }
@@ -156,7 +176,7 @@ function handleRun(argv) {
 
     if (action === 'reveal') music.reveal(track);
 
-    return JSON.stringify(describeTrack(track));
+    return JSON.stringify(describeTrack(track, music));
   }
 
   return controlMusic(music, argv);

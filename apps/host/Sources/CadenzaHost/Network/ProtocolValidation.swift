@@ -313,6 +313,22 @@ enum ProtocolValidation {
         }
     }
 
+    // A frame that fails to decode still answers the request or command it names. Only a valid identifier is echoed, so an
+    // odd or oversized string from the peer never reaches the reply.
+    static func rejection(of data: Data, message: String) -> Frame {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        func identifier(_ key: String) -> String? {
+            guard let value = object?[key] as? String, Wire.isIdentifier(value) else { return nil }
+            return value
+        }
+        if object?["type"] as? String == "command" {
+            return Frame(
+                type: "error", commandId: identifier("command_id"), errorCode: "invalid_command", message: message)
+        }
+        return Frame(
+            type: "error", requestId: identifier("request_id"), errorCode: "invalid_command", message: message)
+    }
+
     private static func invalid(_ message: String) -> CadenzaError {
         .failure("invalid_command", message)
     }

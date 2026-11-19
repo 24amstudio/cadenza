@@ -15,11 +15,15 @@ import {
   artworkStatus,
   type ArtworkStatus,
 } from '~/lib/host/artwork';
+import { ArtworkCoordinator } from '~/lib/host/artworkCoordinator';
+import { unavailableResult } from '~/lib/host/commandTracker';
+import { ControlQueue, type ControlKey } from '~/lib/host/controlQueue';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
 import {
   HostClient,
   type HostChange,
   type HostPhase,
+  type Readiness,
   type SocketLike,
 } from '~/lib/host/client';
 import { createCredentialStore } from '~/lib/host/credentials';
@@ -31,14 +35,19 @@ import {
 import { randomUuid } from '~/lib/host/ids';
 import { describeCommandResult } from '~/lib/host/messages';
 import { readInvitationSecret } from '~/lib/host/pairing';
+import type { Settle } from '~/lib/host/songRequests';
+import type { SongDetails } from '~/lib/protocol/encode';
 import { lyricsLevel, type LyricsLevel } from '~/lib/lyrics';
 import { positionAt } from '~/lib/playback';
 import type {
-  CommandAction,
   CommandResult,
-  CurrentPlayback,
   LyricDocument,
+  QueueActionKind,
+  SearchScope,
   Snapshot,
+  Song,
+  SongIdentity,
+  SongSuggestions,
 } from '~/lib/protocol/types';
 import { useNoticesStore } from '~/stores/notices';
 
@@ -54,6 +63,11 @@ const artworkLimit = 48;
 
 const motionLimit = 4;
 const progressIntervalMs = 250;
+
+// How long the slider keeps the value it sent while the Host's own volume catches up.
+const volumeSettleMs = 2_000;
+
+const defaultVolume = 50;
 
 export const useHostStore = defineStore('host', () => {
   const notices = useNoticesStore();
@@ -78,12 +92,15 @@ export const useHostStore = defineStore('host', () => {
   const artworks = shallowRef<Record<string, string | null>>({});
   // Motion videos by artwork URL, so an album keeps its motion across its songs. Object URLs are revoked on eviction.
   const motionVideos = shallowRef<Record<string, string>>({});
-  const busyAction = ref<CommandAction['kind'] | null>(null);
-  // A row that is not playing asks only for the preview, so preview and full requests are tracked apart. settledArtwork
-  // holds the URLs whose full image or motion has arrived.
-  const previewRequests = new Set<string>();
-  const fullRequests = new Set<string>();
-  const settledArtwork = new Set<string>();
+  // The controls with a command queued or in flight. A control shows its own pending state while it is in here.
+  const pendingControls = ref<ReadonlySet<ControlKey>>(new Set());
+  // The volume the slider last sent, shown until the Host reports it. Null means the Host's own value is shown.
+  const volumeTarget = ref<number | null>(null);
+  let lastAudibleVolume = defaultVolume;
+  let volumeSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastVolumeResult: CommandResult | null = null;
+  // URLs whose image is the full one rather than the 32 pixel preview. A preview never replaces them.
+  const fullImages = new Set<string>();
   // Web Bluetooth exists only in secure contexts and Chromium-based browsers. When it is absent, pairing uses the QR.
   const bluetoothSupported = bluetoothAvailable();
   // 'searching' while the browser's device chooser and GATT connection run. 'linked' once the Host's link waits for a PIN.
@@ -97,11 +114,79 @@ export const useHostStore = defineStore('host', () => {
   let snapshotReceivedMs = 0;
   let ticker: ReturnType<typeof setInterval> | null = null;
 
+  const artwork = new ArtworkCoordinator(
+    {
+      support: () => client?.artworkSupport() ?? 'offline',
+      supportsMotion: () => client?.supportsMotion() ?? false,
+      request: (url, mode) => client?.requestArtwork(url, mode) ?? null,
+      cancel: (requestId) => client?.cancelArtwork(requestId),
+    },
+    {
+      hasImage: (url) => (artworks.value[url] ?? null) !== null,
+      hasFullImage: (url) =>
+        fullImages.has(url) && (artworks.value[url] ?? null) !== null,
+      hasMotion: (url) => motionVideos.value[url] !== undefined,
+      markUnavailable: (url) => {
+        if (!(url in artworks.value)) rememberArtwork(url, null);
+      },
+    },
+    scheduleTask,
+    () => performance.now(),
+  );
+
+  const controls = new ControlQueue(
+    {
+      awaitReadiness: (timeoutMs) =>
+        client?.awaitReadiness(timeoutMs) ??
+        Promise.resolve<Readiness>('offline'),
+      awaitRevision: (minRevision, timeoutMs) =>
+        client?.awaitRevision(minRevision, timeoutMs) ?? Promise.resolve(),
+      latestSnapshot: () => client?.latestSnapshot() ?? null,
+      send: (action) =>
+        client?.sendCommand(action) ?? Promise.resolve(unavailableResult()),
+      wait: (ms) => new Promise((resolve) => scheduleTask(resolve, ms)),
+    },
+    {
+      pendingChanged: (pending) => {
+        const hadVolume = pendingControls.value.has('volume');
+        pendingControls.value = pending;
+
+        if (hadVolume && !pending.has('volume')) settleVolume();
+      },
+      finished: (key, result) => {
+        if (key === 'volume') lastVolumeResult = result;
+        showCommandResult(result);
+      },
+      notice: (message) => notices.show(message),
+    },
+  );
+
+  watch(
+    () => snapshot.value?.volume,
+    (level) => {
+      if (level !== undefined && level > 0) lastAudibleVolume = level;
+
+      if (
+        level === volumeTarget.value &&
+        !pendingControls.value.has('volume')
+      ) {
+        volumeTarget.value = null;
+      }
+    },
+  );
+
   const current = computed(() => snapshot.value?.current ?? null);
   const isPlaying = computed(() => snapshot.value?.playing ?? false);
   const connected = computed(() => phase.value === 'connected');
   const queue = computed(() => snapshot.value?.queue ?? []);
   const canControl = computed(() => connected.value && current.value !== null);
+
+  // The level shown by every volume control: what was just sent, otherwise what the Host reports.
+  const volumePercent = computed(
+    () => volumeTarget.value ?? snapshot.value?.volume ?? 0,
+  );
+
+  const muted = computed(() => volumePercent.value === 0);
 
   const lyricsForCurrent = computed<LyricsState | null>(() => {
     const song = current.value;
@@ -356,10 +441,20 @@ export const useHostStore = defineStore('host', () => {
         return;
       case 'artwork':
         applyArtwork(change.artworkUrl, change.dataUrl, change.full);
+        artwork.artworkArrived(
+          change.requestId,
+          change.full,
+          change.dataUrl !== null,
+        );
 
         return;
       case 'motion':
         showMotion(change.artworkUrl, change.video);
+        artwork.motionArrived(
+          change.requestId,
+          change.video !== null,
+          change.unavailable,
+        );
 
         return;
       case 'commandResolved':
@@ -383,10 +478,11 @@ export const useHostStore = defineStore('host', () => {
     phaseMessage.value = message;
 
     if (next === 'connected') {
-      // Requests in flight on the old socket were dropped. Clearing them lets the next snapshot ask again.
-      previewRequests.clear();
-      fullRequests.clear();
+      // Requests in flight on the old socket were dropped, so artwork that is still missing is asked for again.
       lyrics.value = null;
+      artwork.connected();
+    } else {
+      artwork.disconnected();
     }
 
     if (next === 'pairing-failed' && bluetoothSupported) {
@@ -397,6 +493,7 @@ export const useHostStore = defineStore('host', () => {
       snapshot.value = null;
       clockOffsetMs.value = null;
       lyrics.value = null;
+      artwork.setPlaying(null);
 
       if (next === 'unpaired') hostName.value = null;
     }
@@ -415,12 +512,14 @@ export const useHostStore = defineStore('host', () => {
       applyArtwork(previewUrl, previewDataUrl, false);
     }
 
-    if (song === null) {
-      abandonFullArtwork(null);
+    // Every snapshot, not only a song change, so a still or motion video that failed is asked for again.
+    artwork.setPlaying(
+      song === null
+        ? null
+        : { url: song.song.artworkUrl, occurrenceId: song.occurrenceId },
+    );
 
-      return;
-    }
-
+    if (song === null) return;
     const state = lyrics.value;
 
     if (state === null || state.occurrenceId !== song.occurrenceId) {
@@ -430,57 +529,21 @@ export const useHostStore = defineStore('host', () => {
         unavailable: false,
       };
       client?.requestLyrics(song.occurrenceId);
-      // A song that is no longer playing keeps no transfer, so the Host does not send its image or motion.
-      abandonFullArtwork(song.occurrenceId);
-      requestFullArtwork(song);
     }
   }
 
-  function abandonFullArtwork(playingOccurrenceId: string | null): void {
-    client?.cancelFullArtwork(playingOccurrenceId);
-    fullRequests.clear();
-  }
-
-  // The playing song asks for its motion video in place of the full image, or for the full image when it has no motion.
-  function requestFullArtwork(song: CurrentPlayback): void {
-    const url = song.song.artworkUrl;
-
-    if (
-      url === null ||
-      settledArtwork.has(url) ||
-      fullRequests.has(url) ||
-      motionVideos.value[url] !== undefined
-    ) {
-      return;
-    }
-
-    fullRequests.add(url);
-    client?.requestArtwork(url, {
-      kind: 'full',
-      occurrenceId: song.occurrenceId,
-    });
-  }
-
+  // A full image replaces the preview. A preview never replaces a full image, and a failure replaces neither.
   function applyArtwork(
     url: string,
     dataUrl: string | null,
     full: boolean,
   ): void {
-    if (full) {
-      fullRequests.delete(url);
-      settledArtwork.add(url);
-      // A full image that fails to verify keeps the preview on screen.
+    if (dataUrl === null || artworks.value[url] === dataUrl) return;
 
-      if (dataUrl !== null || !(url in artworks.value)) {
-        rememberArtwork(url, dataUrl);
-      }
+    if (full) fullImages.add(url);
+    else if (fullImages.has(url)) return;
 
-      return;
-    }
-
-    previewRequests.delete(url);
-
-    if (!settledArtwork.has(url)) rememberArtwork(url, dataUrl);
+    rememberArtwork(url, dataUrl);
   }
 
   // Motion is kept per album, so the album's next song needs no transfer. The oldest albums are evicted.
@@ -488,8 +551,6 @@ export const useHostStore = defineStore('host', () => {
     artworkUrl: string,
     video: Uint8Array<ArrayBuffer> | null,
   ): void {
-    fullRequests.delete(artworkUrl);
-
     if (video === null) return;
 
     const next = { ...motionVideos.value };
@@ -524,6 +585,7 @@ export const useHostStore = defineStore('host', () => {
       Math.max(0, urls.length - artworkLimit),
     )) {
       delete next[stale];
+      fullImages.delete(stale);
     }
 
     artworks.value = next;
@@ -535,19 +597,9 @@ export const useHostStore = defineStore('host', () => {
     return artworks.value[url] ?? null;
   }
 
-  // Rows ask for the small preview. The playing song's full image or motion is asked for by requestFullArtwork.
+  // Rows ask for the small preview. The playing song's full image and motion are asked for from each snapshot.
   function requestArtwork(url: string): void {
-    // A full request in flight does not cover the preview: one that does not run progressively sends no preview.
-    if (
-      url in artworks.value ||
-      previewRequests.has(url) ||
-      settledArtwork.has(url)
-    ) {
-      return;
-    }
-
-    previewRequests.add(url);
-    client?.requestArtwork(url, { kind: 'preview' });
+    artwork.wantPreview(url);
   }
 
   function showCommandResult(result: CommandResult): void {
@@ -556,39 +608,16 @@ export const useHostStore = defineStore('host', () => {
     if (message !== null) notices.show(message);
   }
 
-  // A second command waits until the first returns, so repeated taps cannot queue duplicate mutations.
-  async function runAction(action: CommandAction): Promise<void> {
-    if (client === null || !connected.value || busyAction.value !== null)
-      return;
-    busyAction.value = action.kind;
-    const result = await client.sendCommand(action);
-    busyAction.value = null;
-    showCommandResult(result);
-  }
-
   function togglePlayback(): void {
-    const song = current.value;
-
-    if (song === null) return;
-    const kind = isPlaying.value ? 'playback.pause' : 'playback.resume';
-    void runAction({ kind, occurrenceId: song.occurrenceId });
+    controls.press({ key: 'toggle' });
   }
 
   function skipNext(): void {
-    const song = current.value;
-
-    if (song === null) return;
-    void runAction({ kind: 'playback.skip', occurrenceId: song.occurrenceId });
+    controls.press({ key: 'next' });
   }
 
   function skipPrevious(): void {
-    const song = current.value;
-
-    if (song === null) return;
-    void runAction({
-      kind: 'playback.previous',
-      occurrenceId: song.occurrenceId,
-    });
+    controls.press({ key: 'previous' });
   }
 
   function seekTo(targetMs: number): void {
@@ -597,26 +626,90 @@ export const useHostStore = defineStore('host', () => {
     if (song === null) return;
     const duration = song.song.durationMs ?? targetMs;
 
-    const positionMsValue = Math.round(
-      Math.min(Math.max(0, targetMs), duration),
-    );
-
-    void runAction({
-      kind: 'playback.seek',
+    controls.press({
+      key: 'seek',
+      positionMs: Math.round(Math.min(Math.max(0, targetMs), duration)),
       occurrenceId: song.occurrenceId,
-      positionMs: positionMsValue,
     });
   }
 
-  async function setVolume(percent: number): Promise<void> {
-    if (client === null || !connected.value) return;
+  // The slider shows the new level at once. Presses made while a command is in flight are folded into the latest level.
+  function setVolume(percent: number): void {
+    const level = Math.round(Math.min(100, Math.max(0, percent)));
 
-    const result = await client.sendCommand({
-      kind: 'playback.volume',
-      percent: Math.round(Math.min(100, Math.max(0, percent))),
-    });
+    if (volumeSettleTimer !== null) clearTimeout(volumeSettleTimer);
+    volumeSettleTimer = null;
 
-    showCommandResult(result);
+    if (level > 0) lastAudibleVolume = level;
+    volumeTarget.value = level;
+    controls.press({ key: 'volume', percent: level });
+  }
+
+  // Mute returns to the level it replaced, which is remembered locally because the Host reports only the current one.
+  function toggleMute(): void {
+    if (volumePercent.value > 0) lastAudibleVolume = volumePercent.value;
+    setVolume(volumePercent.value > 0 ? 0 : lastAudibleVolume);
+  }
+
+  // After the last volume command finished, the slider returns to the Host's value: at once when the change failed, and
+  // when the Host reports it or after a short wait when it applied.
+  function settleVolume(): void {
+    const result = lastVolumeResult;
+
+    if (
+      result?.outcome !== 'applied' ||
+      snapshot.value?.volume === volumeTarget.value
+    ) {
+      volumeTarget.value = null;
+
+      return;
+    }
+
+    volumeSettleTimer = setTimeout(() => {
+      volumeTarget.value = null;
+      volumeSettleTimer = null;
+    }, volumeSettleMs);
+  }
+
+  // Search and preparation are answered once or not at all. A null return means nothing was sent.
+  function searchSongs(
+    query: string,
+    scope: SearchScope,
+    settle: Settle<Song[]>,
+  ): string | null {
+    return client?.songs.search(query, scope, settle) ?? null;
+  }
+
+  // Suggestions need the Host to advertise them, so an older Host simply shows none.
+  function suggestSongs(
+    query: string,
+    settle: Settle<SongSuggestions>,
+  ): string | null {
+    if (!capabilities.value.includes('search.suggest')) return null;
+
+    return client?.songs.suggest(query, settle) ?? null;
+  }
+
+  function cancelSongRequest(requestId: string): void {
+    client?.songs.cancel(requestId);
+  }
+
+  function prepareSong(
+    song: SongIdentity,
+    settle: Settle<null>,
+    details?: SongDetails,
+  ): boolean {
+    return (client?.songs.prepare(song, settle, details) ?? null) !== null;
+  }
+
+  // A request goes through the same queue as a playback press, so it is sent once, against the newest state. settled
+  // gets null when nothing was sent; the queue has already said why.
+  function queueSong(
+    song: SongIdentity,
+    kind: QueueActionKind,
+    settled: (result: CommandResult | null) => void,
+  ): void {
+    controls.press({ key: 'queue', kind, song, settled });
   }
 
   function renameRemote(name: string): void {
@@ -650,7 +743,9 @@ export const useHostStore = defineStore('host', () => {
     lyricsDocument,
     lyricsStatus,
     lyricsLoading,
-    busyAction,
+    pendingControls,
+    volumePercent,
+    muted,
     artworkFor,
     artworkStatusFor,
     motionUrl,
@@ -669,6 +764,12 @@ export const useHostStore = defineStore('host', () => {
     skipPrevious,
     seekTo,
     setVolume,
+    toggleMute,
+    searchSongs,
+    suggestSongs,
+    cancelSongRequest,
+    prepareSong,
+    queueSong,
     renameRemote,
     forgetBrowser,
   };

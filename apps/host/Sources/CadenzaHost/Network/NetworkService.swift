@@ -300,9 +300,7 @@ final class NetworkService {
             let frame = try ProtocolValidation.decode(data)
             onFrame?(peer, frame)
         } catch {
-            send(
-                Frame(type: "error", errorCode: "invalid_command", message: error.localizedDescription),
-                to: peer)
+            send(ProtocolValidation.rejection(of: data, message: error.localizedDescription), to: peer)
         }
     }
 

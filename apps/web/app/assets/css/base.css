@@ -63,6 +63,31 @@ img {
   white-space: nowrap;
 }
 
+/* Plain lists of rows, such as search results, favorites, and history. */
+.song-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Text actions, such as Clear history or Try again. */
+.text-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.text-button:hover {
+  background: var(--color-fill);
+}
+
 /* A placeholder for content that is still arriving from the Host. The sweep stops under reduced motion. */
 .skeleton {
   background-color: var(--color-fill);

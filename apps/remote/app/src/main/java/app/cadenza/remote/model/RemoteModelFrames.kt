@@ -139,7 +139,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                 }
             }
         "command.result" -> commandResultInternal(frame)
-        "error" -> operationErrorInternal(frame)
+        "error" -> if (!commandRefusedInternal(frame)) operationErrorInternal(frame)
         "operation.started" -> Unit
         else -> Unit
     }

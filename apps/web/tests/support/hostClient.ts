@@ -183,7 +183,11 @@ export function welcome(
 
 // Answers each clock probe as the Host would: 10 ms round trip, Host clock 1000 ms ahead. A reply triggers the next
 // probe, so the loop continues until no unanswered probe remains.
-export function answerClockProbes(socket: FakeSocket, clock: Clock): void {
+export function answerClockProbes(
+  socket: FakeSocket,
+  clock: Clock,
+  roundTripMs = 10,
+): void {
   const answered = new Set<JsonValue | undefined>();
 
   for (;;) {
@@ -199,14 +203,15 @@ export function answerClockProbes(socket: FakeSocket, clock: Clock): void {
       sample === null ? null : counterField(sample, 'sent_at_remote_ms');
 
     if (sentAtRemote === null) return;
-    clock.advance(10);
+    clock.advance(roundTripMs);
+    const hostAt = sentAtRemote + hostOffsetMs + roundTripMs / 2;
     socket.receive({
       type: 'clock',
       request_id: frame.request_id ?? null,
       clock: {
         sent_at_remote_ms: sentAtRemote,
-        received_at_host_ms: sentAtRemote + hostOffsetMs + 5,
-        sent_at_host_ms: sentAtRemote + hostOffsetMs + 5,
+        received_at_host_ms: hostAt,
+        sent_at_host_ms: hostAt,
       },
     });
   }
@@ -229,6 +234,39 @@ export function snapshotFrame(revision: number): JsonObject {
       quality: 'unknown',
       synchronized: true,
       observation_gap: false,
+    },
+  };
+}
+
+// A state frame with a song playing, so commands for that song's occurrence can be sent.
+export function playingSnapshotFrame(
+  revision: number,
+  playingOccurrenceId: string = occurrenceId,
+  playing = true,
+): JsonObject {
+  const frame = snapshotFrame(revision);
+  const snapshot = objectField(frame, 'snapshot');
+
+  return {
+    ...frame,
+    snapshot: {
+      ...snapshot,
+      playing,
+      current: {
+        occurrence_id: playingOccurrenceId,
+        requester_name: 'Mia',
+        song: {
+          source: 'catalog',
+          id: '1440857781',
+          title: 'Breathe Deeper',
+          artist: 'Tame Impala',
+          album: 'The Slow Rush',
+          duration_ms: 372_000,
+          artwork_url: 'https://example.com/art.jpg',
+        },
+        position_ms: 1_000,
+        sampled_at_host_ms: 2_000,
+      },
     },
   };
 }

@@ -45,6 +45,10 @@ export class MotionTransfer {
     this.transfer = null;
   }
 
+  drop(requestId: string): void {
+    if (this.transfer?.requestId === requestId) this.transfer = null;
+  }
+
   receive(frame: MotionChunkFrame): void {
     if (this.sink.motionRequest(frame.requestId, frame.occurrenceId) === null) {
       return;

@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { decodeHostMessage } from '../app/lib/protocol/decode';
-import { encodeArtworkGet } from '../app/lib/protocol/encode';
+import { encodeArtworkGet, encodeMotionGet } from '../app/lib/protocol/encode';
 import type { JsonObject } from '../app/lib/protocol/json';
+import type { SongIdentity } from '../app/lib/protocol/types';
 import {
   encodeClock,
   encodeCommand,
   encodeHello,
   encodePair,
   encodeRemoteConfigure,
+  encodeSearch,
+  encodeSearchSuggest,
+  encodeSongPrepare,
 } from '../app/lib/protocol/encode';
 
 const remoteId = '3f1c2a2e-7b6d-4c1e-9a1f-2d3e4f5a6b7c';
@@ -110,7 +114,7 @@ describe('artwork frames', () => {
 
   test('a progressive request is marked, and a plain one is unchanged', () => {
     const url = 'https://example.com/a.jpg';
-    const plain = { previewOnly: false, occurrenceId: null, motion: false };
+    const plain = { previewOnly: false };
 
     expect(
       JSON.parse(
@@ -138,21 +142,32 @@ describe('artwork frames', () => {
         encodeArtworkGet(remoteId, url, {
           progressive: true,
           previewOnly: true,
-          occurrenceId: null,
-          motion: false,
         }),
       ),
     ).toMatchObject({ preview_only: true });
+    expect(JSON.parse(encodeMotionGet(remoteId, occurrenceId))).toEqual({
+      version: 1,
+      type: 'motion.get',
+      request_id: remoteId,
+      occurrence_id: occurrenceId,
+    });
+  });
+
+  test('a refused motion request is decoded with its request and occurrence', () => {
     expect(
-      JSON.parse(
-        encodeArtworkGet(remoteId, url, {
-          progressive: true,
-          previewOnly: false,
-          occurrenceId,
-          motion: true,
+      decodeHostMessage(
+        JSON.stringify({
+          version: 1,
+          type: 'motion.unavailable',
+          request_id: remoteId,
+          occurrence_id: occurrenceId,
         }),
       ),
-    ).toMatchObject({ motion: true, occurrence_id: occurrenceId });
+    ).toEqual({
+      type: 'motion.unavailable',
+      requestId: remoteId,
+      occurrenceId,
+    });
   });
 });
 
@@ -441,5 +456,146 @@ describe('outgoing frames', () => {
 
     expect(frame.clock.sent_at_remote_ms).toBe(1235);
     expect(Number.isInteger(frame.clock.sent_at_remote_ms)).toBe(true);
+  });
+});
+
+describe('search, preparation, and request frames', () => {
+  const identity: SongIdentity = { source: 'catalog', id: '1440857781' };
+
+  test('a search frame carries exactly the request, query, and scope keys', () => {
+    expect(JSON.parse(encodeSearch(remoteId, 'Breathe', 'library'))).toEqual({
+      version: 1,
+      type: 'search',
+      request_id: remoteId,
+      query: 'Breathe',
+      scope: 'library',
+    });
+    expect(
+      Object.keys(JSON.parse(encodeSearchSuggest(remoteId, 'Bre'))),
+    ).toEqual(['version', 'type', 'request_id', 'query']);
+  });
+
+  test('a preparation frame names the song by source and ID only', () => {
+    expect(JSON.parse(encodeSongPrepare(remoteId, identity))).toEqual({
+      version: 1,
+      type: 'song.prepare',
+      request_id: remoteId,
+      song: { source: 'catalog', id: '1440857781' },
+    });
+  });
+
+  test('a preparation frame may carry the details of the same song', () => {
+    expect(
+      JSON.parse(
+        encodeSongPrepare(remoteId, identity, {
+          title: 'Breathe Deeper',
+          artist: 'Tame Impala',
+          album: 'The Slow Rush',
+          durationMs: null,
+        }),
+      ),
+    ).toEqual({
+      version: 1,
+      type: 'song.prepare',
+      request_id: remoteId,
+      song: { source: 'catalog', id: '1440857781' },
+      song_metadata: {
+        source: 'catalog',
+        id: '1440857781',
+        title: 'Breathe Deeper',
+        artist: 'Tame Impala',
+        album: 'The Slow Rush',
+        duration_ms: null,
+      },
+    });
+  });
+
+  test('queue requests send the song identity and nothing else', () => {
+    const base = {
+      commandId: remoteId,
+      hostEpoch: epoch,
+      expiresAtHostMs: 9000,
+      expectedRevision: 18,
+    };
+
+    const enqueue = JSON.parse(
+      encodeCommand({
+        ...base,
+        action: { kind: 'queue.enqueue', song: identity },
+      }),
+    );
+
+    const playNext = JSON.parse(
+      encodeCommand({
+        ...base,
+        action: {
+          kind: 'queue.play_next',
+          song: { source: 'library', id: '0123456789ABCDEF' },
+        },
+      }),
+    );
+
+    expect(enqueue.action).toEqual({
+      kind: 'queue.enqueue',
+      song: { source: 'catalog', id: '1440857781' },
+    });
+    expect(playNext.action).toEqual({
+      kind: 'queue.play_next',
+      song: { source: 'library', id: '0123456789ABCDEF' },
+    });
+  });
+
+  test('a search result decodes into the song shape the Host sends', () => {
+    expect(
+      decodeHostMessage(
+        wire({
+          type: 'search.result',
+          request_id: remoteId,
+          songs: [song],
+        }),
+      ),
+    ).toEqual({
+      type: 'search.result',
+      requestId: remoteId,
+      songs: [
+        {
+          source: 'catalog',
+          id: '1440857781',
+          title: 'Breathe Deeper',
+          artist: 'Tame Impala',
+          album: 'The Slow Rush',
+          durationMs: 372000,
+          artworkUrl: 'https://example.com/art.jpg',
+        },
+      ],
+    });
+  });
+
+  test('suggestions keep their terms, and a reply without terms is rejected', () => {
+    expect(
+      decodeHostMessage(
+        wire({
+          type: 'search.suggestions',
+          request_id: remoteId,
+          terms: ['Breathe', 'Breathe Deeper'],
+          songs: [],
+        }),
+      ),
+    ).toEqual({
+      type: 'search.suggestions',
+      requestId: remoteId,
+      suggestions: { terms: ['Breathe', 'Breathe Deeper'], songs: [] },
+    });
+    expect(
+      decodeHostMessage(
+        wire({ type: 'search.suggestions', request_id: remoteId, songs: [] }),
+      ),
+    ).toBeNull();
+  });
+
+  test('a preparation answer is recognised by its request ID', () => {
+    expect(
+      decodeHostMessage(wire({ type: 'song.ready', request_id: remoteId })),
+    ).toEqual({ type: 'song.ready', requestId: remoteId });
   });
 });

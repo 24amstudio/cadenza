@@ -1,13 +1,18 @@
-import { bestClockEstimate, type ClockProbe } from './clock';
+import { ClockSync } from './clockSync';
+import { commandExpiryMs, commandWindowMs } from './commandWindow';
+import { CommandTracker, unavailableResult } from './commandTracker';
+import { Waiters } from './waiters';
+import { SongRequests } from './songRequests';
+import type { ArtworkSupport } from './artworkCoordinator';
 import {
   encodeArtworkCancel,
   encodeArtworkGet,
-  encodeClock,
   encodeCommand,
   encodeCommandStatus,
   encodeCreditAck,
   encodeHello,
   encodeLyricsGet,
+  encodeMotionGet,
   encodePair,
   encodeRemoteConfigure,
   encodeSessionStatus,
@@ -20,7 +25,6 @@ import { MotionTransfer } from './motionTransfer';
 import type { CredentialStore, StoredCredential } from './credentials';
 import { traceEvent, traceFrame, type TraceTransport } from './trace';
 import type {
-  ClockSample,
   CommandAction,
   CommandResult,
   LyricDocument,
@@ -37,6 +41,8 @@ export type HostPhase =
   | 'reconnecting'
   | 'bluetooth-idle';
 
+export type Readiness = 'ready' | 'syncing' | 'offline';
+
 export type HostChange =
   | { kind: 'phase'; phase: HostPhase; attempt: number; message: string | null }
   | { kind: 'welcome'; welcome: Welcome }
@@ -44,17 +50,22 @@ export type HostChange =
   | { kind: 'clock'; offsetMs: number }
   | { kind: 'lyrics'; lyrics: LyricDocument }
   | { kind: 'lyricsUnavailable'; occurrenceId: string | null }
-  // A preview has full: false. The full image, or nothing more to wait for, has full: true.
+  // A preview has full: false. The full image has full: true, and so does a failure, with a null image. The request ID
+  // is null when nothing could be sent.
   | {
       kind: 'artwork';
       artworkUrl: string;
       dataUrl: string | null;
       full: boolean;
+      requestId: string | null;
     }
+  // A null video is a failure, or the Host's answer that the song has no motion when unavailable is true.
   | {
       kind: 'motion';
       artworkUrl: string;
       video: Uint8Array<ArrayBuffer> | null;
+      unavailable: boolean;
+      requestId: string | null;
     }
   | { kind: 'commandResolved'; result: CommandResult }
   | { kind: 'notice'; message: string };
@@ -82,65 +93,40 @@ export interface HostClientOptions {
   progressiveArtwork?: boolean;
 }
 
-interface PendingCommand {
-  resolve: (result: CommandResult) => void;
-  cancelSettle: () => void;
-}
-
 interface PendingPairing {
   proof: PairingProof;
   name: string;
 }
 
 type PendingRequest =
-  | { kind: 'clock'; sentAtRemoteMs: number }
   | { kind: 'lyrics'; occurrenceId: string }
   | {
       kind: 'artwork';
       artworkUrl: string;
-      previewOnly: boolean;
+      lane: ArtworkLane;
       occurrenceId: string | null;
-      motion: boolean;
     }
   | { kind: 'rename'; name: string };
 
-// What the page asks an artwork for. A preview is the small image alone. A full request also asks for the playing
-// song's motion video, which the Host sends in place of the full image when the song has one.
+export type ArtworkLane = 'preview' | 'still' | 'motion';
+
+// What the page asks an artwork for. A preview is the small image alone. A still is the full image. Motion is the playing
+// song's video, asked for apart from the still so a failed or refused video never leaves the cover at preview size.
 export type ArtworkMode =
-  { kind: 'preview' } | { kind: 'full'; occurrenceId: string };
+  | { kind: 'preview' }
+  | { kind: 'still' }
+  | { kind: 'motion'; occurrenceId: string };
 
 const handshakeTimeoutMs = 8_000;
-
-// The Host refuses a command whose deadline is more than one second ahead of its clock. Cadenza Remote uses 900 ms
-// less the clock uncertainty, and so does this page. A longer deadline is rejected as invalid_deadline.
-const commandDeadlineMs = 900;
 
 // The Host gates dispatch by the deadline, then gives a dispatched playback change up to 2 s to verify it. A result that
 // still has not arrived after both windows settles as unconfirmed, which frees the controls. A late result is still shown.
 const commandSettleMs = 4_000;
 
-// The first probes come back to back and set the offset. After that one probe runs every few seconds, so the offset
-// follows the link as its round trip changes.
-const clockProbeCount = 4;
-const clockProbeIntervalMs = 5_000;
-
-// The offset comes from the fastest round trip in this window. A slow probe carries more asymmetric queuing delay.
-const clockWindowSize = 12;
-
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const artworkCapability = 'artwork.host-cache';
 const progressiveArtworkCapability = 'artwork.progressive';
 const motionCapability = 'motion.host-cache';
-
-function unconfirmedResult(commandId: string, message: string): CommandResult {
-  return {
-    commandId,
-    outcome: 'unconfirmed',
-    revision: 0,
-    message,
-    errorCode: 'outcome_unknown',
-  };
-}
 
 // Owns one browser Remote session. Mutations are sent once. If the socket closes before a result, the command is
 // reported as unconfirmed and only queried by its original ID after reconnecting; it is never sent again.
@@ -156,11 +142,10 @@ export class HostClient {
   private welcomed = false;
   private capabilities: string[] = [];
   private snapshot: Snapshot | null = null;
-  private offsetMs: number | null = null;
-  private uncertaintyMs = 0;
-  private roundTripMs: number | null = null;
-  private probes: ClockProbe[] = [];
-  private readonly pendingCommands = new Map<string, PendingCommand>();
+  private readonly clock: ClockSync;
+  private readonly commands: CommandTracker;
+  private readonly waiters: Waiters;
+  readonly songs: SongRequests;
   private readonly artworkChunks = new ArtworkChunks({
     artworkRequest: (requestId) => {
       const request = this.requests.get(requestId);
@@ -175,25 +160,56 @@ export class HostClient {
       const request = this.requests.get(requestId);
 
       return request?.kind === 'artwork' &&
-        request.motion &&
+        request.lane === 'motion' &&
         request.occurrenceId === occurrenceId
         ? request.artworkUrl
         : null;
     },
     finish: (requestId, artworkUrl, video) => {
       this.requests.delete(requestId);
-      this.options.onChange({ kind: 'motion', artworkUrl, video });
+      this.options.onChange({
+        kind: 'motion',
+        artworkUrl,
+        video,
+        unavailable: false,
+        requestId,
+      });
     },
   });
-  private readonly orphanedCommands = new Set<string>();
   private readonly requests = new Map<string, PendingRequest>();
   private cancelHandshake: (() => void) | null = null;
   private cancelReconnect: (() => void) | null = null;
-  private cancelClockRefresh: (() => void) | null = null;
 
   constructor(options: HostClientOptions) {
     this.options = options;
     this.credential = options.credentials.read();
+    this.commands = new CommandTracker(options.schedule, commandSettleMs);
+    this.waiters = new Waiters(options.schedule);
+    this.songs = new SongRequests({
+      send: (text) => {
+        if (!this.welcomed || this.socket === null) return false;
+        this.transmit(this.socket, text);
+
+        return true;
+      },
+      newId: options.newId,
+      schedule: options.schedule,
+    });
+    this.clock = new ClockSync({
+      send: (frame) => {
+        if (this.socket !== null) this.transmit(this.socket, frame);
+      },
+      newId: options.newId,
+      monotonicNow: options.monotonicNow,
+      schedule: options.schedule,
+      onEstimate: (estimate, burstDone) => {
+        traceEvent('clock offset estimated', estimate);
+        options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
+        this.waiters.notify();
+
+        if (burstDone) this.reportStatus();
+      },
+    });
   }
 
   start(invitationSecret: string | null): void {
@@ -258,11 +274,56 @@ export class HostClient {
 
   // Milliseconds on the Host's monotonic timeline, or null until a clock estimate exists.
   hostNowMs(): number | null {
-    if (this.offsetMs === null) return null;
-
-    return this.options.monotonicNow() + this.offsetMs;
+    return this.clock.hostNowMs();
   }
 
+  // Whether a command can be sent now. 'syncing' means the link is up but the first state or clock estimate has not
+  // arrived, which a reconnect resolves within a round trip or two.
+  readiness(): Readiness {
+    if (!this.welcomed || this.socket === null) return 'offline';
+
+    return this.snapshot === null || this.clock.hostNowMs() === null
+      ? 'syncing'
+      : 'ready';
+  }
+
+  // Resolves once the link is ready or offline, or as 'syncing' when the wait runs out.
+  async awaitReadiness(timeoutMs: number): Promise<Readiness> {
+    await this.waiters.until(() => this.readiness() !== 'syncing', timeoutMs);
+
+    return this.readiness();
+  }
+
+  // Resolves once the Host's state is at or past a revision, or the link is gone. A command carries the revision it was
+  // sent against, so the next one waits for the state that the previous one produced.
+  async awaitRevision(minRevision: number, timeoutMs: number): Promise<void> {
+    await this.waiters.until(
+      () =>
+        this.readiness() === 'offline' ||
+        (this.snapshot?.revision ?? -1) >= minRevision,
+      timeoutMs,
+    );
+  }
+
+  latestSnapshot(): Snapshot | null {
+    return this.snapshot;
+  }
+
+  // Whether the Host can serve artwork over the current link, and whether it also has motion.
+  artworkSupport(): ArtworkSupport {
+    if (!this.welcomed || this.socket === null) return 'offline';
+
+    return this.capabilities.includes(artworkCapability)
+      ? 'ready'
+      : 'unsupported';
+  }
+
+  supportsMotion(): boolean {
+    return this.capabilities.includes(motionCapability);
+  }
+
+  // The envelope is built from the state at this instant: the newest revision and epoch, and a deadline from the current
+  // clock estimate. It is sent once. If the result does not arrive, the command settles as unconfirmed and is never resent.
   sendCommand(action: CommandAction): Promise<CommandResult> {
     const socket = this.socket;
     const snapshot = this.snapshot;
@@ -279,27 +340,25 @@ export class HostClient {
 
     const commandId = this.options.newId();
 
-    return new Promise((resolve) => {
-      const cancelSettle = this.options.schedule(
-        () => this.settleUnanswered(commandId),
-        commandSettleMs,
-      );
-
-      this.pendingCommands.set(commandId, { resolve, cancelSettle });
-      this.transmit(
-        socket,
-        encodeCommand({
-          commandId,
-          hostEpoch: snapshot.hostEpoch,
-          expiresAtHostMs: Math.max(
-            0,
-            Math.round(hostNow + commandDeadlineMs - this.uncertaintyMs),
-          ),
-          expectedRevision: snapshot.revision,
-          action,
-        }),
-      );
+    const result = this.commands.track(commandId, {
+      kind: action.kind,
+      expectedRevision: snapshot.revision,
+      windowMs: commandWindowMs(this.clock.uncertaintyMs),
+      roundTripMs: this.clock.roundTripMs,
     });
+
+    this.transmit(
+      socket,
+      encodeCommand({
+        commandId,
+        hostEpoch: snapshot.hostEpoch,
+        expiresAtHostMs: commandExpiryMs(hostNow, this.clock.uncertaintyMs),
+        expectedRevision: snapshot.revision,
+        action,
+      }),
+    );
+
+    return result;
   }
 
   requestLyrics(occurrenceId: string): void {
@@ -312,82 +371,80 @@ export class HostClient {
     this.transmit(socket, encodeLyricsGet(requestId));
   }
 
-  requestArtwork(artworkUrl: string, mode: ArtworkMode): void {
+  // Returns the request ID, or null when the Host cannot serve it. A null return has already reported the failure.
+  requestArtwork(artworkUrl: string, mode: ArtworkMode): string | null {
     const socket = this.socket;
 
-    if (
-      !this.welcomed ||
-      socket === null ||
-      !this.capabilities.includes(artworkCapability)
-    ) {
-      this.options.onChange({
-        kind: 'artwork',
-        artworkUrl,
-        dataUrl: null,
-        full: true,
-      });
+    const supported =
+      this.welcomed &&
+      socket !== null &&
+      this.capabilities.includes(artworkCapability) &&
+      (mode.kind !== 'motion' || this.capabilities.includes(motionCapability));
 
-      return;
+    if (!supported || socket === null) {
+      this.reportUnservedArtwork(artworkUrl, mode);
+
+      return null;
     }
-
-    // The Host sends motion in small frames over Bluetooth, so commands are not held behind it. The still image stays
-    // on screen until the motion video verifies.
-    const previewOnly = mode.kind === 'preview';
-    const occurrenceId = mode.kind === 'full' ? mode.occurrenceId : null;
-
-    const motion =
-      occurrenceId !== null && this.capabilities.includes(motionCapability);
 
     const requestId = this.options.newId();
 
     this.requests.set(requestId, {
       kind: 'artwork',
       artworkUrl,
-      previewOnly,
-      occurrenceId,
-      motion,
+      lane: mode.kind,
+      occurrenceId: mode.kind === 'motion' ? mode.occurrenceId : null,
     });
+
+    if (mode.kind === 'motion') {
+      this.transmit(socket, encodeMotionGet(requestId, mode.occurrenceId));
+
+      return requestId;
+    }
+
     this.transmit(
       socket,
       encodeArtworkGet(requestId, artworkUrl, {
         progressive:
-          previewOnly ||
+          mode.kind === 'preview' ||
           (this.options.progressiveArtwork === true &&
             this.capabilities.includes(progressiveArtworkCapability)),
-        previewOnly,
-        occurrenceId,
-        motion,
+        previewOnly: mode.kind === 'preview',
       }),
+    );
+
+    return requestId;
+  }
+
+  private reportUnservedArtwork(artworkUrl: string, mode: ArtworkMode): void {
+    this.options.onChange(
+      mode.kind === 'motion'
+        ? {
+            kind: 'motion',
+            artworkUrl,
+            video: null,
+            unavailable: true,
+            requestId: null,
+          }
+        : {
+            kind: 'artwork',
+            artworkUrl,
+            dataUrl: null,
+            full: true,
+            requestId: null,
+          },
     );
   }
 
-  // Abandons the full images and motion of every song but the playing one, and tells the Host to stop them. A preview is
-  // small, so it is kept.
-  cancelFullArtwork(playingOccurrenceId: string | null): void {
-    const socket = this.socket;
-    let cancelled = false;
+  // Abandons one request, such as a still or motion video for a song that is no longer playing, and tells the Host to
+  // stop it. Anything that still arrives for it is ignored.
+  cancelArtwork(requestId: string): void {
+    if (!this.requests.delete(requestId)) return;
+    this.artworkChunks.drop(requestId);
+    this.motion.drop(requestId);
 
-    for (const [requestId, request] of this.requests) {
-      if (
-        request.kind !== 'artwork' ||
-        request.previewOnly ||
-        request.occurrenceId === playingOccurrenceId
-      ) {
-        continue;
-      }
-
-      this.requests.delete(requestId);
-
-      if (socket !== null) {
-        this.transmit(socket, encodeArtworkCancel(requestId));
-      }
-
-      cancelled = true;
-    }
-
-    if (cancelled) {
-      this.artworkChunks.reset();
-      this.motion.reset();
+    if (this.socket !== null) {
+      this.transmit(this.socket, encodeArtworkCancel(requestId));
     }
   }
 
@@ -497,7 +554,7 @@ export class HostClient {
     traceFrame('in', this.transport(), text);
     const message = decodeHostMessage(text);
 
-    if (message === null) return;
+    if (message === null || this.songs.receive(message)) return;
     this.dispatch(socket, message);
   }
 
@@ -519,6 +576,7 @@ export class HostClient {
       case 'state':
         this.snapshot = message.snapshot;
         this.options.onChange({ kind: 'snapshot', snapshot: message.snapshot });
+        this.waiters.notify();
 
         return;
       case 'command.result':
@@ -526,7 +584,7 @@ export class HostClient {
 
         return;
       case 'error':
-        this.onError(message.requestId, message.errorCode, message.message);
+        this.onError(message);
 
         return;
       case 'lyrics':
@@ -569,8 +627,12 @@ export class HostClient {
         this.motion.receive(message);
 
         return;
+      case 'motion.unavailable':
+        this.onMotionUnavailable(message.requestId);
+
+        return;
       case 'clock':
-        this.onClock(message.requestId, message.sample);
+        this.clock.receive(message.requestId, message.sample);
 
         return;
       case 'remote.configured':
@@ -612,38 +674,43 @@ export class HostClient {
 
     this.options.onChange({ kind: 'welcome', welcome });
     this.setPhase('connected', null);
-    this.refreshClock();
+    this.clock.start();
     this.reconcileOrphanedCommands();
   }
 
   private onCommandResult(result: CommandResult): void {
-    const pending = this.pendingCommands.get(result.commandId);
+    const sent = this.commands.sentFor(result.commandId);
+    const kind = this.commands.receive(result);
 
-    if (pending !== undefined) {
-      this.pendingCommands.delete(result.commandId);
-      pending.cancelSettle();
-      pending.resolve(result);
-
-      return;
+    if (result.outcome !== 'applied') {
+      traceEvent(`command ${sent?.kind ?? 'unknown'} ${result.outcome}`, {
+        errorCode: result.errorCode,
+        message: result.message,
+        expectedRevision: sent?.expectedRevision,
+        hostRevision: result.revision,
+        windowMs: sent?.windowMs,
+        roundTripMs: sent?.roundTripMs,
+        late: kind === 'late',
+      });
     }
 
-    if (this.orphanedCommands.delete(result.commandId)) {
+    if (kind === 'late') {
       this.options.onChange({ kind: 'commandResolved', result });
     }
   }
 
-  private onError(
-    requestId: string | null,
-    errorCode: string,
-    message: string,
-  ): void {
+  private onError(error: Extract<HostMessage, { type: 'error' }>): void {
+    if (this.commands.refuse(error)) return;
+
+    const { requestId, errorCode, message } = error;
+
     const request =
       requestId === null ? undefined : this.requests.get(requestId);
 
     if (requestId !== null) this.requests.delete(requestId);
 
-    if (request !== undefined) {
-      this.onRequestError(request, message);
+    if (request !== undefined && requestId !== null) {
+      this.onRequestError(request, requestId, message);
 
       return;
     }
@@ -668,7 +735,11 @@ export class HostClient {
     else this.emitNotice(message);
   }
 
-  private onRequestError(request: PendingRequest, message: string): void {
+  private onRequestError(
+    request: PendingRequest,
+    requestId: string,
+    message: string,
+  ): void {
     switch (request.kind) {
       case 'lyrics':
         this.options.onChange({
@@ -678,16 +749,10 @@ export class HostClient {
 
         return;
       case 'artwork':
-        this.options.onChange({
-          kind: 'artwork',
-          artworkUrl: request.artworkUrl,
-          dataUrl: null,
-          full: true,
-        });
+        this.reportRequestFailure(request, requestId);
 
         return;
       case 'rename':
-      case 'clock':
         this.emitNotice(message);
 
         return;
@@ -710,12 +775,13 @@ export class HostClient {
     if (request?.kind !== 'artwork') return;
     // A preview-only request is answered by its preview.
 
-    if (request.previewOnly) this.requests.delete(requestId);
+    if (request.lane === 'preview') this.requests.delete(requestId);
     this.options.onChange({
       kind: 'artwork',
       artworkUrl,
       dataUrl,
       full: false,
+      requestId,
     });
   }
 
@@ -725,63 +791,56 @@ export class HostClient {
     requestId: string,
   ): void {
     this.requests.delete(requestId);
-    this.options.onChange({ kind: 'artwork', artworkUrl, dataUrl, full: true });
+    this.options.onChange({
+      kind: 'artwork',
+      artworkUrl,
+      dataUrl,
+      full: true,
+      requestId,
+    });
   }
 
-  private onClock(requestId: string, sample: ClockSample): void {
-    const request = this.requests.get(requestId);
-    this.requests.delete(requestId);
-
-    if (request === undefined || request.kind !== 'clock') return;
-    this.probes.push({
-      sentAtRemoteMs: request.sentAtRemoteMs,
-      receivedAtRemoteMs: this.options.monotonicNow(),
-      receivedAtHostMs: sample.receivedAtHostMs,
-      sentAtHostMs: sample.sentAtHostMs,
-    });
-    this.probes.splice(0, Math.max(0, this.probes.length - clockWindowSize));
-
-    if (this.probes.length < clockProbeCount) {
-      this.sendClockProbe();
+  // The Host refused the request or it failed. A motion request fails as a refusal, which means the song has none.
+  private reportRequestFailure(
+    request: Extract<PendingRequest, { kind: 'artwork' }>,
+    requestId: string,
+  ): void {
+    if (request.lane === 'motion') {
+      this.options.onChange({
+        kind: 'motion',
+        artworkUrl: request.artworkUrl,
+        video: null,
+        unavailable: true,
+        requestId,
+      });
 
       return;
     }
 
-    this.updateClockEstimate();
-    this.cancelClockRefresh?.();
-    this.cancelClockRefresh = this.options.schedule(
-      () => this.sendClockProbe(),
-      clockProbeIntervalMs,
-    );
+    this.onArtwork(request.artworkUrl, null, requestId);
   }
 
-  private updateClockEstimate(): void {
-    const estimate = bestClockEstimate(this.probes);
+  private onMotionUnavailable(requestId: string): void {
+    const request = this.requests.get(requestId);
 
-    if (estimate === null) return;
-    this.offsetMs = estimate.offsetMs;
-    this.uncertaintyMs = estimate.uncertaintyMs;
-    this.roundTripMs = estimate.roundTripMs;
-    traceEvent('clock offset estimated', {
-      offsetMs: estimate.offsetMs,
-      roundTripMs: estimate.roundTripMs,
-      uncertaintyMs: estimate.uncertaintyMs,
-    });
-    this.options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
-    this.reportStatus();
+    if (request?.kind !== 'artwork' || request.lane !== 'motion') return;
+    this.requests.delete(requestId);
+    this.reportRequestFailure(request, requestId);
   }
 
   // Each estimate refreshes the path the Host shows for this Remote, so its status stays current while connected.
   private reportStatus(): void {
     const socket = this.socket;
 
-    if (!this.welcomed || socket === null || this.roundTripMs === null) return;
+    const roundTripMs = this.clock.roundTripMs;
+
+    if (!this.welcomed || socket === null || roundTripMs === null) return;
     this.transmit(
       socket,
       encodeSessionStatus({
         reportedAtMs: Math.round(this.options.monotonicNow()),
         transport: this.linkedOverBluetooth ? 'ble' : 'lan',
-        rttMs: Math.round(this.roundTripMs),
+        rttMs: Math.round(roundTripMs),
       }),
     );
   }
@@ -815,28 +874,12 @@ export class HostClient {
     this.options.credentials.write(this.credential);
   }
 
-  private refreshClock(): void {
-    this.cancelClockRefresh?.();
-    this.probes = [];
-    this.sendClockProbe();
-  }
-
-  private sendClockProbe(): void {
-    const socket = this.socket;
-
-    if (socket === null) return;
-    const requestId = this.options.newId();
-    const sentAtRemoteMs = this.options.monotonicNow();
-    this.requests.set(requestId, { kind: 'clock', sentAtRemoteMs });
-    this.transmit(socket, encodeClock(requestId, sentAtRemoteMs));
-  }
-
   private reconcileOrphanedCommands(): void {
     const socket = this.socket;
 
     if (socket === null) return;
 
-    for (const commandId of this.orphanedCommands) {
+    for (const commandId of this.commands.orphanedIds()) {
       this.transmit(socket, encodeCommandStatus(commandId));
     }
   }
@@ -848,14 +891,16 @@ export class HostClient {
     this.welcomed = false;
     this.cancelHandshake?.();
     this.cancelHandshake = null;
-    this.cancelClockRefresh?.();
-    this.cancelClockRefresh = null;
-    this.offsetMs = null;
+    this.clock.stop();
     this.snapshot = null;
     this.requests.clear();
     this.artworkChunks.reset();
     this.motion.reset();
-    this.orphanCommands();
+    this.commands.orphanAll(
+      'The connection closed before Cadenza Host confirmed this change.',
+    );
+    this.songs.abandon();
+    this.waiters.notify();
 
     if (this.phase === 'pairing-failed' || this.phase === 'unpaired') return;
 
@@ -883,37 +928,6 @@ export class HostClient {
     }
 
     this.scheduleReconnect();
-  }
-
-  private orphanCommands(): void {
-    for (const [commandId, pending] of this.pendingCommands) {
-      pending.cancelSettle();
-      this.orphanedCommands.add(commandId);
-      pending.resolve(
-        unconfirmedResult(
-          commandId,
-          'The connection closed before Cadenza Host confirmed this change.',
-        ),
-      );
-    }
-
-    this.pendingCommands.clear();
-  }
-
-  // A command whose result never arrives on a live link, such as one whose Bluetooth frame was dropped, settles as
-  // unconfirmed so the controls unlock. It stays orphaned, so its late result is still reported.
-  private settleUnanswered(commandId: string): void {
-    const pending = this.pendingCommands.get(commandId);
-
-    if (pending === undefined) return;
-    this.pendingCommands.delete(commandId);
-    this.orphanedCommands.add(commandId);
-    pending.resolve(
-      unconfirmedResult(
-        commandId,
-        'Cadenza Host has not confirmed this change yet.',
-      ),
-    );
   }
 
   private scheduleReconnect(): void {
@@ -955,16 +969,17 @@ export class HostClient {
     const socket = this.socket;
     this.socket = null;
     this.welcomed = false;
+    this.songs.abandon();
     socket?.close();
+    this.waiters.notify();
   }
 
   private cancelTimers(): void {
     this.cancelHandshake?.();
     this.cancelReconnect?.();
-    this.cancelClockRefresh?.();
+    this.clock.stop();
     this.cancelHandshake = null;
     this.cancelReconnect = null;
-    this.cancelClockRefresh = null;
     this.attempt = 0;
   }
 
@@ -982,14 +997,4 @@ export class HostClient {
   private emitNotice(message: string): void {
     this.options.onChange({ kind: 'notice', message });
   }
-}
-
-function unavailableResult(): CommandResult {
-  return {
-    commandId: '',
-    outcome: 'rejected',
-    revision: 0,
-    message: 'Cadenza Host is not connected.',
-    errorCode: 'unavailable',
-  };
 }

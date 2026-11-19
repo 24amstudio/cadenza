@@ -1,6 +1,7 @@
 // The narrow Music.app scripting surface used by the owned JXA resource.
 interface MusicTrack {
   persistentID(): string;
+  class(): string;
   duration(): number;
   name(): string;
   artist(): string;

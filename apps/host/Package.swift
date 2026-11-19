@@ -17,11 +17,11 @@ let package = Package(
         ),
         .package(
             url: "https://github.com/xocialize/mel-roformer-mlx-swift.git",
-            revision: "22162f8fd5cd8cc09abc47a87c1ecddf3baf5ee3"
+            from: "0.1.2"
         ),
         .package(
             url: "https://github.com/huggingface/swift-transformers.git",
-            revision: "573e5c9036c2f136b3a8a071da8e8907322403d0"
+            from: "1.4.0"
         ),
     ],
     targets: [

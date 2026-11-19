@@ -19,10 +19,11 @@ final class HostModel {
     var updateBusy = false
     var updateProgress: Double = 0
     var stagedVersion: String?
+    var updateStatus: String?
     var service: HostService?
     var onboardingComplete = UserDefaults.standard.bool(forKey: "onboardingComplete")
     var showingSetup = false
-    var selectedTab = 2
+    var selectedSection: HostSection = .nowPlaying
     var connectedRemotes: [PairedRemote] = []
     var hostTransportPolicy: HostTransportPolicy = {
         guard let data = UserDefaults.standard.data(forKey: "hostTransportPolicy"),
@@ -63,7 +64,6 @@ final class HostModel {
         service?.remoteTransportPreferences = remoteTransportPreferences
         service?.remoteTransportManualPaths = remoteTransportManualPaths
         service?.publishTransportStatus()
-        notify("Transport policy saved.")
     }
 
     func start() async {
@@ -166,7 +166,8 @@ final class HostModel {
         } catch { showError("Could not change permissions", error.localizedDescription) }
     }
 
-    func save() {
+    /// Restarts the service with the saved configuration. Refuses while Music has a request in progress.
+    func restartToApply() {
         guard !saving else { return }
         saving = true
         Task { @MainActor in
@@ -175,13 +176,13 @@ final class HostModel {
                 try await service?.save(configuration)
                 running = service?.network.ready ?? false
                 scheduleUpdates()
-                notify("Settings saved.")
+                notify("Host restarted with the new settings.")
             } catch {
                 service?.logger.log(
                     .error, category: "settings", action: "settings.save.failed", "Settings could not be saved",
                     metadata: ["error": error.localizedDescription])
                 running = service?.network.ready ?? false
-                showError("Could not save settings", error.localizedDescription)
+                showError("Host could not restart", error.localizedDescription)
             }
         }
     }
@@ -224,6 +225,7 @@ final class HostModel {
         if automatic && (configuration.updates.repository.isEmpty || !configuration.automaticUpdates) { return }
         updateBusy = true
         updateProgress = 0
+        updateStatus = nil
         Task { @MainActor in
             defer { updateBusy = false }
             do {
@@ -232,7 +234,7 @@ final class HostModel {
                 if stagedVersion != nil {
                     installUpdate()
                 } else if !automatic {
-                    notify(message)
+                    updateStatus = message
                 }
             } catch {
                 if !automatic { showError("Update could not be prepared", error.localizedDescription) }
@@ -328,7 +330,7 @@ final class HostModel {
         }
     }
 
-    private func scheduleUpdates() {
+    func scheduleUpdates() {
         updateScheduler?.invalidate()
         guard HostBuild.updatesEnabled, configuration.automaticUpdates, !configuration.updates.repository.isEmpty else {
             return

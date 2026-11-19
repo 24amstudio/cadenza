@@ -16,6 +16,6 @@ Android Keystore protects the key used to encrypt Host credentials. SQLite schem
 
 ## Build
 
-Use `build.cmd Debug` on Windows or `bash build.sh Debug` with JDK 17 and SDK platform `android-37.0`. Caches remain under the monorepo. The scripts stop if the platform is missing. Gradle resolves dependencies and may fetch missing licensed build components inside the configured SDK root; its first invocation can also download the pinned distribution.
+Use `build.cmd Debug` on Windows or `bash build.sh Debug` with JDK 17 and SDK platform `android-37.1`. Caches remain under the monorepo. The scripts stop if the platform is missing. Gradle resolves dependencies and may fetch missing licensed build components inside the configured SDK root; its first invocation can also download the pinned distribution.
 
 `check.cmd` on Windows and `check.sh` on macOS/Linux run native source gates without packaging a release. Tests cover clocks, input validation, lyric identity, certificate pinning, signed release metadata, SQLite migration/replay/recovery, and representative production Compose screens. Robolectric renders Android API 31 under JDK 17; screenshots use synthetic data and do not establish device or Music integration. Release APK builds require the stable signing identity described in [BUILDING.md](../../docs/BUILDING.md).

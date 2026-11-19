@@ -6,9 +6,9 @@ This guide covers the toolchains, checks, and packaging steps for building Caden
 
 Host needs a supported Apple silicon Mac, macOS 26+, Swift 6.2+, and the macOS SDK supplied by compatible Apple command-line tools or Xcode. No paid Apple Developer membership is required.
 
-Remote needs JDK 17, Android SDK platform `android-37.0`, build-tools 36.0.0, and Gradle 9.8.2 with Android Gradle Plugin 9.5.0-rc01. The checked-in wrapper pins and verifies Gradle's distribution. `compileSdk` is 37, `targetSdk` is 36, and the installation floor is Android 12 / API 31. Android Studio and an emulator are not required.
+Remote needs JDK 17, Android SDK platform `android-37.1`, build-tools 36.0.0, and Gradle 9.8.2 with Android Gradle Plugin 9.5.0-rc01. The checked-in wrapper pins and verifies Gradle's distribution. `compileSdk` is 37.1, `targetSdk` is 36, and the installation floor is Android 12 / API 31. Android Studio and an emulator are not required.
 
-The Android plugin is a release candidate. Plugin 9.4.1 calls a deprecated Gradle API that fails the strict build on Gradle 9.8.2; older Gradle versions fail the current Android lint update check. The release candidate removes those deprecated calls. Warnings remain errors. The only disabled lint advisory is `OldTargetApi`, because current dependencies require compileSdk 37 while the requested runtime target remains 36; no lint baseline or other warning suppression is used.
+The Android plugin is a release candidate. Plugin 9.4.1 calls a deprecated Gradle API that fails the strict build on Gradle 9.8.2; older Gradle versions fail the current Android lint update check. The release candidate removes those deprecated calls. Warnings remain errors. The only disabled lint advisory is `OldTargetApi`, because current dependencies require compileSdk 37.1 while the requested runtime target remains 36; no lint baseline or other warning suppression is used.
 
 Temurin JDK 17, Android command-line tools, SDK components, Gradle, and build dependencies can be installed under H:/Dev. Verify downloaded archives against the checksums published by their upstream projects. Android Studio and an emulator are optional; release users install the app packages without these build tools.
 
@@ -42,10 +42,10 @@ On another Windows checkout, install the current Android command-line tools unde
 
 ```bat
 call tools\windows-env.cmd
-"%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%ANDROID_HOME%" "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+"%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%ANDROID_HOME%" "platforms;android-37.1" "build-tools;36.0.0" "platform-tools"
 ```
 
-That command downloads the selected SDK components and asks you to accept their licenses. Older command-line tools may not recognize the `android-37.0` package; use command-line tools 22.0 or later. SDK Manager 22.0 still supports this command and recommends the newer Android CLI for future installations.
+That command downloads the selected SDK components and asks you to accept their licenses. Older command-line tools may not recognize the `android-37.1` package; use command-line tools 22.0 or later. SDK Manager 22.0 still supports this command and recommends the newer Android CLI for future installations.
 
 ## Build and check Host
 

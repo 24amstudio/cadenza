@@ -6,24 +6,18 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     static let serviceUUID = CBUUID(string: "9F4C0001-4B9C-4F2D-9C2A-1C8F8B3D4A10")
     static let writeUUID = CBUUID(string: "9F4C0002-4B9C-4F2D-9C2A-1C8F8B3D4A10")
     static let notifyUUID = CBUUID(string: "9F4C0003-4B9C-4F2D-9C2A-1C8F8B3D4A10")
-    // Each Remote has its own window of frames waiting for CoreBluetooth. A slow Remote fills only its own window, so it
-    // cannot take the budget from the others. A frame larger than the window is accepted only when that Remote has
-    // nothing waiting.
-    private static let windowBytes = 8_192
-
-    private struct PendingSend {
-        var chunks: [Data]
-        var nextChunk: Int
-        let completion: (Error?) -> Void
-    }
+    // Advertising or service publication can fail while the radio is busy or the system is waking. Each failure waits
+    // longer, and the series is bounded so a persistent fault ends in a visible issue instead of a silent loop.
+    private static let retryDelays: [Duration] = [.seconds(2), .seconds(5), .seconds(15), .seconds(30)]
 
     private var manager: CBPeripheralManager!
     private var notifyCharacteristic: CBMutableCharacteristic?
     private var subscribed: [CBCentral] = []
     private var inbound: [UUID: BluetoothFrameCodec] = [:]
-    private var outbound: [UUID: [PendingSend]] = [:]
-    private var pendingBytes: [UUID: Int] = [:]
-    private var refused: Set<UUID> = []
+    // Each Remote has its own queue, so a slow Remote fills only its own window.
+    private var outbound: [UUID: BluetoothSendQueue] = [:]
+    private var retry: Task<Void, Never>?
+    private var retryFailures = 0
     private var pumping = false
     private var started = false
     var onReceive: ((UUID, Data) -> Void)?
@@ -41,25 +35,19 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
 
     func start() {
         started = true
+        retryFailures = 0
         guard manager.state == .poweredOn else { return }
         publish()
     }
 
     func stop() {
         started = false
+        retry?.cancel()
+        retry = nil
         manager.stopAdvertising()
         manager.removeAllServices()
         notifyCharacteristic = nil
-        for sends in outbound.values {
-            for send in sends {
-                send.completion(CadenzaError.failure("network", "Bluetooth stopped."))
-            }
-        }
-        outbound.removeAll()
-        pendingBytes.removeAll()
-        refused.removeAll()
-        inbound.removeAll()
-        subscribed.removeAll()
+        for centralID in subscribed.map(\.identifier) { release(centralID, reason: "Bluetooth stopped.") }
     }
 
     func send(
@@ -73,20 +61,13 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
         let chunks: [Data]
         do {
             // The central's negotiated size. Web Bluetooth cannot negotiate an MTU, so a browser central gets 20 bytes.
-            chunks = try BluetoothFrameCodec.chunks(for: data, maximumChunkBytes: central.maximumUpdateValueLength)
+            let size = max(central.maximumUpdateValueLength, BluetoothFrameCodec.minimumChunkBytes)
+            chunks = try BluetoothFrameCodec.chunks(for: data, maximumChunkBytes: size)
         } catch {
             completion(error)
             return .failed
         }
-        // Count what is actually written, including the length header that the codec adds.
-        let framedBytes = chunks.reduce(0) { $0 + $1.count }
-        let queued = pendingBytes[centralID, default: 0]
-        guard queued == 0 || queued + framedBytes <= Self.windowBytes else {
-            refused.insert(centralID)
-            return .full
-        }
-        outbound[centralID, default: []].append(PendingSend(chunks: chunks, nextChunk: 0, completion: completion))
-        pendingBytes[centralID] = queued + framedBytes
+        guard outbound[centralID]?.enqueue(chunks, completion: completion) == true else { return .full }
         pump()
         return .accepted
     }
@@ -94,14 +75,28 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         onEvent?("bluetooth.state", String(describing: peripheral.state))
         guard started else { return }
-        if peripheral.state == .poweredOn { publish() }
+        if peripheral.state == .poweredOn {
+            retryFailures = 0
+            publish()
+            return
+        }
+        // Centrals are gone with the radio, and CoreBluetooth reports no unsubscribe for them.
+        retry?.cancel()
+        notifyCharacteristic = nil
+        for centralID in subscribed.map(\.identifier) {
+            release(centralID, reason: "Bluetooth turned off.")
+            onUnsubscribe?(centralID)
+        }
         if peripheral.state == .unauthorized { onIssue?("Bluetooth permission is unavailable.") }
     }
 
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
         if let error {
-            onIssue?("Cadenza Host could not advertise over Bluetooth: \(error.localizedDescription)")
+            onEvent?("advertising.failed", error.localizedDescription)
+            scheduleRetry(
+                "Cadenza Host could not advertise over Bluetooth: \(error.localizedDescription)", republishing: false)
         } else {
+            retryFailures = 0
             onEvent?("advertising.started", "Cadenza Host is advertising over Bluetooth.")
         }
     }
@@ -112,38 +107,42 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
         error: Error?,
     ) {
         if let error {
-            onIssue?("Could not publish the Cadenza Bluetooth service: \(error.localizedDescription)")
+            scheduleRetry(
+                "Could not publish the Cadenza Bluetooth service: \(error.localizedDescription)", republishing: true)
             return
         }
-        peripheral.startAdvertising([
-            CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID],
-            CBAdvertisementDataLocalNameKey: "Cadenza Host",
-        ])
+        advertise()
     }
 
     func peripheralManager(
         _ peripheral: CBPeripheralManager,
         didReceiveWrite requests: [CBATTRequest],
     ) {
+        // CoreBluetooth wants one response, to the first request, for the whole batch.
+        guard let first = requests.first else { return }
+        var result = CBATTError.Code.success
         for request in requests {
-            guard request.characteristic.uuid == Self.writeUUID,
-                let value = request.value
-            else {
-                peripheral.respond(to: request, withResult: .requestNotSupported)
+            let centralID = request.central.identifier
+            guard request.characteristic.uuid == Self.writeUUID, let value = request.value else {
+                result = .requestNotSupported
                 continue
             }
-            let centralID = request.central.identifier
+            // A central that was dropped keeps writing until its own link notices. Refusing the write tells it to
+            // reconnect, instead of feeding a session that no longer exists.
+            guard let codec = inbound[centralID] else {
+                result = .writeNotPermitted
+                continue
+            }
             do {
-                let codec = inbound[centralID, default: BluetoothFrameCodec()]
                 for frame in try codec.append(value) { onReceive?(centralID, frame) }
-                inbound[centralID] = codec
-                peripheral.respond(to: request, withResult: .success)
             } catch {
-                inbound.removeValue(forKey: centralID)
-                peripheral.respond(to: request, withResult: .invalidPdu)
-                onIssue?("A Remote sent an invalid Bluetooth frame: \(error.localizedDescription)")
+                result = .invalidPdu
+                release(centralID, reason: "Invalid Bluetooth frame.")
+                onEvent?("central.dropped", "A Remote sent an invalid Bluetooth frame: \(error.localizedDescription)")
+                onUnsubscribe?(centralID)
             }
         }
+        peripheral.respond(to: first, withResult: result)
     }
 
     func peripheralManager(
@@ -151,13 +150,21 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
         central: CBCentral,
         didSubscribeTo characteristic: CBCharacteristic,
     ) {
-        guard characteristic.uuid == Self.notifyUUID,
-            !subscribed.contains(where: { $0.identifier == central.identifier })
-        else { return }
+        guard characteristic.uuid == Self.notifyUUID else { return }
+        let centralID = central.identifier
+        // A Remote that reconnects can arrive before the old subscription was reported gone. The old session is ended
+        // so the new one starts clean, instead of the new subscription being ignored.
+        if subscribed.contains(where: { $0.identifier == centralID }) {
+            release(centralID, reason: "Bluetooth Remote reconnected.")
+            onUnsubscribe?(centralID)
+        }
         subscribed.append(central)
-        inbound[central.identifier] = BluetoothFrameCodec()
-        onEvent?("central.subscribed", "A Remote connected over Bluetooth.")
-        onSubscribe?(central.identifier)
+        inbound[centralID] = BluetoothFrameCodec()
+        outbound[centralID] = BluetoothSendQueue()
+        onEvent?(
+            "central.subscribed",
+            "A Remote connected over Bluetooth (notification size \(central.maximumUpdateValueLength) bytes).")
+        onSubscribe?(centralID)
     }
 
     func peripheralManager(
@@ -167,21 +174,23 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     ) {
         guard characteristic.uuid == Self.notifyUUID else { return }
         let centralID = central.identifier
+        guard subscribed.contains(where: { $0.identifier == centralID }) else { return }
         onEvent?("central.unsubscribed", "A Remote disconnected from Bluetooth.")
-        subscribed.removeAll { $0.identifier == centralID }
-        inbound.removeValue(forKey: centralID)
-        refused.remove(centralID)
-        pendingBytes.removeValue(forKey: centralID)
-        if let pending = outbound.removeValue(forKey: centralID) {
-            for send in pending {
-                send.completion(CadenzaError.failure("network", "Bluetooth Remote disconnected."))
-            }
-        }
+        release(centralID, reason: "Bluetooth Remote disconnected.")
         onUnsubscribe?(centralID)
+        if started, !manager.isAdvertising { advertise() }
     }
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
         pump()
+    }
+
+    // Forgets everything held for one Remote and fails what was still waiting for it.
+    private func release(_ centralID: UUID, reason: String) {
+        subscribed.removeAll { $0.identifier == centralID }
+        inbound.removeValue(forKey: centralID)
+        guard var queue = outbound.removeValue(forKey: centralID) else { return }
+        for completion in queue.removeAll() { completion(CadenzaError.failure("network", reason)) }
     }
 
     // Hands chunks to CoreBluetooth one Remote at a time, in turn. One large frame therefore cannot hold up the others.
@@ -194,38 +203,51 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
             var progressed = false
             for central in subscribed {
                 let centralID = central.identifier
-                guard let next = outbound[centralID]?.first else { continue }
-                let chunk = next.chunks[next.nextChunk]
+                guard let chunk = outbound[centralID]?.nextChunk else { continue }
                 guard manager.updateValue(chunk, for: characteristic, onSubscribedCentrals: [central]) else { return }
-                record(centralID, chunkBytes: chunk.count)
+                outbound[centralID]?.didSendChunk()
                 progressed = true
             }
             if progressed { continue }
-            // Nothing else can be written now. Refused Remotes whose window has room are told so, and their queues
+            // Nothing else can be written now. Refused Remotes whose queue has drained are told so, and their frames
             // resume from the next pass.
-            let ready = refused.filter { pendingBytes[$0, default: 0] < Self.windowBytes }
-            if ready.isEmpty { return }
-            refused.subtract(ready)
-            for centralID in ready { onDrain?(centralID) }
+            let drained = subscribed.map(\.identifier).filter { outbound[$0]?.takeDrainNotice() == true }
+            if drained.isEmpty { return }
+            for centralID in drained { onDrain?(centralID) }
         }
     }
 
-    private func record(_ centralID: UUID, chunkBytes: Int) {
-        guard var sends = outbound.removeValue(forKey: centralID) else { return }
-        sends[0].nextChunk += 1
-        let remaining = (pendingBytes[centralID] ?? 0) - chunkBytes
-        if sends[0].nextChunk == sends[0].chunks.count {
-            sends.removeFirst().completion(nil)
+    // Advertising alone is retried while Remotes are connected, because republishing the service would end their links.
+    private func scheduleRetry(_ issue: String, republishing: Bool) {
+        guard started, manager.state == .poweredOn else { return }
+        guard retryFailures < Self.retryDelays.count else {
+            onIssue?(issue)
+            return
         }
-        if sends.isEmpty {
-            pendingBytes.removeValue(forKey: centralID)
-        } else {
-            pendingBytes[centralID] = remaining
-            outbound[centralID] = sends
+        let delay = Self.retryDelays[retryFailures]
+        retryFailures += 1
+        onEvent?("advertising.retry", issue)
+        retry?.cancel()
+        retry = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.started, self.manager.state == .poweredOn else { return }
+            if republishing { self.publish() } else { self.advertise() }
         }
+    }
+
+    private func advertise() {
+        guard started, manager.state == .poweredOn else { return }
+        manager.stopAdvertising()
+        manager.startAdvertising([
+            CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID],
+            CBAdvertisementDataLocalNameKey: "Cadenza Host",
+        ])
     }
 
     private func publish() {
+        retry?.cancel()
+        manager.stopAdvertising()
+        manager.removeAllServices()
         let write = CBMutableCharacteristic(
             type: Self.writeUUID,
             properties: [.write, .writeWithoutResponse],

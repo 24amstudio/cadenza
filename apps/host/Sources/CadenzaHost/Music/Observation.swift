@@ -7,8 +7,11 @@ final class MusicObservation {
     private var musicToken: NSObjectProtocol?
     private var wakeToken: NSObjectProtocol?
     private var coalesced: Task<Void, Never>?
+    private var changedDuringRead = false
+    private var latestHintAt: Int64 = 0
 
-    func start(refresh: @escaping @MainActor () async -> Void) {
+    /// `refresh` receives the Host time of the latest hint, so it can skip a read that already saw that change.
+    func start(refresh: @escaping @MainActor (Int64) async -> Void) {
         stop()
         musicToken = DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name("com.apple.Music.playerInfo"), object: nil, queue: .main
@@ -22,12 +25,20 @@ final class MusicObservation {
         }
     }
 
-    private func schedule(_ refresh: @escaping @MainActor () async -> Void) {
-        guard coalesced == nil else { return }
+    private func schedule(_ refresh: @escaping @MainActor (Int64) async -> Void) {
+        latestHintAt = monotonicMs()
+        // A hint that arrives while a read runs may describe a newer state than that read saw, so one more read follows.
+        guard coalesced == nil else {
+            changedDuringRead = true
+            return
+        }
         coalesced = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(100))
-            guard !Task.isCancelled else { return }
-            await refresh()
+            repeat {
+                self?.changedDuringRead = false
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled else { return }
+                await refresh(self?.latestHintAt ?? monotonicMs())
+            } while self?.changedDuringRead == true && !Task.isCancelled
             self?.coalesced = nil
         }
     }

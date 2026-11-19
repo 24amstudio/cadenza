@@ -22,6 +22,8 @@
         "search.result",
         "search.suggest",
         "search.suggestions",
+        "browse.get",
+        "browse.result",
         "song.prepare",
         "song.ready",
         "operation.started",
@@ -272,6 +274,7 @@
       "type": "string",
       "maxLength": 700000
     },
+    "browse": { "type": "object" },
     "recommendation_passport": { "type": "object" },
     "recommendation_query": { "type": "object" },
     "recommendation_result": { "type": ["object", "null"] },
@@ -733,6 +736,14 @@
           "songs": { "$ref": "#/properties/songs" }
         }
       }
+    },
+    {
+      "if": { "properties": { "type": { "const": "browse.get" } } },
+      "then": { "$ref": "urn:cadence:protocol:v1:browse#/$defs/getFrame" }
+    },
+    {
+      "if": { "properties": { "type": { "const": "browse.result" } } },
+      "then": { "$ref": "urn:cadence:protocol:v1:browse#/$defs/resultFrame" }
     },
     {
       "if": { "properties": { "type": { "const": "song.prepare" } } },

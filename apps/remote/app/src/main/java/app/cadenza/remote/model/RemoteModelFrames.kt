@@ -10,6 +10,7 @@ import app.cadenza.remote.data.counter
 import app.cadenza.remote.data.nullableString
 import app.cadenza.remote.data.objects
 import app.cadenza.remote.media.SessionStatus
+import app.cadenza.remote.network.HostLivenessPolicy
 import app.cadenza.remote.network.PathMeasurement
 import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
@@ -71,6 +72,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                     mutable.update { it.copy(results = songs, searching = false) }
                     correctIfNeeded(songs)
                 }
+                requestId == favoriteResolveId -> applyFavoriteMatches(frame.getJSONArray("songs").objects().map(Wire::song))
                 requestId == correctionId -> {
                     val songs = frame.getJSONArray("songs").objects().map(Wire::song)
                     mutable.update { it.copy(correctedResults = songs) }
@@ -138,6 +140,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                     )
                 }
             }
+        "browse.result" -> applyBrowseResult(frame)
         "command.result" -> commandResultInternal(frame)
         "error" -> if (!commandRefusedInternal(frame)) operationErrorInternal(frame)
         "operation.started" -> Unit
@@ -162,6 +165,7 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
     discovery?.close()
     discovery = null
     retryDelay = 1_000
+    bleFailures = 0
     metadata.clear()
     val release = value.getJSONObject("updates")
     val updates = UpdateConfiguration(release.optString("repository"), release.optString("public_key_spki_base64"))
@@ -222,13 +226,16 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
             }
             while (true) {
                 delay(5_000)
-                if (SystemClock.elapsedRealtime() - lastStatusSentAt >= 15_000) publishStatus()
-                if (SystemClock.elapsedRealtime() - lastReceivedAt > 10_000) {
+                val profile = energy.profile.value
+                if (SystemClock.elapsedRealtime() - lastStatusSentAt >= profile.statusIntervalMs) publishStatus()
+                if (SystemClock.elapsedRealtime() - lastReceivedAt > HostLivenessPolicy.silenceLimitMs(transportMode)) {
                     connectionClosed(generation, "The Host stopped responding. Reconnecting…")
                     return@launch
                 }
-                if (mutable.value.snapshot?.playing == true ||
-                    SystemClock.elapsedRealtime() - lastClockSentAt >= 30_000
+                // The loop wakes every 5 s, so a 5 s interval pings on each wake and longer ones skip wakes.
+                val sinceClock = SystemClock.elapsedRealtime() - lastClockSentAt
+                if ((mutable.value.snapshot?.playing == true && sinceClock >= profile.clockPingMs - CLOCK_PING_SLACK_MS) ||
+                    sinceClock >= 30_000
                 ) {
                     pingClock()
                 }
@@ -324,3 +331,5 @@ private fun qualifiedRecommendationFeedback(
         track = track,
         positionMs = frame.optLong("played_ms_delta", 0),
     )
+
+private const val CLOCK_PING_SLACK_MS = 500L

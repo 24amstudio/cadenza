@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,15 +37,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.BrowseTarget
+import app.cadenza.remote.energy.LocalEnergyProfile
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
-import app.cadenza.remote.model.showError
+import app.cadenza.remote.ui.browse.browseLink
 import org.json.JSONObject
 
 @Composable
@@ -69,14 +70,11 @@ fun PlayingScreen(
         }
     }
     val current = state.snapshot?.current
-    val currentPosition = (position(model, 100) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
-    val artwork = rememberArtwork(current?.song?.artworkUrl)
-    val backdrop =
-        artwork?.accent?.let {
-            Brush.verticalGradient(
-                listOf(it.copy(alpha = 0.28f), MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), MaterialTheme.colorScheme.surface),
-            )
-        } ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.colorScheme.surface))
+    // This screen draws only the timeline, which moves less than a pixel in 250 ms.
+    val currentPosition = (position(model, LocalEnergyProfile.current.progressTickMs) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
+    // The song on screen trails the playing one until its artwork is ready, so a song change swaps both together.
+    val shown = rememberShownSong(current)
+    val backdrop = rememberBackdrop(shown?.artwork?.accent, 0.28f, MaterialTheme.colorScheme.surfaceContainerLow)
     val lyrics = state.lyrics?.takeIf { it.occurrenceId == current?.occurrenceId && it.level > 0 }
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
     var showQueue by rememberSaveable { mutableStateOf(false) }
@@ -106,7 +104,7 @@ fun PlayingScreen(
                 onClose = onClose,
                 onQueueChanged = { showQueue = it },
             )
-            if (current == null) {
+            if (current == null || shown == null) {
                 EmptyPlayerSurface()
             } else {
                 if (tablet) {
@@ -116,10 +114,21 @@ fun PlayingScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.88f),
                         tonalElevation = 2.dp,
                     ) {
-                        PlayerPanel(model, state, artwork, currentPosition, true)
+                        PlayerPanel(
+                            model,
+                            state,
+                            shown,
+                            currentPosition,
+                            lyricsButton =
+                                if (lyricsMayBeAvailable) {
+                                    { LyricsButton(onOpenLyrics, Modifier.focusRequester(lyricsFocusRequester)) }
+                                } else {
+                                    null
+                                },
+                        )
                     }
                 } else {
-                    PortraitPlayerPanel(model, state, artwork, currentPosition)
+                    PortraitPlayerPanel(model, state, shown, currentPosition)
                 }
                 if (showQueue) QueuePreview(state)
                 state.nextRecommendation?.let { recommendation ->
@@ -211,15 +220,6 @@ private fun PlayerHeader(
             Text(if (state.snapshot?.current == null) "Ready to play" else "Now playing", style = MaterialTheme.typography.headlineMedium)
             ConnectionStatus(state)
         }
-        if (lyricsMayBeAvailable) {
-            FilterChip(
-                selected = false,
-                onClick = onOpenLyrics,
-                label = { Text("Lyrics") },
-                leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
-                modifier = Modifier.focusRequester(lyricsFocusRequester),
-            )
-        }
         FilterChip(
             selected = showQueue,
             onClick = { onQueueChanged(!showQueue) },
@@ -305,36 +305,27 @@ private fun EmptyPlayerSurface() {
     }
 }
 
+// Cover, title and artist are one unit that crossfades when the song changes. Everything below it is controls.
+// [modifier] sizes the cover; the title row always spans the width.
 @Composable
-private fun PortraitPlayerPanel(
-    model: RemoteModel,
+private fun SongCover(
     state: RemoteState,
-    artwork: ArtworkData?,
-    currentPosition: Long,
+    song: ShownSong,
+    snapshotPlaying: Boolean,
+    modifier: Modifier,
+    titleStyle: TextStyle,
+    titleMaxLines: Int,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
-    val snapshot = state.snapshot ?: return
-    val current = snapshot.current ?: return
+    val current = song.current
     val owner = current.requestedBy == state.profile?.remoteId
-    val observationsCurrent = !model.isStale()
-    val mixing = snapshot.mixing.takeIf { observationsCurrent }
-    var volume by remember { mutableFloatStateOf(-1f) }
-    val volumeSlider = remember { SliderState(trackRange = 0f..100f) }
-    volumeSlider.value = if (volume >= 0) volume else snapshot.volume.toFloat()
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         MotionArtwork(
             video = state.motion?.takeIf { it.occurrenceId == current.occurrenceId }?.file,
-            playing = snapshot.playing,
-            modifier =
-                Modifier
-                    .widthIn(max = 420.dp)
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .align(Alignment.CenterHorizontally),
+            playing = snapshotPlaying,
+            modifier = Modifier.sharedArtwork(current.occurrenceId).then(modifier),
         ) {
-            Artwork(artwork, Modifier.fillMaxSize())
+            Artwork(song.artwork, Modifier.fillMaxSize())
         }
         Row(
             Modifier.fillMaxWidth(),
@@ -342,10 +333,20 @@ private fun PortraitPlayerPanel(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(current.song.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2)
-                Text(current.song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(current.song.title, style = titleStyle, maxLines = titleMaxLines)
+                Text(
+                    current.song.artist,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.browseLink(state, current.song, "Open artist page") { BrowseTarget.artist(it) },
+                )
                 current.song.album.takeIf(String::isNotBlank)?.let {
-                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.browseLink(state, current.song, "Open album page") { BrowseTarget.album(it) },
+                    )
                 }
                 if (current.requesterName.isNotBlank()) {
                     Text(
@@ -355,7 +356,39 @@ private fun PortraitPlayerPanel(
                     )
                 }
             }
-            FavoriteIconButton(model, state, current.song)
+            trailing?.invoke()
+        }
+    }
+}
+
+@Composable
+private fun PortraitPlayerPanel(
+    model: RemoteModel,
+    state: RemoteState,
+    shown: ShownSong,
+    currentPosition: Long,
+) {
+    val snapshot = state.snapshot ?: return
+    val current = snapshot.current ?: return
+    val observationsCurrent = !model.isStale()
+    val mixing = snapshot.mixing.takeIf { observationsCurrent }
+    var volume by remember { mutableFloatStateOf(-1f) }
+    val volumeSlider = remember { SliderState(trackRange = 0f..100f) }
+    volumeSlider.value = if (volume >= 0) volume else snapshot.volume.toFloat()
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SongSwap(shown, { it.current.occurrenceId }) { song ->
+            SongCover(
+                state,
+                song,
+                snapshot.playing,
+                Modifier.widthIn(max = 420.dp).fillMaxWidth().aspectRatio(1f),
+                MaterialTheme.typography.headlineSmall,
+                titleMaxLines = 2,
+                trailing = { FavoriteIconButton(model, state, song.current.song) },
+            )
         }
         Row(
             Modifier.fillMaxWidth(),
@@ -384,7 +417,13 @@ private fun PortraitPlayerPanel(
             )
         }
         PlaybackTimeline(model, state, currentPosition)
-        PlaybackTransport(model, state, compact = false)
+        PlaybackTransport(
+            model,
+            state,
+            compact = false,
+            leadingContent = shuffleSlot(model, state),
+            trailingContent = repeatSlot(model, state),
+        )
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("Music volume", style = MaterialTheme.typography.labelLarge)
             Slider(
@@ -407,103 +446,34 @@ private fun PortraitPlayerPanel(
 private fun PlayerPanel(
     model: RemoteModel,
     state: RemoteState,
-    artwork: ArtworkData?,
+    shown: ShownSong,
     currentPosition: Long,
-    wide: Boolean,
+    lyricsButton: (@Composable () -> Unit)?,
 ) {
     val snapshot = state.snapshot ?: return
     val current = snapshot.current ?: return
-    val owner = current.requestedBy == state.profile?.remoteId
-    val canInterrupt = mayInterruptPlayback(state)
-    val observationsCurrent = !model.isStale()
-    val mixing = snapshot.mixing.takeIf { observationsCurrent }
     var volume by remember { mutableFloatStateOf(-1f) }
     val volumeSlider = remember { SliderState(trackRange = 0f..100f) }
     volumeSlider.value = if (volume >= 0) volume else snapshot.volume.toFloat()
     Column(
-        Modifier.fillMaxWidth().padding(if (wide) 24.dp else 20.dp),
-        verticalArrangement = Arrangement.spacedBy(if (wide) 14.dp else 16.dp),
-        horizontalAlignment = if (wide) Alignment.CenterHorizontally else Alignment.Start,
+        Modifier.fillMaxWidth().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val coverModifier =
-            Modifier
-                .widthIn(max = if (wide) 300.dp else 280.dp)
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .align(Alignment.CenterHorizontally)
-        MotionArtwork(
-            video = state.motion?.takeIf { it.occurrenceId == current.occurrenceId }?.file,
-            playing = snapshot.playing,
-            modifier = coverModifier,
-        ) {
-            Artwork(artwork, Modifier.fillMaxSize())
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(current.song.title, style = if (wide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
-                Text(current.song.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "Requested by " + if (owner) "you" else current.requesterName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            FavoriteIconButton(model, state, current.song)
-        }
-        if (!wide) {
-            AssistChip(
-                onClick = {
-                    model.showError(
-                        "Request ownership",
-                        if (canInterrupt) {
-                            "You can control this request."
-                        } else {
-                            "This request belongs to " + current.requesterName +
-                                ". Pause and resume are shared."
-                        },
-                    )
-                },
-                label = { Text(if (owner) "Your request" else "Shared request") },
-                leadingIcon =
-                    if (!canInterrupt) {
-                        { Icon(cadenzaVector(CadenzaIcon.LOCK), contentDescription = "Protected request", modifier = Modifier.size(18.dp)) }
-                    } else {
-                        null
-                    },
+        SongSwap(shown, { it.current.occurrenceId }) { song ->
+            SongCover(
+                state,
+                song,
+                snapshot.playing,
+                Modifier.widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f),
+                MaterialTheme.typography.titleLarge,
+                titleMaxLines = 2,
             )
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(qualityLabel(snapshot.quality, observationsCurrent), style = MaterialTheme.typography.bodyMedium)
-                if (mixing ==
-                    true
-                ) {
-                    Text("· AutoMix", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-            if (mixing == true && snapshot.incoming != null) {
-                Text(
-                    "AutoMix → " + snapshot.incoming.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else if (mixing == null) {
-                Text(
-                    if (observationsCurrent) "AutoMix not reported by Cadenza Host" else "AutoMix status waiting for Cadenza Host",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
         HorizontalDivider()
         PlaybackTimeline(model, state, currentPosition)
-        PlaybackTransport(model, state, Modifier.fillMaxWidth(), compact = true)
+        TabletTransport(model, state, lyricsButton)
         HorizontalDivider()
-        if (!wide) {
-            Text("Music volume", style = MaterialTheme.typography.labelLarge)
-        }
         Slider(
             state = volumeSlider,
             onValueChange = { volume = it },

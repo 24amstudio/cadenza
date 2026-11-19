@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 import {
   bluetoothAvailable,
   forgetBluetoothDevice,
@@ -39,10 +39,15 @@ import type { Settle } from '~/lib/host/songRequests';
 import type { SongDetails } from '~/lib/protocol/encode';
 import { lyricsLevel, type LyricsLevel } from '~/lib/lyrics';
 import { positionAt } from '~/lib/playback';
+import { nextRepeat } from '~/lib/playbackModes';
+import { reuseUnchanged } from '~/lib/snapshotIdentity';
 import type {
+  BrowsePage,
+  BrowseRequest,
   CommandResult,
   LyricDocument,
   QueueActionKind,
+  RepeatMode,
   SearchScope,
   Snapshot,
   Song,
@@ -96,6 +101,11 @@ export const useHostStore = defineStore('host', () => {
   const pendingControls = ref<ReadonlySet<ControlKey>>(new Set());
   // The volume the slider last sent, shown until the Host reports it. Null means the Host's own value is shown.
   const volumeTarget = ref<number | null>(null);
+  // The shuffle and repeat the buttons last sent, shown until the Host reports them, like the volume.
+  const shuffleTarget = ref<boolean | null>(null);
+  const repeatTarget = ref<RepeatMode | null>(null);
+  // A hidden page has no one to show progress to, so its tick stops until the page is visible again.
+  const pageVisible = ref(!document.hidden);
   let lastAudibleVolume = defaultVolume;
   let volumeSettleTimer: ReturnType<typeof setTimeout> | null = null;
   let lastVolumeResult: CommandResult | null = null;
@@ -155,6 +165,15 @@ export const useHostStore = defineStore('host', () => {
       },
       finished: (key, result) => {
         if (key === 'volume') lastVolumeResult = result;
+
+        if (key === 'shuffle') {
+          releaseTarget(shuffleTarget, () => snapshot.value?.shuffle, result);
+        }
+
+        if (key === 'repeat') {
+          releaseTarget(repeatTarget, () => snapshot.value?.repeat, result);
+        }
+
         showCommandResult(result);
       },
       notice: (message) => notices.show(message),
@@ -175,11 +194,41 @@ export const useHostStore = defineStore('host', () => {
     },
   );
 
+  watch(
+    () => snapshot.value?.shuffle,
+    (enabled) => {
+      if (enabled === shuffleTarget.value) shuffleTarget.value = null;
+    },
+  );
+
+  watch(
+    () => snapshot.value?.repeat,
+    (mode) => {
+      if (mode === repeatTarget.value) repeatTarget.value = null;
+    },
+  );
+
   const current = computed(() => snapshot.value?.current ?? null);
   const isPlaying = computed(() => snapshot.value?.playing ?? false);
   const connected = computed(() => phase.value === 'connected');
   const queue = computed(() => snapshot.value?.queue ?? []);
   const canControl = computed(() => connected.value && current.value !== null);
+
+  const supportsBrowse = computed(() =>
+    capabilities.value.includes('library.browse'),
+  );
+
+  const supportsModes = computed(() =>
+    capabilities.value.includes('playback.modes'),
+  );
+
+  const shuffleEnabled = computed(
+    () => shuffleTarget.value ?? snapshot.value?.shuffle ?? false,
+  );
+
+  const repeatMode = computed<RepeatMode>(
+    () => repeatTarget.value ?? snapshot.value?.repeat ?? 'off',
+  );
 
   // The level shown by every volume control: what was just sent, otherwise what the Host reports.
   const volumePercent = computed(
@@ -246,11 +295,12 @@ export const useHostStore = defineStore('host', () => {
   });
 
   watch(
-    [isPlaying, connected],
-    ([playing, online]) => {
+    [isPlaying, connected, pageVisible],
+    ([playing, online, visible]) => {
       stopTicker();
 
-      if (playing && online) {
+      if (playing && online && visible) {
+        clockTick.value += 1;
         ticker = setInterval(() => {
           clockTick.value += 1;
         }, progressIntervalMs);
@@ -258,6 +308,10 @@ export const useHostStore = defineStore('host', () => {
     },
     { immediate: true },
   );
+
+  document.addEventListener('visibilitychange', () => {
+    pageVisible.value = !document.hidden;
+  });
 
   function stopTicker(): void {
     if (ticker !== null) clearInterval(ticker);
@@ -499,7 +553,9 @@ export const useHostStore = defineStore('host', () => {
     }
   }
 
-  function applySnapshot(next: Snapshot): void {
+  function applySnapshot(received: Snapshot): void {
+    const next = reuseUnchanged(snapshot.value, received);
+
     snapshot.value = next;
     snapshotReceivedMs = performance.now();
     const song = next.current;
@@ -608,6 +664,20 @@ export const useHostStore = defineStore('host', () => {
     if (message !== null) notices.show(message);
   }
 
+  function toggleShuffle(): void {
+    const enabled = !shuffleEnabled.value;
+
+    shuffleTarget.value = enabled;
+    controls.press({ key: 'shuffle', enabled });
+  }
+
+  function cycleRepeat(): void {
+    const mode = nextRepeat(repeatMode.value);
+
+    repeatTarget.value = mode;
+    controls.press({ key: 'repeat', mode });
+  }
+
   function togglePlayback(): void {
     controls.press({ key: 'toggle' });
   }
@@ -694,6 +764,20 @@ export const useHostStore = defineStore('host', () => {
     client?.songs.cancel(requestId);
   }
 
+  // Browse is answered once or not at all, like search. A null return means nothing was sent.
+  function browse(
+    request: BrowseRequest,
+    settle: Settle<BrowsePage>,
+  ): string | null {
+    if (!supportsBrowse.value) return null;
+
+    return client?.songs.browse(request, settle) ?? null;
+  }
+
+  function abortBrowse(requestId: string): void {
+    client?.songs.abort(requestId);
+  }
+
   function prepareSong(
     song: SongIdentity,
     settle: Settle<null>,
@@ -738,6 +822,10 @@ export const useHostStore = defineStore('host', () => {
     isPlaying,
     connected,
     canControl,
+    supportsBrowse,
+    supportsModes,
+    shuffleEnabled,
+    repeatMode,
     queue,
     positionMs,
     lyricsDocument,
@@ -765,15 +853,39 @@ export const useHostStore = defineStore('host', () => {
     seekTo,
     setVolume,
     toggleMute,
+    toggleShuffle,
+    cycleRepeat,
     searchSongs,
     suggestSongs,
     cancelSongRequest,
+    browse,
+    abortBrowse,
     prepareSong,
     queueSong,
     renameRemote,
     forgetBrowser,
   };
 });
+
+// A mode the person just set stays on screen until the Host reports it. A change that did not apply is dropped at once,
+// and one that did apply is dropped after a short wait if the Host's own report never matches.
+function releaseTarget<Value>(
+  target: Ref<Value | null>,
+  reported: () => Value | undefined,
+  result: CommandResult,
+): void {
+  if (result.outcome !== 'applied' || reported() === target.value) {
+    target.value = null;
+
+    return;
+  }
+
+  const held = target.value;
+
+  setTimeout(() => {
+    if (target.value === held) target.value = null;
+  }, volumeSettleMs);
+}
 
 function scheduleTask(callback: () => void, delayMs: number): () => void {
   const handle = setTimeout(callback, delayMs);

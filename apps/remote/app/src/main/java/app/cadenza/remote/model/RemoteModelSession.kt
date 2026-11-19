@@ -3,6 +3,7 @@ package app.cadenza.remote.model
 import android.os.SystemClock
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.data.nullableString
+import app.cadenza.remote.network.HostLivenessPolicy
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -18,8 +19,8 @@ internal fun RemoteModel.queryRequest(commandId: String) {
 internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
     val commandId = frame.getString("command_id")
     val original = pending[commandId] ?: return
-    if (frame.nullableString("host_epoch") != hostSnapshot?.hostEpoch) return
-    original.timer.cancel()
+    // The command ID is unique to this Remote and the connection reaches one Host process, so the answer is trusted
+    // even when the Host restarted since the last snapshot. Dropping it left the command unanswered until it timed out.
     reportLog(
         "info",
         "command.result",
@@ -41,10 +42,10 @@ internal suspend fun RemoteModel.commandResultInternal(frame: JSONObject) {
             if (frame.optBoolean("resolved", false)) {
                 finishCommand(commandId)
             } else {
-                // Keep the record so a later status answer can still settle it, but stop showing the intent.
-                original.unconfirmed = true
-                publishOptimisticInternal()
-                showWarning(UNCONFIRMED_MESSAGE)
+                // The Host answers "unconfirmed" for a command it is still applying too, so the tracker keeps
+                // asking for its status and warns only if the answer stays unknown past the grace period.
+                original.hostUnconfirmed = true
+                warnUnconfirmedIfDue(original)
             }
         else -> {
             finishCommand(commandId)
@@ -80,11 +81,12 @@ internal suspend fun RemoteModel.commandRefusedInternal(frame: JSONObject): Bool
 private suspend fun RemoteModel.finishCommand(commandId: String) {
     val profile = mutable.value.profile
     if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
-    pending.remove(commandId)
+    pending.remove(commandId)?.timer?.cancel()
     publishOptimisticInternal()
 }
 
 internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
+    if (applyBrowseError(frame)) return
     val request = frame.nullableString("request_id")
     val message = frame.optString("message", "The operation failed.")
     val code = frame.nullableString("error_code")
@@ -92,6 +94,7 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
         searchTimeout?.cancel()
         mutable.update { it.copy(searching = false) }
     }
+    if (request != null && request == favoriteResolveId) failFavoriteResolution("Music could not look up this song. Try again.")
     if (request != null && request == preparationId) {
         preparationTimeout?.cancel()
         preparingIdentity = null
@@ -110,7 +113,7 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
 }
 
 internal fun RemoteModel.isStaleInternal(now: Long = SystemClock.elapsedRealtime()): Boolean =
-    !mutable.value.connected || now - maxOf(mutable.value.lastStateAt, lastHeartbeatAt) > 3_000
+    !mutable.value.connected || now - maxOf(mutable.value.lastStateAt, lastHeartbeatAt) > HostLivenessPolicy.staleAfterMs(transportMode)
 
 internal fun RemoteModel.positionInternal(now: Long): Long =
     mutable.value.snapshot?.let { clock.position(it, now, isStaleInternal(now)) } ?: 0

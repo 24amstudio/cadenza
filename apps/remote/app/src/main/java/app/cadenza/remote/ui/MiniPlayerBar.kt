@@ -2,6 +2,7 @@ package app.cadenza.remote.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +32,7 @@ internal fun MiniPlayerBar(
     modifier: Modifier = Modifier,
 ) {
     val current = state.snapshot?.current ?: return
+    val shown = rememberShownSong(current) ?: return
     val playing = state.snapshot.playing
     Surface(
         modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -47,16 +49,25 @@ internal fun MiniPlayerBar(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Artwork(current.song.artworkUrl, Modifier.size(44.dp))
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Text(current.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    current.song.artist,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            SongSwap(shown, { it.current.occurrenceId }, Modifier.weight(1f)) { song ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Artwork(song.artwork, Modifier.size(44.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            song.current.song.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            song.current.song.artist,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             IconButton(
                 onClick = {

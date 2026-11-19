@@ -17,11 +17,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import app.cadenza.remote.data.LyricLine
+import kotlinx.coroutines.delay
 
 /**
  * The lyric position sampled once per animation frame from the Host-synchronised playback timeline.
- * Only draw-phase code that calls [liveMs] observes it, so a frame invalidates drawing of the sweeping
- * word and finishing word rather than recomposing the list. Nothing here writes SQLite or sends a message.
+ * Only draw-phase code that calls [liveMs] observes it, so a frame invalidates drawing of the sounding
+ * words rather than recomposing the list. Nothing here writes SQLite or sends a message.
  */
 @Stable
 internal class LyricsClock(
@@ -38,32 +39,37 @@ internal class LyricsClock(
 }
 
 /**
- * Drives the word sweep. While [enabled], a frame loop advances [clock] and publishes the sweeping word.
+ * Drives the word sweep. While [enabled], a frame loop at most [frameCapFps] times a second advances [clock] and
+ * publishes every sounding word.
  * The loop runs only while the host lifecycle is STARTED and the song plays; a paused view runs one frame per
- * [pausedPositionMs] change so a seek still repositions the fill. The published target changes only when the
- * sweeping word does, so composition runs once per word, not once per frame.
+ * [pausedPositionMs] change so a seek still repositions the fill. The published sweeps change only when a word
+ * starts or stops sounding, so composition runs once per word boundary, not once per frame.
  */
 @Composable
-internal fun rememberSweepTarget(
+internal fun rememberSweeps(
     lines: List<LyricLine>,
     clock: LyricsClock,
     enabled: Boolean,
     playing: Boolean,
     pausedPositionMs: Long,
-): State<SweepTarget?> {
-    val target = remember { mutableStateOf<SweepTarget?>(null) }
+    frameCapFps: Int = DEFAULT_FRAME_CAP_FPS,
+): State<Sweeps> {
+    val target = remember { mutableStateOf<Sweeps>(emptyMap()) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lines, clock, enabled, playing, if (playing) 0L else pausedPositionMs) {
+    LaunchedEffect(lines, clock, enabled, playing, frameCapFps, if (playing) 0L else pausedPositionMs) {
         if (!enabled) {
-            target.value = null
+            target.value = emptyMap()
             return@LaunchedEffect
         }
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             do {
                 withFrameNanos {
                     clock.advanceFrame()
-                    target.value = sweepTarget(lines, clock.liveMs())
+                    target.value = sweepTargets(lines, clock.liveMs())
                 }
+                // Sleeping until half a frame before the next sample keeps the loop from waking on every vsync of a
+                // 90 or 120 Hz display. The frame cap is the energy profile's lyric animation rate.
+                if (playing) delay(frameGapMs(frameCapFps))
             } while (playing)
         }
     }
@@ -78,3 +84,9 @@ internal fun rememberReducedMotion(): Boolean {
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
 }
+
+internal const val DEFAULT_FRAME_CAP_FPS = 60
+private const val HALF_FRAME_LEAD_MS = 8L
+
+/** Time to sleep after a frame so the next sample lands near one cap interval later. Never negative. */
+internal fun frameGapMs(capFps: Int): Long = (1_000L / capFps.coerceAtLeast(1) - HALF_FRAME_LEAD_MS).coerceAtLeast(0)

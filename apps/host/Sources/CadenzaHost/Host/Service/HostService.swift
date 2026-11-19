@@ -17,6 +17,7 @@ final class HostService {
     let bluetooth = BluetoothPeripheral()
     let webRemote = WebRemoteListener()
     let queue: QueueCoordinator
+    lazy var browse = BrowseService(catalog: catalog, library: MusicLibraryBrowser(bridge: music))
     private(set) var configuration: HostConfiguration
     var transportPolicy = HostTransportPolicy()
     var remoteTransportPreferences: [String: TransportPreference] = [:]
@@ -31,6 +32,7 @@ final class HostService {
     var onInvitationChanged: ((PairingInvitation?) -> Void)?
     private var polling: Task<Void, Never>?
     private var statusReporting: Task<Void, Never>?
+    private var livenessKeepalive: Task<Void, Never>?
     var jobs: [String: Task<Void, Never>] = [:]
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
@@ -100,7 +102,7 @@ final class HostService {
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             var published = snapshot
-            if self.sing.currentOccurrence != published.current?.occurrenceId {
+            if let occurrence = self.sing.currentOccurrence, occurrence != published.current?.occurrenceId {
                 self.sing.invalidate()
             }
             published.sing = self.sing.session
@@ -110,7 +112,6 @@ final class HostService {
                 current.positionMs = max(0, current.positionMs - delay)
                 published.current = current
             }
-            self.onSnapshot?(published)
             self.onSnapshot?(published)
             self.deliverState(published)
             if published.current?.occurrenceId != self.lyricDocument?.occurrenceId {
@@ -170,6 +171,7 @@ final class HostService {
             await startWebRemote()
             bluetooth.start()
             startStatusReporting()
+            startLivenessKeepalive()
             await catalog.configure(storefront: configuration.storefront)
             if observationEnabled { startObservation() }
         } catch {
@@ -182,9 +184,9 @@ final class HostService {
 
     func startObservation() {
         observationEnabled = true
-        observation.start { [weak self] in
+        observation.start { [weak self] hintedAt in
             guard let self, self.observationEnabled else { return }
-            await self.queue.refresh()
+            await self.queue.refresh(hintedAt: hintedAt)
         }
         polling?.cancel()
         statusReporting?.cancel()
@@ -199,11 +201,17 @@ final class HostService {
                     }
                     self.lastMaintenance = monotonicMs()
                 }
-                let playing = self.queue.isPlaying
-                try? await Task.sleep(
-                    for: .milliseconds(playing ? 1_000 : (self.network.peers.isEmpty ? 10_000 : 2_000)))
+                try? await Task.sleep(for: .milliseconds(self.fallbackPollMs))
             }
         }
+    }
+
+    /// Music's own change notification starts a read at once, so this poll is only the bounded fallback. Each poll
+    /// starts an osascript process and, on a track change, a walk of Music's interface, so it stays slow. While Music
+    /// plays it is shorter than `QueueCoordinator.maximumSampleGapMs`, so listening time stays continuous.
+    private var fallbackPollMs: Int {
+        if queue.isPlaying { return 5_000 }
+        return network.peers.isEmpty ? 30_000 : 10_000
     }
 
     private func settleCredits() {
@@ -217,6 +225,8 @@ final class HostService {
         logger.log(.info, category: "host.lifecycle", action: "service.stop", "Host service stopping")
         settleCredits()
         polling?.cancel()
+        livenessKeepalive?.cancel()
+        livenessKeepalive = nil
         observation.stop()
         listenerRecovery?.cancel()
         listenerRecovery = nil
@@ -245,6 +255,37 @@ final class HostService {
                 }
             }
         }
+    }
+
+    /// A Remote that asked for heartbeats hears from the Host within a bounded time even while Music reads are slow or
+    /// idle: about 2 s over the LAN, 5 s over Bluetooth while playing, and 15 s over Bluetooth while paused. The Remotes
+    /// treat silence for longer than that as a missing Host. The frame carries only the epoch, never a snapshot.
+    private func startLivenessKeepalive() {
+        livenessKeepalive?.cancel()
+        livenessKeepalive = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                self.sendKeepalives(now: monotonicMs())
+            }
+        }
+    }
+
+    static func keepaliveIntervalMs(transport: String, playing: Bool) -> Int64 {
+        guard transport == "ble" else { return 1_000 }
+        return playing ? 4_000 : 12_000
+    }
+
+    private func sendKeepalives(now: Int64) {
+        let playing = queue.isPlaying
+        // A waiting state replaces a heartbeat, and a Remote with no state yet has nothing for a heartbeat to confirm.
+        let due = network.peers.values.filter { peer in
+            peer.authenticated && peer.supportsHeartbeat && peer.pendingState == nil && peer.lastSnapshot != nil
+                && now - peer.lastLivenessAt >= Self.keepaliveIntervalMs(transport: peer.transport, playing: playing)
+        }
+        guard !due.isEmpty else { return }
+        for peer in due { peer.lastLivenessAt = now }
+        network.broadcast(Frame(type: "heartbeat", hostEpoch: store.epoch), to: due)
     }
 
     private func recoverListener(_ reason: String?) {
@@ -364,6 +405,7 @@ final class HostService {
                     || queue.commandQueued(frame.commandId ?? "", actor: actor)
                 network.send(try queue.journal.status(frame, actor: actor, queued: queued), to: peer)
             case "search", "search.suggest", "song.prepare": operation(frame, peer: peer)
+            case "browse.get": startBrowse(frame, peer: peer)
             case "recommendation.passport": try receiveRecommendationPassport(frame, actor: actor, peer: peer)
             case "recommendation.query": startRecommendationQuery(frame, actor: actor, peer: peer)
             case "recommendation.feedback": try receiveRecommendationFeedback(frame, actor: actor)
@@ -498,6 +540,7 @@ final class HostService {
                     peer.lastSnapshotAt = now
                 }
             }
+            for peer in heartbeatRecipients + stateRecipients { peer.lastLivenessAt = now }
             self.network.broadcast(
                 Frame(type: "heartbeat", hostEpoch: outgoing.hostEpoch), to: heartbeatRecipients)
             self.network.broadcast(Frame(type: "state", snapshot: outgoing), to: stateRecipients)
@@ -651,9 +694,10 @@ final class HostService {
                     + " started=\(startedAt)"
                     + " completed=\(completedAt)"
                 self.latencyLog.debug("\(latencyMessage, privacy: .public)")
-                self.logCommandResult(result, request: frame, peer: peer, receivedAt: receivedAt)
                 self.network.send(result, to: peer)
+                self.logCommandResult(result, request: frame, peer: peer, receivedAt: receivedAt)
             } catch { self.fail(error, request: frame, peer: peer) }
+            self.queue.publishPending()
         }
     }
 

@@ -52,57 +52,44 @@ function wordFillPercent(word: LyricWord, positionMs: number): number {
   return ((positionMs - word.startMs) / (word.endMs - word.startMs)) * 100;
 }
 
-// The last word that has started. Provider timings can overlap, so an earlier word may still be ending.
-function latestStartedWord(words: LyricWord[], positionMs: number): number {
-  let latest = -1;
-
-  for (let index = 0; index < words.length; index += 1) {
-    const word = words[index];
-
-    if (
-      word !== undefined &&
-      word.endMs > word.startMs &&
-      word.startMs <= positionMs
-    ) {
-      latest = index;
-    }
-  }
-
-  return latest;
+// A word sweeps while the position is inside it. Provider timings can overlap, so several words of one line, and words
+// of several lines, can be inside their span at the same moment.
+function isSounding(word: LyricWord, positionMs: number): boolean {
+  return word.startMs <= positionMs && positionMs < word.endMs;
 }
 
-// Fill for each word of a line, as a percentage. Only one word on screen sweeps at a time: the latest started word of the
-// newest active line. Earlier words are sung, later words are not, and every other line shows whole words.
+// Fill for each word of a line, as a percentage. On a line that is sounding, every word fills from its own timing, so
+// words that overlap each sweep together instead of one stealing the animation from the other. Any other line shows
+// whole words: sung, or not yet.
 export function wordFills(
   line: LyricLine,
   positionMs: number,
   sweeping: boolean,
 ): number[] {
-  const latest = latestStartedWord(line.words, positionMs);
-
-  return line.words.map((word, index) => {
+  return line.words.map((word) => {
     if (!sweeping) return word.startMs <= positionMs ? 100 : 0;
 
-    if (index === latest) return wordFillPercent(word, positionMs);
-
-    return index < latest ? 100 : 0;
+    return wordFillPercent(word, positionMs);
   });
 }
 
-// The one word that sweeps across all lines: the latest started word of the newest sounding line. Null before the
-// line's first word starts. Overlapping lines do not add sweeps, so the view animates only this word.
-export function sweepTarget(
+// Every word that sweeps now, across every active line. Overlapping lines, such as a second voice or background vocals,
+// each keep their own sweep. The view animates exactly these words.
+export function sweepTargets(
   lines: LyricLine[],
   positionMs: number,
-): { line: number; word: number } | null {
-  const line = activeLineIndices(lines, positionMs).at(-1);
-  const target = line === undefined ? undefined : lines[line];
+): { line: number; word: number }[] {
+  const targets: { line: number; word: number }[] = [];
 
-  if (line === undefined || target === undefined) return null;
+  for (const lineIndex of activeLineIndices(lines, positionMs)) {
+    lines[lineIndex]?.words.forEach((word, wordIndex) => {
+      if (isSounding(word, positionMs)) {
+        targets.push({ line: lineIndex, word: wordIndex });
+      }
+    });
+  }
 
-  const word = latestStartedWord(target.words, positionMs);
-
-  return word < 0 ? null : { line, word };
+  return targets;
 }
 
 // Width of the soft edge on the sweeping word, as a percentage of the word. It is widest halfway through the word and

@@ -16,6 +16,8 @@ function nativeBoundary(
   let volume = 50;
   let position = 1.25;
   let playing = true;
+  let shuffle = false;
+  let repeat = 'off';
   let query = '';
 
   const track = {
@@ -26,6 +28,34 @@ function nativeBoundary(
     artist: () => 'Example artist',
     album: () => 'Example album',
   };
+
+  const playlistId = '0123456789ABCDEF';
+
+  const playlistTracks = {
+    length: 1,
+    persistentID: () => [persistentId],
+    class: () => [trackClass],
+    name: () => [track.name()],
+    artist: () => [track.artist()],
+    album: () => [track.album()],
+    duration: () => [track.duration()],
+    discNumber: () => [1],
+    trackNumber: () => [1],
+    whose: (/** @type {{ persistentID: string }} */ value) =>
+      value.persistentID === persistentId ? [track] : [],
+  };
+
+  const roadTrip = { name: () => 'Road trip', tracks: playlistTracks };
+
+  // The built-in "Music" list mirrors the library and must never be offered as a playlist.
+  const userPlaylists = Object.assign([roadTrip, roadTrip], {
+    name: () => ['Road trip', 'Music'],
+    persistentID: () => [playlistId, 'FEDCBA9876543210'],
+    class: () => ['userPlaylist', 'userPlaylist'],
+    specialKind: () => ['none', 'Music'],
+    whose: (/** @type {{ persistentID: string }} */ value) =>
+      value.persistentID === playlistId ? [roadTrip] : [],
+  });
 
   /** @type {MusicApplication} */
   const music = {
@@ -43,6 +73,7 @@ function nativeBoundary(
         }),
       },
     ],
+    userPlaylists,
     search: (_library, value) => {
       // Music's scripting dictionary defines these search fields; any other value fails to convert.
       const searchFields = [
@@ -89,6 +120,20 @@ function nativeBoundary(
     },
     set playerPosition(/** @type {number} */ value) {
       position = value;
+    },
+    /** @returns {() => boolean} */
+    get shuffleEnabled() {
+      return () => shuffle;
+    },
+    set shuffleEnabled(/** @type {boolean} */ value) {
+      shuffle = value;
+    },
+    /** @returns {() => string} */
+    get songRepeat() {
+      return () => repeat;
+    },
+    set songRepeat(/** @type {string} */ value) {
+      repeat = value;
     },
   };
 
@@ -182,4 +227,69 @@ test('a streamed catalog song that the library does not hold is not labelled as 
 
   assert.equal(kept.invoke(['status']).song.source, 'library');
   assert.equal(kept.invoke(['status']).song.id, '958A4478EDBDEEF8');
+});
+
+test('playlists list only user playlists, and their songs resolve even when the library lacks them', () => {
+  const boundary = nativeBoundary('AB1234567890CDEF', { inLibrary: false });
+
+  assert.deepEqual(boundary.invoke(['playlists']), [
+    { id: '0123456789ABCDEF', name: 'Road trip', count: 1 },
+  ]);
+
+  const playlist = boundary.invoke(['playlist', '0123456789ABCDEF']);
+
+  assert.equal(playlist.total, 1);
+  assert.equal(playlist.songs[0].id, 'AB1234567890CDEF');
+  assert.equal(playlist.songs[0].duration_ms, 183125);
+  assert.equal(
+    boundary.invoke(['resolve', 'AB1234567890CDEF']).title,
+    'A "quoted"\nsong ||| title',
+  );
+  assert.throws(
+    () => boundary.invoke(['playlist', '"; do shell script "x']),
+    /Invalid playlist identity/,
+  );
+  assert.throws(
+    () => boundary.invoke(['playlist', 'FFFFFFFFFFFFFFFF']),
+    /The playlist is unavailable/,
+  );
+});
+
+test('shuffle and repeat are read in the status and set only to known values', () => {
+  const boundary = nativeBoundary();
+
+  assert.equal(boundary.invoke(['status']).shuffle, false);
+  assert.equal(boundary.invoke(['status']).repeat, 'off');
+
+  boundary.invoke(['shuffle', 'true']);
+  boundary.invoke(['repeat', 'one']);
+  assert.equal(boundary.invoke(['status']).shuffle, true);
+  assert.equal(boundary.invoke(['status']).repeat, 'one');
+  boundary.invoke(['repeat', 'all']);
+  assert.equal(boundary.invoke(['status']).repeat, 'all');
+  boundary.invoke(['shuffle', 'false']);
+  boundary.invoke(['repeat', 'off']);
+  assert.equal(boundary.invoke(['status']).shuffle, false);
+  assert.equal(boundary.invoke(['status']).repeat, 'off');
+
+  assert.throws(
+    () => boundary.invoke(['shuffle', 'yes']),
+    /Invalid shuffle setting/,
+  );
+  assert.throws(
+    () => boundary.invoke(['repeat', 'sometimes']),
+    /Invalid repeat mode/,
+  );
+  assert.equal(boundary.invoke(['status']).repeat, 'off');
+});
+
+test('a control action replies with the state it left, so the Host can confirm it without another launch', () => {
+  const boundary = nativeBoundary();
+  const paused = boundary.invoke(['pause']);
+
+  assert.equal(paused.dispatched, true);
+  assert.equal(paused.status.playing, false);
+  assert.equal(paused.status.state, 'paused');
+  assert.equal(boundary.invoke(['volume', '20']).status.volume, 20);
+  assert.equal(boundary.invoke(['shuffle', 'true']).status.shuffle, true);
 });

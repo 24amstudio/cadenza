@@ -1,15 +1,8 @@
 package app.cadenza.remote.ui.lyrics
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
@@ -57,58 +50,57 @@ private class WordSpans(
     fun glyphEnd(word: Int): Int = trimmedEnds[word]
 }
 
-/** Bounds of a word in the latest text layout. They are computed once per word, not once per frame. */
+/** Bounds of each word in the latest text layout. They are computed once per word and layout, not once per frame. */
 private class WordMeasure(
     private val spans: WordSpans,
+    wordCount: Int,
 ) {
     var layout: TextLayoutResult? = null
     private var boundsLayout: TextLayoutResult? = null
-    private var boundsWord = -1
-    private var bounds: Rect? = null
-    var rightToLeft = false
-        private set
+    private val measured = BooleanArray(wordCount)
+    private val bounds = arrayOfNulls<Rect>(wordCount)
+    private val rightToLeft = BooleanArray(wordCount)
 
     fun boundsOf(word: Int): Rect? {
         val current = layout ?: return null
-        if (current !== boundsLayout || word != boundsWord) {
+        if (current !== boundsLayout) {
             boundsLayout = current
-            boundsWord = word
+            measured.fill(false)
+        }
+        if (!measured[word]) {
+            measured[word] = true
             val start = spans.glyphStart(word)
             val end = spans.glyphEnd(word)
-            bounds = if (end > start) current.getPathForRange(start, end).getBounds() else null
-            rightToLeft = end > start && current.getBidiRunDirection(start) == ResolvedTextDirection.Rtl
+            bounds[word] = if (end > start) current.getPathForRange(start, end).getBounds() else null
+            rightToLeft[word] = end > start && current.getBidiRunDirection(start) == ResolvedTextDirection.Rtl
         }
-        return bounds
+        return bounds[word]
     }
-}
 
-private class SweepTracker {
-    var word = -1
+    fun isRightToLeft(word: Int): Boolean = rightToLeft[word]
 }
-
-private const val FINISH_MS = 150
 
 /**
  * A word-timed lyric line as one paragraph, so wrapping and syllables behave like ordinary text. Sung words are
- * [bright]; the rest are [dim]. The sweeping word is bright in the text and its unsung part is covered in the
- * draw phase by a [dim] gradient with a soft edge, composited over the glyphs only. That draw reads
- * [LyricsClock.liveMs], so a frame redraws this one line and recomposes nothing.
+ * [bright]; the rest are [dim]. Every word in [sweep], the words sounding now, is bright in the text and its unsung
+ * part is covered in the draw phase by a [dim] gradient with a soft edge, composited over the glyphs only. Several
+ * words, in this line or in overlapping lines, each take their own fill from their own timing. That draw reads
+ * [LyricsClock.liveMs], so a frame redraws these lines and recomposes nothing.
  */
 @Composable
 internal fun LyricWordsText(
     line: LyricLine,
-    sweepWord: Int,
+    sweep: IntRange,
     litWords: Int,
     clock: LyricsClock,
     bright: Color,
     dim: Color,
     style: TextStyle,
-    animateFinish: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val spans = remember(line.words) { WordSpans(line.words) }
-    val measure = remember(spans) { WordMeasure(spans) }
-    val litThrough = if (sweepWord >= 0) sweepWord + 1 else litWords
+    val measure = remember(spans) { WordMeasure(spans, line.words.size) }
+    val litThrough = if (sweep.isEmpty()) litWords else sweep.last + 1
     val text: AnnotatedString =
         remember(spans, litThrough, bright) {
             buildAnnotatedString {
@@ -117,44 +109,21 @@ internal fun LyricWordsText(
                 if (lit > 0) addStyle(SpanStyle(color = bright), 0, lit)
             }
         }
-
-    // The word that stops sweeping finishes over a short ease so a handoff between overlapping lines does not snap.
-    val finishFill = remember { Animatable(1f) }
-    var finishingWord by remember { mutableIntStateOf(-1) }
-    val tracker = remember { SweepTracker() }
-    LaunchedEffect(sweepWord, animateFinish) {
-        val ended = tracker.word
-        tracker.word = sweepWord
-        val word = line.words.getOrNull(ended)
-        if (word == null || ended == sweepWord || !animateFinish) return@LaunchedEffect
-        val from = wordFill(word, clock.liveMs())
-        if (from <= 0f || from >= 1f) return@LaunchedEffect
-        finishingWord = ended
-        try {
-            finishFill.snapTo(from)
-            finishFill.animateTo(1f, tween(FINISH_MS, easing = LinearOutSlowInEasing))
-        } finally {
-            finishingWord = -1
-        }
-    }
-
     val overlay =
-        if (sweepWord >= 0 || finishingWord >= 0) {
+        if (sweep.isEmpty()) {
+            Modifier
+        } else {
             Modifier
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
-                    if (finishingWord >= 0 && finishingWord != sweepWord) {
-                        drawUnsungMask(measure.boundsOf(finishingWord), measure.rightToLeft, finishFill.value, 0f, dim)
-                    }
-                    val sweeping = line.words.getOrNull(sweepWord)
-                    if (sweeping != null) {
-                        val fill = wordFill(sweeping, clock.liveMs())
-                        drawUnsungMask(measure.boundsOf(sweepWord), measure.rightToLeft, fill, sweepEdgeFraction(fill), dim)
+                    val positionMs = clock.liveMs()
+                    for (index in sweep) {
+                        val word = line.words.getOrNull(index) ?: continue
+                        val fill = wordFill(word, positionMs)
+                        drawUnsungMask(measure.boundsOf(index), measure.isRightToLeft(index), fill, sweepEdgeFraction(fill), dim)
                     }
                 }
-        } else {
-            Modifier
         }
     Text(
         text = text,

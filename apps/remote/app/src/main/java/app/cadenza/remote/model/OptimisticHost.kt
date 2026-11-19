@@ -19,6 +19,14 @@ internal sealed interface OptimisticIntent {
         val percent: Int,
     ) : OptimisticIntent
 
+    data class Shuffle(
+        val enabled: Boolean,
+    ) : OptimisticIntent
+
+    data class Repeat(
+        val mode: String,
+    ) : OptimisticIntent
+
     data class Seek(
         val occurrenceId: String,
         val positionMs: Long,
@@ -56,6 +64,8 @@ internal fun optimisticIntent(
         "playback.pause" -> OptimisticIntent.Playing(false)
         "playback.resume" -> OptimisticIntent.Playing(true)
         "playback.volume" -> OptimisticIntent.Volume(action.optInt("percent"))
+        "playback.shuffle" -> OptimisticIntent.Shuffle(action.optBoolean("enabled"))
+        "playback.repeat" -> OptimisticIntent.Repeat(action.optString("mode", "off"))
         "playback.seek" -> {
             val occurrence = action.nullableString("occurrence_id")
             if (occurrence == null || appliedAtHostMs == null) {
@@ -86,6 +96,8 @@ private fun HostSnapshot.applying(intent: OptimisticIntent): HostSnapshot =
     when (intent) {
         is OptimisticIntent.Playing -> copy(playing = intent.playing)
         is OptimisticIntent.Volume -> copy(volume = intent.percent)
+        is OptimisticIntent.Shuffle -> copy(shuffle = intent.enabled)
+        is OptimisticIntent.Repeat -> copy(repeat = intent.mode)
         is OptimisticIntent.Seek -> {
             val playback = current
             if (playback?.occurrenceId == intent.occurrenceId) {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BluetoothLink } from '../app/lib/host/bluetooth';
 import {
+  jitteredDelayMs,
   reconnectWithRetries,
   silentReconnectDelaysMs,
 } from '../app/lib/host/bluetoothReconnect';
@@ -30,6 +31,7 @@ describe('silent Bluetooth reconnect', () => {
       async (delayMs) => {
         waits.push(delayMs);
       },
+      () => 0,
     );
 
     expect(result).toBe(link);
@@ -49,10 +51,17 @@ describe('silent Bluetooth reconnect', () => {
       async (delayMs) => {
         waits.push(delayMs);
       },
+      () => 0,
     );
 
     expect(result).toBeNull();
     expect(attempts).toBe(silentReconnectDelaysMs.length + 1);
     expect(waits).toEqual(silentReconnectDelaysMs);
+  });
+
+  test('spreads retries by at most a quarter of the delay', () => {
+    expect(jitteredDelayMs(4_000, () => 0)).toBe(4_000);
+    expect(jitteredDelayMs(4_000, () => 0.999)).toBeLessThanOrEqual(5_000);
+    expect(jitteredDelayMs(4_000, () => 0.5)).toBe(4_500);
   });
 });

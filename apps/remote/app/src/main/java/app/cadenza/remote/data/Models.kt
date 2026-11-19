@@ -80,6 +80,8 @@ data class HostSnapshot(
     val observationGap: Boolean,
     val sing: SingSession? = null,
     val autoPlay: List<AutoPlayItem> = emptyList(),
+    val shuffle: Boolean = false,
+    val repeat: String = "off",
 )
 
 data class LyricLine(
@@ -90,6 +92,8 @@ data class LyricLine(
     val translation: String?,
     val words: List<LyricWord> = emptyList(),
     val romanized: String? = null,
+    // "end" lines belong to a second singer. Rendering is up to the lyrics screen; absent means start.
+    val align: String = "start",
 )
 
 data class LyricWord(
@@ -257,7 +261,10 @@ object Wire {
             value.optBoolean("observation_gap"),
             sing,
             value.optJSONArray("auto_play")?.let(::autoPlayItems).orEmpty(),
+            value.optBoolean("shuffle", false),
+            value.optString("repeat", "off"),
         ).also {
+            require(it.repeat in listOf("off", "one", "all")) { "Unknown repeat mode." }
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos")) {
                 "Invalid playback format or volume."
             }
@@ -294,8 +301,10 @@ object Wire {
                     it.nullableString("translation"),
                     words,
                     it.nullableString("romanized"),
+                    it.optString("align", "start"),
                 )
             }
+        require(lines.all { it.align in listOf("start", "end") }) { "Unknown lyric alignment." }
         require(
             lines.size <= 2_000 &&
                 lines.all { it.endMs >= it.startMs && it.text.length <= 20_000 && (it.translation?.length ?: 0) <= 20_000 },

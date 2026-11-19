@@ -17,6 +17,9 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
     private var metadataDepth = 0
     private var paragraph: LyricLine?
     private var paragraphDepth = 0
+    // Singers by `ttm:agent`, in order of first use. The first is the start side; every other agent is the end side.
+    private var agents: [String] = []
+    private var paragraphAgent: String?
     // Background vocals (`ttm:role="x-bg"`) overlap the main line, so their words form a separate timed line.
     private var background: LyricLine?
     private var backgroundDepth = 0
@@ -133,6 +136,8 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 endMs: Self.milliseconds(attributes["end"]) ?? 0
             )
             paragraphDepth = depth
+            paragraphAgent = attributes["ttm:agent"].flatMap { $0.isEmpty ? nil : $0 }
+            if let agent = paragraphAgent, !agents.contains(agent), agents.count < 64 { agents.append(agent) }
         }
         if name == "span", let key = paragraph?.id, background == nil, attributes["ttm:role"] == "x-bg" {
             background = LyricLine(id: "\(key)-bg\(backgroundLines.count)", text: "", startMs: 0, endMs: 0)
@@ -206,6 +211,10 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         }
         if name == "p", paragraphDepth == depth, var line = paragraph {
             line.text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let align = paragraphAgent.flatMap { agent in agents.first == agent ? nil : "end" }
+            line.align = align
+            for index in backgroundLines.indices { backgroundLines[index].align = align }
+            paragraphAgent = nil
             if !line.words.isEmpty {
                 let wordStart = line.words.map(\.startMs).min() ?? line.startMs
                 let wordEnd = line.words.map(\.endMs).max() ?? line.endMs

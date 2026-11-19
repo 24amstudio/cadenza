@@ -28,6 +28,11 @@ struct HostMenu: View {
             openWindow(id: "host")
             NSApplication.shared.activate()
         }
+        Button("Logs…") {
+            model.selectedSection = .logs
+            openWindow(id: "host")
+            NSApplication.shared.activate()
+        }
         Divider()
         Button("Quit Cadenza Host") {
             model.service?.stop()

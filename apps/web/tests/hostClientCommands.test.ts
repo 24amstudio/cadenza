@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ControlQueue } from '../app/lib/host/controlQueue';
+import type { JsonValue } from '../app/lib/protocol/json';
 import type { CommandResult } from '../app/lib/protocol/types';
 import {
   answerClockProbes,
@@ -222,5 +223,116 @@ describe('refused commands', () => {
       kind: 'notice',
       message: 'The command contains unexpected or missing fields.',
     });
+  });
+});
+
+describe('a command whose answer is late', () => {
+  function resultFrame(
+    commandId: JsonValue | undefined,
+    outcome: CommandResult['outcome'],
+    errorCode?: string,
+  ) {
+    return {
+      type: 'command.result',
+      command_id: commandId,
+      host_epoch: epoch,
+      outcome,
+      error_code: errorCode,
+      revision: 19,
+    };
+  }
+
+  test('is settled by the Host receipt, so a change that applied is never called unknown', async () => {
+    const { client, socket, clock, changes } = connected();
+    const pending = client.sendCommand({ kind: 'playback.skip', occurrenceId });
+    const commandId = socket().framesOfType('command')[0]?.command_id;
+
+    clock.advance(4_000);
+    expect(socket().framesOfType('command.status')).toHaveLength(1);
+    socket().receive(resultFrame(commandId, 'applied'));
+
+    expect(await pending).toMatchObject({ outcome: 'applied' });
+    clock.advance(10_000);
+    expect(socket().framesOfType('command.status')).toHaveLength(1);
+    expect(
+      changes.filter((change) => change.kind === 'commandResolved'),
+    ).toEqual([]);
+  });
+
+  test('is called unconfirmed when the Host says it is unknown, and its real outcome is still reported and checked again', async () => {
+    const { client, socket, clock, changes } = connected();
+    const pending = client.sendCommand({ kind: 'playback.skip', occurrenceId });
+    const commandId = socket().framesOfType('command')[0]?.command_id;
+
+    clock.advance(4_000);
+    socket().receive(resultFrame(commandId, 'unconfirmed', 'outcome_unknown'));
+    expect(await pending).toMatchObject({ outcome: 'unconfirmed' });
+
+    // Cadenza keeps checking: one more question after 1.5 s, and a last one after 4 s.
+    clock.advance(1_500);
+    expect(socket().framesOfType('command.status')).toHaveLength(2);
+    socket().receive(resultFrame(commandId, 'unconfirmed', 'outcome_unknown'));
+    clock.advance(4_000);
+    expect(socket().framesOfType('command.status')).toHaveLength(3);
+    expect(
+      changes.filter((change) => change.kind === 'commandResolved'),
+    ).toEqual([]);
+
+    socket().receive(resultFrame(commandId, 'applied'));
+    expect(
+      changes.filter((change) => change.kind === 'commandResolved'),
+    ).toMatchObject([{ result: { commandId, outcome: 'applied' } }]);
+  });
+
+  test('is called unconfirmed at once when the link is gone, and is queried after the reconnect', async () => {
+    const { client, socket, sockets, clock } = connected();
+    const pending = client.sendCommand({ kind: 'playback.skip', occurrenceId });
+    const commandId = socket().framesOfType('command')[0]?.command_id;
+
+    socketAt(sockets, 0).serverDrop();
+    expect(await pending).toMatchObject({ outcome: 'unconfirmed' });
+    clock.advance(1_000);
+    socketAt(sockets, 1).open();
+    socketAt(sockets, 1).receive(welcome(null));
+
+    expect(socketAt(sockets, 1).framesOfType('command.status')).toMatchObject([
+      { command_id: commandId },
+    ]);
+  });
+});
+
+describe('playback modes', () => {
+  test('shuffle and repeat go out as commands and only the latest press is sent while one is in flight', async () => {
+    const setup = connected();
+    const { queue } = queueFor(setup);
+
+    queue.press({ key: 'shuffle', enabled: true });
+    queue.press({ key: 'repeat', mode: 'all' });
+    queue.press({ key: 'repeat', mode: 'one' });
+    queue.press({ key: 'repeat', mode: 'off' });
+    await tick();
+
+    const first = setup.socket().framesOfType('command')[0];
+
+    expect(first).toMatchObject({
+      action: { kind: 'playback.shuffle', enabled: true },
+    });
+    setup.socket().receive({
+      type: 'command.result',
+      command_id: first?.command_id,
+      host_epoch: epoch,
+      outcome: 'applied',
+      revision: 19,
+    });
+    setup.socket().receive(playingSnapshotFrame(19));
+    await tick();
+
+    const repeats = setup
+      .socket()
+      .framesOfType('command')
+      .slice(1)
+      .map((frame) => frame.action);
+
+    expect(repeats).toEqual([{ kind: 'playback.repeat', mode: 'off' }]);
   });
 });

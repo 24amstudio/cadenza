@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue';
 import {
   activeLineIndices,
   sweepEdgeWidth,
-  sweepTarget,
+  sweepTargets,
   wordFills,
 } from '~/lib/lyrics';
 import type { LyricLine } from '~/lib/protocol/types';
@@ -36,26 +44,53 @@ const activeIndices = computed(() =>
   props.timed ? activeLineIndices(props.lines, props.positionMs) : [],
 );
 
-// The newest active line is the one that started last. The view keeps it centred, and it is the only line that sweeps.
+// The newest active line is the one that started last. The view keeps it centred.
 const newestIndex = computed(() => activeIndices.value.at(-1) ?? -1);
 
-// The sweeping word is the only word that animates. Overlapping lines show their other words whole, with no sweep.
-// Its key follows the live clock, so the sweep moves to the next word on the frame that word starts.
-const liveSweepKey = ref<string | null>(null);
+// Every word that is sounding sweeps, in every active line. The keys follow the live clock, so a sweep starts on the
+// frame its word starts. The sets are replaced only when their members change, so most frames cause no render.
+const sweepingKeys = shallowRef<ReadonlySet<string>>(new Set());
 
-// The word that stops sweeping finishes over a short ease, so a handoff between overlapping lines does not snap.
-const finishingKey = ref<string | null>(null);
+// A word that stops sweeping finishes over a short ease, so a handoff between overlapping lines does not snap.
+const finishingKeys = shallowRef<ReadonlySet<string>>(new Set());
 
-watch(liveSweepKey, (_next, previous) => {
-  finishingKey.value = previous ?? null;
-});
+let sweepSignature = '';
+let sweepingLines = new Set<number>();
 
 function wordClass(lineIndex: number, wordIndex: number): string | undefined {
   const key = `${lineIndex}:${wordIndex}`;
 
-  if (key === liveSweepKey.value) return 'sweeping';
+  if (sweepingKeys.value.has(key)) return 'sweeping';
 
-  return key === finishingKey.value ? 'finishing' : undefined;
+  return finishingKeys.value.has(key) ? 'finishing' : undefined;
+}
+
+function publishSweeps(targets: { line: number; word: number }[]): void {
+  const keys = targets.map((target) => `${target.line}:${target.word}`);
+  const signature = keys.join(' ');
+
+  if (signature === sweepSignature) return;
+  sweepSignature = signature;
+  const next = new Set(keys);
+
+  finishingKeys.value = new Set(
+    [...sweepingKeys.value].filter((key) => !next.has(key)),
+  );
+  sweepingKeys.value = next;
+}
+
+// Word elements by line, read once per set of lines rather than on every frame.
+let wordElements: HTMLElement[][] = [];
+
+function collectWordElements(): void {
+  const root = container.value;
+
+  wordElements =
+    root === null
+      ? []
+      : Array.from(root.querySelectorAll<HTMLElement>('.line'), (line) =>
+          Array.from(line.querySelectorAll<HTMLElement>('.word')),
+        );
 }
 
 // Word fills are written to the elements from the live clock. Vue does not bind them, so a re-render cannot overwrite
@@ -71,47 +106,57 @@ function writeWordFill(element: HTMLElement, fill: number, edge: number): void {
   element.style.setProperty('--soft', `${edge}%`);
 }
 
-function syncWordFills(): void {
-  const root = container.value;
+function writeLine(
+  lineIndex: number,
+  position: number,
+  sweeping: boolean,
+): void {
+  const line = props.lines[lineIndex];
+  const elements = wordElements[lineIndex];
 
-  if (root === null || !props.wordTimed) return;
+  if (line === undefined || elements === undefined) return;
+  const fills = wordFills(line, position, sweeping);
 
-  const position = props.livePositionMs();
-  const target = sweepTarget(props.lines, position);
+  elements.forEach((element, wordIndex) => {
+    const fill = fills[wordIndex] ?? 0;
 
-  liveSweepKey.value = target === null ? null : `${target.line}:${target.word}`;
-
-  const lineElements = root.querySelectorAll<HTMLElement>('.line');
-
-  props.lines.forEach((line, lineIndex) => {
-    const lineElement = lineElements.item(lineIndex);
-
-    if (lineElement === null) return;
-
-    const isSweepLine = target?.line === lineIndex;
-    const fills = wordFills(line, position, isSweepLine);
-
-    lineElement
-      .querySelectorAll<HTMLElement>('.word')
-      .forEach((wordElement, wordIndex) => {
-        const fill = fills[wordIndex] ?? 0;
-        const sweeping = isSweepLine && target?.word === wordIndex;
-
-        writeWordFill(wordElement, fill, sweeping ? sweepEdgeWidth(fill) : 0);
-      });
+    writeWordFill(element, fill, sweeping ? sweepEdgeWidth(fill) : 0);
   });
 }
 
-// One frame loop drives the sweep while the music plays. Paused views sync on each position or line change instead.
+// A frame touches only the lines that sweep now and the ones that swept on the last frame, which settle to whole words.
+// Every line is written when the lines or the position tick change, which also covers a seek.
+function syncWordFills(everyLine: boolean): void {
+  if (container.value === null || !props.wordTimed) return;
+
+  const position = props.livePositionMs();
+  const targets = sweepTargets(props.lines, position);
+
+  publishSweeps(targets);
+  const sweeping = new Set(targets.map((target) => target.line));
+
+  const touched = everyLine
+    ? props.lines.keys()
+    : new Set([...sweeping, ...sweepingLines]);
+
+  for (const lineIndex of touched) {
+    writeLine(lineIndex, position, sweeping.has(lineIndex));
+  }
+
+  sweepingLines = sweeping;
+}
+
+// One frame loop drives the sweep while the music plays and the page is visible. Otherwise the view syncs on each
+// position or line change instead, so a paused or hidden page does no per-frame work.
 let frameRequest: number | null = null;
 
 function frameLoop(): void {
-  syncWordFills();
+  syncWordFills(false);
   frameRequest = requestAnimationFrame(frameLoop);
 }
 
 function startFrames(): void {
-  if (frameRequest === null && props.wordTimed) {
+  if (frameRequest === null && props.wordTimed && !document.hidden) {
     frameRequest = requestAnimationFrame(frameLoop);
   }
 }
@@ -119,6 +164,18 @@ function startFrames(): void {
 function stopFrames(): void {
   if (frameRequest !== null) cancelAnimationFrame(frameRequest);
   frameRequest = null;
+}
+
+function onVisibilityChange(): void {
+  if (document.hidden) {
+    stopFrames();
+
+    return;
+  }
+
+  syncWordFills(true);
+
+  if (props.playing) startFrames();
 }
 
 watch(
@@ -131,14 +188,27 @@ watch(
     }
 
     stopFrames();
-    syncWordFills();
+    syncWordFills(true);
   },
 );
 
 watch(
-  [() => props.lines, () => props.positionMs],
+  [() => props.lines, () => props.wordTimed],
   () => {
-    syncWordFills();
+    collectWordElements();
+    sweepSignature = '';
+    sweepingLines = new Set();
+    syncWordFills(true);
+
+    if (props.playing) startFrames();
+  },
+  { flush: 'post' },
+);
+
+watch(
+  () => props.positionMs,
+  () => {
+    syncWordFills(true);
   },
   { flush: 'post' },
 );
@@ -153,18 +223,19 @@ const tierNumbers: Record<LyricTier, number> = {
   far: 2,
 };
 
-// 'active' is a sounding line, 'near' is one line away from one, and 'far' is anything else.
-function tierOf(index: number): LyricTier {
-  if (!props.timed) return 'plain';
+// 'active' is a sounding line, 'near' is one line away from one, and 'far' is anything else. Worked out once per
+// position change for all lines, not once per line and binding.
+const tiers = computed<LyricTier[]>(() => {
+  if (!props.timed) return props.lines.map(() => 'plain');
 
-  if (activeIndices.value.includes(index)) return 'active';
+  const active = new Set(activeIndices.value);
 
-  const distance = Math.min(
-    ...activeIndices.value.map((active) => Math.abs(index - active)),
-  );
+  return props.lines.map((_line, index) => {
+    if (active.has(index)) return 'active';
 
-  return distance === 1 ? 'near' : 'far';
-}
+    return active.has(index - 1) || active.has(index + 1) ? 'near' : 'far';
+  });
+});
 
 // Following eases over about a second rather than jumping, and the user's own scroll takes over until the next line.
 const followDurationMs = 950;
@@ -248,9 +319,11 @@ watch(newestIndex, async () => {
 });
 
 onMounted(() => {
-  syncWordFills();
+  collectWordElements();
+  syncWordFills(true);
 
   if (props.playing) startFrames();
+  document.addEventListener('visibilitychange', onVisibilityChange);
   follow(false);
   userScroller = container.value ? scrollerOf(container.value) : null;
   userScroller?.addEventListener('wheel', stopFollowing, { passive: true });
@@ -266,6 +339,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange);
   stopFrames();
   stopFollowing();
   resizeObserver?.disconnect();
@@ -285,8 +359,8 @@ onUnmounted(() => {
       v-for="(line, index) in lines"
       :key="line.id"
       class="line"
-      :class="tierOf(index)"
-      :style="{ '--lyric-tier': tierNumbers[tierOf(index)] }"
+      :class="[tiers[index], { 'align-end': line.align === 'end' }]"
+      :style="{ '--lyric-tier': tierNumbers[tiers[index] ?? 'far'] }"
       :data-newest="index === newestIndex ? 'true' : undefined"
       :role="timed ? 'button' : undefined"
       :tabindex="timed ? 0 : undefined"
@@ -348,6 +422,12 @@ onUnmounted(() => {
   padding: 24px 0;
   transform-origin: left center;
   transition: --lyric-tier 700ms var(--ease-lyric);
+}
+
+/* A second voice sits on the right. Its words still sweep and recede like any other line, and it grows from its own edge. */
+.line.align-end {
+  text-align: right;
+  transform-origin: right center;
 }
 
 .lyrics.timed .line {
@@ -415,8 +495,8 @@ onUnmounted(() => {
 }
 
 /* Sung words fill from the left in the text colour; words still to come stay in the tertiary colour. The fill is written
-   every frame from the playback clock. The sweeping word blends across --soft on either side of its fill, so its edge is
-   soft. Every other word changes at once, so overlapping lines do not sweep together. */
+   every frame from the playback clock. Every sounding word blends across --soft on either side of its fill, so its edge is
+   soft, and words on overlapping lines or voices sweep together. Words that are not sounding change at once. */
 .lyrics.timed .word {
   background-image: linear-gradient(
     90deg,
@@ -428,7 +508,7 @@ onUnmounted(() => {
   color: transparent;
 }
 
-/* A word that stops sweeping completes over 150 ms, so a handoff between overlapping lines does not snap. */
+/* A word that stops sweeping completes over 150 ms, so it does not snap to whole. */
 .lyrics.timed .word.finishing {
   transition: --fill 150ms ease-out;
 }

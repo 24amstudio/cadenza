@@ -75,6 +75,9 @@ final class Database {
         try execute(String(contentsOf: url, encoding: .utf8))
     }
 
+    /// The row id of the most recent insert on this connection.
+    var lastInsertedRowId: Int64 { sqlite3_last_insert_rowid(handle) }
+
     func execute(_ sql: String) throws {
         guard sqlite3_exec(handle, sql, nil, nil, nil) == SQLITE_OK else { throw failure() }
     }

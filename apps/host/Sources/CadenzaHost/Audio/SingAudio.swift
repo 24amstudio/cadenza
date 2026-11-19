@@ -78,10 +78,13 @@ protocol SingSeparator: AnyObject, Sendable {
     var playbackDelayMs: Int64 { get }
     func prepare(format: SingAudioFormat) async throws -> Int64
     func process(_ input: SingAudioBuffer, vocalPercent: Int) throws -> SingAudioBuffer
+    /// Releases the model and its working memory. A later `prepare` loads it again.
+    func unload()
 }
 
 extension SingSeparator {
     var playbackDelayMs: Int64 { 0 }
+    func unload() {}
 }
 
 protocol SingStreamingSeparator: SingSeparator {
@@ -173,6 +176,9 @@ final class SingCoordinator {
     private(set) var session = SingSession()
     private var occurrenceId: String?
     private var preparationGeneration = 0
+    private var modelRelease: Task<Void, Never>?
+    /// How long an idle separator keeps its model before releasing it. The next Sing preparation then loads it again.
+    static let modelIdleReleaseSeconds = 60
     var onSessionChanged: (() -> Void)?
     var onLifecycle: ((HostLogLevel, String, String, [String: String]) -> Void)?
 
@@ -199,6 +205,8 @@ final class SingCoordinator {
 
     func prepare(for occurrence: String) async {
         onLifecycle?(.info, "sing.prepare.started", "Sing preparation started", ["occurrence_id": occurrence])
+        modelRelease?.cancel()
+        modelRelease = nil
         stop()
         preparationGeneration += 1
         let generation = preparationGeneration
@@ -346,6 +354,18 @@ final class SingCoordinator {
         output.onFailure = nil
         occurrenceId = nil
         session = SingSession()
+        scheduleModelRelease()
+    }
+
+    private func scheduleModelRelease() {
+        guard modelRelease == nil else { return }
+        modelRelease = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.modelIdleReleaseSeconds))
+            guard let self, !Task.isCancelled else { return }
+            self.modelRelease = nil
+            // A song prepared meanwhile owns the model.
+            if self.occurrenceId == nil { self.separator.unload() }
+        }
     }
 
     private func checkOccurrence(_ value: String) throws {

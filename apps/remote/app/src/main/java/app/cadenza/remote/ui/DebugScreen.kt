@@ -31,8 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import app.cadenza.remote.energy.EnergyState
 import app.cadenza.remote.model.DebugLogEntry
 import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.ui.settings.EnergyDebugSection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -52,6 +54,7 @@ private data class DeviceStats(
 fun DebugScreen(
     state: RemoteState,
     onBack: () -> Unit,
+    energy: EnergyState = EnergyState(),
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -110,6 +113,7 @@ fun DebugScreen(
                 StatRow("Clock uncertainty", state.clockUncertaintyMs?.let { "≤ $it ms" } ?: "Synchronizing")
             }
         }
+        EnergyDebugSection(energy)
         Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -132,7 +136,7 @@ fun DebugScreen(
 }
 
 @Composable
-private fun StatRow(
+internal fun StatRow(
     label: String,
     value: String,
 ) {

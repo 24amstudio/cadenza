@@ -12,6 +12,8 @@ import {
   encodeSearch,
   encodeSearchSuggest,
   encodeSongPrepare,
+  encodeBrowseGet,
+  encodeOperationCancel,
 } from '../app/lib/protocol/encode';
 
 const remoteId = '3f1c2a2e-7b6d-4c1e-9a1f-2d3e4f5a6b7c';
@@ -37,6 +39,8 @@ const snapshot = {
   allow_cross_remote_edits: false,
   playing: true,
   volume: 40,
+  shuffle: true,
+  repeat: 'all',
   current: {
     occurrence_id: occurrenceId,
     requester_name: 'Mia',
@@ -181,6 +185,8 @@ describe('decodeHostMessage', () => {
         revision: 18,
         playing: true,
         volume: 40,
+        shuffle: true,
+        repeat: 'all',
         current: {
           occurrenceId,
           positionMs: 126000,
@@ -207,6 +213,21 @@ describe('decodeHostMessage', () => {
       type: 'state',
       snapshot: { current: { artworkPreview: '/9j/4AAQ' } },
     });
+  });
+
+  test('rejects a snapshot without the playback modes', () => {
+    const { shuffle: _shuffle, ...withoutShuffle } = snapshot;
+    const { repeat: _repeat, ...withoutRepeat } = snapshot;
+
+    for (const broken of [
+      withoutShuffle,
+      withoutRepeat,
+      { ...snapshot, repeat: 'forever' },
+    ]) {
+      expect(
+        decodeHostMessage(wire({ type: 'state', snapshot: broken })),
+      ).toBeNull();
+    }
   });
 
   test('rejects the whole snapshot when one queue entry is malformed', () => {
@@ -306,6 +327,43 @@ describe('decodeHostMessage', () => {
       type: 'lyrics',
       lyrics: {
         lines: [{ startMs: 1000, words: [{ text: 'I ', endMs: 1400 }] }],
+      },
+    });
+  });
+
+  test('a lyric line placed at the end is right-aligned, and any other value is the start', () => {
+    const line = (align: string | null) => ({
+      id: 'line',
+      text: 'Hello',
+      start_ms: 0,
+      end_ms: 1000,
+      words: [],
+      align,
+    });
+
+    const decoded = decodeHostMessage(
+      wire({
+        type: 'lyrics',
+        request_id: remoteId,
+        lyrics: {
+          occurrence_id: occurrenceId,
+          revision: 'rev-1',
+          translation_source: 'none',
+          source: 'lrclib',
+          lines: [line('end'), line('start'), line(null), line('middle')],
+        },
+      }),
+    );
+
+    expect(decoded).toMatchObject({
+      type: 'lyrics',
+      lyrics: {
+        lines: [
+          { align: 'end' },
+          { align: 'start' },
+          { align: 'start' },
+          { align: 'start' },
+        ],
       },
     });
   });
@@ -597,5 +655,134 @@ describe('search, preparation, and request frames', () => {
     expect(
       decodeHostMessage(wire({ type: 'song.ready', request_id: remoteId })),
     ).toEqual({ type: 'song.ready', requestId: remoteId });
+  });
+});
+
+describe('browse frames', () => {
+  test('encodes a request by song identity or by ID, with no keys the Host does not accept', () => {
+    expect(
+      JSON.parse(
+        encodeBrowseGet('r1', {
+          kind: 'artist',
+          song: { source: 'library', id: 'ABCDEF0123456789' },
+        }),
+      ),
+    ).toEqual({
+      version: 1,
+      type: 'browse.get',
+      request_id: 'r1',
+      browse: {
+        kind: 'artist',
+        song: { source: 'library', id: 'ABCDEF0123456789' },
+      },
+    });
+    expect(
+      JSON.parse(encodeBrowseGet('r2', { kind: 'playlists' })).browse,
+    ).toEqual({ kind: 'playlists' });
+    expect(JSON.parse(encodeOperationCancel('r1'))).toEqual({
+      version: 1,
+      type: 'operation.cancel',
+      request_id: 'r1',
+    });
+  });
+
+  test('decodes songs and collections in sections', () => {
+    const message = decodeHostMessage(
+      wire({
+        type: 'browse.result',
+        request_id: 'r1',
+        browse: {
+          kind: 'artist',
+          id: '1',
+          title: 'Tame Impala',
+          detail: 'Psychedelic',
+          sections: [
+            {
+              id: 'top_songs',
+              title: 'Top Songs',
+              items: [{ type: 'song', song }],
+            },
+            {
+              id: 'albums',
+              title: 'Albums',
+              items: [
+                { type: 'album', id: '9', title: 'Currents', subtitle: '2015' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(message).toMatchObject({
+      type: 'browse.result',
+      requestId: 'r1',
+      browse: {
+        kind: 'artist',
+        title: 'Tame Impala',
+        subtitle: null,
+        detail: 'Psychedelic',
+        sections: [
+          {
+            id: 'top_songs',
+            items: [{ type: 'song', song: { title: 'Breathe Deeper' } }],
+          },
+          {
+            items: [
+              { type: 'album', id: '9', subtitle: '2015', artworkUrl: null },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  test('rejects a page with an unknown kind or a malformed item', () => {
+    const page = (browse: JsonObject) =>
+      decodeHostMessage(
+        wire({ type: 'browse.result', request_id: 'r1', browse }),
+      );
+
+    expect(
+      page({ kind: 'genre', id: '1', title: 'x', sections: [] }),
+    ).toBeNull();
+    expect(
+      page({
+        kind: 'album',
+        id: '1',
+        title: 'x',
+        sections: [
+          { id: 's', title: 's', items: [{ type: 'album', title: 'no id' }] },
+        ],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('playback mode commands', () => {
+  test('encode the shuffle flag and the repeat mode', () => {
+    const envelope = {
+      commandId: 'c1',
+      hostEpoch: epoch,
+      expiresAtHostMs: 5,
+      expectedRevision: 1,
+    };
+
+    expect(
+      JSON.parse(
+        encodeCommand({
+          ...envelope,
+          action: { kind: 'playback.shuffle', enabled: true },
+        }),
+      ).action,
+    ).toEqual({ kind: 'playback.shuffle', enabled: true });
+    expect(
+      JSON.parse(
+        encodeCommand({
+          ...envelope,
+          action: { kind: 'playback.repeat', mode: 'one' },
+        }),
+      ).action,
+    ).toEqual({ kind: 'playback.repeat', mode: 'one' });
   });
 });

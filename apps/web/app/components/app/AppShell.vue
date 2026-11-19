@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue';
 import AppSidebar from '~/components/app/AppSidebar.vue';
+import BrowseDetailView from '~/components/browse/BrowseDetailView.vue';
 import ConnectionBanner from '~/components/app/ConnectionBanner.vue';
 import MobileTabBar from '~/components/app/MobileTabBar.vue';
 import ToastRegion from '~/components/app/ToastRegion.vue';
@@ -11,6 +12,7 @@ import NowPlayingView from '~/components/views/NowPlayingView.vue';
 import SearchView from '~/components/views/SearchView.vue';
 import SettingsView from '~/components/views/SettingsView.vue';
 import UpNextView from '~/components/views/UpNextView.vue';
+import { browseKey } from '~/lib/browse';
 import { showNotification } from '~/lib/browserNotifications';
 import { createSongChangeDetector, documentTitle } from '~/lib/songAlerts';
 import { useHostStore } from '~/stores/host';
@@ -104,8 +106,13 @@ onUnmounted(() => {
       <PairingView v-if="needsPairing" />
       <template v-else>
         <ConnectionBanner />
+        <BrowseDetailView
+          v-if="ui.browseTarget !== null"
+          :key="browseKey(ui.browseTarget.request)"
+          :target="ui.browseTarget"
+        />
         <NowPlayingView
-          v-if="ui.view === 'now-playing'"
+          v-else-if="ui.view === 'now-playing'"
           :immersive="immersive"
         />
         <UpNextView v-else-if="ui.view === 'up-next'" />

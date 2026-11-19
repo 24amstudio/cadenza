@@ -31,6 +31,8 @@
         { "$ref": "#/$defs/transport" },
         { "$ref": "#/$defs/seek" },
         { "$ref": "#/$defs/volume" },
+        { "$ref": "#/$defs/shuffle" },
+        { "$ref": "#/$defs/repeat" },
         { "$ref": "#/$defs/singEnable" },
         { "$ref": "#/$defs/singDisable" },
         { "$ref": "#/$defs/singMix" }
@@ -126,6 +128,24 @@
       "properties": {
         "kind": { "const": "playback.volume" },
         "percent": { "type": "integer", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "shuffle": {
+      "type": "object",
+      "required": ["kind", "enabled"],
+      "properties": {
+        "kind": { "const": "playback.shuffle" },
+        "enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "repeat": {
+      "type": "object",
+      "required": ["kind", "mode"],
+      "properties": {
+        "kind": { "const": "playback.repeat" },
+        "mode": { "enum": ["off", "one", "all"] }
       },
       "additionalProperties": false
     },

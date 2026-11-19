@@ -23,6 +23,9 @@ import app.cadenza.remote.data.counter
 import app.cadenza.remote.data.deviceName
 import app.cadenza.remote.data.nullableString
 import app.cadenza.remote.data.objects
+import app.cadenza.remote.energy.EnergyAssessor
+import app.cadenza.remote.energy.EnergyMonitor
+import app.cadenza.remote.energy.EnergySettingsStore
 import app.cadenza.remote.media.PlaybackKeepAlive
 import app.cadenza.remote.media.RemoteMediaActions
 import app.cadenza.remote.media.RemoteMediaSession
@@ -63,6 +66,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -82,6 +86,17 @@ class RemoteModel(
     internal val app = application as CadenzaApplication
 
     internal val preferences = app.settings
+
+    internal val energy =
+        EnergyAssessor { settings ->
+            viewModelScope.launch(ioDispatcher) { EnergySettingsStore.save(preferences, settings) }
+        }
+
+    internal val energyMonitor = EnergyMonitor(app, energy::onInputs)
+
+    val energyState get() = energy.state
+
+    val energyProfile get() = energy.profile
 
     private val mediaActions = RemoteMediaActions({ mutable.value }, ::command)
 
@@ -131,9 +146,17 @@ class RemoteModel(
 
     internal var retryDelay = 1_000L
 
+    internal var bleFailures = 0
+
     internal var searchId: String? = null
 
     internal var correctionId: String? = null
+
+    internal var favoriteResolveId: String? = null
+
+    internal var favoriteResolveTimeout: Job? = null
+
+    internal var resolvingSong: Song? = null
 
     internal var searchedQuery = ""
 
@@ -203,6 +226,11 @@ class RemoteModel(
 
     internal val pending = mutableMapOf<String, PendingCommand>()
 
+    // Browse request ID to the page key it answers, and the timeout that fails an unanswered request.
+    internal val browseRequests = mutableMapOf<String, String>()
+
+    internal val browseTimeouts = mutableMapOf<String, Job>()
+
     // The Host's last snapshot. The published snapshot is this one with unanswered command intents applied.
     internal var hostSnapshot: HostSnapshot? = null
 
@@ -262,8 +290,10 @@ class RemoteModel(
                 .distinctUntilChanged()
                 .collect { active ->
                     if (!keepAlive.update(active)) reportLog("warning", "keepalive.refused", "active=$active")
+                    refreshEnergyMonitoring()
                 }
         }
+        viewModelScope.launch { energy.profile.drop(1).collect { energyProfileChanged(it) } }
         viewModelScope.launch {
             for (ignored in frameSignal) {
                 while (true) {
@@ -299,6 +329,7 @@ class RemoteModel(
                 val staged = RemoteUpdater.staged(app)
                 val cached = withContext(ioDispatcher) { profile?.let { app.database.cachedState(it.hostId) } }
                 val library = withContext(ioDispatcher) { app.library.load() }
+                energy.restore(withContext(ioDispatcher) { EnergySettingsStore.load(preferences) })
                 val passportSequence = withContext(ioDispatcher) { app.database.latestRecommendationPassportSequence() }
                 recommendationEngine.restoreSequence(passportSequence)
                 remoteName = preferences.getString("client_name", null)?.takeIf { it.isNotBlank() && it.length <= 80 } ?: remoteName
@@ -361,10 +392,12 @@ class RemoteModel(
                 disconnect()
             }
         }
+        refreshEnergyMonitoring()
     }
 
     internal fun startDiscovery() {
-        if (!foreground || !mutable.value.loaded || discovery != null) return
+        // A connected Remote has no use for a scan; the watchdog restarts it when the connection drops.
+        if (!foreground || !mutable.value.loaded || discovery != null || mutable.value.connected) return
         discovery =
             HostDiscovery(app) { host ->
                 val profile = mutable.value.profile ?: return@HostDiscovery
@@ -562,6 +595,11 @@ class RemoteModel(
     }
 
     fun prepare(song: Song) {
+        // Music's own queue rows have no catalog or library identity the Host could resolve.
+        if (song.source == "unknown") {
+            mutable.update { it.copy(preparing = false, preparedSong = null) }
+            return
+        }
         reportLog("info", "prepare.requested", "song=${song.source}:${song.id}")
         preparationId = id()
         preparingIdentity = song.source + ":" + song.id
@@ -649,7 +687,19 @@ class RemoteModel(
 
     fun toggleFavorite(song: Song) {
         if (mutable.value.savingFavorite) return
-        val saved = mutable.value.favorites.none { it.identity == song.identity }
+        // Music's own queue rows carry no identity that can be stored. A saved copy of the same song stands in for the
+        // row, and a song with none is matched to the Host library first.
+        val stored = if (song.source == "unknown") mutable.value.favorites.firstOrNull { it.matches(song) } else null
+        if (song.source == "unknown" && stored == null) return resolveFavorite(song)
+        val target = stored ?: song
+        val saved = mutable.value.favorites.none { it.identity == target.identity }
+        saveFavorite(target, saved)
+    }
+
+    internal fun saveFavorite(
+        song: Song,
+        saved: Boolean,
+    ) {
         val feedback = favoriteRecommendationFeedback(song, saved)
         recommendationEngine.recordFeedback(feedback)
         sendRecommendationFeedback(feedback)
@@ -693,6 +743,7 @@ class RemoteModel(
         app.mediaAction = null
         mediaSession.release()
         networkMonitor.close()
+        energyMonitor.setActive(false)
         disconnect()
         discovery?.close()
         for (item in pending.values) item.timer.cancel()

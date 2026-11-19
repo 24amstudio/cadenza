@@ -5,11 +5,17 @@ import app.cadenza.remote.data.TransportPolicy
 
 class TransportPathSelector {
     private var selected: String? = null
+    private var selectedAtMs = Long.MIN_VALUE
 
+    /**
+     * Keeps the current path unless another is clearly better (score margin) and the current one has been in use for
+     * the policy's minimum dwell. A path that is no longer eligible is replaced at once.
+     */
     fun chooseMeasured(
         policy: TransportPolicy,
         paths: List<TransportPathStatus>,
         preference: PathPreference,
+        nowMs: Long = System.nanoTime() / 1_000_000,
     ): TransportPathStatus? {
         val eligible =
             paths
@@ -17,10 +23,16 @@ class TransportPathSelector {
                 .filter { allowed(policy.mode, it.transport) }
         val candidate = eligible.maxByOrNull { measuredScore(it, preference) } ?: return null
         val current = eligible.firstOrNull { it.transport == selected }
-        if (current != null && measuredScore(current, preference) >= measuredScore(candidate, preference) - 0.08) {
+        if (current != null &&
+            (
+                measuredScore(current, preference) >= measuredScore(candidate, preference) - 0.08 ||
+                    nowMs - selectedAtMs < policy.minimumDwellMs
+            )
+        ) {
             return current
         }
         selected = candidate.transport
+        selectedAtMs = nowMs
         return candidate
     }
 

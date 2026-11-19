@@ -229,6 +229,8 @@ export function snapshotFrame(revision: number): JsonObject {
       allow_cross_remote_edits: false,
       playing: true,
       volume: 50,
+      shuffle: false,
+      repeat: 'off',
       current: null,
       queue: [],
       quality: 'unknown',

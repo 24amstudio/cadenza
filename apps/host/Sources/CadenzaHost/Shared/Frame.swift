@@ -30,6 +30,8 @@ struct Frame: Codable, Sendable {
     var updateState: String? = nil
     var updateVersion: String? = nil
     var songs: [Song]? = nil
+    // browse.get carries the request and browse.result the result, both under "browse".
+    var browse: BrowsePayload? = nil
     var terms: [String]? = nil
     var lyrics: LyricDocument? = nil
     var clock: ClockSample? = nil

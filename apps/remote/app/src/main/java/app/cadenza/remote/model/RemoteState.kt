@@ -99,4 +99,5 @@ data class RemoteState(
     val debugLog: List<DebugLogEntry> = emptyList(),
     val creeMode: String = "disabled",
     val nextRecommendation: RecommendationItem? = null,
+    val browse: Map<String, BrowseLoad> = emptyMap(),
 )

@@ -148,8 +148,9 @@ fun duration(milliseconds: Long?): String {
 fun Artwork(
     url: String?,
     modifier: Modifier = Modifier,
+    large: Boolean = false,
 ) {
-    Artwork(rememberArtwork(url), modifier)
+    Artwork(rememberArtwork(url, if (large) null else THUMBNAIL_EDGE_PX), modifier)
 }
 
 @Composable

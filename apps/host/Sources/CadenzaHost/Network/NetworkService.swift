@@ -35,6 +35,8 @@ final class NetworkService {
         // The last full state this Remote was sent, and when. Heartbeats are judged against it, not the latest snapshot.
         var lastSnapshot: HostSnapshot?
         var lastSnapshotAt: Int64 = 0
+        // When this Remote was last sent a state or a heartbeat. The Host's keepalive fills the silence after it.
+        var lastLivenessAt: Int64 = 0
         var receivedAt: [Int64] = []
         var outbound: [Outbound] = []
         var pendingState: Outbound?

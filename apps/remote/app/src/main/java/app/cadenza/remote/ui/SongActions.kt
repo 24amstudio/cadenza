@@ -21,15 +21,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.matches
+import app.cadenza.remote.ui.browse.LocalBrowseNavigator
+import app.cadenza.remote.ui.browse.canBrowse
 import org.json.JSONObject
 
 @Composable
@@ -38,11 +43,10 @@ fun FavoriteButton(
     state: RemoteState,
     song: Song,
 ) {
-    val saved = state.favorites.any { it.identity == song.identity }
+    val saved = state.favorites.any { it.matches(song) }
     ActionButton(
         if (saved) "Remove from Favorites" else "Save to Favorites",
         pending = state.savingFavorite,
-        enabled = song.source != "unknown",
     ) {
         model.toggleFavorite(song)
     }
@@ -54,10 +58,10 @@ fun FavoriteIconButton(
     state: RemoteState,
     song: Song,
 ) {
-    val saved = state.favorites.any { it.identity == song.identity }
+    val saved = state.favorites.any { it.matches(song) }
     IconButton(
         onClick = { model.toggleFavorite(song) },
-        enabled = song.source != "unknown" && !state.savingFavorite,
+        enabled = !state.savingFavorite,
         modifier = Modifier.sizeIn(minWidth = 56.dp, minHeight = 56.dp),
     ) {
         if (state.savingFavorite) {
@@ -158,6 +162,19 @@ fun SongActions(
                             ) { Text("Prepare in Music", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
+                    if (canBrowse(state, song)) {
+                        val browse = LocalBrowseNavigator.current
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            TextButton(
+                                onClick = { browse.open(BrowseTarget.album(song)) },
+                                modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
+                            ) { Text("Go to album", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            TextButton(
+                                onClick = { browse.open(BrowseTarget.artist(song)) },
+                                modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
+                            ) { Text("Go to artist", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        }
+                    }
                 }
             }
         }
@@ -177,13 +194,13 @@ private fun SongIdentityCard(
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Artwork(song.artworkUrl, Modifier.size((availableWidth * 0.38f).coerceIn(160.dp, 220.dp)).aspectRatio(1f))
+                Artwork(song.artworkUrl, Modifier.size((availableWidth * 0.38f).coerceIn(160.dp, 220.dp)).aspectRatio(1f), large = true)
                 SongMetadata(song, Modifier.weight(1f), centered = false)
             }
         }
     } else {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Artwork(song.artworkUrl, Modifier.widthIn(max = 248.dp).fillMaxWidth().aspectRatio(1f))
+            Artwork(song.artworkUrl, Modifier.widthIn(max = 248.dp).fillMaxWidth().aspectRatio(1f), large = true)
             SongMetadata(song, Modifier.fillMaxWidth(), centered = true)
         }
     }

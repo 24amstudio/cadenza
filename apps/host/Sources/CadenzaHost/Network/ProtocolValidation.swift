@@ -15,6 +15,8 @@ enum ProtocolValidation {
         "playback.stop": ["kind", "occurrence_id"],
         "playback.seek": ["kind", "occurrence_id", "position_ms"],
         "playback.volume": ["kind", "percent"],
+        "playback.shuffle": ["kind", "enabled"],
+        "playback.repeat": ["kind", "mode"],
         "sing.enable": ["kind", "occurrence_id"],
         "sing.disable": ["kind", "occurrence_id"],
         "sing.mix": ["kind", "occurrence_id", "vocal_percent"],
@@ -34,7 +36,8 @@ enum ProtocolValidation {
         if frame.type == "command" {
             try validateCommand(frame, raw: data)
         } else if ![
-            "pair", "hello", "clock", "search", "search.suggest", "song.prepare", "operation.cancel", "lyrics.get",
+            "pair", "hello", "clock", "search", "search.suggest", "browse.get", "song.prepare", "operation.cancel",
+            "lyrics.get",
             "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get", "artwork.cancel",
             "motion.get",
@@ -59,6 +62,7 @@ enum ProtocolValidation {
         let required: [String: Set<String>] = [
             "pair": ["pair"], "hello": ["auth"], "clock": ["clock"],
             "search": ["request_id", "query", "scope"], "search.suggest": ["request_id", "query"],
+            "browse.get": ["request_id", "browse"],
             "song.prepare": ["request_id", "song"],
             "operation.cancel": ["request_id"], "lyrics.get": [], "analytics.ack": ["sequence"],
             "state.get": [], "command.status": ["command_id"],
@@ -178,6 +182,7 @@ enum ProtocolValidation {
             }
         }
         if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
+        if type == "browse.get" { try validateBrowse(object["browse"]) }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")
         }
@@ -209,6 +214,38 @@ enum ProtocolValidation {
         }
         if type.hasPrefix("recommendation.") {
             guard keys.count <= 5 else { throw invalid("The recommendation message contains unexpected fields.") }
+        }
+    }
+
+    // A browse request names playlists alone, one playlist, or an album or artist by exactly one of catalog ID or song.
+    private static func validateBrowse(_ value: Any?) throws {
+        try nested(value, fields: ["kind"], optional: ["id", "song"])
+        guard let browse = value as? [String: Any], let kind = browse["kind"] as? String else {
+            throw invalid("Invalid browse request.")
+        }
+        let id = browse["id"]
+        let song = browse["song"]
+        func matches(_ pattern: String) -> Bool {
+            (id as? String)?.range(of: pattern, options: .regularExpression) != nil
+        }
+        switch kind {
+        case "playlists":
+            guard id == nil, song == nil else { throw invalid("Playlists take no identifier.") }
+        case "playlist":
+            guard song == nil, matches("^[0-9A-F]{16}$") else { throw invalid("Invalid playlist.") }
+        case "album", "artist":
+            guard (id == nil) != (song == nil) else { throw invalid("Name the item by one of ID or song.") }
+            if id != nil {
+                guard matches("^[1-9][0-9]{0,19}$") else { throw invalid("Invalid catalog ID.") }
+            } else {
+                try nested(song, fields: ["source", "id"])
+                let identity = song as? [String: Any]
+                guard let source = identity?["source"] as? String, let songId = identity?["id"] as? String,
+                    Wire.validate(SongIdentity(source: source, id: songId))
+                else { throw invalid("Invalid song identity.") }
+            }
+        default:
+            throw invalid("Choose an album, artist, or playlist.")
         }
     }
 
@@ -255,6 +292,14 @@ enum ProtocolValidation {
             if let anchor = action.beforeEntryId, !Wire.isIdentifier(anchor) { throw invalid("Invalid queue anchor.") }
         case "playback.volume":
             guard let percent = action.percent, (0...100).contains(percent) else { throw invalid("Invalid volume.") }
+        case "playback.shuffle":
+            guard let flag = rawAction["enabled"] as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else {
+                throw invalid("Invalid shuffle setting.")
+            }
+        case "playback.repeat":
+            guard let mode = action.mode, ["off", "one", "all"].contains(mode) else {
+                throw invalid("Invalid repeat mode.")
+            }
         case "sing.mix":
             guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence),
                 let vocalPercent = action.vocalPercent, (0...100).contains(vocalPercent)

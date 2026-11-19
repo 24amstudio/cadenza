@@ -17,6 +17,6 @@ struct Welcome: Codable, Sendable {
         "lyrics.music-cache", "lyrics.english-translation", "analytics", "updates.signed", "queue.play-next",
         "lyrics.lrclib", "artwork.host-cache", "motion.host-cache", "search.suggest", "remote.configure",
         "state.heartbeat", "recommendations.cree",
-        "host.update",
+        "host.update", "library.browse", "playback.modes",
     ]
 }

@@ -30,9 +30,11 @@ internal fun RemoteModel.reportFailure(
     title: String,
     message: String,
 ) {
+    val shown = friendlyHostMessage(message)
+    if (shown != message) reportLog("warning", "host.error", message)
     when (failureSeverity(code)) {
-        FailureSeverity.Fatal -> if (mutableState.value.prompt?.message != message) showError(title, message)
-        FailureSeverity.Warning -> showWarning(message)
+        FailureSeverity.Fatal -> if (mutableState.value.prompt?.message != shown) showError(title, shown)
+        FailureSeverity.Warning -> showWarning(shown)
     }
 }
 

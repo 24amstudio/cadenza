@@ -22,7 +22,15 @@ import { decodeHostMessage, type HostMessage } from '../protocol/decode';
 import { artworkDataUrl } from './artwork';
 import { ArtworkChunks } from './artworkTransfer';
 import { MotionTransfer } from './motionTransfer';
-import type { CredentialStore, StoredCredential } from './credentials';
+import type { StoredCredential } from './credentials';
+import type {
+  ArtworkLane,
+  ArtworkMode,
+  HostClientOptions,
+  HostPhase,
+  Readiness,
+  SocketLike,
+} from './clientTypes';
 import { traceEvent, traceFrame, type TraceTransport } from './trace';
 import type {
   CommandAction,
@@ -32,66 +40,15 @@ import type {
   Welcome,
 } from '../protocol/types';
 
-export type HostPhase =
-  | 'unpaired'
-  | 'pairing'
-  | 'pairing-failed'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'bluetooth-idle';
-
-export type Readiness = 'ready' | 'syncing' | 'offline';
-
-export type HostChange =
-  | { kind: 'phase'; phase: HostPhase; attempt: number; message: string | null }
-  | { kind: 'welcome'; welcome: Welcome }
-  | { kind: 'snapshot'; snapshot: Snapshot }
-  | { kind: 'clock'; offsetMs: number }
-  | { kind: 'lyrics'; lyrics: LyricDocument }
-  | { kind: 'lyricsUnavailable'; occurrenceId: string | null }
-  // A preview has full: false. The full image has full: true, and so does a failure, with a null image. The request ID
-  // is null when nothing could be sent.
-  | {
-      kind: 'artwork';
-      artworkUrl: string;
-      dataUrl: string | null;
-      full: boolean;
-      requestId: string | null;
-    }
-  // A null video is a failure, or the Host's answer that the song has no motion when unavailable is true.
-  | {
-      kind: 'motion';
-      artworkUrl: string;
-      video: Uint8Array<ArrayBuffer> | null;
-      unavailable: boolean;
-      requestId: string | null;
-    }
-  | { kind: 'commandResolved'; result: CommandResult }
-  | { kind: 'notice'; message: string };
-
-// Only the methods the client uses. Browser WebSocket instances are adapted to this shape by the app.
-export interface SocketLike {
-  onOpen: (() => void) | null;
-  onMessage: ((text: string) => void) | null;
-  onClose: (() => void) | null;
-  send(text: string): void;
-  close(): void;
-}
-
-export interface HostClientOptions {
-  url: string;
-  remoteVersion: string;
-  defaultName: string;
-  openSocket: (url: string) => SocketLike;
-  credentials: CredentialStore;
-  monotonicNow: () => number;
-  schedule: (callback: () => void, delayMs: number) => () => void;
-  newId: () => string;
-  onChange: (change: HostChange) => void;
-  // Asks for a preview before the full artwork. Only the Bluetooth page sets this, and only the Host's capability enables it.
-  progressiveArtwork?: boolean;
-}
+export type {
+  ArtworkLane,
+  ArtworkMode,
+  HostChange,
+  HostClientOptions,
+  HostPhase,
+  Readiness,
+  SocketLike,
+} from './clientTypes';
 
 interface PendingPairing {
   proof: PairingProof;
@@ -108,19 +65,10 @@ type PendingRequest =
     }
   | { kind: 'rename'; name: string };
 
-export type ArtworkLane = 'preview' | 'still' | 'motion';
-
-// What the page asks an artwork for. A preview is the small image alone. A still is the full image. Motion is the playing
-// song's video, asked for apart from the still so a failed or refused video never leaves the cover at preview size.
-export type ArtworkMode =
-  | { kind: 'preview' }
-  | { kind: 'still' }
-  | { kind: 'motion'; occurrenceId: string };
-
 const handshakeTimeoutMs = 8_000;
 
 // The Host gates dispatch by the deadline, then gives a dispatched playback change up to 2 s to verify it. A result that
-// still has not arrived after both windows settles as unconfirmed, which frees the controls. A late result is still shown.
+// still has not arrived after both windows is looked up with command.status, which frees the controls. A late result is still shown.
 const commandSettleMs = 4_000;
 
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
@@ -183,7 +131,11 @@ export class HostClient {
   constructor(options: HostClientOptions) {
     this.options = options;
     this.credential = options.credentials.read();
-    this.commands = new CommandTracker(options.schedule, commandSettleMs);
+    this.commands = new CommandTracker(
+      options.schedule,
+      commandSettleMs,
+      (commandId) => this.queryCommandStatus(commandId),
+    );
     this.waiters = new Waiters(options.schedule);
     this.songs = new SongRequests({
       send: (text) => {
@@ -882,6 +834,14 @@ export class HostClient {
     for (const commandId of this.commands.orphanedIds()) {
       this.transmit(socket, encodeCommandStatus(commandId));
     }
+  }
+
+  // Asks the Host for the receipt of a command that is late. The answer arrives as a command.result for that ID.
+  private queryCommandStatus(commandId: string): boolean {
+    if (!this.welcomed || this.socket === null) return false;
+    this.transmit(this.socket, encodeCommandStatus(commandId));
+
+    return true;
   }
 
   private handleClose(socket: SocketLike): void {

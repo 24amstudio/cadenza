@@ -7,6 +7,7 @@ import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.PairingInvitation
 import app.cadenza.remote.data.Wire
 import app.cadenza.remote.network.BleConnection
+import app.cadenza.remote.network.BleLinkPolicy
 import app.cadenza.remote.network.HostConnection
 import app.cadenza.remote.network.HybridConnection
 import app.cadenza.remote.network.PrioritizedFrameQueue
@@ -165,7 +166,10 @@ internal fun RemoteModel.connectionClosed(
         showError("Could not pair", message)
         return
     }
-    if (transportMode == "ble" && !wasConnected) {
+    // A Bluetooth drop or a failed attempt is routine, so the watchdog retries it quietly. The user is asked only
+    // when a permission or the adapter blocks it, or when the retries keep failing.
+    if (transportMode == "ble" && BleLinkPolicy.needsPrompt(message, ++bleFailures)) {
+        bleFailures = 0
         showError("Could not connect over Bluetooth", message)
         return
     }

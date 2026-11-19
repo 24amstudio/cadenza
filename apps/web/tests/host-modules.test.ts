@@ -17,7 +17,7 @@ import {
   activeLineIndices,
   lyricsLevel,
   sweepEdgeWidth,
-  sweepTarget,
+  sweepTargets,
   wordFills,
 } from '../app/lib/lyrics';
 import {
@@ -170,6 +170,7 @@ describe('lyrics', () => {
     startMs: 1_000,
     endMs: 2_000,
     translation: null,
+    align: 'start' as const,
     words: [
       { text: 'first ', startMs: 1_000, endMs: 1_400 },
       { text: 'line', startMs: 1_400, endMs: 2_000 },
@@ -203,7 +204,7 @@ describe('lyrics', () => {
     expect(activeLineIndices(lines, 3_500)).toEqual([2]);
   });
 
-  test('sweeps only the latest started word, even when word timings overlap', () => {
+  test('every word that is sounding sweeps from its own timing, even when word timings overlap', () => {
     // The second word starts while the first is still ending.
     const overlapping = {
       ...timedLine,
@@ -213,20 +214,18 @@ describe('lyrics', () => {
       ],
     };
 
-    const partial = (fills: number[]) =>
-      fills.filter((fill) => fill > 0 && fill < 100);
-
     expect(wordFills(overlapping, 900, true)).toEqual([0, 0]);
 
     const during = wordFills(overlapping, 1_500, true);
 
-    expect(during[0]).toBe(100);
+    expect(during[0]).toBeCloseTo(83.3, 1);
     expect(during[1]).toBeCloseTo(16.7, 1);
-    expect(partial(during)).toHaveLength(1);
+    expect(wordFills(overlapping, 1_700, true)[0]).toBe(100);
+    // A line that is not sounding shows whole words only.
     expect(wordFills(overlapping, 1_500, false)).toEqual([100, 100]);
   });
 
-  test('names one sweep target across overlapping lines: the latest started word of the newest line', () => {
+  test('names a sweep for every sounding word of every active line, not one for the whole view', () => {
     const main = {
       ...timedLine,
       startMs: 0,
@@ -239,6 +238,8 @@ describe('lyrics', () => {
 
     const background = {
       ...timedLine,
+      id: 'bg',
+      align: 'end' as const,
       startMs: 1_000,
       endMs: 3_000,
       words: [
@@ -252,16 +253,33 @@ describe('lyrics', () => {
       words: [{ text: 'c', startMs: 1_100, endMs: 1_500 }],
     };
 
-    expect(sweepTarget([main, background], 500)).toEqual({ line: 0, word: 0 });
-    expect(sweepTarget([main, background], 1_200)).toEqual({
-      line: 1,
-      word: 0,
-    });
-    expect(sweepTarget([main, background], 1_700)).toEqual({
-      line: 1,
-      word: 1,
-    });
-    expect(sweepTarget([main, beforeFirstWord], 1_050)).toBeNull();
+    expect(sweepTargets([main, background], 500)).toEqual([
+      { line: 0, word: 0 },
+    ]);
+    // The main line's second word and the second voice's first word are sounding together.
+    expect(sweepTargets([main, background], 1_200)).toEqual([
+      { line: 0, word: 1 },
+      { line: 1, word: 0 },
+    ]);
+    expect(sweepTargets([main, background], 1_700)).toEqual([
+      { line: 1, word: 1 },
+    ]);
+    expect(sweepTargets([main, beforeFirstWord], 1_050)).toEqual([
+      { line: 0, word: 1 },
+    ]);
+  });
+
+  test('a gap between words sweeps nothing', () => {
+    const gap = {
+      ...timedLine,
+      words: [
+        { text: 'a ', startMs: 1_000, endMs: 1_200 },
+        { text: 'b', startMs: 1_600, endMs: 2_000 },
+      ],
+    };
+
+    expect(sweepTargets([gap], 1_400)).toEqual([]);
+    expect(wordFills(gap, 1_400, true)).toEqual([100, 0]);
   });
 
   test('gives the sweeping edge no width at either end of a word, and the most halfway through', () => {

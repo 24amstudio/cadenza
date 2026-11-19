@@ -43,6 +43,14 @@ class OptimisticHostTest {
     }
 
     @Test
+    fun shuffleAndRepeatShowTheChosenModesBeforeTheHostAnswers() {
+        val shown = host.withOptimisticIntents(listOf(OptimisticIntent.Shuffle(true), OptimisticIntent.Repeat("all")))
+
+        assertEquals(true, shown.shuffle)
+        assertEquals("all", shown.repeat)
+    }
+
+    @Test
     fun aSeekForAnotherOccurrenceDoesNotMoveTheCurrentSong() {
         assertEquals(host, host.withOptimisticIntents(listOf(OptimisticIntent.Seek("other", 60_000, 500))))
     }

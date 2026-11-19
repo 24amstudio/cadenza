@@ -44,9 +44,20 @@ class ClockSync {
 
     fun hostTime(remoteNow: Long): Long = remoteNow + offsetMs
 
-    fun deadline(remoteNow: Long): Long {
+    fun deadline(
+        remoteNow: Long,
+        windowMs: Long = DEFAULT_WINDOW_MS,
+    ): Long {
         check(ready) { "Clock synchronization is not ready. Wait a moment and retry." }
-        return hostTime(remoteNow) + 900 - uncertaintyMs
+        return hostTime(remoteNow) + windowMs - uncertaintyMs
+    }
+
+    companion object {
+        const val DEFAULT_WINDOW_MS = 900L
+
+        // Music answers a pause or seek in 0.7 to 1.8 s on a healthy Host, and its calls run one at a time. A
+        // transport tap that waits behind a slow seek needs more than the default before it is dispatched.
+        const val TRANSPORT_WINDOW_MS = 2_000L
     }
 
     fun position(

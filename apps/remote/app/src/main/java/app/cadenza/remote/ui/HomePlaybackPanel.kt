@@ -9,13 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -24,8 +21,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.BrowseTarget
+import app.cadenza.remote.energy.LocalEnergyProfile
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.ui.browse.browseLink
 
 @Composable
 internal fun HomePlaybackPanel(
@@ -45,51 +45,52 @@ internal fun HomePlaybackPanel(
         }
     }
     val current = state.snapshot?.current
-    val artwork = rememberArtwork(current?.song?.artworkUrl)
-    val currentPosition = (position(model, 100) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
+    val shown = rememberShownSong(current)
+    val currentPosition = (position(model, LocalEnergyProfile.current.progressTickMs) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
     val lyrics = state.lyrics?.takeIf { it.occurrenceId == current?.occurrenceId && it.level > 0 }
     val lyricsMayBeAvailable = current != null && (lyrics != null || (state.lyrics == null && state.lyricsIssue == null))
 
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp)) {
         val horizontal = maxWidth >= 460.dp
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Now playing", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                if (lyricsMayBeAvailable) {
-                    FilterChip(
-                        selected = false,
-                        onClick = onOpenLyrics,
-                        label = { Text("Lyrics") },
-                        leadingIcon = { Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = null) },
-                        modifier = Modifier.focusRequester(lyricsFocusRequester),
-                    )
-                }
-            }
-            if (current == null) {
+            Text("Now playing", style = MaterialTheme.typography.headlineSmall)
+            if (current == null || shown == null) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text("Nothing is playing", style = MaterialTheme.typography.titleLarge)
                 }
             } else {
-                if (horizontal) {
-                    Row(
-                        Modifier.weight(1f).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        HomeArtwork(state, current.occurrenceId, current.song.artworkUrl)
-                        HomeTrackIdentity(current, state.profile?.remoteId, Modifier.weight(1f))
-                    }
-                } else {
-                    Column(
-                        Modifier.weight(1f).fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
-                    ) {
-                        HomeArtwork(state, current.occurrenceId, current.song.artworkUrl)
-                        HomeTrackIdentity(current, state.profile?.remoteId, Modifier.fillMaxWidth())
+                SongSwap(shown, { it.current.occurrenceId }, Modifier.weight(1f).fillMaxWidth()) { song ->
+                    if (horizontal) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            HomeArtwork(state, song)
+                            HomeTrackIdentity(state, song.current, state.profile?.remoteId, Modifier.weight(1f))
+                        }
+                    } else {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+                        ) {
+                            HomeArtwork(state, song)
+                            HomeTrackIdentity(state, song.current, state.profile?.remoteId, Modifier.fillMaxWidth())
+                        }
                     }
                 }
                 PlaybackTimeline(model, state, currentPosition)
+                TabletTransport(
+                    model,
+                    state,
+                    lyrics =
+                        if (lyricsMayBeAvailable) {
+                            { LyricsButton(onOpenLyrics, Modifier.focusRequester(lyricsFocusRequester)) }
+                        } else {
+                            null
+                        },
+                )
             }
         }
     }
@@ -98,20 +99,21 @@ internal fun HomePlaybackPanel(
 @Composable
 private fun HomeArtwork(
     state: RemoteState,
-    occurrenceId: String,
-    artworkUrl: String?,
+    song: ShownSong,
 ) {
+    val occurrenceId = song.current.occurrenceId
     MotionArtwork(
         video = state.motion?.takeIf { it.occurrenceId == occurrenceId }?.file,
         playing = state.snapshot?.playing == true,
-        modifier = Modifier.size(184.dp),
+        modifier = Modifier.sharedArtwork(occurrenceId).size(184.dp),
     ) {
-        Artwork(artworkUrl, Modifier.fillMaxSize())
+        Artwork(song.artwork, Modifier.fillMaxSize())
     }
 }
 
 @Composable
 private fun HomeTrackIdentity(
+    state: RemoteState,
     current: app.cadenza.remote.data.CurrentPlayback,
     remoteId: String?,
     modifier: Modifier = Modifier,
@@ -129,9 +131,15 @@ private fun HomeTrackIdentity(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.browseLink(state, current.song, "Open artist page") { BrowseTarget.artist(it) },
         )
         current.song.album.takeIf(String::isNotBlank)?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.browseLink(state, current.song, "Open album page") { BrowseTarget.album(it) },
+            )
         }
         if (current.requesterName.isNotBlank()) {
             val requester = if (remoteId != null && current.requestedBy == remoteId) "you" else current.requesterName

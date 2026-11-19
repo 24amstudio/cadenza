@@ -1,11 +1,13 @@
 package app.cadenza.remote.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -74,6 +76,16 @@ internal fun PlaybackTimeline(
     }
 }
 
+// One slot per control. Slots share the row evenly, so the group shrinks with the column instead of clipping, and
+// the row stops growing once the controls are comfortably spaced so a wide column keeps them together.
+private const val SLOT_MAX_COMPACT_DP = 76
+private const val SLOT_MAX_DP = 88
+
+@Composable
+private fun RowScope.TransportSlot(content: @Composable () -> Unit) {
+    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { content() }
+}
+
 @Composable
 internal fun PlaybackTransport(
     model: RemoteModel,
@@ -87,45 +99,88 @@ internal fun PlaybackTransport(
     val current = snapshot.current ?: return
     val mayInterrupt = mayInterruptPlayback(state)
     val playback = if (snapshot.playing) "playback.pause" else "playback.resume"
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        leadingContent?.invoke()
-        if (leadingContent != null) Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        IconButton(
-            onClick = {
-                model.command(
-                    JSONObject().put("kind", "playback.previous").put("occurrence_id", current.occurrenceId),
-                    "playback.previous",
-                )
-            },
-            enabled = mayInterrupt,
+    val slots = 3 + (if (leadingContent != null) 1 else 0) + (if (trailingContent != null) 1 else 0)
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier.widthIn(max = (slots * if (compact) SLOT_MAX_COMPACT_DP else SLOT_MAX_DP).dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(cadenzaVector(CadenzaIcon.PREVIOUS), "Previous song")
+            leadingContent?.let { TransportSlot(it) }
+            TransportSlot {
+                IconButton(
+                    onClick = {
+                        model.command(
+                            JSONObject().put("kind", "playback.previous").put("occurrence_id", current.occurrenceId),
+                            "playback.previous",
+                        )
+                    },
+                    enabled = mayInterrupt,
+                ) {
+                    Icon(cadenzaVector(CadenzaIcon.PREVIOUS), "Previous song")
+                }
+            }
+            TransportSlot {
+                FilledIconButton(
+                    onClick = { model.command(JSONObject().put("kind", playback).put("occurrence_id", current.occurrenceId), playback) },
+                    enabled = state.connected,
+                    modifier = Modifier.size(if (compact) 56.dp else 72.dp),
+                ) {
+                    Icon(
+                        cadenzaVector(if (snapshot.playing) CadenzaIcon.PAUSE else CadenzaIcon.PLAY),
+                        if (snapshot.playing) "Pause in Cadenza Host" else "Resume in Cadenza Host",
+                        Modifier.size(if (compact) 28.dp else 36.dp),
+                    )
+                }
+            }
+            TransportSlot {
+                IconButton(
+                    onClick = {
+                        model.command(
+                            JSONObject().put("kind", "playback.skip").put("occurrence_id", current.occurrenceId),
+                            "playback.skip",
+                        )
+                    },
+                    enabled = mayInterrupt,
+                ) {
+                    Icon(cadenzaVector(CadenzaIcon.NEXT), "Next song")
+                }
+            }
+            trailingContent?.let { TransportSlot(it) }
         }
-        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        FilledIconButton(
-            onClick = { model.command(JSONObject().put("kind", playback).put("occurrence_id", current.occurrenceId), playback) },
-            enabled = state.connected,
-            modifier = Modifier.size(if (compact) 56.dp else 72.dp),
-        ) {
-            Icon(
-                cadenzaVector(if (snapshot.playing) CadenzaIcon.PAUSE else CadenzaIcon.PLAY),
-                if (snapshot.playing) "Pause in Cadenza Host" else "Resume in Cadenza Host",
-                Modifier.size(if (compact) 28.dp else 36.dp),
-            )
-        }
-        Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        IconButton(
-            onClick = {
-                model.command(
-                    JSONObject().put("kind", "playback.skip").put("occurrence_id", current.occurrenceId),
-                    "playback.skip",
-                )
-            },
-            enabled = mayInterrupt,
-        ) {
-            Icon(cadenzaVector(CadenzaIcon.NEXT), "Next song")
-        }
-        if (trailingContent != null) Spacer(Modifier.size(if (compact) 8.dp else 12.dp))
-        trailingContent?.invoke()
+    }
+}
+
+/** Opens the lyrics. Its place in the transport is the first slot, before Previous. */
+@Composable
+internal fun LyricsButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(cadenzaVector(CadenzaIcon.LYRICS), contentDescription = "Lyrics")
+    }
+}
+
+/**
+ * The tablet Now Playing controls as one balanced group: Lyrics (only when the song has lyrics), Previous,
+ * Play/Pause, Next and Favorite. Shuffle and repeat, when the Host offers them, sit in a row of their own below.
+ */
+@Composable
+internal fun TabletTransport(
+    model: RemoteModel,
+    state: RemoteState,
+    lyrics: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val song = state.snapshot?.current?.song ?: return
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        PlaybackTransport(
+            model,
+            state,
+            compact = true,
+            leadingContent = lyrics,
+            trailingContent = { FavoriteIconButton(model, state, song) },
+        )
+        PlaybackModeRow(model, state)
     }
 }

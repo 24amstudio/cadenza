@@ -42,6 +42,9 @@ struct HostSnapshot: Codable, Equatable, Sendable {
     var observationGap: Bool = false
     var sing: SingSession? = nil
     var autoPlay: [AutoPlayItem] = []
+    // Music's shuffle switch and its repeat mode ("off", "one", or "all").
+    var shuffle: Bool = false
+    var `repeat`: String = "off"
 }
 
 // Music's AutoPlay songs, which play after the queue. Only the first few travel, so a state frame stays small.

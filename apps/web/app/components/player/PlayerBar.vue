@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
+import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
 import VolumeSlider from '~/components/player/VolumeSlider.vue';
@@ -67,6 +68,17 @@ const showLyricsToggle = computed(
     </div>
 
     <div class="utilities">
+      <PlaybackModes
+        v-if="host.supportsModes"
+        class="player-modes"
+        compact
+        :shuffle="host.shuffleEnabled"
+        :repeat="host.repeatMode"
+        :pending="host.pendingControls"
+        :disabled="!host.connected"
+        @shuffle="host.toggleShuffle"
+        @repeat="host.cycleRepeat"
+      />
       <VolumeSlider
         class="volume-full"
         :percent="host.volumePercent"
@@ -200,7 +212,8 @@ const showLyricsToggle = computed(
     padding: 0 12px;
   }
 
-  .utilities .volume-full {
+  .utilities .volume-full,
+  .utilities .player-modes {
     display: none;
   }
 }

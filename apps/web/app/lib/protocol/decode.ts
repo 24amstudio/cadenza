@@ -11,6 +11,11 @@ import {
   type JsonValue,
 } from './json';
 import type {
+  BrowseCollectionKind,
+  BrowseItem,
+  BrowseKind,
+  BrowsePage,
+  BrowseSection,
   ClockSample,
   CommandOutcome,
   CommandResult,
@@ -19,6 +24,7 @@ import type {
   LyricLine,
   LyricWord,
   QueueEntry,
+  RepeatMode,
   Snapshot,
   Song,
   SongSuggestions,
@@ -78,7 +84,8 @@ export type HostMessage =
       requestId: string;
       suggestions: SongSuggestions;
     }
-  | { type: 'song.ready'; requestId: string };
+  | { type: 'song.ready'; requestId: string }
+  | { type: 'browse.result'; requestId: string; browse: BrowsePage };
 
 export function decodeHostMessage(text: string): HostMessage | null {
   const value = parseJson(text);
@@ -123,6 +130,8 @@ export function decodeHostMessage(text: string): HostMessage | null {
       return decodeSearchSuggestionsMessage(value);
     case 'song.ready':
       return decodeSongReadyMessage(value);
+    case 'browse.result':
+      return decodeBrowseResultMessage(value);
     default:
       return null;
   }
@@ -374,6 +383,83 @@ function decodeSongReadyMessage(object: JsonObject): HostMessage | null {
   return requestId === null ? null : { type: 'song.ready', requestId };
 }
 
+function decodeBrowseResultMessage(object: JsonObject): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const page = objectField(object, 'browse');
+  const browse = page === null ? null : decodeBrowsePage(page);
+
+  return requestId === null || browse === null
+    ? null
+    : { type: 'browse.result', requestId, browse };
+}
+
+function decodeBrowsePage(object: JsonObject): BrowsePage | null {
+  const kind = stringField(object, 'kind');
+  const id = stringField(object, 'id');
+  const title = stringField(object, 'title');
+  const sections = decodeList(arrayField(object, 'sections'), decodeSection);
+
+  if (!isBrowseKind(kind) || id === null || title === null || sections === null)
+    return null;
+
+  return {
+    kind,
+    id,
+    title,
+    subtitle: stringField(object, 'subtitle'),
+    artworkUrl: stringField(object, 'artwork_url'),
+    detail: stringField(object, 'detail'),
+    sections,
+  };
+}
+
+function decodeSection(object: JsonObject): BrowseSection | null {
+  const id = stringField(object, 'id');
+  const title = stringField(object, 'title');
+  const items = decodeList(arrayField(object, 'items'), decodeBrowseItem);
+
+  return id === null || title === null || items === null
+    ? null
+    : { id, title, items };
+}
+
+function decodeBrowseItem(object: JsonObject): BrowseItem | null {
+  const type = stringField(object, 'type');
+
+  if (type === 'song') {
+    const song = objectField(object, 'song');
+    const decoded = song === null ? null : decodeSong(song);
+
+    return decoded === null ? null : { type, song: decoded };
+  }
+
+  const id = stringField(object, 'id');
+  const title = stringField(object, 'title');
+
+  if (!isCollectionKind(type) || !id || title === null) return null;
+
+  return {
+    type,
+    id,
+    title,
+    subtitle: stringField(object, 'subtitle'),
+    artworkUrl: stringField(object, 'artwork_url'),
+  };
+}
+
+function isBrowseKind(value: string | null): value is BrowseKind {
+  return (
+    value === 'album' ||
+    value === 'artist' ||
+    value === 'playlists' ||
+    value === 'playlist'
+  );
+}
+
+function isCollectionKind(value: string | null): value is BrowseCollectionKind {
+  return value === 'album' || value === 'artist' || value === 'playlist';
+}
+
 export function decodeSnapshot(object: JsonObject): Snapshot | null {
   const hostId = stringField(object, 'host_id');
   const hostEpoch = stringField(object, 'host_epoch');
@@ -382,6 +468,8 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
   const playing = booleanField(object, 'playing');
   const volume = counterField(object, 'volume');
   const synchronized = booleanField(object, 'synchronized');
+  const shuffle = booleanField(object, 'shuffle');
+  const repeat = stringField(object, 'repeat');
   const queue = decodeList(arrayField(object, 'queue'), decodeQueueEntry);
 
   if (
@@ -393,6 +481,8 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     volume === null ||
     volume > 100 ||
     synchronized === null ||
+    shuffle === null ||
+    !isRepeatMode(repeat) ||
     queue === null
   ) {
     return null;
@@ -408,11 +498,17 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     sequence,
     playing,
     volume,
+    shuffle,
+    repeat,
     current,
     queue,
     synchronized,
     issue: stringField(object, 'issue'),
   };
+}
+
+function isRepeatMode(value: string | null): value is RepeatMode {
+  return value === 'off' || value === 'one' || value === 'all';
 }
 
 function decodeCurrent(object: JsonObject): CurrentPlayback | null {
@@ -540,6 +636,8 @@ function decodeLyricLine(object: JsonObject): LyricLine | null {
     endMs,
     translation: stringField(object, 'translation'),
     words,
+    // Anything but an explicit end is the first voice.
+    align: stringField(object, 'align') === 'end' ? 'end' : 'start',
   };
 }
 

@@ -1,9 +1,7 @@
 name: Build
 
 on:
-  workflow_run:
-    workflows: [Checking]
-    types: [completed]
+  push:
     branches: [main]
 
 permissions:
@@ -13,15 +11,12 @@ permissions:
 env:
   CI: 'false'
   CADENZA_BUILD_PROFILE: production
+  # Build codes continue from the last published release (0.1.4 build 393). Build run numbers count only main pushes, so
+  # without this base an installed CI build could be newer than the next one and refuse to upgrade.
+  CADENZA_CI_BUILD_BASE: 393
 
 jobs:
   artifacts:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.path == '.github/workflows/checking.yml'
     strategy:
       fail-fast: false
       matrix:
@@ -36,11 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify exact checked revision
         env:
-          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CHECKED_SHA: ${{ github.sha }}
         run: test "$(git rev-parse HEAD)" = "$CHECKED_SHA"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -54,9 +49,9 @@ jobs:
             host-build-${{ runner.os }}-
       - name: Resolve CI release identity
         env:
-          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
-          BUILD_NUMBER: ${{ github.event.workflow_run.run_number }}
-        run: node tools/release-identity.mjs --sha "$CHECKED_SHA" --build "$BUILD_NUMBER" >> "$GITHUB_ENV"
+          CHECKED_SHA: ${{ github.sha }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: node tools/release-identity.mjs --sha "$CHECKED_SHA" --build "$((CADENZA_CI_BUILD_BASE + BUILD_NUMBER))" >> "$GITHUB_ENV"
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         if: matrix.platform == 'remote'
         with:
@@ -133,14 +128,14 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.platform == 'remote'
         with:
-          name: Cadenza-remote-production-${{ github.event.workflow_run.head_sha }}
+          name: Cadenza-remote-production-${{ github.sha }}
           path: dist/Cadenza-Remote-*.apk
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.platform == 'host'
         with:
-          name: Cadenza-host-production-${{ github.event.workflow_run.head_sha }}
+          name: Cadenza-host-production-${{ github.sha }}
           path: dist/Cadenza-Host-*-arm64.zip
           if-no-files-found: error
           retention-days: 14
@@ -153,16 +148,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.23.3'
       - name: Resolve CI release identity
         env:
-          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
-          BUILD_NUMBER: ${{ github.event.workflow_run.run_number }}
-        run: node tools/release-identity.mjs --sha "$CHECKED_SHA" --build "$BUILD_NUMBER" >> "$GITHUB_ENV"
+          CHECKED_SHA: ${{ github.sha }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: node tools/release-identity.mjs --sha "$CHECKED_SHA" --build "$((CADENZA_CI_BUILD_BASE + BUILD_NUMBER))" >> "$GITHUB_ENV"
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
@@ -183,7 +178,7 @@ jobs:
       - name: Download built Production artifacts
         env:
           BUILD_RUN_ID: ${{ github.run_id }}
-          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CHECKED_SHA: ${{ github.sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/cadenza-artifacts/remote" "$RUNNER_TEMP/cadenza-artifacts/host" dist
           gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \
@@ -201,14 +196,14 @@ jobs:
           chmod 600 "$RUNNER_TEMP/cadenza-update-private.pem"
       - name: Sign release metadata
         env:
-          CADENZA_SOURCE_ID: ${{ github.event.workflow_run.head_sha }}
+          CADENZA_SOURCE_ID: ${{ github.sha }}
         run: |
           test -x "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
           bash tools/sign-release.sh "$GITHUB_REPOSITORY" "$RUNNER_TEMP/cadenza-update-private.pem"
       - name: Publish stable GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CHECKED_SHA: ${{ github.sha }}
         run: |
           if gh release view "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$CADENZA_RELEASE_TITLE" --notes "Automated Production build $CADENZA_BUILD_NUMBER from $CHECKED_SHA." --draft=false --prerelease=false

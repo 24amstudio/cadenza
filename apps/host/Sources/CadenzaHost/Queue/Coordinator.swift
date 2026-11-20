@@ -705,7 +705,12 @@ final class QueueCoordinator {
                     } ?? added
                 try await music.accessibility.play(
                     target, deadline: deadline,
-                    skipToNext: { [music] in try await music.skipToNext(deadline: deadline) },
+                    skipToNext: { [music] in
+                        // Next track moves to the row while Music plays or is paused. Resume then starts it when
+                        // Music is stopped, and does nothing when the row is already playing.
+                        try await music.skipToNext(deadline: deadline)
+                        try await music.resume(deadline: deadline)
+                    },
                     confirmed: { [music] in
                         (try? music.accessibility.rows(deadline: monotonicMs() + 800)).map(Self.rowKeys) == expected
                     })

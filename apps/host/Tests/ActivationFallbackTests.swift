@@ -8,9 +8,13 @@ private final class FakeDesktop: FrontApplications {
     static let music = FrontApplication(processId: 10, bundleId: ActivationFallback.musicBundleId)
     static let editor = FrontApplication(processId: 20, bundleId: "com.example.editor")
     static let browser = FrontApplication(processId: 30, bundleId: "com.example.browser")
+    static let host = FrontApplication(
+        processId: ProcessInfo.processInfo.processIdentifier, bundleId: "app.cadence.host")
 
     var frontmost: FrontApplication?
     var musicComesForward = true
+    // A declined request to bring Music forward can leave Host, which made the request, frontmost.
+    var declinedActivationTakesFocus = false
     var activations: [FrontApplication] = []
     var time: Int64 = 1_000
 
@@ -22,7 +26,11 @@ private final class FakeDesktop: FrontApplications {
 
     func activate(_ application: FrontApplication) {
         activations.append(application)
-        if application != Self.music || musicComesForward { frontmost = application }
+        if application != Self.music || musicComesForward {
+            frontmost = application
+        } else if declinedActivationTakesFocus {
+            frontmost = Self.host
+        }
     }
 
     func fallback() -> ActivationFallback {
@@ -186,6 +194,22 @@ struct ActivationFallbackTests {
 
         #expect(log.names.isEmpty)
         #expect(desktop.frontmost == FakeDesktop.editor)
+    }
+
+    @Test func handsFocusBackWhenADeclinedActivationLeavesHostFrontmost() async {
+        let desktop = FakeDesktop()
+        desktop.musicComesForward = false
+        desktop.declinedActivationTakesFocus = true
+        let log = Log()
+
+        await #expect(throws: CadenzaError.self) {
+            try await desktop.fallback().run(
+                deadline: 10_000, steps: [step("front", .activating, log: log, result: .success("forced"))])
+        }
+
+        #expect(log.names.isEmpty)
+        #expect(desktop.frontmost == FakeDesktop.editor)
+        #expect(desktop.activations == [FakeDesktop.music, FakeDesktop.editor])
     }
 
     @Test func anAttemptThatRunsOutOfItsShareEscalatesButAnExpiredCommandDoesNot() async throws {

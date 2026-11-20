@@ -603,6 +603,46 @@ describe('search, preparation, and request frames', () => {
     });
   });
 
+  test('play now names the occurrence it replaces, or null when nothing plays', () => {
+    const base = {
+      commandId: remoteId,
+      hostEpoch: epoch,
+      expiresAtHostMs: 9000,
+      expectedRevision: 18,
+    };
+
+    const song = { source: 'catalog' as const, id: '1440857781' };
+
+    const playing = JSON.parse(
+      encodeCommand({
+        ...base,
+        action: {
+          kind: 'queue.play_now',
+          song,
+          occurrenceId: 'occurrence-1',
+        },
+      }),
+    );
+
+    const idle = JSON.parse(
+      encodeCommand({
+        ...base,
+        action: { kind: 'queue.play_now', song, occurrenceId: null },
+      }),
+    );
+
+    expect(playing.action).toEqual({
+      kind: 'queue.play_now',
+      song: { source: 'catalog', id: '1440857781' },
+      occurrence_id: 'occurrence-1',
+    });
+    expect(idle.action).toEqual({
+      kind: 'queue.play_now',
+      song: { source: 'catalog', id: '1440857781' },
+      occurrence_id: null,
+    });
+  });
+
   test('a search result decodes into the song shape the Host sends', () => {
     expect(
       decodeHostMessage(

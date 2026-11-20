@@ -9,11 +9,19 @@ import type { Song } from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
 import { useSongActionsStore, type RowAction } from '~/stores/songActions';
 
-// One song in a list. The two request buttons send it to Cadenza Host. The heart keeps it in this browser.
+// One song in a list. The request buttons send it to Cadenza Host. The heart keeps it in this browser.
 const props = defineProps<{ song: Song; note?: string }>();
 
 const host = useHostStore();
 const actions = useSongActionsStore();
+
+const requestActions: RowAction[] = ['now', 'next', 'add'];
+
+const requestLabels: Record<RowAction, string> = {
+  now: 'Play now',
+  next: 'Play next',
+  add: 'Add to queue',
+};
 
 const duration = computed(() =>
   props.song.durationMs === null ? '' : formatClock(props.song.durationMs),
@@ -28,6 +36,9 @@ function phaseOf(action: RowAction) {
 function disabled(action: RowAction): boolean {
   if (!host.connected || identityOf(props.song) === null) return true;
 
+  // Cadenza Host refuses every queue change until it has read Music's queue, so the button waits for that read.
+  if (host.snapshot?.synchronized !== true) return true;
+
   if (action === 'next' && !host.capabilities.includes('queue.play-next'))
     return true;
 
@@ -40,9 +51,9 @@ function label(action: RowAction): string {
 
   if (phase === 'preparing') return 'Preparing…';
 
-  if (phase === 'sending') return 'Adding…';
+  if (phase === 'sending') return action === 'now' ? 'Starting…' : 'Adding…';
 
-  return action === 'next' ? 'Play next' : 'Add to queue';
+  return requestLabels[action];
 }
 </script>
 
@@ -66,24 +77,19 @@ function label(action: RowAction): string {
     </div>
     <div class="actions">
       <button
+        v-for="action in requestActions"
+        :key="action"
         class="request"
-        :class="{ pending: phaseOf('next') !== null }"
+        :class="{
+          primary: action === 'now',
+          pending: phaseOf(action) !== null,
+        }"
         type="button"
-        :aria-busy="phaseOf('next') !== null"
-        :disabled="disabled('next')"
-        @click="actions.queue(song, 'next')"
+        :aria-busy="phaseOf(action) !== null"
+        :disabled="disabled(action)"
+        @click="actions.queue(song, action)"
       >
-        {{ label('next') }}
-      </button>
-      <button
-        class="request"
-        :class="{ pending: phaseOf('add') !== null }"
-        type="button"
-        :aria-busy="phaseOf('add') !== null"
-        :disabled="disabled('add')"
-        @click="actions.queue(song, 'add')"
-      >
-        {{ label('add') }}
+        {{ label(action) }}
       </button>
       <FavoriteToggle :song="song" />
     </div>
@@ -192,6 +198,20 @@ function label(action: RowAction): string {
 .request.pending {
   color: var(--color-accent);
   box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+.request.primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.request.primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.request.primary.pending {
+  color: var(--color-on-accent);
+  box-shadow: inset 0 0 0 2px var(--color-on-accent);
 }
 
 @media (min-width: 720px) {

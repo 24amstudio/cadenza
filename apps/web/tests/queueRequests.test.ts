@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { ControlQueue } from '../app/lib/host/controlQueue';
-import type { CommandResult, SongIdentity } from '../app/lib/protocol/types';
+import type {
+  CommandResult,
+  QueueActionKind,
+  SongIdentity,
+} from '../app/lib/protocol/types';
 import {
   answerClockProbes,
   harness,
+  occurrenceId,
   playingSnapshotFrame,
   snapshotFrame,
   socketAt,
@@ -36,7 +41,7 @@ function queueFor(setup: Harness) {
 
   return {
     settled,
-    press: (kind: 'queue.enqueue' | 'queue.play_next') =>
+    press: (kind: QueueActionKind) =>
       queue.press({
         key: 'queue',
         kind,
@@ -110,6 +115,22 @@ describe('song requests through the command path', () => {
     ).toEqual({
       kind: 'queue.play_next',
       song: { source: 'catalog', id: '1440857781' },
+    });
+  });
+
+  test('Play now names the song that is playing', async () => {
+    const setup = connected('playing');
+    const queue = queueFor(setup);
+
+    queue.press('queue.play_now');
+    await tick();
+
+    expect(
+      socketAt(setup.sockets, 0).framesOfType('command')[0]?.action,
+    ).toEqual({
+      kind: 'queue.play_now',
+      song: { source: 'catalog', id: '1440857781' },
+      occurrence_id: occurrenceId,
     });
   });
 });

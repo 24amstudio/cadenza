@@ -241,8 +241,17 @@ export class ControlQueue {
       return actionOf({ kind: 'playback.repeat', mode: intent.mode });
     }
 
-    // A request names its song, and the Host decides where it goes, so nothing needs to be playing.
+    // A request names its song, and the Host decides where it goes. Play now replaces the current song, so it names
+    // that song's occurrence, or null when nothing is playing.
     if (intent.key === 'queue') {
+      if (intent.kind === 'queue.play_now') {
+        return actionOf({
+          kind: 'queue.play_now',
+          song: intent.song,
+          occurrenceId: snapshot.current?.occurrenceId ?? null,
+        });
+      }
+
       return actionOf({ kind: intent.kind, song: intent.song });
     }
 
@@ -286,7 +295,7 @@ function actionOf(action: CommandAction): BuiltAction {
   return { action, reason: null };
 }
 
-// A playback change is tied to the song it was chosen on. Volume, modes and requests are not.
+// A playback change, and Play now, is tied to the song it was chosen on. Volume, modes and queued requests are not.
 function isOccurrenceBound(action: CommandAction): boolean {
   return (
     action.kind !== 'playback.volume' &&

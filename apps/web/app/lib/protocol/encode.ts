@@ -279,6 +279,12 @@ function encodeAction(action: CommandAction) {
     case 'queue.enqueue':
     case 'queue.play_next':
       return { kind: action.kind, song: encodeIdentity(action.song) };
+    case 'queue.play_now':
+      return {
+        kind: action.kind,
+        song: encodeIdentity(action.song),
+        occurrence_id: action.occurrenceId,
+      };
   }
 }
 

@@ -4,6 +4,7 @@ import AppSidebar from '~/components/app/AppSidebar.vue';
 import BrowseDetailView from '~/components/browse/BrowseDetailView.vue';
 import ConnectionBanner from '~/components/app/ConnectionBanner.vue';
 import MobileTabBar from '~/components/app/MobileTabBar.vue';
+import QueueStatusBanner from '~/components/app/QueueStatusBanner.vue';
 import ToastRegion from '~/components/app/ToastRegion.vue';
 import PlayerBar from '~/components/player/PlayerBar.vue';
 import PairingView from '~/components/pairing/PairingView.vue';
@@ -106,6 +107,7 @@ onUnmounted(() => {
       <PairingView v-if="needsPairing" />
       <template v-else>
         <ConnectionBanner />
+        <QueueStatusBanner />
         <BrowseDetailView
           v-if="ui.browseTarget !== null"
           :key="browseKey(ui.browseTarget.request)"

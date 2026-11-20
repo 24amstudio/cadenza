@@ -41,7 +41,10 @@ SELECT CASE
     OR :expected_revision != CAST(:expected_revision AS INTEGER)
     OR :expected_revision NOT BETWEEN 0 AND 9007199254740991 THEN 'invalid_command'
   WHEN :expires_at_host_ms <= :now_host_ms THEN 'expired'
-  WHEN :expires_at_host_ms > :now_host_ms + 1000 THEN 'invalid_deadline'
+  -- Transport taps may wait for the Remote's two-second window. That window is timed from a clock estimate accurate to
+  -- within 100 ms, so transport allows 2.1 s and every other command keeps the 1 s limit.
+  WHEN :expires_at_host_ms > :now_host_ms + CASE WHEN :kind LIKE 'playback.%' THEN 2100 ELSE 1000 END
+    THEN 'invalid_deadline'
   WHEN :expected_revision != (SELECT queue_revision FROM policy) THEN 'stale_revision'
   WHEN :kind IS NULL OR :kind NOT IN (
     'queue.enqueue', 'queue.remove', 'queue.move', 'playback.pause',

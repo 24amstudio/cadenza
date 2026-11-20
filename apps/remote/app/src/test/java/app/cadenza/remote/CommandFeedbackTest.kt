@@ -7,6 +7,7 @@ import app.cadenza.remote.model.PendingCommand
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.UNCONFIRMED_MESSAGE
 import app.cadenza.remote.model.commandResultInternal
+import app.cadenza.remote.model.giveUpPending
 import app.cadenza.remote.model.publishOptimisticInternal
 import app.cadenza.remote.model.reportFailure
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +94,17 @@ class CommandFeedbackTest {
 
             assertTrue(model.pending.isEmpty())
             assertNull(model.state.value.notice)
+        }
+
+    @Test
+    fun aCommandTheHostKeepsAnsweringUnconfirmedStopsBeingTrackedWhenItsWindowEnds() =
+        runBlocking {
+            val model = modelWithPendingCommand(OptimisticIntent.Playing(false))
+            model.pending.getValue(COMMAND).hostUnconfirmed = true
+
+            model.giveUpPending(COMMAND)
+
+            assertTrue(model.pending.isEmpty())
         }
 
     @Test

@@ -356,6 +356,14 @@ final class NetworkService {
         // A Remote that has already gone away is not an oversized message, so it gets no alert.
         guard peers[peer.id] != nil else { return }
         guard data.count <= Wire.maximumMessageBytes else {
+            logger?.log(
+                .warning, category: "network", action: "peer.closed",
+                "Closed a Remote connection because an outbound message was too large.",
+                remoteVersion: peer.remoteVersion,
+                metadata: [
+                    "peer": peer.id, "remote_id": peer.remoteId ?? "", "message_bytes": String(data.count),
+                    "lane": String(describing: lane),
+                ])
             disconnect(peer.id)
             onIssue?("The Host closed a Remote connection after an outbound message exceeded the safety limit.")
             return
@@ -365,6 +373,14 @@ final class NetworkService {
         let nextBytes = peer.outboundBytes - replacedBytes + data.count
         guard nextBytes <= 4_194_304
         else {
+            logger?.log(
+                .warning, category: "network", action: "peer.closed",
+                "Closed a Remote connection because its outbound buffer exceeded the limit.",
+                remoteVersion: peer.remoteVersion,
+                metadata: [
+                    "peer": peer.id, "remote_id": peer.remoteId ?? "", "buffered_bytes": String(peer.outboundBytes),
+                    "message_bytes": String(data.count), "lane": String(describing: lane),
+                ])
             disconnect(peer.id)
             onIssue?("The Host closed a Remote connection after its outbound message buffer exceeded the safety limit.")
             return

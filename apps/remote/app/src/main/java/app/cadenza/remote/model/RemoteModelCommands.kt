@@ -97,7 +97,10 @@ internal fun RemoteModel.trackPending(
                     item.unconfirmed = true
                     publishOptimisticInternal()
                 }
-                if (age >= GIVE_UP_MS) return@launch
+                if (age >= GIVE_UP_MS) {
+                    giveUpPending(commandId)
+                    return@launch
+                }
             }
         }
     pending[commandId] = PendingCommand(command, key, timer, intent)
@@ -110,6 +113,18 @@ internal fun RemoteModel.warnUnconfirmedIfDue(item: PendingCommand) {
     item.unconfirmed = true
     publishOptimisticInternal()
     showWarning(UNCONFIRMED_MESSAGE)
+}
+
+// Past the give-up window the Remote stops asking. A Host that answered unconfirmed keeps that receipt and repeats it on
+// every query, so its row is dropped and reconnects stop replaying the command. A command the Host never answered keeps
+// its row, so the next connection still asks for its outcome.
+internal suspend fun RemoteModel.giveUpPending(commandId: String) {
+    val item = pending[commandId] ?: return
+    if (item.hostUnconfirmed) {
+        finishCommand(commandId)
+    } else {
+        pending.remove(commandId)
+    }
 }
 
 private const val STATUS_QUERY_MS = 1_000L

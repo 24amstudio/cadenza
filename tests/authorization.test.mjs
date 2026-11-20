@@ -142,7 +142,11 @@ test('transport commands may wait for the two-second Remote window', (t) => {
     'invalid_deadline',
   );
   assert.equal(
-    query.get({ ...transport, kind: 'queue.enqueue', expires_at_host_ms: 2001 })?.['decision'],
+    query.get({
+      ...transport,
+      kind: 'queue.enqueue',
+      expires_at_host_ms: 2001,
+    })?.['decision'],
     'invalid_deadline',
   );
 });

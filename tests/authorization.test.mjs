@@ -119,6 +119,38 @@ test('request protection covers pending requests and the current song, including
   );
 });
 
+test('transport commands may wait for the two-second Remote window', (t) => {
+  const database = openDatabase('host');
+  t.after(() => database.close());
+  pairRemotes(database);
+  const query = database.prepare(authorizeSql);
+
+  const transport = {
+    actor_id: 'remote-a',
+    host_epoch: 'boot-one',
+    now_host_ms: 1000,
+    expires_at_host_ms: 3100,
+    expected_revision: 0,
+    before_entry_id: null,
+    entry_id: null,
+    kind: 'playback.pause',
+  };
+
+  assert.equal(query.get(transport)?.['decision'], 'allowed');
+  assert.equal(
+    query.get({ ...transport, expires_at_host_ms: 3101 })?.['decision'],
+    'invalid_deadline',
+  );
+  assert.equal(
+    query.get({
+      ...transport,
+      kind: 'queue.enqueue',
+      expires_at_host_ms: 2001,
+    })?.['decision'],
+    'invalid_deadline',
+  );
+});
+
 test('expired, previous-boot, stale, revoked, and unknown commands are rejected', (t) => {
   const database = openDatabase('host');
   t.after(() => database.close());

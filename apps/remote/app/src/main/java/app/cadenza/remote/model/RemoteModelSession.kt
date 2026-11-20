@@ -78,7 +78,7 @@ internal suspend fun RemoteModel.commandRefusedInternal(frame: JSONObject): Bool
     return true
 }
 
-private suspend fun RemoteModel.finishCommand(commandId: String) {
+internal suspend fun RemoteModel.finishCommand(commandId: String) {
     val profile = mutable.value.profile
     if (profile != null) withContext(updateDispatcher) { updateApp.database.finishPending(profile, commandId) }
     pending.remove(commandId)?.timer?.cancel()

@@ -90,7 +90,8 @@ final class QueueCoordinator {
     /// Reads Music's state. `hintedAt` is the Host time of the change notification that asked for this read. A state
     /// sampled after that moment already shows the change, so a command's own notification does not cost a second read.
     func refresh(hintedAt: Int64? = nil) async {
-        guard !locked else { return }
+        // A background read holds the lock for a full Music round trip, so it yields to queued and running commands.
+        guard !busy else { return }
         if let hintedAt, let sampled = lastStatus?.sampledAtMs, sampled >= hintedAt { return }
         locked = true
         defer { locked = false }

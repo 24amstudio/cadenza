@@ -2,7 +2,6 @@ package app.cadenza.remote.model
 
 import android.util.Base64
 import app.cadenza.remote.data.Wire
-import app.cadenza.remote.data.objects
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -28,8 +27,7 @@ internal fun RemoteModel.applyRecommendationResult(frame: JSONObject) {
             evidence =
                 value
                     .optJSONArray("evidence")
-                    ?.objects()
-                    ?.map { it.toString() }
+                    ?.let { items -> (0 until items.length()).map { items.optString(it) } }
                     .orEmpty(),
             expiresAtMs = value.getLong("expires_at_ms"),
         )

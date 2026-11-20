@@ -29,6 +29,8 @@ internal fun RemoteModel.openConnection() {
     val version = ++generation
     clock.reset()
     lastHeartbeatAt = 0
+    // A new session starts its liveness clock now, not at the previous session's last frame.
+    lastReceivedAt = SystemClock.elapsedRealtime()
     mutable.update { it.copy(connecting = true, connectionIssue = null) }
     connection =
         if (transportMode == "ble") {

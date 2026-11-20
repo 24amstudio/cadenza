@@ -218,6 +218,7 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
         requestRecommendation()
     }
     clockJob?.cancel()
+    val session = generation
     clockJob =
         viewModelScope.launch {
             repeat(5) {
@@ -229,7 +230,7 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
                 val profile = energy.profile.value
                 if (SystemClock.elapsedRealtime() - lastStatusSentAt >= profile.statusIntervalMs) publishStatus()
                 if (SystemClock.elapsedRealtime() - lastReceivedAt > HostLivenessPolicy.silenceLimitMs(transportMode)) {
-                    connectionClosed(generation, "The Host stopped responding. Reconnecting…")
+                    connectionClosed(session, "The Host stopped responding. Reconnecting…")
                     return@launch
                 }
                 // The loop wakes every 5 s, so a 5 s interval pings on each wake and longer ones skip wakes.

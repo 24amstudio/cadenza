@@ -85,7 +85,7 @@ struct ActivationFallback {
         let limit = min(deadline, now() + Self.activationLimitMs)
         while applications.frontmost?.bundleId != Self.musicBundleId {
             guard now() < limit else {
-                await restore(previous)
+                await restore(previous, afterFailedActivation: true)
                 throw CadenzaError.failure("native_queue_unavailable", "Music did not come to the front in time.")
             }
             try await sleepOrRestore(previous)
@@ -102,9 +102,13 @@ struct ActivationFallback {
         }
     }
 
-    /// Focus is handed back only while Music still holds it, so a user who already moved on is left alone.
-    private func restore(_ application: FrontApplication?) async {
-        guard let application, applications.frontmost?.bundleId == Self.musicBundleId else { return }
+    /// Focus is handed back only while Music still holds it, so a user who already moved on is left alone. A declined
+    /// activation can leave Host frontmost with nothing to show, so after a failed activation Host's own focus is handed
+    /// back too.
+    private func restore(_ application: FrontApplication?, afterFailedActivation: Bool = false) async {
+        guard let application, let front = applications.frontmost else { return }
+        let heldByHost = afterFailedActivation && front.processId == ProcessInfo.processInfo.processIdentifier
+        guard front.bundleId == Self.musicBundleId || heldByHost else { return }
         applications.activate(application)
         report("focus.restored", "Returned focus to the previously active application")
         let limit = now() + Self.restoreLimitMs

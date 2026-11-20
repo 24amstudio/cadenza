@@ -105,9 +105,15 @@ final class MusicBridge {
         return data
     }
 
-    /// Music's own next-track command. It needs no focus, and plays the first queued request.
+    /// Music's own next-track command. It needs no focus. While Music is stopped it does nothing, so a caller that
+    /// needs playback to start follows it with `resume`.
     func skipToNext(deadline: Int64) async throws {
         _ = try await script(["skip"], deadline: deadline)
+    }
+
+    /// Music's own play command. With nothing playing it starts the first queued request.
+    func resume(deadline: Int64) async throws {
+        _ = try await script(["resume"], deadline: deadline)
     }
 
     /// Dispatches one transport action and returns Music's state read right after it, when the script could read it.

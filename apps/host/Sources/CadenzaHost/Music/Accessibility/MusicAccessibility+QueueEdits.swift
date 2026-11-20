@@ -16,8 +16,8 @@ extension MusicAccessibility {
         }
     }
 
-    /// Starts the row. `skipToNext` is Music's own next-track command, which needs no focus and plays the row when it
-    /// is first in the queue. `confirmed` reads Music back, so each way is checked before the next one runs.
+    /// Starts the row. `skipToNext` moves Music to the row without focus, and the caller starts playback after it.
+    /// `confirmed` reads Music back, so each way is checked before the next one runs.
     func play(
         _ row: NativeQueueRow, deadline: Int64, skipToNext: (() async throws -> Void)? = nil,
         confirmed: @escaping () -> Bool

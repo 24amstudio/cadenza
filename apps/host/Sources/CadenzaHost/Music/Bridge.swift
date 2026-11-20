@@ -111,7 +111,7 @@ final class MusicBridge {
         _ = try await script(["skip"], deadline: deadline)
     }
 
-    /// Music's own play command. With nothing playing it starts the first queued request.
+    /// Music's own play command. With nothing playing it starts the track Music has loaded.
     func resume(deadline: Int64) async throws {
         _ = try await script(["resume"], deadline: deadline)
     }

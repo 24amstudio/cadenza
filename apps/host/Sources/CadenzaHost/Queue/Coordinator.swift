@@ -706,9 +706,11 @@ final class QueueCoordinator {
                 try await music.accessibility.play(
                     target, deadline: deadline,
                     skipToNext: { [music] in
-                        // Next track moves to the row while Music plays or is paused. Resume then starts it when
-                        // Music is stopped, and does nothing when the row is already playing.
+                        // Next track does not always land on the queued row. Resume only when Music reports the
+                        // requested song, so a different track that Music had loaded is never started.
                         try await music.skipToNext(deadline: deadline)
+                        let status = try await music.status(deadline: deadline)
+                        guard status.song?.title == added.title, !status.playing else { return }
                         try await music.resume(deadline: deadline)
                     },
                     confirmed: { [music] in

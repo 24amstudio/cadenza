@@ -3,13 +3,24 @@ import { shallowRef } from 'vue';
 import { describeCommandResult } from '~/lib/host/messages';
 import type { RequestOutcome } from '~/lib/host/songRequests';
 import { identityOf, songKey } from '~/lib/library/identity';
-import type { CommandResult, Song, SongIdentity } from '~/lib/protocol/types';
+import type {
+  CommandResult,
+  QueueActionKind,
+  Song,
+  SongIdentity,
+} from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
 import { useLibraryStore } from '~/stores/library';
 import { useNoticesStore } from '~/stores/notices';
 
-// The two request buttons on a song row.
-export type RowAction = 'next' | 'add';
+// The three request buttons on a song row.
+export type RowAction = 'now' | 'next' | 'add';
+
+const queueKindOf: Record<RowAction, QueueActionKind> = {
+  now: 'queue.play_now',
+  next: 'queue.play_next',
+  add: 'queue.enqueue',
+};
 
 // Preparing comes first when the Host has not seen the song in this session. Sending follows once it is prepared.
 export type RowPhase = 'preparing' | 'sending';
@@ -58,16 +69,12 @@ export const useSongActionsStore = defineStore('songActions', () => {
 
     setPhase(key, 'sending');
     library.recordRequested(song);
-    host.queueSong(
-      identity,
-      action === 'next' ? 'queue.play_next' : 'queue.enqueue',
-      (result) => {
-        setPhase(key, null);
-        const message = queuedMessage(action, result);
+    host.queueSong(identity, queueKindOf[action], (result) => {
+      setPhase(key, null);
+      const message = queuedMessage(action, result);
 
-        if (message !== null) notices.show(message);
-      },
-    );
+      if (message !== null) notices.show(message);
+    });
   }
 
   function prepare(
@@ -136,6 +143,8 @@ function queuedMessage(
   if (result === null) return null;
 
   if (result.outcome !== 'applied') return describeCommandResult(result);
+
+  if (action === 'now') return 'Playing now';
 
   return action === 'next' ? 'Will play next' : 'Added to queue';
 }

@@ -181,6 +181,32 @@ describe('ControlQueue', () => {
     expect(lastPending(log)).toEqual([]);
   });
 
+  test('Play now is not retried once another song is playing', async () => {
+    const port = new ScriptedPort();
+    const { queue, log } = queueOver(port);
+    const settled: (CommandResult | null)[] = [];
+    const song = { source: 'catalog', id: '1' } as const;
+
+    queue.press({
+      key: 'queue',
+      kind: 'queue.play_now',
+      song,
+      settled: (result) => settled.push(result),
+    });
+    await tick();
+    port.snapshot = snapshotOf(secondSong);
+    port.reply(resultOf('expired', 'expired'));
+    await tick();
+
+    expect(port.sent).toEqual([
+      { kind: 'queue.play_now', song, occurrenceId: firstSong },
+    ]);
+    expect(settled).toEqual([null]);
+    expect(log.notices).toEqual([
+      'Playback moved to another song, so that change was not sent again.',
+    ]);
+  });
+
   test('never sends an unconfirmed command again, because it may have applied', async () => {
     const port = new ScriptedPort();
     const { queue, log } = queueOver(port);

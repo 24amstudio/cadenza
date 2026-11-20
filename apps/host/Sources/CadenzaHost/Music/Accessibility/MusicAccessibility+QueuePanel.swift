@@ -34,9 +34,10 @@ extension MusicAccessibility {
     /// Opens the Playing Next list through Music's View menu, which Accessibility can press while Music is in the
     /// background. Music is brought forward only if that press fails or the list never appears. A list that is already
     /// visible is left alone, and the state is read again before every attempt, because pressing the item while the
-    /// list is visible hides it.
+    /// list is visible hides it. The quiet press gets half the budget, but does nothing while Music is in the
+    /// background. Music draws the list about a second after the activating press, so that route gets the rest.
     func requestQueuePanel() async throws {
-        try await escalating(deadline: monotonicMs() + 1_500, routes: [.accessibility, .system]) { route, limit in
+        try await escalating(deadline: monotonicMs() + 4_000, routes: [.accessibility, .system]) { route, limit in
             var state: (item: AXUIElement, open: Bool)?
             repeat {
                 self.beginRead(deadline: limit)
@@ -51,15 +52,15 @@ extension MusicAccessibility {
             guard AXUIElementPerformAction(state.item, kAXPressAction as CFString) == .success else {
                 throw CadenzaError.failure("native_queue_unavailable", "Music did not open Playing Next.")
             }
-            guard try await self.queuePanelAppears(deadline: limit) else {
+            guard try await self.queuePanelAppears(deadline: limit, windowMs: route == .system ? 2_000 : 600) else {
                 throw CadenzaError.failure("native_queue_unavailable", "Music did not show Playing Next.")
             }
         }
     }
 
     /// The panel counts as shown when its menu item reads "Hide" or the queue list is readable.
-    private func queuePanelAppears(deadline: Int64) async throws -> Bool {
-        let limit = min(deadline, monotonicMs() + 600)
+    private func queuePanelAppears(deadline: Int64, windowMs: Int64) async throws -> Bool {
+        let limit = min(deadline, monotonicMs() + windowMs)
         repeat {
             try await Task.sleep(for: .milliseconds(50))
             beginRead(deadline: monotonicMs() + 300)

@@ -100,7 +100,8 @@ export interface SongIdentity {
 
 export type SearchScope = 'catalog' | 'library';
 
-export type QueueActionKind = 'queue.enqueue' | 'queue.play_next';
+export type QueueActionKind =
+  'queue.enqueue' | 'queue.play_next' | 'queue.play_now';
 
 export interface SongSuggestions {
   terms: string[];
@@ -120,7 +121,12 @@ export type CommandAction =
   | { kind: 'playback.volume'; percent: number }
   | { kind: 'playback.shuffle'; enabled: boolean }
   | { kind: 'playback.repeat'; mode: RepeatMode }
-  | { kind: QueueActionKind; song: SongIdentity };
+  | { kind: Exclude<QueueActionKind, 'queue.play_now'>; song: SongIdentity }
+  | {
+      kind: 'queue.play_now';
+      song: SongIdentity;
+      occurrenceId: string | null;
+    };
 
 export interface ClockSample {
   sentAtRemoteMs: number;

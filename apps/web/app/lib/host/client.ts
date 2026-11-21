@@ -11,6 +11,7 @@ import {
   encodeCommandStatus,
   encodeCreditAck,
   encodeHello,
+  encodeHostUpdate,
   encodeLyricsGet,
   encodeMotionGet,
   encodePair,
@@ -32,6 +33,7 @@ import type {
   SocketLike,
 } from './clientTypes';
 import { traceEvent, traceFrame, type TraceTransport } from './trace';
+import { flushLocalLog } from './localLog';
 import type {
   CommandAction,
   CommandResult,
@@ -156,7 +158,11 @@ export class HostClient {
       schedule: options.schedule,
       onEstimate: (estimate, burstDone) => {
         traceEvent('clock offset estimated', estimate);
-        options.onChange({ kind: 'clock', offsetMs: estimate.offsetMs });
+        options.onChange({
+          kind: 'clock',
+          offsetMs: estimate.offsetMs,
+          roundTripMs: estimate.roundTripMs,
+        });
         this.waiters.notify();
 
         if (burstDone) this.reportStatus();
@@ -400,6 +406,23 @@ export class HostClient {
     }
   }
 
+  // Asks the Host to check for an update, or to install the one it found. Its answer arrives as a host.update.status.
+  requestHostUpdate(action: 'check' | 'install'): void {
+    const socket = this.socket;
+
+    if (
+      !this.welcomed ||
+      socket === null ||
+      !this.capabilities.includes('host.update')
+    ) {
+      this.emitNotice('Connect to Cadenza Host to update it.');
+
+      return;
+    }
+
+    this.transmit(socket, encodeHostUpdate(this.options.newId(), action));
+  }
+
   renameRemote(name: string): void {
     const socket = this.socket;
 
@@ -504,10 +527,14 @@ export class HostClient {
   private receive(socket: SocketLike, text: string): void {
     if (this.socket !== socket) return;
     traceFrame('in', this.transport(), text);
+    this.options.onChange({ kind: 'traffic', direction: 'in' });
     const message = decodeHostMessage(text);
 
-    if (message === null || this.songs.receive(message)) return;
-    this.dispatch(socket, message);
+    if (message !== null && !this.songs.receive(message)) {
+      this.dispatch(socket, message);
+    }
+
+    flushLocalLog((text) => socket.send(text));
   }
 
   private transport(): TraceTransport {
@@ -516,6 +543,7 @@ export class HostClient {
 
   private transmit(socket: SocketLike, text: string): void {
     traceFrame('out', this.transport(), text);
+    this.options.onChange({ kind: 'traffic', direction: 'out' });
     socket.send(text);
   }
 
@@ -523,6 +551,10 @@ export class HostClient {
     switch (message.type) {
       case 'welcome':
         this.onWelcome(message.welcome);
+
+        return;
+      case 'host.update.status':
+        this.options.onChange({ kind: 'hostUpdate', status: message.status });
 
         return;
       case 'state':

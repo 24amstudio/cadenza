@@ -47,6 +47,7 @@ import app.cadenza.remote.energy.LocalEnergyProfile
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
+import app.cadenza.remote.model.playAutoPlay
 import app.cadenza.remote.ui.browse.browseLink
 import org.json.JSONObject
 
@@ -58,7 +59,8 @@ fun PlayingScreen(
     restoreLyricsFocus: Boolean,
     onLyricsFocusRestored: () -> Unit,
     onOpenLyrics: () -> Unit,
-    onClose: () -> Unit = {},
+    // Null where the screen is a pane that has nothing to close to, such as the wide Home.
+    onClose: (() -> Unit)? = null,
 ) {
     KeepScreenAwake(state.snapshot?.playing == true && state.snapshot.current != null)
     val lyricsFocusRequester = remember { FocusRequester() }
@@ -88,7 +90,9 @@ fun PlayingScreen(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(backdrop)) {
-        val tablet = wide && maxWidth >= 760.dp
+        // The wide Home shows this screen in its detail pane, which is narrower than the window, so the tablet layout starts
+        // at a smaller width than a full-window screen would need.
+        val tablet = wide && maxWidth >= 480.dp
         val contentPadding = if (wide) 28.dp else 20.dp
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding),
@@ -130,7 +134,7 @@ fun PlayingScreen(
                 } else {
                     PortraitPlayerPanel(model, state, shown, currentPosition)
                 }
-                if (showQueue) QueuePreview(state)
+                if (showQueue) QueuePreview(model, state)
                 state.nextRecommendation?.let { recommendation ->
                     Surface(
                         Modifier.fillMaxWidth(),
@@ -165,14 +169,18 @@ private fun PlayerHeader(
     compact: Boolean,
     lyricsFocusRequester: FocusRequester,
     onOpenLyrics: () -> Unit,
-    onClose: () -> Unit,
+    onClose: (() -> Unit)?,
     onQueueChanged: (Boolean) -> Unit,
 ) {
     if (compact) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
-                    Icon(cadenzaVector(CadenzaIcon.DOWN), contentDescription = "Close now playing")
+                if (onClose != null) {
+                    IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                        Icon(cadenzaVector(CadenzaIcon.DOWN), contentDescription = "Close now playing")
+                    }
+                } else {
+                    Spacer(Modifier.size(48.dp))
                 }
                 Column(
                     Modifier.weight(1f),
@@ -213,8 +221,10 @@ private fun PlayerHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
-            Icon(cadenzaVector(CadenzaIcon.DOWN), contentDescription = "Close now playing")
+        if (onClose != null) {
+            IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                Icon(cadenzaVector(CadenzaIcon.DOWN), contentDescription = "Close now playing")
+            }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(if (state.snapshot?.current == null) "Ready to play" else "Now playing", style = MaterialTheme.typography.headlineMedium)
@@ -230,7 +240,10 @@ private fun PlayerHeader(
 }
 
 @Composable
-private fun QueuePreview(state: RemoteState) {
+private fun QueuePreview(
+    model: RemoteModel,
+    state: RemoteState,
+) {
     val entries =
         state.snapshot
             ?.queue
@@ -259,11 +272,8 @@ private fun QueuePreview(state: RemoteState) {
             // Music plays these once the queue is empty, so they are the next songs the Host will play.
             if (autoPlay.isNotEmpty()) {
                 Text("AutoPlay", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                autoPlay.forEach { song ->
-                    Column(Modifier.fillMaxWidth()) {
-                        Text(song.title, style = MaterialTheme.typography.bodyLarge)
-                        Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                autoPlay.forEach { item ->
+                    AutoPlayRow(item, state) { next -> model.playAutoPlay(item, next) }
                 }
             }
         }
@@ -309,6 +319,7 @@ private fun EmptyPlayerSurface() {
 // [modifier] sizes the cover; the title row always spans the width.
 @Composable
 private fun SongCover(
+    model: RemoteModel,
     state: RemoteState,
     song: ShownSong,
     snapshotPlaying: Boolean,
@@ -356,6 +367,7 @@ private fun SongCover(
                     )
                 }
             }
+            LiveLinkIndicator(model, state, Modifier.padding(top = 6.dp))
             trailing?.invoke()
         }
     }
@@ -381,6 +393,7 @@ private fun PortraitPlayerPanel(
     ) {
         SongSwap(shown, { it.current.occurrenceId }) { song ->
             SongCover(
+                model,
                 state,
                 song,
                 snapshot.playing,
@@ -462,6 +475,7 @@ private fun PlayerPanel(
     ) {
         SongSwap(shown, { it.current.occurrenceId }) { song ->
             SongCover(
+                model,
                 state,
                 song,
                 snapshot.playing,
@@ -489,7 +503,7 @@ private fun PlayerPanel(
     }
 }
 
-private fun qualityLabel(
+internal fun qualityLabel(
     quality: String,
     current: Boolean,
 ): String =

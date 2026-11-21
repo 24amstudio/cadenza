@@ -17,7 +17,7 @@ actor BrowseService {
     }
 
     func result(for request: BrowseRequest) async throws -> BrowseResult {
-        let key = Self.key(request.kind, id: request.id, song: request.song)
+        let key = Self.key(request.kind, id: request.id, song: request.song, name: request.artistName)
         if let hit = await cache.result(for: key) { return hit }
         let (fetched, lifetime) = try await gate.run { try await self.fetch(request) }
         let result = fetched.bounded()
@@ -30,8 +30,9 @@ actor BrowseService {
         return result
     }
 
-    static func key(_ kind: String, id: String?, song: SongIdentity?) -> String {
+    static func key(_ kind: String, id: String?, song: SongIdentity?, name: String? = nil) -> String {
         if let song { return "\(kind):song:\(song.source):\(song.id)" }
+        if let name { return "\(kind):name:\(name)" }
         return "\(kind):id:\(id ?? "")"
     }
 
@@ -43,6 +44,7 @@ actor BrowseService {
             if let id = request.id {
                 return (try await catalogResult(request.kind, id: id), BrowseCache.catalogLifetime)
             }
+            if let name = request.artistName { return try await artistNamed(name) }
             guard let song = request.song else { throw Self.invalid }
             return try await resolve(request.kind, song: song)
         default: throw Self.invalid
@@ -98,6 +100,12 @@ actor BrowseService {
                 sections: [BrowseSection(id: "songs", title: "Songs", items: tracks.map(BrowseItem.song))]),
             BrowseCache.libraryLifetime
         )
+    }
+
+    // Only Apple's catalog can find an artist by name, so a name that is not there is not found.
+    private func artistNamed(_ name: String) async throws -> (BrowseResult, TimeInterval) {
+        guard let id = try await catalog.findArtist(name: name) else { throw Self.notFound }
+        return (try await catalogResult("artist", id: id), BrowseCache.catalogLifetime)
     }
 
     private static let notFound = CadenzaError.failure("not_found", "This item is not available to browse.")

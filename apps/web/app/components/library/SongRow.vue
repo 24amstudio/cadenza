@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import BrowseLink from '~/components/browse/BrowseLink.vue';
+import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import FavoriteToggle from '~/components/library/FavoriteToggle.vue';
 import { identityOf } from '~/lib/library/identity';
@@ -9,13 +10,16 @@ import type { Song } from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
 import { useSongActionsStore, type RowAction } from '~/stores/songActions';
 
-// One song in a list. The request buttons send it to Cadenza Host. The heart keeps it in this browser.
+// One song in a list. Tapping the artwork reveals Play now; the buttons below queue the song next or last. The heart
+// keeps it in this browser.
 const props = defineProps<{ song: Song; note?: string }>();
 
 const host = useHostStore();
 const actions = useSongActionsStore();
 
-const requestActions: RowAction[] = ['now', 'next', 'add'];
+const armed = ref(false);
+
+const requestActions: RowAction[] = ['next', 'add'];
 
 const requestLabels: Record<RowAction, string> = {
   now: 'Play now',
@@ -45,6 +49,25 @@ function disabled(action: RowAction): boolean {
   return phaseOf(action) !== null;
 }
 
+// Why a request is unavailable, so a greyed-out button says what to wait for instead of looking broken.
+function unavailableReason(action: RowAction): string | null {
+  if (!host.connected) return 'Connect to Cadenza Host to request songs.';
+
+  if (identityOf(props.song) === null)
+    return 'This song has no ID that Cadenza Host can queue.';
+
+  if (host.snapshot?.synchronized !== true)
+    return (
+      host.snapshot?.issue ??
+      "Cadenza Host is reading Music's queue. Requests resume when it finishes."
+    );
+
+  if (action === 'next' && !host.capabilities.includes('queue.play-next'))
+    return 'This Cadenza Host cannot play a song next.';
+
+  return null;
+}
+
 // The pressed button names what it is doing, so the row says Preparing… or Adding… only on that action.
 function label(action: RowAction): string {
   const phase = phaseOf(action);
@@ -58,12 +81,33 @@ function label(action: RowAction): string {
 </script>
 
 <template>
-  <li class="song-row">
-    <ArtworkImage
-      class="thumb"
-      :url="song.artworkUrl"
-      :alt="`${song.title} artwork`"
-    />
+  <li class="song-row" :class="{ armed }">
+    <div class="art">
+      <button
+        class="art-toggle"
+        type="button"
+        :aria-expanded="armed"
+        :aria-label="`Show play for ${song.title}`"
+        @click="armed = !armed"
+      >
+        <ArtworkImage
+          class="thumb"
+          :url="song.artworkUrl"
+          :alt="`${song.title} artwork`"
+        />
+      </button>
+      <button
+        class="play"
+        type="button"
+        :aria-label="`${label('now')}: ${song.title}`"
+        :aria-busy="phaseOf('now') !== null"
+        :class="{ pending: phaseOf('now') !== null }"
+        :disabled="disabled('now')"
+        @click="actions.queue(song, 'now')"
+      >
+        <AppIcon name="play" />
+      </button>
+    </div>
     <div class="meta">
       <strong>{{ song.title }}</strong>
       <span><BrowseLink kind="artist" :song="song" /></span>
@@ -80,13 +124,15 @@ function label(action: RowAction): string {
         v-for="action in requestActions"
         :key="action"
         class="request"
-        :class="{
-          primary: action === 'now',
-          pending: phaseOf(action) !== null,
-        }"
+        :class="{ pending: phaseOf(action) !== null }"
         type="button"
         :aria-busy="phaseOf(action) !== null"
         :disabled="disabled(action)"
+        :title="
+          disabled(action)
+            ? (unavailableReason(action) ?? undefined)
+            : undefined
+        "
         @click="actions.queue(song, action)"
       >
         {{ label(action) }}
@@ -111,11 +157,61 @@ function label(action: RowAction): string {
   background: var(--color-fill);
 }
 
-.thumb {
+.art {
+  position: relative;
   grid-row: span 2;
   width: 48px;
   height: 48px;
+}
+
+.art-toggle {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
   border-radius: 7px;
+  background: none;
+  cursor: pointer;
+}
+
+.thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+}
+
+.play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 160ms var(--ease-standard);
+}
+
+.play :deep(svg) {
+  width: 16px;
+  height: 16px;
+}
+
+.song-row:hover .play,
+.song-row.armed .play,
+.play:focus-visible,
+.play.pending {
+  opacity: 1;
+}
+
+.play:disabled:not(.pending) {
+  opacity: 0;
 }
 
 .meta,
@@ -200,26 +296,12 @@ function label(action: RowAction): string {
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
-.request.primary {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-}
-
-.request.primary:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
-.request.primary.pending {
-  color: var(--color-on-accent);
-  box-shadow: inset 0 0 0 2px var(--color-on-accent);
-}
-
 @media (min-width: 720px) {
   .song-row {
     grid-template-columns: 48px minmax(0, 1fr) auto auto;
   }
 
-  .thumb {
+  .art {
     grid-row: auto;
   }
 

@@ -44,6 +44,15 @@ struct ArtworkPreviewTests {
         #expect(try ArtworkProvider.fullSize(of: small) == small)
     }
 
+    @Test func bluetoothAlbumArtIsSentNoLargerThan160Pixels() throws {
+        let sent = try ArtworkProvider.fullSize(
+            of: try pngData(width: 1_200, height: 900), side: ArtworkProvider.bluetoothAlbumArtSide)
+        let decoded = try #require(CGImageSourceCreateWithData(sent as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(decoded, 0, nil) as? [CFString: Any])
+
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 160)
+    }
+
     private func pngData(width: Int, height: Int) throws -> Data {
         let context = try #require(
             CGContext(

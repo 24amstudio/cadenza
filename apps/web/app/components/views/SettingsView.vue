@@ -48,6 +48,36 @@ const canSaveName = computed(
   () => host.connected && nameChanged.value && nameValid.value,
 );
 
+// The version this page is served with, and what the Host says about an update it has found.
+const hostUpdateText = computed(() => {
+  const update = host.hostUpdate;
+
+  const version = host.hostVersion
+    ? `Cadenza Host ${host.hostVersion}`
+    : 'Cadenza Host';
+
+  if (update === null) return version;
+
+  switch (update.state) {
+    case 'checking':
+      return 'Checking for an update';
+    case 'ready':
+      return `${version}. Version ${update.version ?? 'update'} is ready.`;
+    case 'installing':
+      return 'Installing the update. Cadenza Host restarts.';
+    case 'current':
+      return `${version}. Up to date.`;
+    default:
+      return update.message ?? version;
+  }
+});
+
+function updateHost(): void {
+  host.requestHostUpdate(
+    host.hostUpdate?.state === 'ready' ? 'install' : 'check',
+  );
+}
+
 const statusLabel = computed(() => {
   switch (host.phase) {
     case 'connected':
@@ -256,6 +286,24 @@ async function toggleSongAlerts(): Promise<void> {
         <button class="quiet-button" type="button" @click="host.retry()">
           <AppIcon name="refresh" />
           Try again
+        </button>
+      </div>
+      <div
+        v-if="host.connected && host.capabilities.includes('host.update')"
+        class="row"
+      >
+        <span>{{ hostUpdateText }}</span>
+        <button
+          class="quiet-button"
+          type="button"
+          :disabled="host.hostUpdate?.state === 'installing'"
+          @click="updateHost"
+        >
+          {{
+            host.hostUpdate?.state === 'ready'
+              ? 'Install update'
+              : 'Check for update'
+          }}
         </button>
       </div>
     </section>

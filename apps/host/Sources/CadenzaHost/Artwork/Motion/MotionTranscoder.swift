@@ -2,7 +2,7 @@ import AVFoundation
 import CoreImage
 import Foundation
 
-// Re-encodes a motion video at 256 by 256 pixels and a fixed bitrate. Apple's rendition can be larger, so every album's
+// Re-encodes a motion video at a square size and a fixed bitrate. Apple's rendition can be larger, so every album's
 // motion reaches the Remote at the same small size, which a Bluetooth link carries within the motion deadline.
 enum MotionTranscoder {
     static let side = 256
@@ -10,7 +10,7 @@ enum MotionTranscoder {
 
     fileprivate static let failure = CadenzaError.failure("motion_unavailable", "Motion artwork is unavailable.")
 
-    static func transcode(_ source: Data) async throws -> Data {
+    static func transcode(_ source: Data, side: Int = side, bitrate: Int = bitrate) async throws -> Data {
         let folder = FileManager.default.temporaryDirectory.appending(
             path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -51,7 +51,7 @@ enum MotionTranscoder {
         guard reader.startReading(), writer.startWriting() else { throw failure }
         writer.startSession(atSourceTime: .zero)
 
-        try await copyFrames(reader: reader, output: readerOutput, input: writerInput, adaptor: adaptor)
+        try await copyFrames(reader: reader, output: readerOutput, input: writerInput, adaptor: adaptor, side: side)
         await finish(writer)
         guard writer.status == .completed else { throw failure }
         return try Data(contentsOf: output)
@@ -60,9 +60,9 @@ enum MotionTranscoder {
     // The writer asks for frames when it can take them, so no frame is read before the writer has room for it.
     private static func copyFrames(
         reader: AVAssetReader, output: AVAssetReaderTrackOutput, input: AVAssetWriterInput,
-        adaptor: AVAssetWriterInputPixelBufferAdaptor
+        adaptor: AVAssetWriterInputPixelBufferAdaptor, side: Int
     ) async throws {
-        let copy = FrameCopy(reader: reader, output: output, input: input, adaptor: adaptor)
+        let copy = FrameCopy(reader: reader, output: output, input: input, adaptor: adaptor, side: side)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             copy.run(continuation)
         }
@@ -84,15 +84,17 @@ private final class FrameCopy: @unchecked Sendable {
     private let adaptor: AVAssetWriterInputPixelBufferAdaptor
     private let context = CIContext()
     private let queue = DispatchQueue(label: "cadenza.motion.transcode")
+    private let side: CGFloat
 
     init(
         reader: AVAssetReader, output: AVAssetReaderTrackOutput, input: AVAssetWriterInput,
-        adaptor: AVAssetWriterInputPixelBufferAdaptor
+        adaptor: AVAssetWriterInputPixelBufferAdaptor, side: Int
     ) {
         self.reader = reader
         self.output = output
         self.input = input
         self.adaptor = adaptor
+        self.side = CGFloat(side)
     }
 
     func run(_ continuation: CheckedContinuation<Void, Error>) {
@@ -126,7 +128,6 @@ private final class FrameCopy: @unchecked Sendable {
             return nil
         }
         let image = CIImage(cvPixelBuffer: source)
-        let side = CGFloat(MotionTranscoder.side)
         let scale = CGAffineTransform(scaleX: side / image.extent.width, y: side / image.extent.height)
         context.render(image.transformed(by: scale), to: target)
         return target

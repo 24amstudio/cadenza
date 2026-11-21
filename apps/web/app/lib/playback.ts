@@ -1,4 +1,4 @@
-import type { CurrentPlayback } from './protocol/types';
+import type { AudioQuality, CurrentPlayback } from './protocol/types';
 
 // Position is anchored to the Host sample time. While playing, the browser advances it from that anchor on the Host
 // timeline, so progress stays correct between state updates without polling.
@@ -45,4 +45,29 @@ export function formatWait(milliseconds: number | null): string {
   if (minutes < 1) return 'Next';
 
   return `In ${minutes} min`;
+}
+
+// The names Music's audio tier badge uses, matching the native Remote. Nothing is shown while the tier is unread.
+export function qualityLabel(quality: AudioQuality): string | null {
+  switch (quality) {
+    case 'lossless':
+      return 'Lossless';
+    case 'hi_res_lossless':
+      return 'Hi-Res Lossless';
+    case 'dolby_atmos':
+      return 'Dolby Atmos';
+    case 'unknown':
+      return null;
+  }
+}
+
+// Long totals read as hours and minutes, which a summary card can show at a glance.
+export function formatListeningTime(milliseconds: number): string {
+  const totalMinutes = Math.floor(Math.max(0, milliseconds) / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) return `${minutes} min`;
+
+  return `${hours} h ${minutes} min`;
 }

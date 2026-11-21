@@ -1,6 +1,7 @@
 import type { CredentialStore } from './credentials';
 import type {
   CommandResult,
+  HostUpdateStatus,
   LyricDocument,
   Snapshot,
   Welcome,
@@ -21,7 +22,10 @@ export type HostChange =
   | { kind: 'phase'; phase: HostPhase; attempt: number; message: string | null }
   | { kind: 'welcome'; welcome: Welcome }
   | { kind: 'snapshot'; snapshot: Snapshot }
-  | { kind: 'clock'; offsetMs: number }
+  | { kind: 'clock'; offsetMs: number; roundTripMs: number }
+  | { kind: 'hostUpdate'; status: HostUpdateStatus }
+  // Each frame sent or received, so the sidebar can show traffic in both directions.
+  | { kind: 'traffic'; direction: 'in' | 'out' }
   | { kind: 'lyrics'; lyrics: LyricDocument }
   | { kind: 'lyricsUnavailable'; occurrenceId: string | null }
   // A preview has full: false. The full image has full: true, and so does a failure, with a null image. The request ID

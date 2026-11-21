@@ -53,6 +53,18 @@ class ClockSyncTest {
     }
 
     @Test
+    fun aBluetoothSessionIsReadyWithTheUncertaintyItsLinkCanMeasure() {
+        val clock = ClockSync()
+        clock.readyUncertaintyMs = ClockSync.BLUETOOTH_READY_UNCERTAINTY_MS
+        clock.observe(1_000, 1_250, 1_250, 1_500)
+        clock.observe(2_000, 2_250, 2_250, 2_500)
+        clock.observe(3_000, 3_250, 3_250, 3_500)
+
+        assertTrue(clock.uncertaintyMs > ClockSync.LAN_READY_UNCERTAINTY_MS)
+        assertTrue(clock.ready)
+    }
+
+    @Test
     fun clockNeedsRepeatedSamplesAndUsesTheSmallestMeasuredUncertainty() {
         val clock = ClockSync()
         assertThrows(IllegalStateException::class.java) { clock.deadline(1_000) }

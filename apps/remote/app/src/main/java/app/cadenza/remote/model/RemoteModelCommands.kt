@@ -11,7 +11,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+
+private const val CLOCK_READY_WAIT_MS = 1_500L
+private const val CLOCK_POLL_MS = 50L
 
 // Commands take effect on screen at once. The Host's result confirms them later, or reverts them with a reason.
 internal suspend fun RemoteModel.sendCommand(
@@ -29,6 +33,8 @@ internal suspend fun RemoteModel.sendCommand(
         createdProfile = profile
         val snapshot = requireNotNull(mutable.value.snapshot) { "Wait for Host state." }
         check(mutable.value.connected && !isStale()) { "Reconnect and wait for current Host state." }
+        // A link that has just connected has not had its first clock replies yet. A tap waits briefly for them.
+        withTimeoutOrNull(CLOCK_READY_WAIT_MS) { while (!clock.ready) delay(CLOCK_POLL_MS) }
         // A repeated tap while the same control's command is unanswered is the same intent, so it is dropped.
         if (pending.values.any { it.key == key && !it.unconfirmed }) return
         val command =

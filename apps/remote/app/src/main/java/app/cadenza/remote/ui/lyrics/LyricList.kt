@@ -16,6 +16,7 @@ import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricsTextSize
 import app.cadenza.remote.energy.LocalEnergyProfile
 
+private val lyricsGutter = 12.dp
 private const val LINE_WITH_WORDS = "words"
 private const val LINE_PLAIN = "plain"
 
@@ -56,7 +57,8 @@ internal fun LyricList(
         LazyColumn(
             modifier = Modifier.fillMaxSize().nestedScroll(userScroll),
             state = list,
-            contentPadding = PaddingValues(top = topEdge, bottom = bottomEdge),
+            // Lines keep clear of both screen edges, so the start and end aligned singers have room on either side.
+            contentPadding = PaddingValues(start = lyricsGutter, end = lyricsGutter, top = topEdge, bottom = bottomEdge),
             verticalArrangement = Arrangement.spacedBy(lineGap),
         ) {
             itemsIndexed(

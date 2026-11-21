@@ -104,6 +104,28 @@ class SearchRankingTest {
     }
 
     @Test
+    fun theSameRecordingUnderAnotherAlbumIsShownOnceWithItsBestMatch() {
+        val favoriteCopy = akad.copy(id = "library-copy", source = "library", durationMs = 270_000)
+        val albumVersion = akad.copy(id = "album", durationMs = 271_000)
+        val signals = SearchSignals(favorites = listOf(favoriteCopy), statistics = emptyList())
+
+        val ranked = rankSearch("akad", listOf(albumVersion, favoriteCopy), null, emptyList(), signals)
+
+        assertEquals(listOf("library-copy"), ranked.map { it.song.id })
+    }
+
+    @Test
+    fun aLiveVersionWithAnotherLengthIsNotTakenForTheSameRecording() {
+        val studio = akad.copy(id = "studio", durationMs = 270_000)
+        val live = akad.copy(id = "live", durationMs = 420_000)
+        val signals = SearchSignals(favorites = emptyList(), statistics = emptyList())
+
+        val ranked = rankSearch("akad", listOf(studio, live), null, emptyList(), signals)
+
+        assertEquals(listOf("studio", "live"), ranked.map { it.song.id })
+    }
+
+    @Test
     fun correctedResultsRankBesideTheTypedMatchesWithoutDuplicates() {
         val signals = SearchSignals(favorites = emptyList(), statistics = emptyList())
         val ranked = rankSearch("pelukn", listOf(akad, pelukan), pelukan.title, listOf(pelukan), signals)

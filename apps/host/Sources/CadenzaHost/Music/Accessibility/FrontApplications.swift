@@ -26,12 +26,20 @@ struct WorkspaceApplications: FrontApplications {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first.map(Self.describe)
     }
 
+    /// macOS declines a background app's own activation requests (`NSRunningApplication.activate` and an AX frontmost
+    /// write both fail while another app is in front), but asking Launch Services to open the application by its
+    /// bundle path is honored. The request is fire-and-forget: the caller polls the frontmost application for the outcome.
     func activate(_ application: FrontApplication) {
-        NSRunningApplication(processIdentifier: application.processId)?.activate()
-        // Cooperative activation can be declined while Host is in the background, so Accessibility asks the process
-        // to come forward as well.
-        AXUIElementSetAttributeValue(
-            AXUIElementCreateApplication(application.processId), kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        let running = NSRunningApplication(processIdentifier: application.processId)
+        guard let path = running?.bundleURL?.path else {
+            running?.activate()
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", path]
+        guard (try? process.run()) != nil else { return }
+        DispatchQueue.global(qos: .utility).async { process.waitUntilExit() }
     }
 
     private static func describe(_ application: NSRunningApplication) -> FrontApplication {

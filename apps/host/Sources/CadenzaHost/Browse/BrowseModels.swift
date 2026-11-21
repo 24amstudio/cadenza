@@ -4,6 +4,8 @@ struct BrowseRequest: Codable, Sendable, Equatable {
     var kind: String
     var id: String? = nil
     var song: SongIdentity? = nil
+    // An artist named by its text, for a song whose identity the Host does not know.
+    var artistName: String? = nil
 }
 
 // A song, or a link to an album, artist, or playlist that the Remote can browse next.

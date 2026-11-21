@@ -9,6 +9,7 @@ import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
 import app.cadenza.remote.model.RemoteState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,6 +35,35 @@ class SessionNotificationTest {
             SessionStatus
                 .from(RemoteState(connected = true, snapshot = testSnapshot(playing = false, current = current)))
                 .active,
+        )
+    }
+
+    @Test
+    fun aHostThatFinishedPlaybackLeavesNoNotificationEvenWhileConnected() {
+        assertFalse(
+            SessionStatus
+                .from(RemoteState(connected = true, snapshot = testSnapshot(playing = false, current = null)))
+                .active,
+        )
+    }
+
+    @Test
+    fun aSilentHostIsDismissedOnceTheSessionIsInterrupted() {
+        val current =
+            CurrentPlayback(
+                occurrenceId = "occurrence",
+                entryId = "entry",
+                requestedBy = null,
+                requesterName = "",
+                song = Song("catalog", "song", "Title", "Artist"),
+                positionMs = 0,
+                sampledAtHostMs = 0,
+            )
+        val snapshot = testSnapshot(playing = true, current = current)
+
+        assertTrue(SessionStatus.from(RemoteState(connected = false, snapshot = snapshot)).active)
+        assertFalse(
+            SessionStatus.from(RemoteState(connected = false, sessionInterrupted = true, snapshot = snapshot)).active,
         )
     }
 

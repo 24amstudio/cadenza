@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { HostChange } from '../app/lib/host/client';
+import { sharedLocalLog } from '../app/lib/host/localLog';
 import {
   counterField,
   isJsonObject,
@@ -93,6 +94,44 @@ describe('HostClient pairing and reconnection', () => {
     });
     socketAt(sockets, 0).receive(welcome(null));
     expect(phases(changes).at(-1)).toBe('connected');
+  });
+
+  test('sends the held log entries once connected, and keeps them until the socket takes them', () => {
+    const log = sharedLocalLog();
+    log.record('warning', 'log test before connecting', 'held while offline');
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 0,
+    };
+    const { client, sockets } = harness(credentials);
+
+    client.start(null);
+    socketAt(sockets, 0).open();
+    expect(
+      socketAt(sockets, 0)
+        .framesOfType('log.report')
+        .flatMap((frame) => frame.log_entries ?? []),
+    ).toEqual([]);
+
+    socketAt(sockets, 0).receive(welcome(null));
+
+    const sent = socketAt(sockets, 0)
+      .framesOfType('log.report')
+      .flatMap((frame) => frame.log_entries ?? []);
+
+    expect(sent).toContainEqual({
+      level: 'warning',
+      action: 'log test before connecting',
+      message: 'held while offline',
+    });
+    expect(
+      log
+        .pending()
+        .some((entry) => entry.action === 'log test before connecting'),
+    ).toBe(false);
   });
 
   test('forgets a credential that the Host revokes', () => {

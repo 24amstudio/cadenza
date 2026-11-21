@@ -10,12 +10,15 @@ import {
   silentReconnectSupported,
 } from '~/lib/host/bluetooth';
 import { reconnectWithRetries } from '~/lib/host/bluetoothReconnect';
+import { signalBars } from '~/lib/host/linkSignal';
 import {
   artworkDataUrl,
   artworkStatus,
   type ArtworkStatus,
 } from '~/lib/host/artwork';
+import { ArtworkAlbums } from '~/lib/host/artworkAlbums';
 import { ArtworkCoordinator } from '~/lib/host/artworkCoordinator';
+import { TrafficPulses } from '~/lib/host/trafficPulses';
 import { unavailableResult } from '~/lib/host/commandTracker';
 import { ControlQueue, type ControlKey } from '~/lib/host/controlQueue';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
@@ -45,6 +48,7 @@ import type {
   BrowsePage,
   BrowseRequest,
   CommandResult,
+  HostUpdateStatus,
   LyricDocument,
   QueueActionKind,
   RepeatMode,
@@ -90,11 +94,21 @@ export const useHostStore = defineStore('host', () => {
   const hostName = ref<string | null>(null);
   const remoteName = ref('');
   const capabilities = shallowRef<string[]>([]);
+  const hostVersion = ref<string | null>(null);
+  const hostUpdate = shallowRef<HostUpdateStatus | null>(null);
   const snapshot = shallowRef<Snapshot | null>(null);
   const clockOffsetMs = ref<number | null>(null);
   const clockTick = ref(0);
+  const linkRoundTripMs = ref<number | null>(null);
+  const traffic = new TrafficPulses();
   const lyrics = shallowRef<LyricsState | null>(null);
   const artworks = shallowRef<Record<string, string | null>>({});
+
+  // Every track of an album shows one cover, so the cover already held stands in for the album's other songs.
+  const albums = new ArtworkAlbums(
+    (url) => (artworks.value[url] ?? null) !== null,
+  );
+
   // Motion videos by artwork URL, so an album keeps its motion across its songs. Object URLs are revoked on eviction.
   const motionVideos = shallowRef<Record<string, string>>({});
   // The controls with a command queued or in flight. A control shows its own pending state while it is in here.
@@ -132,10 +146,15 @@ export const useHostStore = defineStore('host', () => {
       cancel: (requestId) => client?.cancelArtwork(requestId),
     },
     {
-      hasImage: (url) => (artworks.value[url] ?? null) !== null,
-      hasFullImage: (url) =>
-        fullImages.has(url) && (artworks.value[url] ?? null) !== null,
-      hasMotion: (url) => motionVideos.value[url] !== undefined,
+      hasImage: (url) => (artworks.value[albums.shown(url)] ?? null) !== null,
+      hasFullImage: (url) => {
+        const shown = albums.shown(url);
+
+        return (
+          fullImages.has(shown) && (artworks.value[shown] ?? null) !== null
+        );
+      },
+      hasMotion: (url) => motionVideos.value[albums.shown(url)] !== undefined,
       markUnavailable: (url) => {
         if (!(url in artworks.value)) rememberArtwork(url, null);
       },
@@ -211,7 +230,22 @@ export const useHostStore = defineStore('host', () => {
   const current = computed(() => snapshot.value?.current ?? null);
   const isPlaying = computed(() => snapshot.value?.playing ?? false);
   const connected = computed(() => phase.value === 'connected');
+
+  const linkBars = computed(() =>
+    signalBars({
+      connected: connected.value,
+      roundTripMs: linkRoundTripMs.value,
+    }),
+  );
+
   const queue = computed(() => snapshot.value?.queue ?? []);
+  const autoPlay = computed(() => snapshot.value?.autoPlay ?? []);
+  const quality = computed(() => snapshot.value?.quality ?? 'unknown');
+
+  const totalRemainingMs = computed(
+    () => snapshot.value?.totalRemainingMs ?? null,
+  );
+
   const canControl = computed(() => connected.value && current.value !== null);
 
   const supportsBrowse = computed(() =>
@@ -267,7 +301,9 @@ export const useHostStore = defineStore('host', () => {
   const motionUrl = computed(() => {
     const url = current.value?.song.artworkUrl ?? null;
 
-    return url === null ? null : (motionVideos.value[url] ?? null);
+    return url === null
+      ? null
+      : (motionVideos.value[albums.shown(url)] ?? null);
   });
 
   // The Host-anchored position at this instant. Per-frame views, such as the lyric sweep, read it directly.
@@ -465,6 +501,11 @@ export const useHostStore = defineStore('host', () => {
       case 'welcome':
         hostName.value = change.welcome.hostName;
         capabilities.value = change.welcome.capabilities;
+        hostVersion.value = change.welcome.hostVersion;
+
+        return;
+      case 'hostUpdate':
+        hostUpdate.value = change.status;
 
         return;
       case 'snapshot':
@@ -473,6 +514,11 @@ export const useHostStore = defineStore('host', () => {
         return;
       case 'clock':
         clockOffsetMs.value = change.offsetMs;
+        linkRoundTripMs.value = change.roundTripMs;
+
+        return;
+      case 'traffic':
+        traffic.record(change.direction, performance.now());
 
         return;
       case 'lyrics':
@@ -546,10 +592,15 @@ export const useHostStore = defineStore('host', () => {
     if (next === 'unpaired' || next === 'pairing-failed') {
       snapshot.value = null;
       clockOffsetMs.value = null;
+      linkRoundTripMs.value = null;
       lyrics.value = null;
       artwork.setPlaying(null);
 
-      if (next === 'unpaired') hostName.value = null;
+      if (next === 'unpaired') {
+        hostName.value = null;
+        hostVersion.value = null;
+        hostUpdate.value = null;
+      }
     }
   }
 
@@ -568,12 +619,26 @@ export const useHostStore = defineStore('host', () => {
       applyArtwork(previewUrl, previewDataUrl, false);
     }
 
+    if (song !== null) albums.note(song.song);
+    const upNext = next.queue[0]?.song;
+
+    if (upNext !== undefined) albums.note(upNext);
+
     // Every snapshot, not only a song change, so a still or motion video that failed is asked for again.
     artwork.setPlaying(
       song === null
         ? null
-        : { url: song.song.artworkUrl, occurrenceId: song.occurrenceId },
+        : {
+            url:
+              song.song.artworkUrl === null
+                ? null
+                : albums.shown(song.song.artworkUrl),
+            occurrenceId: song.occurrenceId,
+          },
     );
+    // The next request's cover starts now, so it is on screen when its song begins.
+
+    if (upNext?.artworkUrl) artwork.prefetch(albums.shown(upNext.artworkUrl));
 
     if (song === null) return;
     const state = lyrics.value;
@@ -600,6 +665,8 @@ export const useHostStore = defineStore('host', () => {
     else if (fullImages.has(url)) return;
 
     rememberArtwork(url, dataUrl);
+
+    if (full) albums.delivered(url);
   }
 
   // Motion is kept per album, so the album's next song needs no transfer. The oldest albums are evicted.
@@ -609,14 +676,13 @@ export const useHostStore = defineStore('host', () => {
   ): void {
     if (video === null) return;
 
+    const key = albums.shown(artworkUrl);
     const next = { ...motionVideos.value };
-    const previous = next[artworkUrl];
+    const previous = next[key];
 
     if (previous !== undefined) URL.revokeObjectURL(previous);
-    delete next[artworkUrl];
-    next[artworkUrl] = URL.createObjectURL(
-      new Blob([video], { type: 'video/mp4' }),
-    );
+    delete next[key];
+    next[key] = URL.createObjectURL(new Blob([video], { type: 'video/mp4' }));
 
     for (const stale of Object.keys(next).slice(0, -motionLimit)) {
       const url = next[stale];
@@ -629,7 +695,10 @@ export const useHostStore = defineStore('host', () => {
   }
 
   function artworkStatusFor(url: string | null): ArtworkStatus {
-    return artworkStatus(url, artworks.value);
+    return artworkStatus(
+      url === null ? null : albums.shown(url),
+      artworks.value,
+    );
   }
 
   function rememberArtwork(url: string, dataUrl: string | null): void {
@@ -650,7 +719,7 @@ export const useHostStore = defineStore('host', () => {
   function artworkFor(url: string | null): string | null {
     if (url === null) return null;
 
-    return artworks.value[url] ?? null;
+    return artworks.value[albums.shown(url)] ?? null;
   }
 
   // Rows ask for the small preview. The playing song's full image and motion are asked for from each snapshot.
@@ -788,6 +857,10 @@ export const useHostStore = defineStore('host', () => {
 
   // A request goes through the same queue as a playback press, so it is sent once, against the newest state. settled
   // gets null when nothing was sent; the queue has already said why.
+  function requestHostUpdate(action: 'check' | 'install'): void {
+    client?.requestHostUpdate(action);
+  }
+
   function queueSong(
     song: SongIdentity,
     kind: QueueActionKind,
@@ -817,16 +890,25 @@ export const useHostStore = defineStore('host', () => {
     hostName,
     remoteName,
     capabilities,
+    hostVersion,
+    hostUpdate,
+    requestHostUpdate,
     snapshot,
     current,
     isPlaying,
     connected,
+    linkBars,
+    rxPulse: traffic.incoming,
+    txPulse: traffic.outgoing,
     canControl,
     supportsBrowse,
     supportsModes,
     shuffleEnabled,
     repeatMode,
     queue,
+    autoPlay,
+    quality,
+    totalRemainingMs,
     positionMs,
     lyricsDocument,
     lyricsStatus,

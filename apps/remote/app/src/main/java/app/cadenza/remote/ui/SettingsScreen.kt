@@ -225,12 +225,10 @@ private fun HostCard(
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(state.profile?.name ?: "Not paired", style = MaterialTheme.typography.titleMedium)
             state.profile?.let { Text("${it.address}:${it.port}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            state.hostVersion?.let { Text("Cadenza Host $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             ConnectionStatus(state)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ActionButton("Reconnect", modifier = Modifier.weight(1f), pending = state.connecting, onClick = model::connect)
-            TextButton(onClick = model::beginPairing, modifier = Modifier.weight(1f)) { Text("Pair again") }
-        }
+        TextButton(onClick = model::beginPairing, modifier = Modifier.fillMaxWidth()) { Text("Pair again") }
         if ("host.update" in state.capabilities) {
             hostUpdateMessage(state.hostUpdate)?.let { message ->
                 Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
@@ -331,13 +329,6 @@ private fun TransportCard(
             selected = state.transportMode,
             onSelected = chooseTransport,
         )
-        ActionButton(
-            "Reconnect using ${transportModeLabel(state.transportMode)}",
-            modifier = Modifier.fillMaxWidth(),
-            pending = state.connecting,
-            enabled = state.profile != null,
-            onClick = { chooseTransport(state.transportMode) },
-        )
         HorizontalDivider()
         Text("Transport preference", style = MaterialTheme.typography.labelLarge)
         Text(
@@ -375,13 +366,6 @@ private fun TransportCard(
         }
     }
 }
-
-private fun transportModeLabel(mode: String): String =
-    when (mode) {
-        "ble" -> "Bluetooth"
-        "hybrid" -> "Hybrid"
-        else -> "Wi-Fi / LAN"
-    }
 
 @Composable
 private fun SupportUpdatesCard(

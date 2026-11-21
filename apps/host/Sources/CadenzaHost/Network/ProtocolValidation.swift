@@ -96,7 +96,8 @@ enum ProtocolValidation {
         }
         if type == "pair" {
             try nested(
-                object["pair"], fields: ["name"], optional: ["secret", "pin", "heartbeat", "remote_version"])
+                object["pair"], fields: ["name"],
+                optional: ["secret", "pin", "heartbeat", "remote_version"])
         }
         if type == "log.report" {
             // A batch is the normal form. The single-entry fields remain accepted for Remotes that predate batching.
@@ -140,7 +141,7 @@ enum ProtocolValidation {
         if type == "hello" {
             try nested(
                 object["auth"], fields: ["remote_id", "token", "last_credit_sequence"],
-                optional: ["name", "heartbeat", "remote_version"])
+                optional: ["name", "heartbeat", "remote_version", "remote_build"])
         }
         if type == "clock" { try nested(object["clock"], fields: ["sent_at_remote_ms"]) }
         if type == "transport.configure" {
@@ -217,23 +218,32 @@ enum ProtocolValidation {
         }
     }
 
-    // A browse request names playlists alone, one playlist, or an album or artist by exactly one of catalog ID or song.
+    // A browse request names playlists alone, one playlist, or an album or artist by exactly one of catalog ID or song. An
+    // artist may instead be named by its text.
     private static func validateBrowse(_ value: Any?) throws {
-        try nested(value, fields: ["kind"], optional: ["id", "song"])
+        try nested(value, fields: ["kind"], optional: ["id", "song", "artist_name"])
         guard let browse = value as? [String: Any], let kind = browse["kind"] as? String else {
             throw invalid("Invalid browse request.")
         }
         let id = browse["id"]
         let song = browse["song"]
+        let name = browse["artist_name"]
         func matches(_ pattern: String) -> Bool {
             (id as? String)?.range(of: pattern, options: .regularExpression) != nil
         }
+        guard name == nil || kind == "artist" else { throw invalid("Only an artist can be named by its text.") }
         switch kind {
         case "playlists":
             guard id == nil, song == nil else { throw invalid("Playlists take no identifier.") }
         case "playlist":
             guard song == nil, matches("^[0-9A-F]{16}$") else { throw invalid("Invalid playlist.") }
         case "album", "artist":
+            if let name {
+                guard kind == "artist", id == nil, song == nil, let text = name as? String,
+                    (1...200).contains(text.count)
+                else { throw invalid("Invalid artist name.") }
+                return
+            }
             guard (id == nil) != (song == nil) else { throw invalid("Name the item by one of ID or song.") }
             if id != nil {
                 guard matches("^[1-9][0-9]{0,19}$") else { throw invalid("Invalid catalog ID.") }

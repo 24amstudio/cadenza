@@ -10,7 +10,7 @@ struct LyricAlignmentTests {
         return try TTMLDocument.parse(Data(ttml.utf8), occurrence: "occurrence")
     }
 
-    @Test func theFirstSingerStartsAndEveryOtherSingerEnds() throws {
+    @Test func singerOneStartsAndEveryOtherSingerEnds() throws {
         let document = try parse(
             """
             <p begin="1s" end="2s" itunes:key="L1" ttm:agent="v1">One</p>
@@ -20,6 +20,16 @@ struct LyricAlignmentTests {
             """)
 
         #expect(document.lines.map(\.align) == [nil, "end", nil, "end"])
+    }
+
+    @Test func singerOneStaysOnTheStartSideWhenAnotherSingerSingsFirst() throws {
+        let document = try parse(
+            """
+            <p begin="1s" end="2s" itunes:key="L1" ttm:agent="v2000">Two</p>
+            <p begin="3s" end="4s" itunes:key="L2" ttm:agent="v1">One</p>
+            """)
+
+        #expect(document.lines.map(\.align) == ["end", nil])
     }
 
     @Test func aDocumentWithoutAgentsOrWithOneAgentStaysAtTheStart() throws {

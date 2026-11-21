@@ -10,4 +10,6 @@ data class EnergyInputs(
     val charging: Boolean = false,
     val thermal: ThermalLevel = ThermalLevel.NORMAL,
     val interactive: Boolean = true,
+    /** What the system battery says about the draw since this session began. Null until the first reading. */
+    val draw: BatteryDraw? = null,
 )

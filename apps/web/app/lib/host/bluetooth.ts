@@ -1,4 +1,5 @@
 import type { SocketLike } from './client';
+import { laneOf, WriteQueue } from './writeLanes';
 import { traceEvent } from './trace';
 
 // Same GATT layout as the native Remote. Each Host message is a 4-byte big-endian UTF-8 length followed by its bytes,
@@ -394,8 +395,39 @@ function linkSocket(
 ): SocketLike {
   const reader = new BluetoothFrameReader();
   let closed = false;
-  let writes: Promise<void> = Promise.resolve();
+  let writing = false;
   let queuedBytes = 0;
+
+  const pending = new WriteQueue<{
+    chunks: Uint8Array<ArrayBuffer>[];
+    bytes: number;
+  }>();
+
+  // Writes run one at a time, because a Bluetooth link accepts one pending write at once. The next frame is chosen when
+  // the previous one has been written, so a control frame goes ahead of any bulk frames already waiting.
+  function writeNext(): void {
+    if (writing || closed) return;
+
+    const next = pending.next();
+
+    if (next === undefined) return;
+    writing = true;
+    withDeadline(
+      writeFrameChunks(write, next.chunks),
+      bluetoothWriteDeadlineMs,
+      () => gatt.disconnect(),
+    )
+      .then(() => {
+        queuedBytes -= next.bytes;
+        writing = false;
+        writeNext();
+      })
+      .catch((error) => {
+        if (closed) return;
+        traceEvent('bluetooth: write failed', error);
+        gatt.disconnect();
+      });
+  }
 
   const socket: SocketLike = {
     onOpen: null,
@@ -416,25 +448,8 @@ function linkSocket(
       }
 
       queuedBytes += bytes;
-
-      // Writes run one at a time, because a Bluetooth link accepts one pending write at once.
-      writes = writes
-        .then(() =>
-          withDeadline(
-            writeFrameChunks(write, chunks),
-            bluetoothWriteDeadlineMs,
-            () => gatt.disconnect(),
-          ),
-        )
-        .finally(() => {
-          queuedBytes -= bytes;
-        });
-
-      writes.catch((error) => {
-        if (closed) return;
-        traceEvent('bluetooth: write failed', error);
-        gatt.disconnect();
-      });
+      pending.push(laneOf(text), { chunks, bytes });
+      writeNext();
     },
     close() {
       gatt.disconnect();

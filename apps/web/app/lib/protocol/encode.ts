@@ -62,6 +62,34 @@ export function encodeHello(auth: AuthPayload): string {
   });
 }
 
+// The Host keeps these with the Remote's identity. It accepts up to 100 entries per report.
+export function encodeLogReport(
+  entries: readonly { level: string; action: string; message: string }[],
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'log.report',
+    log_entries: entries.map(({ level, action, message }) => ({
+      level,
+      action,
+      message,
+    })),
+  });
+}
+
+// Asks the Host to check for an update, or to install one it has found. The Host answers with host.update.status.
+export function encodeHostUpdate(
+  requestId: string,
+  action: 'check' | 'install',
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'host.update',
+    request_id: requestId,
+    update_action: action,
+  });
+}
+
 export function encodeRemoteConfigure(requestId: string, name: string): string {
   return JSON.stringify({
     version: 1,

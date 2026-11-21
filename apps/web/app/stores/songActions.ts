@@ -42,7 +42,13 @@ export const useSongActionsStore = defineStore('songActions', () => {
 
   // Queues the song for the next place or the end of the queue. A press while that action is busy does nothing, so the
   // same request is never sent twice.
-  async function queue(song: Song, action: RowAction): Promise<void> {
+  // A request that the Host answers with song_not_ready is prepared once more and sent again, one time only. The Host
+  // drops a song's preparation when Music's search moves on, while this page still remembers it as prepared.
+  async function queue(
+    song: Song,
+    action: RowAction,
+    retry = false,
+  ): Promise<void> {
     const identity = identityOf(song);
     const key = rowKey(song, action);
 
@@ -68,9 +74,19 @@ export const useSongActionsStore = defineStore('songActions', () => {
     }
 
     setPhase(key, 'sending');
-    library.recordRequested(song);
+
+    if (!retry) library.recordRequested(song);
+
     host.queueSong(identity, queueKindOf[action], (result) => {
       setPhase(key, null);
+
+      if (!retry && result?.errorCode === 'song_not_ready') {
+        prepared.delete(`${identity.source}:${identity.id}`);
+        void queue(song, action, true);
+
+        return;
+      }
+
       const message = queuedMessage(action, result);
 
       if (message !== null) notices.show(message);

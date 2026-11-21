@@ -163,6 +163,11 @@
         "quality": {
           "enum": ["unknown", "lossless", "hi_res_lossless", "dolby_atmos"]
         },
+        "auto_play": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/autoPlayItem" }
+        },
         "incoming": { "$ref": "#/$defs/song" },
         "mixing": { "type": "boolean" },
         "synchronized": { "type": "boolean" },

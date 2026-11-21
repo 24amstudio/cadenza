@@ -3,8 +3,11 @@ package app.cadenza.remote
 import app.cadenza.remote.data.BrowseItem
 import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.BrowseWire
+import app.cadenza.remote.data.Song
 import app.cadenza.remote.data.Wire
+import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.friendlyHostMessage
+import app.cadenza.remote.ui.browse.canBrowse
 import app.cadenza.remote.ui.nextRepeatMode
 import org.json.JSONArray
 import org.json.JSONObject
@@ -166,6 +169,20 @@ class HostWireTest {
         assertEquals(target, restored)
         assertEquals("album/library:AB12", restored?.key)
         assertEquals("playlist/ABC", BrowseTarget("playlist", "ABC").key)
+    }
+
+    @Test
+    fun anArtistOfASongTheHostDoesNotKnowIsBrowsedByNameWhileItsAlbumIsNot() {
+        val unknown = Song(source = "unknown", id = "opaque", title = "Song", artist = "Payung Teduh")
+        val state = RemoteState(connected = true, capabilities = setOf("library.browse"))
+        val artist = BrowseTarget.artist(unknown)
+
+        assertEquals("Payung Teduh", artist.artistName)
+        assertEquals("artist", artist.request().getString("kind"))
+        assertEquals("Payung Teduh", artist.request().getString("artist_name"))
+        assertTrue(canBrowse(state, artist))
+        assertFalse(canBrowse(state, BrowseTarget.album(unknown)))
+        assertEquals(artist, BrowseTarget.decode(artist.encode()))
     }
 
     @Test

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
+import LinkIndicator from '~/components/app/LinkIndicator.vue';
 import { navigationItems } from '~/lib/navigation';
 import { useHostStore } from '~/stores/host';
 import { useUiStore } from '~/stores/ui';
@@ -51,7 +52,13 @@ const statusLabel = computed(() => {
       <span class="status" :class="host.phase" aria-hidden="true"></span>
       <div class="host-copy">
         <strong>{{ host.hostName ?? 'Cadenza Host' }}</strong>
-        <span>{{ statusLabel }}</span>
+        <LinkIndicator
+          v-if="host.connected"
+          :bars="host.linkBars"
+          :rx-pulse="host.rxPulse"
+          :tx-pulse="host.txPulse"
+        />
+        <span v-else>{{ statusLabel }}</span>
       </div>
     </div>
   </aside>

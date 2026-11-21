@@ -36,7 +36,10 @@ extension HostService {
                     throw CadenzaError.failure("artwork_unavailable", "Artwork is unavailable.")
                 }
                 guard !Task.isCancelled else { return }
-                let full = try ArtworkProvider.fullSize(of: data)
+                let full = try ArtworkProvider.fullSize(
+                    of: data,
+                    side: peer.transport == "ble" ? ArtworkProvider.bluetoothAlbumArtSide : ArtworkProvider.albumArtSide
+                )
                 if progressive || previewOnly {
                     // The preview goes first, so a Remote on a slow link can show the cover while the rest follows.
                     var preview = Frame(type: "artwork", requestId: requestId)
@@ -149,6 +152,9 @@ extension HostService {
     }
 
     private static let motionChunkBytes = 480 * 1_024
+    // Motion over Bluetooth is re-encoded this small, so a cover video fits the motion deadline on a slow link.
+    static let bluetoothMotionSide = 96
+    static let bluetoothMotionBitrate = 48_000
     // A motion video must reach the Remote within this long after its request, so a slow link cannot hold the next song.
     static let motionDeadlineMs: Int64 = 30_000
     // A Bluetooth frame holds the link until its notifications are sent, so over Bluetooth the video moves in frames the
@@ -157,9 +163,19 @@ extension HostService {
     private static let artworkChunkBytes = 1_024
 
     private func sendMotion(
-        _ video: Data, requestId: String, occurrenceId: String, deadline: Int64, to peer: NetworkService.Peer
+        _ source: Data, requestId: String, occurrenceId: String, deadline: Int64, to peer: NetworkService.Peer
     ) async {
         let started = monotonicMs()
+        let video: Data
+        do {
+            video = try await Self.motionPayload(source, for: peer)
+        } catch {
+            var unavailable = Frame(type: "motion.unavailable", requestId: requestId)
+            unavailable.occurrenceId = occurrenceId
+            unavailable.message = error.localizedDescription
+            network.send(unavailable, to: peer)
+            return
+        }
         let chunkBytes = peer.transport == "ble" ? Self.bluetoothMotionChunkBytes : Self.motionChunkBytes
         let count = (video.count + chunkBytes - 1) / chunkBytes
         let digest = SHA256.hash(data: video).map { String(format: "%02x", $0) }.joined()
@@ -192,5 +208,14 @@ extension HostService {
                 .warning, category: "motion", action: "motion.stopped",
                 "Motion artwork stopped after \(sent) of \(count) chunks", metadata: metadata)
         }
+    }
+
+    // LAN keeps the full rendition. Bluetooth gets a smaller re-encode of it, made when the video is sent.
+    private static func motionPayload(_ video: Data, for peer: NetworkService.Peer) async throws -> Data {
+        guard peer.transport == "ble" else { return video }
+        return try await Task.detached(priority: .utility) {
+            try await MotionTranscoder.transcode(
+                video, side: bluetoothMotionSide, bitrate: bluetoothMotionBitrate)
+        }.value
     }
 }

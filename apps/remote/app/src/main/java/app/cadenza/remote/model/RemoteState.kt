@@ -54,7 +54,11 @@ data class RemoteState(
     val lyricsTextSize: LyricsTextSize = LyricsTextSize.LARGE,
     val favorites: List<Song> = emptyList(),
     val capabilities: Set<String> = emptySet(),
-    val sessionActive: Boolean = false,
+    // The Host's version name and build, from its welcome. Null until a Host that reports them has welcomed this Remote.
+    val hostVersion: String? = null,
+    val hostBuild: Long? = null,
+    // Set when the Host has been silent for several minutes. Its playback is then assumed interrupted.
+    val sessionInterrupted: Boolean = false,
     val hostUpdate: HostUpdateStatus? = null,
     val unreadableFavorites: Int = 0,
     val savingPreferences: Boolean = false,
@@ -89,6 +93,7 @@ data class RemoteState(
     val statistics: List<SongStatistic> = emptyList(),
     val prompt: Prompt? = null,
     val notice: Notice? = null,
+    val autoPlayRequest: AutoPlayRequest? = null,
     val updateConfiguration: UpdateConfiguration = UpdateConfiguration(),
     val updateStatus: String = "",
     val updateBusy: Boolean = false,

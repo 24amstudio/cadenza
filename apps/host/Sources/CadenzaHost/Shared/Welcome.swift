@@ -11,6 +11,9 @@ struct Welcome: Codable, Sendable {
     var hostTimeMs: Int64
     var protocolMajor: Int = 1
     var protocolMinor: Int = 1
+    // The Host's version and build, so a Remote can tell whether it or the Host is the older one.
+    var hostVersion: String? = nil
+    var hostBuild: Int64? = nil
     var updates: UpdateConfiguration
     var capabilities: [String] = [
         "playback", "library", "catalog.public-web", "queue.native-accessibility",

@@ -73,6 +73,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                     correctIfNeeded(songs)
                 }
                 requestId == favoriteResolveId -> applyFavoriteMatches(frame.getJSONArray("songs").objects().map(Wire::song))
+                requestId == autoPlayId -> resolveAutoPlay(frame.getJSONArray("songs").objects().map(Wire::song))
                 requestId == correctionId -> {
                     val songs = frame.getJSONArray("songs").objects().map(Wire::song)
                     mutable.update { it.copy(correctedResults = songs) }
@@ -92,6 +93,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                 val prepared = preparingIdentity ?: (song.getString("source") + ":" + song.getString("id"))
                 preparingIdentity = null
                 mutable.update { it.copy(preparing = false, preparedSong = prepared) }
+                autoPlayPrepared(prepared)
             }
         "lyrics" -> {
             val document = Wire.lyrics(frame.getJSONObject("lyrics"))
@@ -182,6 +184,8 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
             clientName = remoteName,
             connected = true,
             hostUpdate = null,
+            hostVersion = value.nullableString("host_version"),
+            hostBuild = if (value.has("host_build")) value.getLong("host_build") else null,
             capabilities =
                 value
                     .optJSONArray("capabilities")
@@ -193,6 +197,7 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
             updateConfiguration = RemoteUpdater.configuration(app),
         )
     }
+    reconcileVersions()
     if (invite != null && transportMode == "hybrid") {
         val hello = handshake.frame(invite = null, profile = profile)
         hello.put("request_id", id())

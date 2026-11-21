@@ -95,6 +95,7 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
         mutable.update { it.copy(searching = false) }
     }
     if (request != null && request == favoriteResolveId) failFavoriteResolution("Music could not look up this song. Try again.")
+    if (request != null && request == autoPlayId) failAutoPlay("Music could not look up this song. Try again.")
     if (request != null && request == preparationId) {
         preparationTimeout?.cancel()
         preparingIdentity = null
@@ -119,7 +120,6 @@ internal fun RemoteModel.positionInternal(now: Long): Long =
     mutable.value.snapshot?.let { clock.position(it, now, isStaleInternal(now)) } ?: 0
 
 internal fun RemoteModel.endSessionStatusInternal() {
-    mutable.update { it.copy(sessionActive = false) }
     if (!foreground) {
         networkMonitor.close()
         discovery?.close()

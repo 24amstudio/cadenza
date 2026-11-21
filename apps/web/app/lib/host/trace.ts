@@ -5,6 +5,7 @@ import {
   parseJson,
   type JsonValue,
 } from '../protocol/json';
+import { sharedLocalLog } from './localLog';
 
 // Session logs for the browser console. They show each frame in the order it crossed the transport, so the whole
 // conversation can be followed in DevTools. Secrets and base64 payloads are replaced before anything is logged.
@@ -15,8 +16,21 @@ export type TraceTransport = 'websocket' | 'bluetooth';
 const secretKeys = new Set(['token', 'secret', 'pin']);
 const payloadKeys = new Set(['artwork_data_base64', 'data_base64']);
 
+// Each trace is also kept in this browser's log, which the Host receives once it is connected.
 export function traceEvent(message: string, ...details: unknown[]): void {
   console.debug(`[cadenza] ${message}`, ...details);
+
+  const text = details
+    .map((detail) => {
+      try {
+        return redactedText(JSON.stringify(detail) ?? String(detail));
+      } catch {
+        return '(not recorded)';
+      }
+    })
+    .join(' ');
+
+  sharedLocalLog().record('info', message, text || message);
 }
 
 // A frame this large is an artwork or motion chunk. Parsing it only to hide its payload costs a copy of every transfer,
@@ -35,6 +49,12 @@ export function traceFrame(
       `${direction} ${transport} ${type ?? 'unknown'}`,
       `${text.length} characters`,
     );
+    recordFrame(
+      direction,
+      transport,
+      type ?? 'unknown',
+      `${text.length} characters`,
+    );
 
     return;
   }
@@ -46,6 +66,12 @@ export function traceFrame(
       `${direction} ${transport} unparseable frame`,
       `${text.length} characters`,
     );
+    recordFrame(
+      direction,
+      transport,
+      'unparseable',
+      `${text.length} characters`,
+    );
 
     return;
   }
@@ -53,7 +79,30 @@ export function traceFrame(
   const type =
     isJsonObject(frame) && isJsonString(frame.type) ? frame.type : 'unknown';
 
-  traceEvent(`${direction} ${transport} ${type}`, redact(frame));
+  const shown = redact(frame);
+
+  traceEvent(`${direction} ${transport} ${type}`, shown);
+
+  recordFrame(direction, transport, type, JSON.stringify(shown));
+}
+
+function recordFrame(
+  direction: TraceDirection,
+  transport: TraceTransport,
+  type: string,
+  message: string,
+): void {
+  sharedLocalLog().record(
+    'debug',
+    `${direction} ${transport} ${type}`,
+    message,
+  );
+}
+
+function redactedText(text: string): string {
+  const value = parseJson(text);
+
+  return value === null ? text : JSON.stringify(redact(value));
 }
 
 function redact(value: JsonValue): JsonValue {

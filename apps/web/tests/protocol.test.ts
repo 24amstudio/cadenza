@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { decodeHostMessage } from '../app/lib/protocol/decode';
-import { encodeArtworkGet, encodeMotionGet } from '../app/lib/protocol/encode';
+import {
+  encodeArtworkGet,
+  encodeHostUpdate,
+  encodeMotionGet,
+} from '../app/lib/protocol/encode';
 import type { JsonObject } from '../app/lib/protocol/json';
 import type { SongIdentity } from '../app/lib/protocol/types';
 import {
@@ -213,6 +217,50 @@ describe('decodeHostMessage', () => {
       type: 'state',
       snapshot: { current: { artworkPreview: '/9j/4AAQ' } },
     });
+  });
+
+  test('a state carries the audio tier, AutoPlay songs and the time left', () => {
+    const message = decodeHostMessage(
+      wire({
+        type: 'state',
+        snapshot: {
+          ...snapshot,
+          quality: 'hi_res_lossless',
+          total_remaining_ms: 540000,
+          auto_play: [{ title: 'Next Song', artist: 'Next Artist' }],
+        },
+      }),
+    );
+
+    expect(message).toMatchObject({
+      type: 'state',
+      snapshot: {
+        quality: 'hi_res_lossless',
+        totalRemainingMs: 540000,
+        autoPlay: [{ title: 'Next Song', artist: 'Next Artist' }],
+      },
+    });
+  });
+
+  test('an older Host without the tier or AutoPlay still decodes as unread and empty', () => {
+    const { quality: _quality, ...older } = snapshot;
+    const message = decodeHostMessage(wire({ type: 'state', snapshot: older }));
+
+    expect(message).toMatchObject({
+      type: 'state',
+      snapshot: { quality: 'unknown', totalRemainingMs: null, autoPlay: [] },
+    });
+  });
+
+  test('rejects the snapshot when an AutoPlay song lacks its artist or the tier is unknown', () => {
+    for (const broken of [
+      { ...snapshot, auto_play: [{ title: 'Only a title' }] },
+      { ...snapshot, quality: 'stereo' },
+    ]) {
+      expect(
+        decodeHostMessage(wire({ type: 'state', snapshot: broken })),
+      ).toBeNull();
+    }
   });
 
   test('rejects a snapshot without the playback modes', () => {
@@ -824,5 +872,31 @@ describe('playback mode commands', () => {
         }),
       ).action,
     ).toEqual({ kind: 'playback.repeat', mode: 'one' });
+  });
+});
+
+describe('host updates', () => {
+  test('a host update status decodes, and a check or install request names its action', () => {
+    const status = decodeHostMessage(
+      wire({
+        type: 'host.update.status',
+        request_id: 'request-1',
+        update_state: 'ready',
+        update_version: '0.3.4',
+        message: null,
+      }),
+    );
+
+    expect(status).toMatchObject({
+      type: 'host.update.status',
+      requestId: 'request-1',
+      status: { state: 'ready', version: '0.3.4', message: null },
+    });
+    expect(JSON.parse(encodeHostUpdate('request-2', 'install'))).toEqual({
+      version: 1,
+      type: 'host.update',
+      request_id: 'request-2',
+      update_action: 'install',
+    });
   });
 });

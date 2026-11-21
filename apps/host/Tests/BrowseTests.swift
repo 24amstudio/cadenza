@@ -134,6 +134,7 @@ private struct StubCatalog: BrowseCatalogSource {
     let counter = FetchCounter()
     var albumID: String? = "10"
     var failure: CadenzaError?
+    var artistIDs: [String: String] = [:]
 
     func album(id: String) async throws -> BrowseResult {
         counter.begin()
@@ -154,7 +155,7 @@ private struct StubCatalog: BrowseCatalogSource {
         return albumID
     }
 
-    func findArtist(name: String) async throws -> String? { nil }
+    func findArtist(name: String) async throws -> String? { artistIDs[name] }
 }
 
 private struct StubLibrary: BrowseLibrarySource {
@@ -196,6 +197,18 @@ struct BrowseServiceTests {
 
         #expect(result.title == "Demo" && result.subtitle == "Band")
         #expect(result.songs == [track])
+    }
+
+    @Test func anArtistNamedByTextIsFoundInTheCatalogAndAnUnknownNameIsNotFound() async throws {
+        let catalog = StubCatalog(artistIDs: ["Known Artist": "77"])
+        let service = BrowseService(catalog: catalog, library: StubLibrary(), cache: BrowseCache(now: { 0 }))
+
+        let result = try await service.result(for: BrowseRequest(kind: "artist", artistName: "Known Artist"))
+
+        #expect(result.kind == "artist" && result.id == "77")
+        await #expect(throws: CadenzaError.self) {
+            try await service.result(for: BrowseRequest(kind: "artist", artistName: "Nobody"))
+        }
     }
 
     @Test func anItemWithNoCatalogMatchAndNoLibraryTracksIsNotFound() async {
@@ -244,6 +257,22 @@ struct BrowseProtocolTests {
         for invalid in [
             #"{"kind":"album","id":"1","song":{"source":"catalog","id":"1"}}"#, #"{"kind":"album"}"#,
             #"{"kind":"playlist","id":"1"}"#, #"{"kind":"playlists","id":"1"}"#, #"{"kind":"genre","id":"1"}"#,
+        ] {
+            #expect(throws: (any Error).self) { try browse(invalid) }
+        }
+    }
+
+    @Test func anArtistCanBeNamedByItsTextAndNothingElseCan() throws {
+        let frame = try browse(#"{"kind":"artist","artist_name":"Payung Teduh"}"#)
+        guard case .request(let request)? = frame.browse else {
+            Issue.record("Expected a browse request")
+            return
+        }
+        #expect(request.artistName == "Payung Teduh" && request.id == nil && request.song == nil)
+
+        for invalid in [
+            #"{"kind":"album","artist_name":"Payung Teduh"}"#, #"{"kind":"playlists","artist_name":"Payung Teduh"}"#,
+            #"{"kind":"artist","artist_name":""}"#, #"{"kind":"artist","id":"159260351","artist_name":"Payung Teduh"}"#,
         ] {
             #expect(throws: (any Error).self) { try browse(invalid) }
         }

@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +43,8 @@ import app.cadenza.remote.data.AutoPlayItem
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
+import app.cadenza.remote.model.canRequestAutoPlay
+import app.cadenza.remote.model.playAutoPlay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
@@ -133,7 +138,7 @@ fun HomeScreen(
                                 // Music plays these once the requests above are done. They are not Host requests, so
                                 // there is nothing to select, reorder or remove.
                                 itemsIndexed(autoPlay, key = { index, item -> "autoplay:$index:${item.title}" }) { _, item ->
-                                    AutoPlayRow(item)
+                                    AutoPlayRow(item, state) { next -> model.playAutoPlay(item, next) }
                                 }
                             }
                         }
@@ -153,9 +158,10 @@ fun HomeScreen(
                     }
                     when {
                         selected == "playing" && wide ->
-                            HomePlaybackPanel(
+                            PlayingScreen(
                                 model,
                                 state,
+                                wide,
                                 restoreLyricsFocus,
                                 onLyricsFocusRestored,
                                 onOpenLyrics,
@@ -254,36 +260,66 @@ private fun LibrarySongRow(
     }
 }
 
+/** A song Music plays after the queue. Play now and Play next turn it into a Host request, which can then be reordered. */
 @Composable
-private fun AutoPlayRow(item: AutoPlayItem) {
+internal fun AutoPlayRow(
+    item: AutoPlayItem,
+    state: RemoteState,
+    onRequest: (next: Boolean) -> Unit,
+) {
+    val request = state.autoPlayRequest?.takeIf { it.item == item }
     Surface(
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(
+        Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                cadenzaVector(CadenzaIcon.MUSIC),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp),
-            )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
-                    item.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    cadenzaVector(CadenzaIcon.MUSIC),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(28.dp),
                 )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        item.artist,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text("AutoPlay", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("AutoPlay", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (request != null) {
+                Text(
+                    if (request.song == null) "Finding…" else "Preparing…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilledTonalButton(
+                        onClick = { onRequest(false) },
+                        enabled = state.canRequestAutoPlay(next = false),
+                        modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
+                    ) { Text("Play now", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    OutlinedButton(
+                        onClick = { onRequest(true) },
+                        enabled = state.canRequestAutoPlay(next = true),
+                        modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
+                    ) { Text("Play next", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
         }
     }
 }

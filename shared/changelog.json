@@ -2,6 +2,38 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.3.3",
+      "build": 11,
+      "changes": [
+        "Places the lowest-numbered singer, v1, on the start side of lyrics, whichever line opens the song.",
+        "Keeps shuffle and repeat changes confirmed on Host when Music answers slowly.",
+        "Sends Bluetooth motion artwork at 96 by 96 pixels, and cover art at 160 by 160 pixels.",
+        "Browses an artist of a song Cadenza Host cannot identify, by the artist's name.",
+        "Removes the Reconnect buttons from Remote settings, because choosing a connection mode already reconnects.",
+        "Dismisses the Android session notification when Host finishes playback, or after five minutes without Host.",
+        "Gives motion artwork the same rounded corners as the still cover, and shows it in the lyrics view.",
+        "Shows Now Playing on the wide Home screen, and opens lyrics directly for songs that have them.",
+        "Keeps lyric lines clear of the screen edges, and lets the portrait lyrics controls use the full width.",
+        "Collapses repeated search results for the same recording.",
+        "Gives a tap a short wait for the first clock replies after connecting.",
+        "Replaces the Play now buttons on web search and library rows with a play control on the album art.",
+        "Lists AutoPlay songs in Up Next and Now Playing, and shows the audio tier, on the web Remote.",
+        "Shows a signal bar and send and receive arrows in the web Remote sidebar.",
+        "Adds a listening summary with total play time to the web Library history.",
+        "Shows signal bars and send and receive arrows beside the Android now playing title, and the audio tier under the lyrics track.",
+        "Keeps a web Remote's own log and sends it to Cadenza Host once connected, so support can read it.",
+        "Shares one album cover across its songs on the web Remote, and loads the next request's cover ahead of time.",
+        "Tells each Remote and Host which build is newer: an older Host is updated when idle, an older Remote is asked to update, and the web Remote can check for and install a Host update.",
+        "Shows the system battery's charge drawn during a session in the Android Energy debug view.",
+        "Writes control requests over Bluetooth ahead of artwork and lyrics requests.",
+        "Keeps a hybrid session on Bluetooth when Wi-Fi is off, and retries Wi-Fi when it returns.",
+        "Gives a Bluetooth session the clock uncertainty its link measures, and lets a tap wait briefly for the first clock replies.",
+        "Retries a request once when Cadenza Host reports that a song is not ready, and explains why a request is unavailable.",
+        "Plays an AutoPlay song now, or next so it can be reordered, from the Android Remote's Up Next list. The Remote first finds the matching catalog song.",
+        "Brings Music forward through Launch Services when Cadenza Host needs it to prepare a song, because macOS honours that request from a background app."
+      ]
+    },
+    {
       "version": "0.3.0",
       "build": 10,
       "changes": [

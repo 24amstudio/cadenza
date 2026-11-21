@@ -2,24 +2,30 @@ package app.cadenza.remote.data
 
 import org.json.JSONObject
 
-// What a browse page shows. album and artist pages are addressed by catalog id, or by a song the Host resolves
-// itself. A playlist is addressed by its library id. The list of playlists needs neither.
+// What a browse page shows. album and artist pages are addressed by catalog id, by a song the Host resolves itself, or,
+// for an artist the Host cannot tie to a song, by the artist's name. A playlist is addressed by its library id. The list of
+// playlists needs none of these.
 data class BrowseTarget(
     val kind: String,
     val id: String? = null,
     val song: SongIdentity? = null,
     // Shown while the page loads, so a tapped row keeps its name on screen.
     val title: String = "",
+    val artistName: String? = null,
 ) {
     // Two taps on the same thing share one request and one cached answer.
-    val key: String get() = listOfNotNull(kind, id, song?.let { it.source + ":" + it.id }).joinToString("/")
+    val key: String
+        get() = listOfNotNull(kind, id, song?.let { it.source + ":" + it.id }, artistName?.let { "name:$it" }).joinToString("/")
 
-    fun encode(): String = listOf(kind, id.orEmpty(), song?.source.orEmpty(), song?.id.orEmpty(), title).joinToString(SEPARATOR)
+    fun encode(): String =
+        listOf(kind, id.orEmpty(), song?.source.orEmpty(), song?.id.orEmpty(), title, artistName.orEmpty())
+            .joinToString(SEPARATOR)
 
     fun request(): JSONObject =
         JSONObject().put("kind", kind).apply {
             id?.let { put("id", it) }
             song?.let { put("song", it.json()) }
+            artistName?.let { put("artist_name", it) }
         }
 
     companion object {
@@ -29,15 +35,21 @@ data class BrowseTarget(
 
         fun album(song: Song) = BrowseTarget("album", song = song.identity, title = song.album.ifBlank { "Album" })
 
-        fun artist(song: Song) = BrowseTarget("artist", song = song.identity, title = song.artist.ifBlank { "Artist" })
+        // A song the Host does not know has no identity to resolve, so its artist is named instead.
+        fun artist(song: Song): BrowseTarget =
+            if (song.source == "unknown") {
+                BrowseTarget("artist", title = song.artist.ifBlank { "Artist" }, artistName = song.artist.trim())
+            } else {
+                BrowseTarget("artist", song = song.identity, title = song.artist.ifBlank { "Artist" })
+            }
 
         fun of(item: BrowseItem.Collection) = BrowseTarget(item.kind, item.id, title = item.title)
 
         fun decode(text: String): BrowseTarget? {
             val parts = text.split(SEPARATOR)
-            if (parts.size != 5) return null
+            if (parts.size != 6) return null
             val song = if (parts[2].isNotEmpty() && parts[3].isNotEmpty()) SongIdentity(parts[2], parts[3]) else null
-            return BrowseTarget(parts[0], parts[1].ifEmpty { null }, song, parts[4])
+            return BrowseTarget(parts[0], parts[1].ifEmpty { null }, song, parts[4], parts[5].ifEmpty { null })
         }
     }
 }

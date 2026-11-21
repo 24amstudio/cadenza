@@ -38,6 +38,9 @@ function snapshot(positionMs: number, queueWait: number | null): Snapshot {
         estimatedWaitMs: queueWait,
       },
     ],
+    totalRemainingMs: null,
+    quality: 'unknown',
+    autoPlay: [],
     synchronized: true,
     issue: null,
   };

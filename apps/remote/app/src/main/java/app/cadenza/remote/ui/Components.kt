@@ -43,6 +43,9 @@ import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.position
 import kotlinx.coroutines.delay
 
+// Every cover shape: the still artwork, and the animated cover that replaces it, so both keep the same corners.
+internal val ArtworkCornerShape = RoundedCornerShape(28.dp)
+
 @Composable
 fun LoadingScreen(label: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -158,7 +161,7 @@ internal fun Artwork(
     artwork: ArtworkData?,
     modifier: Modifier,
 ) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(modifier = modifier, shape = ArtworkCornerShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Box(contentAlignment = Alignment.Center) {
             val bitmap = artwork?.image
             if (bitmap !=

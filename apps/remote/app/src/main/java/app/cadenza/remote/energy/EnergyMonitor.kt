@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 
 /**
@@ -19,6 +20,8 @@ class EnergyMonitor(
     private val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
     private var active = false
     private var thermal = ThermalLevel.NORMAL
+    private val batteryManager = context.getSystemService(BatteryManager::class.java)
+    private val drawMeter = BatteryDrawMeter()
 
     private val receiver =
         object : BroadcastReceiver() {
@@ -51,6 +54,7 @@ class EnergyMonitor(
         // The battery broadcast is sticky, so registering returns the current reading without waiting for a change.
         val sticky = ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         thermal = thermalLevel(power.currentThermalStatus)
+        drawMeter.start(chargeMicroAh(), SystemClock.elapsedRealtime())
         power.addThermalStatusListener(ContextCompat.getMainExecutor(context), thermalListener)
         publish(sticky)
     }
@@ -69,8 +73,25 @@ class EnergyMonitor(
                 charging = reading?.let(::isCharging) ?: false,
                 thermal = thermal,
                 interactive = power.isInteractive,
+                draw =
+                    drawMeter.read(
+                        chargeMicroAh(),
+                        currentMicroAmp(),
+                        SystemClock.elapsedRealtime(),
+                    ),
             ),
         )
+    }
+
+    // The system reports Long.MIN_VALUE for a property the device does not have, and a charge counter is never zero.
+    private fun chargeMicroAh(): Long? {
+        val charge = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+        return charge.takeIf { it > 0 }
+    }
+
+    private fun currentMicroAmp(): Long? {
+        val current = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        return current.takeIf { it != Long.MIN_VALUE }
     }
 
     private fun percent(intent: Intent): Int? {

@@ -39,6 +39,7 @@ import app.cadenza.remote.network.BleConnection
 import app.cadenza.remote.network.EndpointPool
 import app.cadenza.remote.network.HostConnection
 import app.cadenza.remote.network.HostDiscovery
+import app.cadenza.remote.network.HostLivenessPolicy
 import app.cadenza.remote.network.HybridConnection
 import app.cadenza.remote.network.LocalEndpoint
 import app.cadenza.remote.network.NetworkMonitor
@@ -65,6 +66,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -121,6 +123,10 @@ class RemoteModel(
     internal var transportPreference = "balanced"
 
     internal var generation = 0
+
+    // Set when this Remote asked the Host to check for an update itself, and counted once an automatic install is asked for.
+    internal var hostUpdateCheckedAutomatically = false
+    internal var hostUpdateInstalls = 0
 
     internal var foreground = false
 
@@ -179,6 +185,10 @@ class RemoteModel(
 
     internal var preparationTimeout: Job? = null
 
+    internal var autoPlayId: String? = null
+
+    internal var autoPlayTimeout: Job? = null
+
     internal var lyricsTimeout: Job? = null
 
     internal var lyricRequestId: String? = null
@@ -235,6 +245,7 @@ class RemoteModel(
     internal var hostSnapshot: HostSnapshot? = null
 
     internal val frameQueue = PrioritizedFrameQueue()
+    val traffic = TrafficPulses()
 
     // State frames are coalesced by PrioritizedFrameQueue. A conflated wakeup
     // avoids retaining one signal per network frame during transport bursts.
@@ -263,6 +274,16 @@ class RemoteModel(
         }
         viewModelScope.launch {
             state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
+        }
+        viewModelScope.launch {
+            state.map { it.connected }.distinctUntilChanged().collectLatest { connected ->
+                if (connected) {
+                    mutable.update { it.copy(sessionInterrupted = false) }
+                } else {
+                    delay(HostLivenessPolicy.SESSION_INTERRUPTED_MS)
+                    mutable.update { it.copy(sessionInterrupted = true) }
+                }
+            }
         }
         viewModelScope.launch {
             var previous: String? = null
@@ -298,6 +319,7 @@ class RemoteModel(
             for (ignored in frameSignal) {
                 while (true) {
                     val item = frameQueue.poll() ?: break
+                    traffic.received()
                     val version = item.version
                     if (version == generation) {
                         receiveJob =
@@ -504,6 +526,8 @@ class RemoteModel(
         searchTimeout?.cancel()
         preparationTimeout?.cancel()
         preparingIdentity = null
+        autoPlayTimeout?.cancel()
+        autoPlayId = null
         lyricsTimeout?.cancel()
         lyricRequestId = null
         lyricStartedAtElapsedMs = null
@@ -518,6 +542,7 @@ class RemoteModel(
                 transportPaths = emptyList(),
                 searching = false,
                 preparing = false,
+                autoPlayRequest = null,
                 lyricsLoading = false,
             )
         }
@@ -733,7 +758,6 @@ class RemoteModel(
         song: Song? = null,
     ) {
         recordRecommendationCommand(action)
-        mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key, song) }
     }
 

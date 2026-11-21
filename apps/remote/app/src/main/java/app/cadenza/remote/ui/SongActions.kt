@@ -33,6 +33,7 @@ import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.matches
+import app.cadenza.remote.model.mayInterruptCurrent
 import app.cadenza.remote.ui.browse.LocalBrowseNavigator
 import app.cadenza.remote.ui.browse.canBrowse
 import org.json.JSONObject
@@ -87,9 +88,7 @@ fun SongActions(
     val prepared = state.preparedSong == song.source + ":" + song.id
     val canQueue = state.connected && state.snapshot?.synchronized == true && prepared && !state.preparing
     val current = state.snapshot?.current
-    val mayInterrupt =
-        current == null || current.requestedBy == state.profile?.remoteId ||
-            (state.snapshot.allowCrossRemoteEdits && current.requestedBy != null)
+    val mayInterrupt = state.mayInterruptCurrent()
     // Requests stay disabled until the Host reconciles Music's queue, so the sheet says why instead of greying out silently.
     val queueIssue =
         state.snapshot
@@ -162,17 +161,23 @@ fun SongActions(
                             ) { Text("Prepare in Music", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
-                    if (canBrowse(state, song)) {
+                    val albumPage = BrowseTarget.album(song).takeIf { canBrowse(state, it) }
+                    val artistPage = BrowseTarget.artist(song).takeIf { canBrowse(state, it) }
+                    if (albumPage != null || artistPage != null) {
                         val browse = LocalBrowseNavigator.current
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            TextButton(
-                                onClick = { browse.open(BrowseTarget.album(song)) },
-                                modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
-                            ) { Text("Go to album", maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                            TextButton(
-                                onClick = { browse.open(BrowseTarget.artist(song)) },
-                                modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
-                            ) { Text("Go to artist", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            albumPage?.let {
+                                TextButton(
+                                    onClick = { browse.open(it) },
+                                    modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
+                                ) { Text("Go to album", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            }
+                            artistPage?.let {
+                                TextButton(
+                                    onClick = { browse.open(it) },
+                                    modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp),
+                                ) { Text("Go to artist", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            }
                         }
                     }
                 }

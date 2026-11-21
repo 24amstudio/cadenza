@@ -31,6 +31,11 @@
         },
         "song": {
           "$ref": "urn:cadence:protocol:v1:common#/$defs/song"
+        },
+        "artist_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       },
       "oneOf": [
@@ -40,7 +45,8 @@
               "const": "playlists"
             },
             "id": false,
-            "song": false
+            "song": false,
+            "artist_name": false
           }
         },
         {
@@ -52,7 +58,8 @@
               "pattern": "^[0-9A-F]{16}$",
               "type": "string"
             },
-            "song": false
+            "song": false,
+            "artist_name": false
           },
           "required": ["id"]
         },
@@ -65,7 +72,8 @@
               "pattern": "^[1-9][0-9]{0,19}$",
               "type": "string"
             },
-            "song": false
+            "song": false,
+            "artist_name": false
           },
           "required": ["id"]
         },
@@ -75,9 +83,25 @@
               "enum": ["album", "artist"]
             },
             "id": false,
-            "song": {}
+            "song": {},
+            "artist_name": false
           },
           "required": ["song"]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "artist"
+            },
+            "id": false,
+            "song": false,
+            "artist_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": ["artist_name"]
         }
       ],
       "additionalProperties": false

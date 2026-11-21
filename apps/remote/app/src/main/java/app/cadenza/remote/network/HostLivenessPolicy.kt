@@ -11,6 +11,9 @@ internal object HostLivenessPolicy {
     private const val LAN_STALE_MS = 3_000L
     private const val BLUETOOTH_STALE_MS = 20_000L
 
+    /** Silence after which the Host's playback is assumed interrupted and its session notification is dismissed. */
+    const val SESSION_INTERRUPTED_MS = 5 * 60_000L
+
     /** Silence after which the Host counts as gone and the Remote reconnects. */
     fun silenceLimitMs(transportMode: String): Long = if (transportMode == "lan") LAN_SILENCE_MS else BLUETOOTH_SILENCE_MS
 

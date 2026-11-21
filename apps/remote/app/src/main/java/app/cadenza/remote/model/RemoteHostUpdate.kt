@@ -32,6 +32,7 @@ internal fun RemoteModel.applyHostUpdateStatus(frame: JSONObject) {
             frame.nullableString("message"),
         )
     mutable.update { it.copy(hostUpdate = status) }
+    installReadyHostUpdateAutomatically(status)
 }
 
 internal fun hostUpdateMessage(status: HostUpdateStatus?): String? {

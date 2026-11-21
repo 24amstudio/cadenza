@@ -10,8 +10,10 @@ import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
 import VolumeSlider from '~/components/player/VolumeSlider.vue';
+import AutoPlayRow from '~/components/queue/AutoPlayRow.vue';
 import QueueRow from '~/components/queue/QueueRow.vue';
 import { IdleTimer } from '~/lib/idleTimer';
+import { qualityLabel } from '~/lib/playback';
 import { useHostStore } from '~/stores/host';
 import { useUiStore } from '~/stores/ui';
 
@@ -22,6 +24,16 @@ const ui = useUiStore();
 
 const song = computed(() => host.current?.song ?? null);
 const upNext = computed(() => host.queue.slice(0, 4));
+
+// AutoPlay fills the rest of the preview, because Music plays it in the same order after the requests.
+const autoPlayPreview = computed(() =>
+  host.autoPlay.slice(0, Math.max(0, 4 - upNext.value.length)),
+);
+
+// The tier belongs to the song Music is playing, so nothing is shown between songs.
+const quality = computed(() =>
+  host.current === null ? null : qualityLabel(host.quality),
+);
 
 const hasLyrics = computed(
   () => host.current !== null && host.lyricsStatus > 0,
@@ -132,6 +144,7 @@ const ambientStyle = computed(() => {
           <p v-if="song.album.trim() !== ''" class="album">
             <BrowseLink kind="album" :song="song" />
           </p>
+          <p v-if="quality !== null" class="quality">{{ quality }}</p>
         </div>
 
         <ProgressScrubber
@@ -222,7 +235,10 @@ const ambientStyle = computed(() => {
       <header class="section-header">
         <h2 id="up-next-heading">Up Next</h2>
         <button
-          v-if="host.queue.length > upNext.length"
+          v-if="
+            host.queue.length + host.autoPlay.length >
+            upNext.length + autoPlayPreview.length
+          "
           class="text-button"
           type="button"
           @click="ui.showView('up-next')"
@@ -230,8 +246,13 @@ const ambientStyle = computed(() => {
           Show all
         </button>
       </header>
-      <ol v-if="upNext.length > 0" class="queue-list">
+      <ol v-if="upNext.length + autoPlayPreview.length > 0" class="queue-list">
         <QueueRow v-for="entry in upNext" :key="entry.id" :entry="entry" />
+        <AutoPlayRow
+          v-for="(item, index) in autoPlayPreview"
+          :key="`autoplay:${index}:${item.title}`"
+          :item="item"
+        />
       </ol>
       <p v-else class="quiet">Nothing else is queued.</p>
     </section>
@@ -266,8 +287,8 @@ const ambientStyle = computed(() => {
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
-  align-items: end;
+  grid-template-columns: minmax(240px, min(440px, 50%)) minmax(0, 1fr);
+  align-items: start;
   gap: clamp(28px, 5vw, 64px);
 }
 
@@ -276,8 +297,11 @@ const ambientStyle = computed(() => {
 }
 
 .details {
-  display: grid;
-  gap: 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -288,7 +312,7 @@ const ambientStyle = computed(() => {
 
 h1 {
   font-family: var(--font-display);
-  font-size: clamp(30px, 4.4vw, 46px);
+  font-size: clamp(30px, 3.2vw, 46px);
   font-weight: 750;
   letter-spacing: -0.025em;
   line-height: 1.08;
@@ -304,6 +328,12 @@ h1 {
 .album {
   color: var(--color-text-secondary);
   font-size: 16px;
+}
+
+.quality {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .transport-row {
@@ -396,10 +426,23 @@ h2 {
   color: var(--color-text-secondary);
 }
 
+/* Narrow desktops fit the title and controls beside the artwork by tightening them, so both columns end together. */
+@media (min-width: 900px) and (max-width: 1099px) {
+  .details {
+    gap: 10px;
+  }
+}
+
 @media (max-width: 899px) {
   .hero {
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
+  }
+
+  .details {
+    align-self: auto;
+    justify-content: flex-start;
+    gap: 22px;
   }
 
   .cover {

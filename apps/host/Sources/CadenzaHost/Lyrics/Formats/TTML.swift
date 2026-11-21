@@ -17,8 +17,10 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
     private var metadataDepth = 0
     private var paragraph: LyricLine?
     private var paragraphDepth = 0
-    // Singers by `ttm:agent`, in order of first use. The first is the start side; every other agent is the end side.
-    private var agents: [String] = []
+    // Singers by `ttm:agent` in order of first use, and each line's singer by id. Placement is resolved after parsing,
+    // because a later line can introduce the singer that starts the layout.
+    private(set) var agents: [String] = []
+    private(set) var lineAgents: [String: String] = [:]
     private var paragraphAgent: String?
     // Background vocals (`ttm:role="x-bg"`) overlap the main line, so their words form a separate timed line.
     private var background: LyricLine?
@@ -60,6 +62,11 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 "lyrics_unavailable", handler.failure ?? "Music's lyric format could not be read.")
         }
         var lines = handler.lines.sorted { $0.startMs < $1.startMs }
+        // Apple draws singer v1 on the start side. Ties between unnumbered singers keep first-use order.
+        let startAgent = handler.agents.min { singerNumber($0) < singerNumber($1) }
+        for index in lines.indices {
+            lines[index].align = handler.lineAgents[lines[index].id].flatMap { $0 == startAgent ? nil : "end" }
+        }
         guard Set(lines.map(\.id)).count == lines.count,
             lines.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 128 })
         else {
@@ -84,6 +91,11 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
             occurrenceId: occurrence, revision: identifier(), language: handler.language,
             translationSource: supplied ? "apple" : "none", lines: lines
         )
+    }
+
+    private static func singerNumber(_ agent: String) -> Int {
+        guard agent.hasPrefix("v"), let number = Int(agent.dropFirst()) else { return .max }
+        return number
     }
 
     static func milliseconds(_ text: String?) -> Int64? {
@@ -211,9 +223,9 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         }
         if name == "p", paragraphDepth == depth, var line = paragraph {
             line.text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let align = paragraphAgent.flatMap { agent in agents.first == agent ? nil : "end" }
-            line.align = align
-            for index in backgroundLines.indices { backgroundLines[index].align = align }
+            if let agent = paragraphAgent {
+                for id in [line.id] + backgroundLines.map(\.id) { lineAgents[id] = agent }
+            }
             paragraphAgent = nil
             if !line.words.isEmpty {
                 let wordStart = line.words.map(\.startMs).min() ?? line.startMs

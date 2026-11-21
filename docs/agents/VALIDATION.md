@@ -1,6 +1,26 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.3.0 and internal build 10, following the user's explicit release-version request. Portable, Host and Remote Checking CI passed for the latest audit changes; the final branch head is `1f44a60`. macOS runtime behavior and target-device evidence remain unverified locally.
+Cadenza's current working tree declares visible version 0.3.3 and internal build 11, following the user's explicit release-version request. Portable, Host and Remote Checking CI passed for the latest audit changes; the final branch head is `1f44a60`. macOS runtime behavior and target-device evidence remain unverified locally.
+
+## Version 0.3.3 work (21 November 2026)
+
+Local macOS 27 (arm64, Swift 6.4.2), Android SDK platform 37.0 and Node/Bun from the repository setup. Passed on the final tree: Host `swift test -Xswiftc -warnings-as-errors` (138 Swift Testing tests) and `swift format lint --strict --recursive`; Remote `:app:compileDebugKotlin`, `:app:ktlintCheck` and `:app:testDebugUnitTest` (204 tests, including 33 Robolectric renders on synthetic data); web `vue-tsc`, 203 `bun test` cases, oxlint with warnings denied, Prettier and `nuxt generate`; and `node tools/check.mjs --portable` (44 behavioral tests, schema and file caps included).
+
+Lyric placement was checked against this Mac's cached Music TTML. Six documents carry `ttmlLocalizations`, and one (`Salah Jurusan`) opens with singer `v2000` and then `v1`, which the previous first-use rule drew on the wrong side. The rule now places `v1` on the start side. Which side Apple draws `v1` on is inferred from the report, not measured in Music.app. Lyric documents are cached under a new `lyrics-v5` prefix so old placements are not reused.
+
+The Host's log showed `Command unconfirmed` for shuffle and repeat, which had a 2 s verification budget against script round trips of about a second. That budget is now 6 s, the same as queue edits.
+
+Web screenshots were captured in headless Chromium against a scratch Host stand-in outside the repository, with synthetic songs: Up Next with AutoPlay, Now Playing with the audio tier, Library History with the listening summary and an armed album-art play control, and the phone Library and Now Playing views. Native screenshots are Robolectric renders only, including the signal bars and arrows beside the title.
+
+Not verified, and needing the named target: a real Music.app session for the artist-by-name page, the Play now and Playing Next accessibility paths (`song_not_ready`, the greyed Play now, the Host log findings about Playing Next), AutoPlay play-now and reordering (the Host's AutoPlay reader is still read-only), BLE throughput and control latency at 96 px motion and 160 px cover, the Bluetooth write lanes against the Host's notification window, a hybrid session with Wi-Fi off and on device, the battery draw measured on a device (the system counter covers the whole phone, not Cadenza alone), the cause of the 250 MB and 12% CPU regression, background connection on Android, and motion artwork playback in the lyrics view. The Host version handshake is covered by unit and protocol tests; a Host update installed from a Remote has not been run.
+
+Closeout, 21 November 2026. The user accepted the open items as unverified for 0.3.3. Nothing below is marked passed.
+
+- Host activation: on this Mac, `open -a` with the app's bundle path brought Music forward, and focus returned to the previous app, in a live run of about 46 ms. That verifies the activation route only. The full Play now prepare path, the `song_not_ready` fix in a real session, and the Host's Playing Next reads are unverified.
+- AutoPlay: a Remote's Play now or Play next on an AutoPlay song searches the catalog for its title and artist, prepares the match, then sends the existing play-now or play-next command. A Play next song becomes a request that can be reordered. No Host command was added. `AutoPlayRequestTest` (7 tests) and `AutoPlayRowRenderTest` (3 tests, synthetic data) pass, and the full Remote unit suite passes (214 tests) with ktlint. Unverified: the path on a device or a live Host. Clicking AutoPlay rows in Music's Playing Next list was rejected: two live attempts changed Music's playback and did not play the target.
+- Music state: the live tests changed Music's playback. The original streaming track, "Maneater", is not in the library and could not be restored, so Music was left paused on "I Want to Know What Love Is".
+- Energy regression: the root cause is unknown. No device profile was taken and no code change addresses it. The per-frame sweep map in `ui/lyrics/LyricsClock.kt` is an unverified candidate. The motion player is released when its view leaves.
+- Accepted as unverified: the device-only goalset items (background connection, hybrid Wi-Fi and Bluetooth wayfinding, BLE control priority) and the device or visual items (BLE motion timing and sizes, Bluetooth clock readiness, the version handshake on a device, the Now Playing and Search layouts on a device, and motion artwork in lyrics).
 
 ## Current local checks
 

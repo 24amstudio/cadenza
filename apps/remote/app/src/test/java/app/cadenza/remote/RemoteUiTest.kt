@@ -832,6 +832,17 @@ class RemoteUiTest {
     }
 
     @Test
+    fun theLyricsScreenKeepsTheScreenAwakeAfterTheSurfaceTransitionFinishes() {
+        seedProfile(playing = true)
+        openApp()
+        navigate("Home")
+        compose.onNodeWithContentDescription("Lyrics").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertTrue(viewsKeepingScreenOn().isNotEmpty())
+    }
+
+    @Test
     fun aPlayingHostKeepsTheSessionAliveWhenTheAppIsBackgrounded() {
         seedProfile(playing = true)
         openApp()

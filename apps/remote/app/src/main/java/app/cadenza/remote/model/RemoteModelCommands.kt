@@ -14,7 +14,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
-private const val CLOCK_READY_WAIT_MS = 1_500L
+// A Bluetooth link needs its bootstrap pings (see RemoteModelFrames) before it can stamp a command.
+private const val CLOCK_READY_WAIT_MS = 3_000L
 private const val CLOCK_POLL_MS = 50L
 
 // Commands take effect on screen at once. The Host's result confirms them later, or reverts them with a reason.

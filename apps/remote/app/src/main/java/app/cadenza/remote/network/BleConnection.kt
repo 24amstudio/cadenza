@@ -34,7 +34,10 @@ class BleConnection(
         link.startScan()
     }
 
-    override fun send(frame: JSONObject): Boolean = transport?.send(frame.toString().toByteArray(Charsets.UTF_8)) == true
+    override fun send(frame: JSONObject): Boolean {
+        val urgent = frame.optString("type") in URGENT_FRAME_TYPES
+        return transport?.send(frame.toString().toByteArray(Charsets.UTF_8), urgent) == true
+    }
 
     override fun disconnect() {
         stopped = true
@@ -42,3 +45,6 @@ class BleConnection(
         transport = null
     }
 }
+
+// Frames the Host must answer quickly, so they go ahead of queued bulk and state frames on Bluetooth.
+private val URGENT_FRAME_TYPES = setOf("hello", "pair", "clock", "command", "command.status", "operation.cancel")

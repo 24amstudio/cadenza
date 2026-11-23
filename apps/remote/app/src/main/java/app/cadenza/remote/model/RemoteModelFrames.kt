@@ -230,6 +230,14 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
                 pingClock()
                 delay(40)
             }
+            // Replies to the first pings can wait behind the writes that follow the welcome, so the first samples often
+            // exceed the round-trip bound. Ping on a short interval until three samples are accepted.
+            var bootstrapPings = 0
+            while (!clock.ready && bootstrapPings < CLOCK_BOOTSTRAP_PINGS) {
+                delay(CLOCK_BOOTSTRAP_INTERVAL_MS)
+                bootstrapPings += 1
+                pingClock()
+            }
             while (true) {
                 delay(5_000)
                 val profile = energy.profile.value
@@ -339,3 +347,5 @@ private fun qualifiedRecommendationFeedback(
     )
 
 private const val CLOCK_PING_SLACK_MS = 500L
+private const val CLOCK_BOOTSTRAP_INTERVAL_MS = 300L
+private const val CLOCK_BOOTSTRAP_PINGS = 20

@@ -33,7 +33,7 @@ internal fun RemoteModel.openConnection() {
     lastHeartbeatAt = 0
     // A new session starts its liveness clock now, not at the previous session's last frame.
     lastReceivedAt = SystemClock.elapsedRealtime()
-    mutable.update { it.copy(connecting = true, connectionIssue = null) }
+    mutable.update { it.copy(connecting = true, connectionIssue = null, clockUncertaintyMs = null) }
     connection =
         if (transportMode == "ble") {
             BleConnection(

@@ -38,6 +38,7 @@ import app.cadenza.remote.media.isSongChange
 import app.cadenza.remote.motion.MotionAssembly
 import app.cadenza.remote.motion.MotionStore
 import app.cadenza.remote.network.BleConnection
+import app.cadenza.remote.network.BluetoothAdapterMonitor
 import app.cadenza.remote.network.EndpointPool
 import app.cadenza.remote.network.HostConnection
 import app.cadenza.remote.network.HostDiscovery
@@ -216,6 +217,17 @@ class RemoteModel(
     internal val handshake = RemoteHandshake(app, ioDispatcher) { remoteName }
 
     internal var activeEndpoint: LocalEndpoint? = null
+
+    internal val bluetoothMonitor =
+        BluetoothAdapterMonitor(app) {
+            viewModelScope.launch {
+                if (foreground && mutable.value.loaded && mutable.value.profile != null &&
+                    !mutable.value.connected && !mutable.value.connecting && transportMode != "lan"
+                ) {
+                    connect()
+                }
+            }
+        }
 
     internal val networkMonitor =
         NetworkMonitor(app) {
@@ -408,6 +420,7 @@ class RemoteModel(
     fun setForeground(visible: Boolean) {
         foreground = visible
         if (visible) networkMonitor.start() else networkMonitor.close()
+        if (visible) bluetoothMonitor.start() else bluetoothMonitor.close()
         if (visible) startDiscovery()
         if (visible && mutable.value.loaded && mutable.value.profile != null && !mutable.value.connected) connect()
         if (!visible) {
@@ -772,6 +785,7 @@ class RemoteModel(
         app.mediaAction = null
         mediaSession.release()
         networkMonitor.close()
+        bluetoothMonitor.close()
         energyMonitor.setActive(false)
         disconnect()
         discovery?.close()

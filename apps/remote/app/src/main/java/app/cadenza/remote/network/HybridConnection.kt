@@ -62,6 +62,8 @@ class HybridConnection(
         timers.postDelayed({ if (!stopped && lanReady && !bleReady) ble.connect() }, delay)
     }
 
+    // A reopened LAN path resends the stored hello. Calling onOpened as well would send a second hello, which the Host
+    // rejects as an unsupported message once the path is authenticated.
     private fun lanOpened() {
         lanReady = true
         lanRetries = 0
@@ -69,8 +71,8 @@ class HybridConnection(
         pendingPair?.let { pair ->
             if (lan.send(pair)) pendingPair = null
         }
-        handshake?.let { lan.send(it) }
-        onOpened()
+        val stored = handshake
+        if (stored == null) onOpened() else lan.send(stored)
     }
 
     private fun bleOpened() {

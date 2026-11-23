@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import app.cadenza.remote.debugmode.handleDebugIntent
 import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
 import app.cadenza.remote.model.RemoteModel
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         model = ViewModelProvider(this)[RemoteModel::class.java]
+        handleDebugIntent(intent, model)
         setContent {
             CadenzaApp(model) { path ->
                 val file = File(path)
@@ -86,6 +88,11 @@ class MainActivity : ComponentActivity() {
                 model.showError("Update could not be installed", error.message ?: "Retry installation.")
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDebugIntent(intent, model)
     }
 
     override fun onStart() {

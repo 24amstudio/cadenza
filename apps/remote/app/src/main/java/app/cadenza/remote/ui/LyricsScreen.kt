@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.energy.LocalEnergyProfile
@@ -43,6 +44,7 @@ import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
 import app.cadenza.remote.model.position
+import app.cadenza.remote.ui.browse.browseLink
 import app.cadenza.remote.ui.lyrics.FollowActiveLine
 import app.cadenza.remote.ui.lyrics.LyricList
 import app.cadenza.remote.ui.lyrics.LyricPlayback
@@ -130,7 +132,7 @@ fun LyricsScreen(
                                 ) {
                                     Artwork(entry.artwork, Modifier.fillMaxSize())
                                 }
-                                TrackIdentity(entry.current, state.profile?.remoteId, quality = state.snapshot.quality)
+                                TrackIdentity(state, entry.current, state.profile?.remoteId, quality = state.snapshot.quality)
                             }
                         }
                         Spacer(Modifier.weight(1f))
@@ -143,7 +145,7 @@ fun LyricsScreen(
             } else {
                 song?.let { entry ->
                     SongSwap(entry, { it.current.occurrenceId }) {
-                        CompactTrackIdentity(it.current, state.profile?.remoteId, it.artwork, quality = state.snapshot?.quality)
+                        CompactTrackIdentity(state, it.current, state.profile?.remoteId, it.artwork, quality = state.snapshot?.quality)
                     }
                 }
                 LyricsPane(model, state, document, shownOccurrence, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
@@ -176,14 +178,21 @@ private fun LyricsTransport(
 
 @Composable
 private fun TrackIdentity(
+    state: RemoteState,
     current: CurrentPlayback,
     remoteId: String?,
-    quality: String? = null,
     modifier: Modifier = Modifier,
+    quality: String? = null,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(current.song.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(current.song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            current.song.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.browseLink(state, current.song, "Open artist page") { BrowseTarget.artist(it) },
+        )
         val requester = if (remoteId != null && current.requestedBy == remoteId) "you" else current.requesterName
         Text("Requested by $requester", style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         quality?.takeIf { it != "unknown" }?.let {
@@ -198,6 +207,7 @@ private fun TrackIdentity(
 
 @Composable
 private fun CompactTrackIdentity(
+    state: RemoteState,
     current: CurrentPlayback,
     remoteId: String?,
     artwork: ArtworkData?,
@@ -205,7 +215,7 @@ private fun CompactTrackIdentity(
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Artwork(artwork, Modifier.sharedArtwork(current.occurrenceId).size(48.dp))
-        TrackIdentity(current, remoteId, quality = quality, modifier = Modifier.weight(1f))
+        TrackIdentity(state, current, remoteId, quality = quality, modifier = Modifier.weight(1f))
     }
 }
 

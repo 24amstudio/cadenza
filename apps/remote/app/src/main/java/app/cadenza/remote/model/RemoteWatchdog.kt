@@ -6,6 +6,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// Zero means no frame has arrived since this Remote started, so no age exists. Reporting elapsed time since boot would
+// read as a stale Host.
+internal fun heartbeatAgeLabel(
+    lastSeenAt: Long,
+    now: Long,
+): String = if (lastSeenAt == 0L) "none" else (now - lastSeenAt).coerceAtLeast(0).toString()
+
 /**
  * Keeps a foreground Remote attached while Host recovers after an unexpected exit.
  *
@@ -17,12 +24,12 @@ internal fun RemoteModel.watchdogHostUnavailable(
     message: String,
     wasConnected: Boolean,
 ): Job? {
-    val elapsedSinceHeartbeat =
-        (SystemClock.elapsedRealtime() - maxOf(lastHeartbeatAt, lastReceivedAt)).coerceAtLeast(0)
+    val heartbeatAge =
+        heartbeatAgeLabel(maxOf(lastHeartbeatAt, lastReceivedAt), SystemClock.elapsedRealtime())
     reportLog(
         if (wasConnected) "error" else "warning",
         "watchdog.host.unavailable",
-        "message=${message.take(240)} connected=$wasConnected heartbeat_age_ms=$elapsedSinceHeartbeat",
+        "message=${message.take(240)} connected=$wasConnected heartbeat_age_ms=$heartbeatAge",
     )
     if (invitation != null || pairingPin != null ||
         !maintainBackgroundSessionInternal() || mutable.value.profile == null

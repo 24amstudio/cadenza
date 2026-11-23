@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.CadenzaApplication
+import app.cadenza.remote.data.ARTWORK_DISK_BYTES
+import app.cadenza.remote.data.ArtworkDiskCache
 import app.cadenza.remote.data.ClockSync
 import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
@@ -258,6 +260,7 @@ class RemoteModel(
     internal val mutableState get() = mutable
 
     internal val updateApp get() = app
+    internal val artworkDisk by lazy { ArtworkDiskCache(java.io.File(app.cacheDir, "artwork"), ARTWORK_DISK_BYTES) }
 
     internal val updateDispatcher get() = ioDispatcher
 

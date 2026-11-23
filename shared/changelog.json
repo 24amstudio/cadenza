@@ -30,7 +30,9 @@
         "Gives a Bluetooth session the clock uncertainty its link measures, and lets a tap wait briefly for the first clock replies.",
         "Retries a request once when Cadenza Host reports that a song is not ready, and explains why a request is unavailable.",
         "Plays an AutoPlay song now, or next so it can be reordered, from the Android Remote's Up Next list. The Remote first finds the matching catalog song.",
-        "Brings Music forward through Launch Services when Cadenza Host needs it to prepare a song, because macOS honours that request from a background app."
+        "Brings Music forward through Launch Services when Cadenza Host needs it to prepare a song, because macOS honours that request from a background app.",
+        "Opens the artist page from the Lyrics view on the Android Remote.",
+        "Shares one album cover across an album's tracks on the Android Remote, and keeps covers on disk between sessions."
       ]
     },
     {

@@ -87,6 +87,19 @@ final class QueueCoordinator {
         for song in songs { knownSongs[song.identity] = song }
     }
 
+    // The map is bounded and cleared when full, while a Remote may still hold a song as prepared. Resolving the
+    // identity again keeps a request from failing on a song that Music or the catalog still has.
+    private func knownOrResolved(_ identity: SongIdentity) async throws -> Song {
+        if let known = knownSongs[identity] { return known }
+        let song =
+            identity.source == "library"
+            ? try await music.resolve(identity)
+            : try await catalog.resolve(identity)
+        remember([song])
+        if song.identity != identity { knownSongs[identity] = song }
+        return song
+    }
+
     /// Reads Music's state. `hintedAt` is the Host time of the change notification that asked for this read. A state
     /// sampled after that moment already shows the change, so a command's own notification does not cost a second read.
     func refresh(hintedAt: Int64? = nil) async {
@@ -546,9 +559,10 @@ final class QueueCoordinator {
         }
         var plannedEntry: String?
         if ["queue.enqueue", "queue.play_now", "queue.play_next"].contains(action.kind) {
-            guard let identity = action.song, let song = knownSongs[identity] else {
+            guard let identity = action.song else {
                 throw CadenzaError.failure("song_not_ready", "Search for and select the song first.")
             }
+            let song = try await knownOrResolved(identity)
             let id = identifier()
             let plan = String(decoding: try JSONSerialization.data(withJSONObject: ["entry_id": id]), as: UTF8.self)
             try store.database.transaction {

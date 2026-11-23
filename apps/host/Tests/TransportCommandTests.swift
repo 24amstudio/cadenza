@@ -75,14 +75,14 @@ struct TransportCommandTests {
         return Fixture(coordinator: coordinator, music: fake, store: store, remote: remote, directory: directory)
     }
 
-    // Playback commands may expire at most 2.1 s ahead (storage/authorize-command.sql). The default uses most of that
-    // window so a loaded test runner still dispatches in time. A test that needs a tight window passes its own.
-    private func command(_ action: CommandAction, store: HostStore, expiresInMs: Int64 = 2_000) throws -> Frame {
+    // Playback commands may expire at most 2.1 s ahead (storage/authorize-command.sql). Using most of that window keeps a
+    // loaded test runner from expiring a command before it is dispatched.
+    private func command(_ action: CommandAction, store: HostStore) throws -> Frame {
         var frame = Frame(type: "command")
         frame.commandId = UUID().uuidString.lowercased()
         frame.hostEpoch = store.epoch
         frame.expectedRevision = try store.revision
-        frame.expiresAtHostMs = monotonicMs() + expiresInMs
+        frame.expiresAtHostMs = monotonicMs() + 2_000
         frame.action = action
         return frame
     }
@@ -90,13 +90,13 @@ struct TransportCommandTests {
     @Test func skipIsDispatchedBeforeAnyMusicReadSoItsDeadlineIsNotSpent() async throws {
         let fixture = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
-        // Each Music read takes 300 ms, like a real osascript launch. Reading first would leave too little time.
+        // Each Music read takes 300 ms, like a real osascript launch. A read ahead of the skip would be recorded before it,
+        // which the call-order check below rejects.
         fixture.music.delayMs = 300
         let occurrence = try #require(fixture.coordinator.snapshot().current?.occurrenceId)
 
         let result = try await fixture.coordinator.execute(
-            command(
-                CommandAction(kind: "playback.skip", occurrenceId: occurrence), store: fixture.store, expiresInMs: 900),
+            command(CommandAction(kind: "playback.skip", occurrenceId: occurrence), store: fixture.store),
             actor: fixture.remote)
 
         #expect(result.outcome == "applied")

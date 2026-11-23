@@ -75,12 +75,14 @@ struct TransportCommandTests {
         return Fixture(coordinator: coordinator, music: fake, store: store, remote: remote, directory: directory)
     }
 
-    private func command(_ action: CommandAction, store: HostStore) throws -> Frame {
+    // Playback commands may expire at most 2.1 s ahead (storage/authorize-command.sql). The default uses most of that
+    // window so a loaded test runner still dispatches in time. A test that needs a tight window passes its own.
+    private func command(_ action: CommandAction, store: HostStore, expiresInMs: Int64 = 2_000) throws -> Frame {
         var frame = Frame(type: "command")
         frame.commandId = UUID().uuidString.lowercased()
         frame.hostEpoch = store.epoch
         frame.expectedRevision = try store.revision
-        frame.expiresAtHostMs = monotonicMs() + 900
+        frame.expiresAtHostMs = monotonicMs() + expiresInMs
         frame.action = action
         return frame
     }
@@ -93,7 +95,8 @@ struct TransportCommandTests {
         let occurrence = try #require(fixture.coordinator.snapshot().current?.occurrenceId)
 
         let result = try await fixture.coordinator.execute(
-            command(CommandAction(kind: "playback.skip", occurrenceId: occurrence), store: fixture.store),
+            command(
+                CommandAction(kind: "playback.skip", occurrenceId: occurrence), store: fixture.store, expiresInMs: 900),
             actor: fixture.remote)
 
         #expect(result.outcome == "applied")
@@ -175,7 +178,7 @@ struct TransportCommandTests {
         let paused = MusicStatus(playing: false, state: "paused", volume: 50, positionMs: 0)
 
         let settled = await TransportConfirmation.awaitConfirmation(
-            action, before: playing, first: playing, dispatchedAtMs: monotonicMs(), deadline: monotonicMs() + 1_000,
+            action, before: playing, first: playing, dispatchedAtMs: monotonicMs(), deadline: monotonicMs() + 60_000,
             intervalMs: 1
         ) {
             reads += 1

@@ -512,6 +512,7 @@ internal fun qualityLabel(
         quality == "lossless" -> "Lossless"
         quality == "hi_res_lossless" -> "Hi-Res Lossless"
         quality == "dolby_atmos" -> "Dolby Atmos"
+        quality == "aac" -> "AAC"
         quality == "unknown" -> "Quality waiting for Cadenza Host"
         else -> "Quality not reported by Cadenza Host"
     }

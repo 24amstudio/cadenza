@@ -8,6 +8,8 @@ struct MusicStatus: Codable, Sendable {
     /// Wall-clock time at which the script read the position. Scripts older than this field omit it.
     var readAtMs: Int64?
     var song: Song?
+    /// Music's file kind for the current track, such as "Apple Music AAC audio file". Scripts older than this field omit it.
+    var fileKind: String?
     /// Music's shuffle switch and repeat mode ("off", "one", or "all"). Scripts older than these fields omit them.
     var shuffle: Bool = false
     var `repeat`: String = "off"
@@ -16,7 +18,7 @@ struct MusicStatus: Codable, Sendable {
 
     init(
         playing: Bool, state: String, volume: Int, positionMs: Int64, readAtMs: Int64? = nil, song: Song? = nil,
-        shuffle: Bool = false, repeat mode: String = "off", sampledAtMs: Int64? = nil
+        shuffle: Bool = false, repeat mode: String = "off", sampledAtMs: Int64? = nil, fileKind: String? = nil
     ) {
         self.playing = playing
         self.state = state
@@ -24,6 +26,7 @@ struct MusicStatus: Codable, Sendable {
         self.positionMs = positionMs
         self.readAtMs = readAtMs
         self.song = song
+        self.fileKind = fileKind
         self.shuffle = shuffle
         self.repeat = mode
         self.sampledAtMs = sampledAtMs
@@ -37,6 +40,7 @@ struct MusicStatus: Codable, Sendable {
         positionMs = try values.decode(Int64.self, forKey: .positionMs)
         readAtMs = try values.decodeIfPresent(Int64.self, forKey: .readAtMs)
         song = try values.decodeIfPresent(Song.self, forKey: .song)
+        fileKind = try values.decodeIfPresent(String.self, forKey: .fileKind)
         shuffle = try values.decodeIfPresent(Bool.self, forKey: .shuffle) ?? false
         self.repeat = try values.decodeIfPresent(String.self, forKey: .repeat) ?? "off"
         sampledAtMs = try values.decodeIfPresent(Int64.self, forKey: .sampledAtMs)

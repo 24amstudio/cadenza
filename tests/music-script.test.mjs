@@ -27,6 +27,7 @@ function nativeBoundary(
     name: () => 'A "quoted"\nsong ||| title',
     artist: () => 'Example artist',
     album: () => 'Example album',
+    kind: () => 'Apple Music AAC audio file',
   };
 
   const playlistId = '0123456789ABCDEF';
@@ -38,6 +39,7 @@ function nativeBoundary(
     name: () => [track.name()],
     artist: () => [track.artist()],
     album: () => [track.album()],
+    kind: () => [track.kind()],
     duration: () => [track.duration()],
     discNumber: () => [1],
     trackNumber: () => [1],

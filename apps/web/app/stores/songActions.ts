@@ -2,8 +2,10 @@ import { defineStore } from 'pinia';
 import { shallowRef } from 'vue';
 import { describeCommandResult } from '~/lib/host/messages';
 import type { RequestOutcome } from '~/lib/host/songRequests';
+import { matchesAutoPlay } from '~/lib/library/autoPlayMatch';
 import { identityOf, songKey } from '~/lib/library/identity';
 import type {
+  AutoPlayItem,
   CommandResult,
   QueueActionKind,
   Song,
@@ -144,7 +146,50 @@ export const useSongActionsStore = defineStore('songActions', () => {
     phases.value = next;
   }
 
-  return { phaseOf, queue };
+  // AutoPlay songs have no identity in Music's queue. The request searches the catalog for the same title and artist,
+  // then queues the match like any other row. Resolves when the match is queued or the search fails.
+  function playAutoPlay(
+    item: AutoPlayItem,
+    action: 'now' | 'next',
+  ): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const query = `${item.title} ${item.artist}`.slice(0, 200);
+
+      const sent = host.searchSongs(query, 'catalog', (outcome) => {
+        if (!outcome.ok) {
+          notices.show(outcome.message);
+
+          resolve();
+
+          return;
+        }
+
+        const song = outcome.value.find((candidate) =>
+          matchesAutoPlay(item, candidate),
+        );
+
+        if (song === undefined) {
+          notices.show(
+            `Apple Music has no match for ${item.title} by ${item.artist}.`,
+          );
+
+          resolve();
+
+          return;
+        }
+
+        void queue(song, action).then(resolve);
+      });
+
+      if (sent === null) {
+        notices.show('Cadenza Host is not connected.');
+
+        resolve();
+      }
+    });
+  }
+
+  return { phaseOf, queue, playAutoPlay };
 });
 
 function rowKey(song: Song, action: RowAction): string {

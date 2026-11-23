@@ -33,7 +33,7 @@ export type RepeatMode = 'off' | 'one' | 'all';
 
 // The audio tier Music reports for the current song. 'unknown' until Music's badge has been read.
 export type AudioQuality =
-  'unknown' | 'lossless' | 'hi_res_lossless' | 'dolby_atmos';
+  'unknown' | 'lossless' | 'hi_res_lossless' | 'dolby_atmos' | 'aac';
 
 // A song Music plays after the requests. Only the first few arrive, and a Remote cannot change them.
 export interface AutoPlayItem {

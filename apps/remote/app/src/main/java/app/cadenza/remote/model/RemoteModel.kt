@@ -148,6 +148,8 @@ class RemoteModel(
 
     internal var lastHeartbeatAt = 0L
 
+    internal var lastWarningLogged: Pair<String, Long>? = null
+
     internal var lastClockSentAt = 0L
 
     internal var lastStatusSentAt = 0L

@@ -6,6 +6,7 @@ interface MusicTrack {
   name(): string;
   artist(): string;
   album(): string;
+  kind(): string;
 }
 
 // A set of tracks read one property at a time: each call is a single Apple event for the whole set.

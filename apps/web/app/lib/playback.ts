@@ -56,6 +56,8 @@ export function qualityLabel(quality: AudioQuality): string | null {
       return 'Hi-Res Lossless';
     case 'dolby_atmos':
       return 'Dolby Atmos';
+    case 'aac':
+      return 'AAC';
     case 'unknown':
       return null;
   }

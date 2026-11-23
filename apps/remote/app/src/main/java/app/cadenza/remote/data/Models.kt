@@ -265,7 +265,7 @@ object Wire {
             value.optString("repeat", "off"),
         ).also {
             require(it.repeat in listOf("off", "one", "all")) { "Unknown repeat mode." }
-            require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos")) {
+            require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos", "aac")) {
                 "Invalid playback format or volume."
             }
             require(queue.map { entry -> entry.id }.toSet().size == queue.size) { "Duplicate queue request identity." }

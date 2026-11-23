@@ -111,6 +111,8 @@ function describeStatus(music) {
     shuffle: readValue(() => Boolean(music.shuffleEnabled()), false),
     repeat: readRepeat(music),
     song: readValue(() => describeTrack(music.currentTrack(), music), null),
+    // The file kind of the current track, such as "Apple Music AAC audio file". It names the codec when Music shows no tier badge.
+    file_kind: readValue(() => String(music.currentTrack().kind()), null),
   };
 }
 

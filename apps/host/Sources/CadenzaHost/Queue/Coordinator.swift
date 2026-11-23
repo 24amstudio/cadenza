@@ -346,7 +346,10 @@ final class QueueCoordinator {
         if refreshQuality, now - lastQualityAt > Self.qualityIntervalMs, !connectedRemoteIds().isEmpty,
             let title = status.song?.title
         {
-            let quality = music.accessibility.quality(currentTitle: title)
+            let badgeTier = music.accessibility.quality(currentTitle: title)
+            // A tier badge always wins. The file kind names the codec only when Music shows no badge.
+            let quality =
+                badgeTier == "unknown" ? MusicQuality.tier(forFileKind: status.fileKind) ?? badgeTier : badgeTier
             if quality != lastQuality {
                 logger?.log(
                     .info, category: "playback", action: "quality.changed", "Music audio quality is \(quality)",

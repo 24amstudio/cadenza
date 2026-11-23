@@ -550,7 +550,8 @@ function isAudioQuality(value: string): value is AudioQuality {
     value === 'unknown' ||
     value === 'lossless' ||
     value === 'hi_res_lossless' ||
-    value === 'dolby_atmos'
+    value === 'dolby_atmos' ||
+    value === 'aac'
   );
 }
 

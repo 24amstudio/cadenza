@@ -7,4 +7,10 @@ enum MusicQuality {
         if text.contains("lossless") { return "lossless" }
         return "unknown"
     }
+
+    /// The codec named by Music's file kind. It is used only when Music shows no tier badge, so a lossless badge always wins.
+    static func tier(forFileKind kind: String?) -> String? {
+        guard let kind, kind.localizedCaseInsensitiveContains("AAC") else { return nil }
+        return "aac"
+    }
 }

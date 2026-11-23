@@ -8,7 +8,7 @@ const source = readFileSync(
   'utf8',
 );
 
-/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean }} [options] */
+/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean, lateApply?: number }} [options] */
 function nativeBoundary(
   persistentId = 'AB1234567890CDEF',
   { trackClass = 'sharedTrack', inLibrary = true, lateApply = 0 } = {},
@@ -17,8 +17,10 @@ function nativeBoundary(
   let position = 1.25;
   let playing = true;
   // Music applies play and pause some reads after its script returns, as it does on a busy Mac.
+  /** @type {boolean | null} */
   let pendingPlaying = null;
   let readsUntilApplied = 0;
+
   const applyLatePlaybackChange = (/** @type {boolean} */ next) => {
     if (lateApply > 0) {
       pendingPlaying = next;
@@ -27,6 +29,7 @@ function nativeBoundary(
       playing = next;
     }
   };
+
   let shuffle = false;
   let repeat = 'off';
   let query = '';
@@ -79,6 +82,7 @@ function nativeBoundary(
         playing = pendingPlaying;
         pendingPlaying = null;
       }
+
       return playing ? 'playing' : 'paused';
     },
     currentTrack: () => track,
@@ -157,7 +161,11 @@ function nativeBoundary(
   };
 
   // Application is the explicit external macOS automation boundary.
-  const context = { Application: () => music, argumentsForTest: [], delay: () => {} };
+  const context = {
+    Application: () => music,
+    argumentsForTest: [],
+    delay: () => {},
+  };
 
   runInNewContext(source, context);
 

@@ -29,14 +29,23 @@ struct CommandAction: Codable, Sendable {
     var vocalPercent: Int? = nil
     var enabled: Bool? = nil
     var mode: String? = nil
+    // Library write-back: the playlist name and the library songs to add to it.
+    var name: String? = nil
+    var songs: [SongIdentity]? = nil
+    // The UID of the audio output to make the Mac's default.
+    var output: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case kind, song, entryId, beforeEntryId, occurrenceId, positionMs, percent, vocalPercent, enabled, mode
+        case name, songs, output
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(name, forKey: .name)
+        try container.encodeIfPresent(songs, forKey: .songs)
+        try container.encodeIfPresent(output, forKey: .output)
         try container.encodeIfPresent(song, forKey: .song)
         try container.encodeIfPresent(entryId, forKey: .entryId)
         if kind == "queue.move" { try container.encode(beforeEntryId, forKey: .beforeEntryId) }

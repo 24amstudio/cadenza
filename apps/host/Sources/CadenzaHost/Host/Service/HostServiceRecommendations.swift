@@ -46,12 +46,111 @@ extension HostService {
             Frame(type: "recommendation.passport.accepted", sequence: passport.sequence), to: peer)
     }
 
+    /// Ranks for the Remote that asked. Taste comes from the Host's ledger, and with other Remotes connected the room
+    /// arrangement drops artists one of them dislikes and places the artists every Remote likes first.
+    private func roomRanked(
+        _ candidates: [RecommendationCandidate], profile: RecommendationProfile, context: RecommendationContext,
+        actor: String
+    ) -> [RecommendationCandidate] {
+        let now = Date()
+        let ledger = TasteLedger(database: store.database)
+        let ranking = tasteProfile(profile, ledger: ledger, now: now)
+        let ranked = recommendationRanker.rank(candidates: candidates, profile: ranking, context: context)
+        let others = queue.connectedRemoteIds().subtracting([actor]).map { remoteId in
+            tasteProfile(storedProfile(remoteId: remoteId), ledger: ledger, now: now)
+        }
+        let timeArtists = (try? ledger.artists(remoteId: actor, bucket: TasteBucket.bucket(for: now))) ?? []
+
+        return RoomBlend.arrange(ranked, room: [ranking] + others, actor: ranking, timeArtists: timeArtists)
+    }
+
+    private func tasteProfile(_ profile: RecommendationProfile, ledger: TasteLedger, now: Date) -> RecommendationProfile
+    {
+        let applied = profile.applyingTaste((try? ledger.affinities(remoteId: profile.remoteId, now: now)) ?? [:])
+        guard let digest = try? TasteDigestStore(database: store.database).load(remoteId: profile.remoteId) else {
+            return applied
+        }
+        return digest.seeding(applied)
+    }
+
+    private func storedProfile(remoteId: String) -> RecommendationProfile {
+        (try? store.recommendationProfile(remoteId: remoteId)) ?? .blank(remoteId: remoteId)
+    }
+
+    /// The context and ranked candidates for one query. A single recommendation and a shelf share this, so they rank alike.
+    func rankedRecommendations(
+        _ query: RecommendationQuery, profile: RecommendationProfile, actor: String, snapshot: HostSnapshot
+    ) -> (context: RecommendationContext, ranked: [RecommendationCandidate]) {
+        let context = RecommendationContext(
+            current: snapshot.current.map {
+                RecommendationTrack(
+                    source: $0.song.source,
+                    id: $0.song.id,
+                    artistId: $0.song.artist,
+                    albumId: $0.song.album,
+                    versionId: nil
+                )
+            },
+            recent: profile.recent,
+            queue: snapshot.queue.map {
+                RecommendationTrack(
+                    source: $0.song.source,
+                    id: $0.song.id,
+                    artistId: $0.song.artist,
+                    albumId: $0.song.album,
+                    versionId: nil
+                )
+            },
+            intent: query.intent,
+            queuePhase: snapshot.queue.isEmpty ? "empty" : "active",
+            explicitAllowed: query.filters.explicitAllowed,
+            locked: query.filters.locked,
+            queueRevision: snapshot.revision,
+            modelVersion: query.modelVersion
+        )
+        let queueCandidates = snapshot.queue.prefix(CREEConstants.maximumCandidates).map { entry in
+            RecommendationCandidate(
+                track: RecommendationTrack(
+                    source: entry.song.source,
+                    id: entry.song.id,
+                    artistId: entry.song.artist,
+                    albumId: entry.song.album,
+                    versionId: nil
+                ),
+                song: entry.song,
+                source: "cadenza",
+                confidence: 0.65,
+                evidence: ["already in the Host queue"],
+                applePrior: nil,
+                metadataCompleteness: entry.song.album.isEmpty ? 0.7 : 1,
+                availability: true
+            )
+        }
+        let recentCandidates = recommendationRetriever.retrieve(
+            profile: profile, context: context, knownSongs: queue.knownSongs)
+        let ranked = roomRanked(
+            queueCandidates + recentCandidates, profile: profile, context: context, actor: actor)
+        return (context, ranked)
+    }
+
     func receiveRecommendationQuery(
         _ frame: Frame, actor: String, peer: NetworkService.Peer
     ) async throws {
-        guard let query = frame.recommendationQuery,
-            let profile = try store.recommendationProfile(remoteId: actor)
-        else {
+        guard let query = frame.recommendationQuery else {
+            network.send(
+                Frame(
+                    type: "recommendation.result",
+                    errorCode: "profile_unavailable",
+                    recommendationResult: nil
+                ),
+                to: peer)
+            return
+        }
+        if query.shelf == true {
+            try sendRecommendationShelf(query, requestId: frame.requestId, actor: actor, peer: peer)
+            return
+        }
+        guard let profile = try store.recommendationProfile(remoteId: actor) else {
             network.send(
                 Frame(
                     type: "recommendation.result",
@@ -101,55 +200,7 @@ extension HostService {
             )
         }
         let snapshot = try queue.snapshot()
-        let context = RecommendationContext(
-            current: snapshot.current.map {
-                RecommendationTrack(
-                    source: $0.song.source,
-                    id: $0.song.id,
-                    artistId: $0.song.artist,
-                    albumId: $0.song.album,
-                    versionId: nil
-                )
-            },
-            recent: profile.recent,
-            queue: snapshot.queue.map {
-                RecommendationTrack(
-                    source: $0.song.source,
-                    id: $0.song.id,
-                    artistId: $0.song.artist,
-                    albumId: $0.song.album,
-                    versionId: nil
-                )
-            },
-            intent: query.intent,
-            queuePhase: snapshot.queue.isEmpty ? "empty" : "active",
-            explicitAllowed: query.filters.explicitAllowed,
-            locked: query.filters.locked,
-            queueRevision: snapshot.revision,
-            modelVersion: query.modelVersion
-        )
-        let queueCandidates = snapshot.queue.prefix(CREEConstants.maximumCandidates).map { entry in
-            RecommendationCandidate(
-                track: RecommendationTrack(
-                    source: entry.song.source,
-                    id: entry.song.id,
-                    artistId: entry.song.artist,
-                    albumId: entry.song.album,
-                    versionId: nil
-                ),
-                song: entry.song,
-                source: "cadenza",
-                confidence: 0.65,
-                evidence: ["already in the Host queue"],
-                applePrior: nil,
-                metadataCompleteness: entry.song.album.isEmpty ? 0.7 : 1,
-                availability: true
-            )
-        }
-        let recentCandidates = recommendationRetriever.retrieve(
-            profile: profile, context: context, knownSongs: queue.knownSongs)
-        let ranked = recommendationRanker.rank(
-            candidates: queueCandidates + recentCandidates, profile: profile, context: context)
+        let (context, ranked) = rankedRecommendations(query, profile: profile, actor: actor, snapshot: snapshot)
         let (_, chosen) = recommendationPlanner.choose(ranked: ranked, context: context, profile: profile)
         var result = chosen
         result?.mode = effectiveMode

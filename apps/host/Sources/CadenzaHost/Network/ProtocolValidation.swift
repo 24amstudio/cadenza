@@ -20,6 +20,9 @@ enum ProtocolValidation {
         "sing.enable": ["kind", "occurrence_id"],
         "sing.disable": ["kind", "occurrence_id"],
         "sing.mix": ["kind", "occurrence_id", "vocal_percent"],
+        "library.favorite": ["kind", "song", "enabled"],
+        "library.addToPlaylist": ["kind", "name", "songs"],
+        "audio.selectOutput": ["kind", "output"],
     ]
 
     static func decode(_ data: Data) throws -> Frame {
@@ -141,7 +144,7 @@ enum ProtocolValidation {
         if type == "hello" {
             try nested(
                 object["auth"], fields: ["remote_id", "token", "last_credit_sequence"],
-                optional: ["name", "heartbeat", "remote_version", "remote_build"])
+                optional: ["name", "heartbeat", "remote_version", "remote_build", "taste_digest"])
         }
         if type == "clock" { try nested(object["clock"], fields: ["sent_at_remote_ms"]) }
         if type == "transport.configure" {
@@ -310,6 +313,22 @@ enum ProtocolValidation {
             guard let mode = action.mode, ["off", "one", "all"].contains(mode) else {
                 throw invalid("Invalid repeat mode.")
             }
+        case "library.favorite":
+            guard let song = action.song, let flag = rawAction["enabled"] as? NSNumber,
+                CFGetTypeID(flag) == CFBooleanGetTypeID(),
+                (try? MusicLibraryWriteBack.favoriteArguments(song, favorite: flag.boolValue)) != nil,
+                let object = rawAction["song"] as? [String: Any], Set(object.keys) == Set(["source", "id"])
+            else { throw invalid("Invalid library favorite.") }
+        case "audio.selectOutput":
+            guard let output = action.output, (1...256).contains(output.count) else {
+                throw invalid("Invalid audio output.")
+            }
+        case "library.addToPlaylist":
+            guard let name = action.name, let songs = action.songs,
+                (try? MusicLibraryWriteBack.playlistArguments(name: name, songs)) != nil,
+                let items = rawAction["songs"] as? [[String: Any]],
+                items.allSatisfy({ Set($0.keys) == Set(["source", "id"]) })
+            else { throw invalid("Invalid playlist request.") }
         case "sing.mix":
             guard let occurrence = action.occurrenceId, Wire.isIdentifier(occurrence),
                 let vocalPercent = action.vocalPercent, (0...100).contains(vocalPercent)

@@ -46,6 +46,28 @@
           "additionalProperties": false
         }
       ]
+    },
+    "taste_digest": {
+      "type": "object",
+      "required": ["top_artists", "top_genres", "favorited_track_ids"],
+      "properties": {
+        "top_artists": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "top_genres": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "favorited_track_ids": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -9,6 +9,8 @@ const props = defineProps<{
   durationMs: number | null;
   disabled: boolean;
   labels?: boolean;
+  // A radio stream has no length to seek within, so it shows a LIVE label instead of times.
+  live?: boolean;
 }>();
 
 const emit = defineEmits<{ seek: [positionMs: number] }>();
@@ -70,14 +72,19 @@ function clearCommitted(): void {
       max="1000"
       step="1"
       :value="Math.round(ratio * 1000)"
-      :disabled="disabled || durationMs === null"
+      :disabled="disabled || live || durationMs === null"
       :style="{ '--progress': `${ratio * 100}%` }"
       aria-label="Playback position"
-      :aria-valuetext="`${formatClock(shownMs)} of ${formatClock(duration)}`"
+      :aria-valuetext="
+        live
+          ? 'Live radio'
+          : `${formatClock(shownMs)} of ${formatClock(duration)}`
+      "
       @input="onInput"
       @change="onCommit"
     />
-    <div v-if="labels" class="times" aria-hidden="true">
+    <div v-if="live" class="live-badge">Live</div>
+    <div v-else-if="labels" class="times" aria-hidden="true">
       <span>{{ formatClock(shownMs) }}</span>
       <span>-{{ formatClock(remainingMs) }}</span>
     </div>
@@ -164,5 +171,15 @@ function clearCommitted(): void {
   color: var(--color-text-secondary);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.live-badge {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-fill-strong);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
 }
 </style>

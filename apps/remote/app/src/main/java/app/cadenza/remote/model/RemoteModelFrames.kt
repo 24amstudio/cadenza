@@ -12,6 +12,7 @@ import app.cadenza.remote.data.objects
 import app.cadenza.remote.media.SessionStatus
 import app.cadenza.remote.network.HostLivenessPolicy
 import app.cadenza.remote.network.PathMeasurement
+import app.cadenza.remote.network.WakeOnLan
 import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
 import app.cadenza.remote.recommendation.RecommendationTrack
@@ -160,6 +161,9 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
     withContext(ioDispatcher) {
         if (token != null) app.vault.save("host." + profile.hostId, token)
         app.database.saveProfile(profile)
+        value.nullableString("mac_address")?.takeIf { WakeOnLan.isValidAddress(it) }?.let {
+            preferences.write("host_mac." + profile.hostId to it)
+        }
         preferences.write("active_host" to profile.hostId, "client_name" to remoteName)
     }
     invitation = null

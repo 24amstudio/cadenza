@@ -153,6 +153,7 @@ const ambientStyle = computed(() => {
           :position-ms="host.positionMs"
           :duration-ms="song.durationMs"
           :disabled="!host.canControl"
+          :live="host.current?.isLiveRadio === true"
           @seek="host.seekTo"
         />
 

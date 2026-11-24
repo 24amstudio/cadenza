@@ -43,6 +43,15 @@ export default defineNuxtConfig({
         },
         { name: 'referrer', content: 'no-referrer' },
       ],
+      // The manifest lets the Remote be installed, and receives Apple Music links shared from other apps.
+      link: [
+        {
+          rel: 'manifest',
+          href:
+            (process.env['CADENZA_WEB_BASE_URL'] ?? '/') +
+            'manifest.webmanifest',
+        },
+      ],
     },
   },
 });

@@ -15,6 +15,8 @@ final class HostService {
     let logger: HostLogger
     let lyrics: Lyrics
     let sing: SingCoordinator
+    let sleepAssertion = SleepAssertion()
+    let publishedState = HostPublishedState()
     let network = NetworkService()
     let bluetooth = BluetoothPeripheral()
     let webRemote = WebRemoteListener()
@@ -111,6 +113,7 @@ final class HostService {
                 self.sing.invalidate()
             }
             published.sing = self.sing.publishedSession
+            self.publishedState.apply(to: &published)
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs
             if delay > 0, var current = published.current {
@@ -118,6 +121,7 @@ final class HostService {
                 published.current = current
             }
             self.onSnapshot?(published)
+            self.refreshSleepAssertion()
             self.deliverState(published)
             if published.current?.occurrenceId != self.lyricDocument?.occurrenceId {
                 self.lyricDocument = nil
@@ -141,6 +145,7 @@ final class HostService {
             self?.transportDecisions.removeValue(forKey: id)
             self?.transportDecisionAt.removeValue(forKey: id)
             self?.settleCredits()
+            self?.refreshSleepAssertion()
             self?.onDevicesChanged?()
         }
         bluetooth.onIssue = { [weak self] message in self?.onIssue?(message) }
@@ -189,6 +194,8 @@ final class HostService {
     }
 
     func startObservation() {
+        // Safe recovery keeps automatic Music polling off until the user resumes it, so the crash cannot repeat on each poll.
+        guard !CrashLoopGuard.safeRecoveryActive() else { return }
         observationEnabled = true
         observation.start { [weak self] hintedAt in
             guard let self, self.observationEnabled else { return }
@@ -201,6 +208,7 @@ final class HostService {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.queue.refresh()
+                self.refreshSleepAssertion()
                 if !self.queue.busy && monotonicMs() - self.lastMaintenance > 300_000 {
                     do { try self.store.database.maintain() } catch {
                         self.onIssue?("Database maintenance failed: " + error.localizedDescription)
@@ -210,6 +218,12 @@ final class HostService {
                 try? await Task.sleep(for: .milliseconds(self.fallbackPollMs))
             }
         }
+    }
+
+    /// Clears safe recovery and restarts automatic Music polling. Called from Logs when the user chooses to resume.
+    func resumeAutomaticMusicPolling() {
+        CrashLoopGuard.resumeAutomaticMusicPolling()
+        if serviceRunning && observationEnabled { startObservation() }
     }
 
     /// Music's own change notification starts a read at once, so this poll is only the bounded fallback. Each poll
@@ -231,6 +245,7 @@ final class HostService {
         logger.log(.info, category: "host.lifecycle", action: "service.stop", "Host service stopping")
         settleCredits()
         polling?.cancel()
+        sleepAssertion.releaseNow()
         livenessKeepalive?.cancel()
         livenessKeepalive = nil
         observation.stop()
@@ -457,6 +472,7 @@ final class HostService {
             invitationPinAttempts = 3
         } else if frame.type == "hello", let auth = frame.auth, try store.authenticate(auth) {
             remoteId = auth.remoteId
+            try receiveTasteDigest(auth)
             peer.remoteVersion = auth.remoteVersion
             peer.supportsHeartbeat = auth.heartbeat == true
             if let build = auth.remoteBuild, build > HostBuild.build { onNewerRemote?() }
@@ -499,6 +515,7 @@ final class HostService {
         if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         welcome.hostVersion = HostBuild.version
         welcome.hostBuild = HostBuild.build
+        welcome.macAddress = HardwareAddress.primary()
         welcome.updateManifest = remoteUpdateOffer()
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
@@ -823,6 +840,10 @@ final class HostService {
         do {
             guard let current = try queue.snapshot().current else {
                 throw CadenzaError.failure("lyrics_unavailable", "Play a song first.")
+            }
+            // Radio has no fixed length to align timed lines against, so no lookup runs for it.
+            if current.isLiveRadio {
+                throw CadenzaError.failure("lyrics_unavailable", "Lyrics are not available for live radio.")
             }
             if let document = lyricDocument, document.occurrenceId == current.occurrenceId {
                 network.send(Frame(type: "lyrics", requestId: requestId, lyrics: document), to: peer)

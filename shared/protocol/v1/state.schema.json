@@ -88,7 +88,8 @@
         "artwork_preview": {
           "type": "string",
           "maxLength": 4096
-        }
+        },
+        "is_live_radio": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -179,7 +180,58 @@
         "synchronized": { "type": "boolean" },
         "issue": { "type": "string", "maxLength": 4000 },
         "observation_gap": { "type": "boolean" },
-        "sing": { "$ref": "#/$defs/sing" }
+        "sing": { "$ref": "#/$defs/sing" },
+        "host_budget": {
+          "enum": ["unrestricted", "balanced", "constrained", "survival"]
+        },
+        "audio_outputs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/audioOutput" }
+        },
+        "cast": { "$ref": "#/$defs/cast" }
+      },
+      "additionalProperties": false
+    },
+    "audioOutput": {
+      "type": "object",
+      "required": ["id", "name", "transport", "is_default"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "transport": {
+          "enum": [
+            "built-in",
+            "airplay",
+            "bluetooth",
+            "usb",
+            "display",
+            "virtual",
+            "other"
+          ]
+        },
+        "is_default": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "cast": {
+      "type": "object",
+      "required": ["presentation", "devices"],
+      "properties": {
+        "presentation": { "enum": ["auto", "audio_only", "full_suite"] },
+        "devices": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["name", "display"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "display": { "enum": ["none", "display", "unknown"] }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },

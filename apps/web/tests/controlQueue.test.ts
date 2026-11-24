@@ -44,6 +44,9 @@ function snapshotOf(occurrenceId: string, revision = 18): Snapshot {
     autoPlay: [],
     synchronized: true,
     issue: null,
+    audioOutputs: [],
+    hostBudget: null,
+    cast: null,
     shuffle: false,
     repeat: 'off',
   };

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import OledAmbient from '~/components/app/OledAmbient.vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
+import LibraryActions from '~/components/player/LibraryActions.vue';
+import OutputMenu from '~/components/player/OutputMenu.vue';
 import VolumeSlider from '~/components/player/VolumeSlider.vue';
 import { useHostStore } from '~/stores/host';
 import { useUiStore } from '~/stores/ui';
@@ -14,6 +17,8 @@ const ui = useUiStore();
 
 const song = computed(() => host.current?.song ?? null);
 const duration = computed(() => song.value?.durationMs ?? null);
+
+const ambientOpen = ref(false);
 
 const showLyricsToggle = computed(
   () => host.current !== null && host.lyricsStatus > 0,
@@ -27,6 +32,7 @@ const showLyricsToggle = computed(
         :position-ms="host.positionMs"
         :duration-ms="duration"
         :disabled="!host.canControl"
+        :live="host.current?.isLiveRadio === true"
         @seek="host.seekTo"
       />
     </div>
@@ -79,6 +85,22 @@ const showLyricsToggle = computed(
         @shuffle="host.toggleShuffle"
         @repeat="host.cycleRepeat"
       />
+      <button
+        type="button"
+        class="utility-button ambient-toggle"
+        :disabled="host.current === null"
+        @click="ambientOpen = true"
+      >
+        Ambient
+      </button>
+      <OledAmbient
+        v-if="ambientOpen && host.current !== null"
+        :title="host.current.song.title"
+        :artist="host.current.song.artist"
+        @close="ambientOpen = false"
+      />
+      <LibraryActions class="player-library" />
+      <OutputMenu class="player-output" />
       <VolumeSlider
         class="volume-full"
         :percent="host.volumePercent"

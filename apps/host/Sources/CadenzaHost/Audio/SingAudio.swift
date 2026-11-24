@@ -177,6 +177,8 @@ final class SingCoordinator {
     private let output: SingOutputSink
     /// Answers whether the verified Sing model is installed. Wired to the Sing model manager by the Host.
     var modelInstalled: () -> Bool = { false }
+    /// Answers whether the thermal budget allows new separation. Wired to the energy monitor by the Host.
+    var budgetAllowsInference: () -> Bool = { true }
     private let mixState = SingMixState()
     private var pipeline: SingAudioPipeline?
     private(set) var session = SingSession()
@@ -277,6 +279,9 @@ final class SingCoordinator {
 
     func enable(for occurrence: String) async throws {
         try checkOccurrence(occurrence)
+        guard budgetAllowsInference() else {
+            throw SingAudioError.unavailable("Sing is paused while this Mac is under heavy thermal load.")
+        }
         onLifecycle?(.info, "sing.enable.started", "Sing enable started", ["occurrence_id": occurrence])
         guard session.status == "ready" else {
             throw SingAudioError.unavailable(session.issue ?? "Sing is not ready.")

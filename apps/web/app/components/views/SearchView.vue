@@ -2,6 +2,7 @@
 import { computed, onMounted, useTemplateRef } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import EmptyState from '~/components/common/EmptyState.vue';
+import RecommendationShelves from '~/components/browse/RecommendationShelves.vue';
 import SongRow from '~/components/library/SongRow.vue';
 import { songKey } from '~/lib/library/identity';
 import type { SearchScope } from '~/lib/protocol/types';
@@ -93,6 +94,11 @@ function submit(): void {
         </button>
       </div>
     </form>
+
+    <RecommendationShelves
+      v-if="search.state.query.trim() === ''"
+      class="shelves-section"
+    />
 
     <ul v-if="suggestionsShown" class="suggestions" aria-label="Suggestions">
       <li v-for="term in search.state.terms" :key="term">

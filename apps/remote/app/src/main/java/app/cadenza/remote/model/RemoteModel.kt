@@ -337,6 +337,7 @@ class RemoteModel(
                 status.copy(lyricLine = line.takeIf { interactive })
             }.distinctUntilChanged().collect { SessionNotification(app).update(it, mediaToken) }
         }
+        startSessionDismissal()
         viewModelScope.launch {
             state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
         }
@@ -433,6 +434,8 @@ class RemoteModel(
                         recentSearches = SearchHistory.decode(preferences.getString("recent_searches", null)),
                         transportPreference = preferences.getString("transport_preference", "balanced") ?: "balanced",
                         songChangeNotifications = preferences.getString("song_change_notifications", "true") != "false",
+                        tasteDigestOptIn = preferences.getString(TASTE_DIGEST_OPT_IN, "false") == "true",
+                        volumeRockerControl = preferences.getString(VOLUME_ROCKER_CONTROL, "false") == "true",
                         lockScreenMotionArtwork = background.lockScreenMotionArtwork,
                         silentPlaybackKeepAlive = background.silentPlaybackKeepAlive,
                         theme = theme,
@@ -572,6 +575,16 @@ class RemoteModel(
         preferences.write("transport_preference" to preference)
         mutable.update { it.copy(transportPreference = preference) }
         if (mutable.value.connected) publishStatus()
+    }
+
+    fun setVolumeRockerControl(enabled: Boolean) {
+        mutable.update { it.copy(volumeRockerControl = enabled) }
+        viewModelScope.launch(ioDispatcher) { preferences.write(VOLUME_ROCKER_CONTROL to enabled.toString()) }
+    }
+
+    fun setTasteDigestOptIn(enabled: Boolean) {
+        mutable.update { it.copy(tasteDigestOptIn = enabled) }
+        viewModelScope.launch(ioDispatcher) { preferences.write(TASTE_DIGEST_OPT_IN to enabled.toString()) }
     }
 
     fun setSongChangeNotifications(enabled: Boolean) {

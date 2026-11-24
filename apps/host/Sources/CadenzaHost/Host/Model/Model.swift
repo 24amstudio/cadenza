@@ -21,6 +21,9 @@ final class HostModel {
     var stagedVersion: String?
     var updateStatus: String?
     var service: HostService?
+    let energy = HostEnergyMonitor()
+    /// The fatal-signal record left by the previous session, shown in Logs until the user dismisses it.
+    var previousCrashRecord: String?
     var onboardingComplete = UserDefaults.standard.bool(forKey: "onboardingComplete")
     var showingSetup = false
     var selectedSection: HostSection = .nowPlaying
@@ -76,13 +79,33 @@ final class HostModel {
         SelfUpdateLoopGuard.save(SelfUpdateLoopGuard.settled(SelfUpdateLoopGuard.load(), runningBuild: HostBuild.build))
         if watchdog == nil { watchdog = try? HostWatchdog() }
         watchdog?.start()
+        energy.onChange = { [weak self] next in
+            self?.service?.setHostBudget(next)
+            self?.service?.logger.log(
+                .info, category: "host.health", action: "budget.changed", "Host operating budget is now \(next)",
+                metadata: ["budget": String(describing: next)])
+        }
+        energy.start()
+        AudioOutputs.startObserving { [weak self] in self?.service?.queue.publish() }
         service?.stop()
         do {
             let directory = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appendingPathComponent("Cadence Host", isDirectory: true)
+            CrashCapture.install(directory: directory)
             let service = try HostService(directory: directory, configuration: configuration)
+            let logs = directory.appendingPathComponent("logs", isDirectory: true)
+            service.logger.mirror = try? LogMirror(directory: logs)
+            previousCrashRecord = CrashCapture.takePreviousRecord()
+            if let previous = previousCrashRecord {
+                service.logger.log(
+                    .error, category: "host.lifecycle", action: "host.crash.previous",
+                    "Cadenza Host ended from a fatal signal last time",
+                    metadata: ["record": String(previous.prefix(4_000))])
+            }
             service.sing.modelInstalled = { [weak self] in self?.singModel.isInstalled ?? false }
+            service.sing.budgetAllowsInference = { [energy] in energy.budget.allowsSingInference }
+            service.setHostBudget(energy.budget)
             // A Remote on a newer build is the signal that this Host should look for its own update now.
             service.onNewerRemote = { [weak self] in self?.checkUpdates(automatic: true) }
             refreshRemoteArtifact(service)
@@ -127,7 +150,10 @@ final class HostModel {
         }
     }
 
-    func markCleanShutdown() { watchdog?.markCleanShutdown() }
+    func markCleanShutdown() {
+        CrashCapture.finishSession()
+        watchdog?.markCleanShutdown()
+    }
 
     func refreshDevices() {
         let connected: [String: SessionStatus?] = Dictionary(

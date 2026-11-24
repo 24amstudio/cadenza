@@ -1,8 +1,12 @@
 // The narrow Music.app scripting surface used by the owned JXA resource.
 interface MusicTrack {
   persistentID(): string;
+  get favorited(): () => boolean;
+  set favorited(value: boolean);
+  duplicate(query: { to: MusicPlaylist }): void;
   class(): string;
-  duration(): number;
+  // Music answers "missing value" (null here) for a stream, which has no length.
+  duration(): number | null;
   name(): string;
   artist(): string;
   album(): string;
@@ -17,7 +21,7 @@ interface MusicTrackSet {
   name(): string[];
   artist(): string[];
   album(): string[];
-  duration(): number[];
+  duration(): (number | null)[];
   discNumber(): number[];
   trackNumber(): number[];
 }
@@ -39,7 +43,7 @@ interface MusicPlaylist {
 }
 
 interface MusicPlaylistCollection extends ArrayLike<MusicPlaylist> {
-  whose(query: { persistentID: string }): MusicPlaylist[];
+  whose(query: { persistentID: string } | { name: string }): MusicPlaylist[];
   name(): string[];
   persistentID(): string[];
   class(): string[];
@@ -55,6 +59,10 @@ interface MusicApplication {
   launch(): void;
   playerState(): string;
   currentTrack(): MusicTrack;
+  make(spec: {
+    new: 'userPlaylist';
+    withProperties: { name: string };
+  }): MusicPlaylist;
   libraryPlaylists: ArrayLike<MusicLibrary>;
   userPlaylists: MusicPlaylistCollection;
   search(

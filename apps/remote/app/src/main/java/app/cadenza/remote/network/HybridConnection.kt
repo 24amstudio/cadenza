@@ -14,6 +14,8 @@ class HybridConnection(
     opened: () -> Unit,
     received: (JSONObject) -> Unit,
     closed: (String) -> Unit,
+    // The Host's hardware address from its pairing. A sleeping Host answers no LAN connection, so it is woken from here.
+    private val wakeMac: String? = null,
 ) : RemoteConnection {
     private val onOpened = opened
 
@@ -37,6 +39,7 @@ class HybridConnection(
     private val lan =
         HostConnection(host, port, ::lanOpened, received) {
             lanReady = false
+            wakeHostOnce()
             if (!bleReady && bleFinished) closed(it) else retryLanLater()
         }
     private val ble =
@@ -62,10 +65,22 @@ class HybridConnection(
         timers.postDelayed({ if (!stopped && lanReady && !bleReady) ble.connect() }, delay)
     }
 
+    // Wake-on-LAN is sent once per LAN outage, and only while Bluetooth is not carrying the session. It runs off the
+    // main thread, and Bluetooth keeps trying in the meantime.
+    private var wakeSent = false
+
+    private fun wakeHostOnce() {
+        val mac = wakeMac ?: return
+        if (wakeSent || bleReady) return
+        wakeSent = true
+        kotlin.concurrent.thread(name = "cadenza-wake-on-lan", isDaemon = true) { WakeOnLan.send(mac) }
+    }
+
     // A reopened LAN path resends the stored hello. Calling onOpened as well would send a second hello, which the Host
     // rejects as an unsupported message once the path is authenticated.
     private fun lanOpened() {
         lanReady = true
+        wakeSent = false
         lanRetries = 0
         openedOnce = true
         pendingPair?.let { pair ->

@@ -12,7 +12,7 @@ Cadenza does not require SSH. SSH is used only for development access to the Hos
 
 ## Host identity changed
 
-Do not replace the certificate check with an accept-all handler. Verify the Host in person and generate a new pairing invitation if its TLS identity was intentionally replaced.
+Cadenza uses no TLS and no certificate pinning. Remote and Host authenticate with the pairing secret and per-device tokens. If the Host's credential file was removed or the Host was reinstalled with a new identity, pair the Remote again from Host's Remotes page.
 
 Normal app updates preserve the identity outside the app bundle. Revoking a Remote affects only that pairing.
 
@@ -65,3 +65,27 @@ On macOS, run the installed Cadenza Host bundle from a writable Applications loc
 If PowerShell blocks local scripts, use `tools\windows-env.cmd` and `apps\remote\build.cmd` from Command Prompt. Do not change system execution policy for Cadenza.
 
 Missing SDKs and compilers are reported explicitly. Native verification cannot be replaced by the portable Node suite.
+
+## Sing mode is unavailable
+
+The vocal-separation model is not in the app bundle. Sing mode downloads it the first time you open it, so check the Host's network connection and free disk space, then open Sing mode again. Sing needs an Apple silicon Host and stereo output at Music's sample rate. Other routes show a failure.
+
+## Music shows a dialog
+
+When Music shows a sheet or dialog, such as a storefront or region prompt, Cadenza reports `music_modal_blocked` instead of a generic song-not-ready error. Dismiss the dialog in Music, then send the request again.
+
+## Radio shows LIVE
+
+Apple Music radio streams have no reliable length. Cadenza shows LIVE in place of times, turns seeking off, and skips lyric lookups for them. Radio does not count toward taste.
+
+## Export diagnostic logs
+
+Open Logs on Host and choose Export Diagnostic Logs. The mirrored log rotates through three generations of 2 MB each. A fatal crash leaves a record with the signal, time, and active track, and the next launch shows a crash banner. Three launches within thirty seconds enter safe recovery, which pauses automatic Music polling until you resume it from Logs. Crash backtraces are addresses in the stripped executable. Resolve them with `atos` and the dSYM that the build writes to `dist/`, matched by UUID.
+
+## Cast devices are listed but play nothing
+
+Settings lists Google Cast devices and keeps your presentation choice, but this build does not transmit audio to them. Use the output picker to choose a Mac audio device.
+
+## Lock screen and screen saver on Android
+
+The lock-screen motion artwork and the charging screen saver have not been checked on a device, including Huawei HarmonyOS 4.3. Confirm both on your device before you rely on them.

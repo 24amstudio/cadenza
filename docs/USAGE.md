@@ -49,7 +49,7 @@ When paused, the queue remains visible with paused status. External changes in M
 
 Open **Playing**, then select **Lyrics** on A and B. Both receive the same lyric document, occurrence, translation revision, and Host timeline. Select **Lyrics** again or use Android Back to return to the player.
 
-On a supported Apple Silicon Host, open **Sing mode** from Playing to lower the lead vocal while Music continues playing. Production Host archives include the MIT Mel-RoFormer vocal-separation model (about 456 MB); development runs without the bundled resource download the pinned model into the Host cache on first use. Processing stays on Host and the Remote receives only Sing state and controls. Sing supports Music's stereo output sample rate and reports a clear failure when audio capture, model loading, or the output route is unavailable.
+On a supported Apple Silicon Host, open **Sing mode** from Playing to lower the lead vocal while Music continues playing. The Host downloads the pinned MIT Mel-RoFormer vocal-separation model (about 456 MB) into its cache the first time you open Sing mode. Processing stays on Host and the Remote receives only Sing state and controls. Sing supports Music's stereo output sample rate and reports a clear failure when audio capture, model loading, or the output route is unavailable.
 
 Each Remote renders highlighting locally. Pause, seek, replay, and song changes use the authoritative occurrence and position. Reconnecting midway requests the current document again. Stale synchronization is marked explicitly.
 
@@ -95,3 +95,21 @@ Match each native row to the saved request it represents. Leave genuine Host-ori
 If a saved request is no longer present, explicitly select the option to cancel missing saved requests. Cadenza does not silently invent ownership after an ambiguous native change or restart.
 
 After the Host applies verified assignments, choose **Check status** on an unconfirmed Remote request. A confirmed queue outcome is returned when available. If Host reviewed an action whose original outcome remains unknowable, Remote releases its pending control and keeps that uncertainty explicit; it does not replay the command.
+
+## Radio, outputs, and library actions
+
+Radio streams show LIVE in place of a time, and seeking is off. The playing screen lists the Mac's audio outputs. Choosing one changes the Mac's default output, which Music plays through. The output menu also lists the Google Cast devices found on your network and the presentation mode set in the Mac's Settings. Cadenza does not send audio to Cast devices yet.
+
+**Favorite in Music** sets Music's favorite flag for a library song. **Add to Host playlist** adds it to a Cadenza Host playlist and creates that playlist when it is missing. Both are receipted commands. They have not been run against a live Music session.
+
+Opening an Apple Music song link on Android, or sharing one to Cadenza Remote, offers Play now, Play next, and Add to queue. Album and playlist links are explained but not played.
+
+The web Remote adds OLED ambient mode, a black screen that drifts every 45 seconds, and operating-system media keys for playback.
+
+When the search is empty, the web Remote shows "For You" and "Room Blend" suggestions. The Host ranks them from this Remote's listening history, and Room Blend holds the songs every connected Remote shares. Each song has Play next and Add buttons. The list is read-only until you choose one.
+
+On Android, the volume buttons change Music's volume on Host in 5 percent steps when the Settings switch is on. The session notification clears itself after five minutes of pause or lost connection.
+
+Timed lyrics on the web Remote have a timing nudge. Each press of -0.5 s or +0.5 s moves the lyrics, and Sync First Line sets the timing from the first line you hear. The nudge applies to the current song only and is not saved to Host yet. Tapping a line seeks to that line's time with the nudge applied.
+
+Not in this build: Cast audio transmission, the karaoke overlay and music-video playback, and Cast transmission controls. An Android Remote can share its taste at connect when its Settings switch is on, and the Host uses that history when it ranks suggestions.

@@ -74,6 +74,7 @@ internal fun RemoteModel.openConnection() {
                     }
                 },
                 closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
+                wakeMac = profile?.let { preferences.getString("host_mac." + it.hostId) },
             )
         } else {
             HostConnection(

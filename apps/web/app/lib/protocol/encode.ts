@@ -194,6 +194,22 @@ export function encodeCommandStatus(commandId: string): string {
   });
 }
 
+/** Asks the Host for the ranked shelf. Nothing is queued by it, and the reply echoes the request id. */
+export function encodeRecommendationShelf(requestId: string): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'recommendation.query',
+    request_id: requestId,
+    recommendation_query: {
+      intent: null,
+      horizon: 1,
+      filters: { explicit_allowed: false, locked: false },
+      model_version: 1,
+      shelf: true,
+    },
+  });
+}
+
 export function encodeCreditAck(sequence: number): string {
   return JSON.stringify({ version: 1, type: 'analytics.ack', sequence });
 }
@@ -299,6 +315,20 @@ function encodeAction(action: CommandAction) {
       return { kind: action.kind, enabled: action.enabled };
     case 'playback.repeat':
       return { kind: action.kind, mode: action.mode };
+    case 'audio.selectOutput':
+      return { kind: action.kind, output: action.output };
+    case 'library.favorite':
+      return {
+        kind: action.kind,
+        song: encodeIdentity(action.song),
+        enabled: action.favorite,
+      };
+    case 'library.addToPlaylist':
+      return {
+        kind: action.kind,
+        name: action.name,
+        songs: action.songs.map(encodeIdentity),
+      };
     case 'playback.pause':
     case 'playback.resume':
     case 'playback.skip':

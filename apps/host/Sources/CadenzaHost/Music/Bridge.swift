@@ -93,6 +93,20 @@ final class MusicBridge {
     }
 
     // Music's own artwork is the authority for the track it plays, including streams with no catalog match.
+    /// Sets the Favorite flag of a library song in Music. No other field of the song changes.
+    func setFavorite(_ identity: SongIdentity, favorite: Bool) async throws {
+        let arguments = try MusicLibraryWriteBack.favoriteArguments(identity, favorite: favorite)
+        _ = try await script(arguments, timeout: 6)
+    }
+
+    /// Adds library songs to the named playlist, which Music creates when it is missing. Returns the number added.
+    func addToPlaylist(named name: String, _ identities: [SongIdentity]) async throws -> Int {
+        let arguments = try MusicLibraryWriteBack.playlistArguments(name: name, identities)
+        struct Reply: Decodable { let added: Int }
+        let data = try await script(arguments, timeout: 15)
+        return try Wire.decode(Reply.self, from: data).added
+    }
+
     func currentArtwork() async throws -> Data? {
         guard
             let script = HostResources.bundle.url(
@@ -125,7 +139,14 @@ final class MusicBridge {
     func control(_ action: CommandAction, deadline: Int64) async throws -> MusicStatus? {
         let arguments = try Self.controlArguments(action)
         let started = monotonicMs()
-        let output = try await script(arguments, deadline: deadline, timeout: 3, boundsRuntime: false)
+        let output: Data
+        do {
+            output = try await script(arguments, deadline: deadline, timeout: 3, boundsRuntime: false)
+        } catch let error where MusicTransportFallback.isAutomationDenial(error) {
+            // Music refused Cadenza's Apple events and ran nothing, so a system route may take the action instead.
+            guard MusicTransportFallback.perform(action.kind) else { throw error }
+            return nil
+        }
         guard var status = try? Wire.decode(ControlReply.self, from: output).status else { return nil }
 
         status.sampledAtMs = MusicStatus.sampleTime(

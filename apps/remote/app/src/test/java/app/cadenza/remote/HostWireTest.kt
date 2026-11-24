@@ -1,5 +1,6 @@
 package app.cadenza.remote
 
+import app.cadenza.remote.data.AudioOutput
 import app.cadenza.remote.data.BrowseItem
 import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.BrowseWire
@@ -55,6 +56,40 @@ class HostWireTest {
 
         assertFalse(value.shuffle)
         assertEquals("off", value.repeat)
+    }
+
+    private fun current(live: Boolean?) =
+        JSONObject()
+            .put("occurrence_id", UUID(0, 3).toString())
+            .put("requester_name", "Remote")
+            .put("song", song())
+            .put("position_ms", 0)
+            .put("sampled_at_host_ms", 1)
+            .apply { if (live != null) put("is_live_radio", live) }
+
+    @Test
+    fun aRadioStreamIsMarkedLiveAndAHostThatOmitsTheFlagIsNot() {
+        assertTrue(Wire.snapshot(snapshot().put("current", current(true))).current!!.isLiveRadio)
+        assertFalse(Wire.snapshot(snapshot().put("current", current(null))).current!!.isLiveRadio)
+    }
+
+    @Test
+    fun theSnapshotCarriesTheMacsAudioOutputsAndBudgetAndSkipsAMalformedOutput() {
+        val speakers =
+            JSONObject()
+                .put("id", "uid-1")
+                .put("name", "Mac speakers")
+                .put("transport", "built-in")
+                .put("is_default", true)
+        val kitchen =
+            JSONObject()
+                .put("id", "uid-2")
+                .put("name", "Kitchen")
+        val outputs = JSONArray().put(speakers).put(kitchen)
+        val value = Wire.snapshot(snapshot().put("audio_outputs", outputs).put("host_budget", "constrained"))
+
+        assertEquals(listOf(AudioOutput("uid-1", "Mac speakers", "built-in", true)), value.audioOutputs)
+        assertEquals("constrained", value.hostBudget)
     }
 
     @Test

@@ -44,6 +44,8 @@ data class CurrentPlayback(
     val song: Song,
     val positionMs: Long,
     val sampledAtHostMs: Long,
+    // A radio stream, which has no length to seek within. Older Hosts omit it.
+    val isLiveRadio: Boolean = false,
 )
 
 data class SingSession(
@@ -82,6 +84,16 @@ data class HostSnapshot(
     val autoPlay: List<AutoPlayItem> = emptyList(),
     val shuffle: Boolean = false,
     val repeat: String = "off",
+    val audioOutputs: List<AudioOutput> = emptyList(),
+    val hostBudget: String? = null,
+)
+
+// An audio output the Mac can play to. `id` is the device UID.
+data class AudioOutput(
+    val id: String,
+    val name: String,
+    val transport: String,
+    val isDefault: Boolean,
 )
 
 data class LyricLine(
@@ -210,6 +222,7 @@ object Wire {
                     song(item.getJSONObject("song")),
                     item.counter("position_ms"),
                     item.counter("sampled_at_host_ms"),
+                    item.optBoolean("is_live_radio", false),
                 )
             }
         val queue =
@@ -263,6 +276,8 @@ object Wire {
             value.optJSONArray("auto_play")?.let(::autoPlayItems).orEmpty(),
             value.optBoolean("shuffle", false),
             value.optString("repeat", "off"),
+            audioOutputs(value.optJSONArray("audio_outputs")),
+            value.optString("host_budget").takeIf { it.isNotEmpty() },
         ).also {
             require(it.repeat in listOf("off", "one", "all")) { "Unknown repeat mode." }
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos", "aac")) {
@@ -271,6 +286,19 @@ object Wire {
             require(queue.map { entry -> entry.id }.toSet().size == queue.size) { "Duplicate queue request identity." }
         }
     }
+
+    // An output that does not parse is left out, so one unknown output never hides the rest.
+    private fun audioOutputs(array: JSONArray?): List<AudioOutput> =
+        array?.objects().orEmpty().mapNotNull { item ->
+            val id = item.optString("id")
+            val name = item.optString("name")
+            val transport = item.optString("transport")
+            if (id.isEmpty() || name.isEmpty() || transport.isEmpty() || !item.has("is_default")) {
+                null
+            } else {
+                AudioOutput(id, name, transport, item.optBoolean("is_default"))
+            }
+        }
 
     private fun autoPlayItems(array: JSONArray): List<AutoPlayItem> {
         require(array.length() <= 8) { "Too many AutoPlay songs." }

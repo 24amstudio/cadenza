@@ -8,9 +8,23 @@ struct LogsScreen: View {
     @State private var showsDetail = false
     // Changes after each read of stored entries, so the table can jump to the newest row when a filter is applied.
     @State private var loadedToken = 0
+    @State private var safeRecovery = CrashLoopGuard.safeRecoveryActive()
 
     var body: some View {
         VStack(spacing: 0) {
+            if model.previousCrashRecord != nil {
+                CrashReportBanner(export: exportDiagnostics) {
+                    model.previousCrashRecord = nil
+                }
+                Divider()
+            }
+            if safeRecovery {
+                SafeRecoveryBanner {
+                    model.service?.resumeAutomaticMusicPolling()
+                    safeRecovery = CrashLoopGuard.safeRecoveryActive()
+                }
+                Divider()
+            }
             LogFilterBar(logs: logs)
             Divider()
             content
@@ -101,6 +115,9 @@ struct LogsScreen: View {
             Menu {
                 Button("Export Shown as Text…") { export(.text) }
                 Button("Export Shown as JSON…") { export(.json) }
+                Divider()
+                Button("Export Diagnostic Logs…") { exportDiagnostics() }
+                    .disabled(model.service?.logger.mirror == nil)
             } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
@@ -117,6 +134,15 @@ struct LogsScreen: View {
         guard !rows.isEmpty else { return }
         LogExport.copy(rows)
         model.notify(rows.count == 1 ? "Copied 1 log entry." : "Copied \(rows.count) log entries.")
+    }
+
+    private func exportDiagnostics() {
+        guard let mirror = model.service?.logger.mirror else { return }
+        do {
+            if let name = try LogExport.saveDiagnostics(mirror) { model.notify("Saved \(name).") }
+        } catch {
+            model.notify("Diagnostic logs could not be saved: \(error.localizedDescription)")
+        }
     }
 
     private func export(_ format: LogExport.Format) {

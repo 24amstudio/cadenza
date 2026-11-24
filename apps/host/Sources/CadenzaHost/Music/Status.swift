@@ -8,6 +8,8 @@ struct MusicStatus: Codable, Sendable {
     /// Wall-clock time at which the script read the position. Scripts older than this field omit it.
     var readAtMs: Int64?
     var song: Song?
+    /// True for a radio stream: a URL track, or a track with no positive length. Timing that needs a length is skipped.
+    var isLiveRadio: Bool = false
     /// Music's file kind for the current track, such as "Apple Music AAC audio file". Scripts older than this field omit it.
     var fileKind: String?
     /// Music's shuffle switch and repeat mode ("off", "one", or "all"). Scripts older than these fields omit them.
@@ -18,7 +20,8 @@ struct MusicStatus: Codable, Sendable {
 
     init(
         playing: Bool, state: String, volume: Int, positionMs: Int64, readAtMs: Int64? = nil, song: Song? = nil,
-        shuffle: Bool = false, repeat mode: String = "off", sampledAtMs: Int64? = nil, fileKind: String? = nil
+        shuffle: Bool = false, repeat mode: String = "off", sampledAtMs: Int64? = nil, fileKind: String? = nil,
+        isLiveRadio: Bool = false
     ) {
         self.playing = playing
         self.state = state
@@ -26,6 +29,7 @@ struct MusicStatus: Codable, Sendable {
         self.positionMs = positionMs
         self.readAtMs = readAtMs
         self.song = song
+        self.isLiveRadio = isLiveRadio
         self.fileKind = fileKind
         self.shuffle = shuffle
         self.repeat = mode
@@ -39,7 +43,9 @@ struct MusicStatus: Codable, Sendable {
         volume = try values.decode(Int.self, forKey: .volume)
         positionMs = try values.decode(Int64.self, forKey: .positionMs)
         readAtMs = try values.decodeIfPresent(Int64.self, forKey: .readAtMs)
-        song = try values.decodeIfPresent(Song.self, forKey: .song)
+        let report = try values.decodeIfPresent(MusicSongReport.self, forKey: .song)
+        song = report?.song
+        isLiveRadio = report?.isLiveRadio ?? false
         fileKind = try values.decodeIfPresent(String.self, forKey: .fileKind)
         shuffle = try values.decodeIfPresent(Bool.self, forKey: .shuffle) ?? false
         self.repeat = try values.decodeIfPresent(String.self, forKey: .repeat) ?? "off"

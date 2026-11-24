@@ -22,6 +22,8 @@ import { ArtworkCoordinator } from '~/lib/host/artworkCoordinator';
 import { TrafficPulses } from '~/lib/host/trafficPulses';
 import { unavailableResult } from '~/lib/host/commandTracker';
 import { ControlQueue, type ControlKey } from '~/lib/host/controlQueue';
+import { libraryHostCommands } from '~/lib/host/hostCommands';
+import { prefetchNextCover } from '~/lib/host/nextCover';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
 import {
   HostClient,
@@ -57,6 +59,7 @@ import type {
   Snapshot,
   Song,
   SongIdentity,
+  RecommendationShelfItem,
   SongSuggestions,
 } from '~/lib/protocol/types';
 import { useNoticesStore } from '~/stores/notices';
@@ -640,7 +643,12 @@ export const useHostStore = defineStore('host', () => {
     );
     // The next request's cover starts now, so it is on screen when its song begins.
 
-    if (upNext?.artworkUrl) artwork.prefetch(albums.shown(upNext.artworkUrl));
+    prefetchNextCover(
+      artwork,
+      albums,
+      upNext?.artworkUrl,
+      snapshot.value?.hostBudget,
+    );
 
     if (song === null) return;
     const state = lyrics.value;
@@ -871,6 +879,8 @@ export const useHostStore = defineStore('host', () => {
     controls.press({ key: 'queue', kind, song, settled });
   }
 
+  const hostCommands = libraryHostCommands(controls.pressHost.bind(controls));
+
   function renameRemote(name: string): void {
     client?.renameRemote(name);
     remoteName.value = name;
@@ -936,11 +946,14 @@ export const useHostStore = defineStore('host', () => {
     skipPrevious,
     seekTo,
     setVolume,
+    ...hostCommands,
     toggleMute,
     toggleShuffle,
     cycleRepeat,
     searchSongs,
     suggestSongs,
+    shelf: (settle: Settle<RecommendationShelfItem[]>) =>
+      client?.songs.shelves(settle) ?? null,
     cancelSongRequest,
     browse,
     abortBrowse,

@@ -6,6 +6,7 @@ import app.cadenza.remote.data.HostSnapshot
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.data.LyricsTextSize
 import app.cadenza.remote.data.Song
+import app.cadenza.remote.data.SongIdentity
 import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.data.TransportPathStatus
@@ -73,6 +74,8 @@ data class RemoteState(
     val transportPaths: List<TransportPathStatus> = emptyList(),
     val transportPreference: String = "balanced",
     val songChangeNotifications: Boolean = true,
+    val tasteDigestOptIn: Boolean = false,
+    val volumeRockerControl: Boolean = false,
     val lockScreenMotionArtwork: Boolean = true,
     val silentPlaybackKeepAlive: Boolean = true,
     val transportMode: String = "lan",
@@ -106,6 +109,8 @@ data class RemoteState(
     val stagedUpdate: String? = null,
     val changelog: String? = null,
     val comparingChanges: Boolean = false,
+    // A song shared from Apple Music, waiting for the person to choose what the Host does with it.
+    val sharedTrack: SongIdentity? = null,
     val debugLog: List<DebugLogEntry> = emptyList(),
     val creeMode: String = "disabled",
     val nextRecommendation: RecommendationItem? = null,

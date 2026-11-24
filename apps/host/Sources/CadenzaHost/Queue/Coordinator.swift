@@ -229,6 +229,7 @@ final class QueueCoordinator {
             || (forcedEntry != nil && missing.contains { bindings[$0.token] == forcedEntry })
         if songChanged {
             if let song = status.song {
+                CrashCapture.setActiveTrack("\(song.title) — \(song.artist) (live radio: \(status.isLiveRadio))")
                 logger?.log(
                     .info, category: "playback", action: "song.changed", "Music is playing \(song.title)",
                     metadata: [
@@ -253,10 +254,18 @@ final class QueueCoordinator {
                     occurrenceId: occurrence, entryId: row["entry_id"]?.string,
                     requestedBy: row["requested_by"]?.string,
                     requesterName: try store.remoteName(row["requested_by"]?.string), song: store.song(row),
-                    positionMs: status.positionMs, sampledAtHostMs: sampledAt
+                    positionMs: status.positionMs, sampledAtHostMs: sampledAt, isLiveRadio: status.isLiveRadio
                 )
                 if let current { requestArtwork(for: current.song, occurrenceId: occurrence) }
             }
+        }
+        // A song that changes is scored for the Remote that requested it, by how far it played.
+        if songChanged, let finished = current, let owner = finished.requestedBy,
+            let signal = TasteSignal.ending(
+                positionMs: finished.positionMs, durationMs: finished.song.durationMs, isLiveRadio: finished.isLiveRadio
+            )
+        {
+            writeTaste(signal, song: finished.song, actor: owner)
         }
         if let song = status.song, status.state != "stopped", current == nil || songChanged {
             var entry: String?
@@ -269,10 +278,13 @@ final class QueueCoordinator {
             let stored = try entry.flatMap { try store.entry($0) }
             let actual = stored.map(store.song) ?? song
             let occurrence = try store.beginOccurrence(entryId: entry, song: actual)
+            if entry != nil, let owner = stored?["requested_by"]?.string {
+                writeTaste(.promotion, song: actual, actor: owner)
+            }
             current = CurrentPlayback(
                 occurrenceId: occurrence, entryId: entry, requestedBy: stored?["requested_by"]?.string,
                 requesterName: try store.remoteName(stored?["requested_by"]?.string),
-                song: actual, positionMs: status.positionMs, sampledAtHostMs: sampledAt
+                song: actual, positionMs: status.positionMs, sampledAtHostMs: sampledAt, isLiveRadio: status.isLiveRadio
             )
             try store.database.run("UPDATE host_state SET current_native_id=?", [.text(song.id)])
             lastObservation = nil
@@ -437,7 +449,8 @@ final class QueueCoordinator {
             observationGap: try store.database.query("SELECT observation_gap FROM host_state").first?[
                 "observation_gap"]?.integer == 1,
             autoPlay: autoPlay.prefix(AutoPlayItem.shownLimit).map { AutoPlayItem(title: $0.title, artist: $0.artist) },
-            shuffle: lastStatus?.shuffle ?? false, repeat: lastStatus?.repeat ?? "off"
+            shuffle: lastStatus?.shuffle ?? false, repeat: lastStatus?.repeat ?? "off",
+            audioOutputs: AudioOutputs.current()
         )
     }
 
@@ -518,6 +531,9 @@ final class QueueCoordinator {
             locked = false
             // The result reaches the Remote first. The snapshot follows once drain has handed the result over.
             needsPublish = true
+        }
+        if action.kind.hasPrefix("library.") || action.kind == "audio.selectOutput" {
+            return try await performHostWrite(command, action: action, actor: actor)
         }
         primingLyrics = false
         preparationToken = nil
@@ -626,6 +642,9 @@ final class QueueCoordinator {
                 try await confirmTransport(
                     action, before: before, first: immediate, dispatchedAt: dispatchedAt, deadline: nativeDeadline)
             }
+            if let signal = TasteSignal(commandKind: action.kind) {
+                recordTaste(signal, identity: action.song, actor: actor)
+            }
             let result = try journal.result(command, outcome: "applied")
             try journal.finish(command, actor: actor, result: result)
             return result
@@ -644,6 +663,41 @@ final class QueueCoordinator {
                 synchronized = false
                 issue = "A native action is unconfirmed. Reconcile the queue before retrying."
             }
+            return result
+        }
+    }
+
+    /// Library write-back and audio output changes do not touch the queue or playback, so they have no queue read-back.
+    /// Their receipt records what the Mac acknowledged. A failure after the change was attempted is unconfirmed.
+    private func performHostWrite(_ command: Frame, action: CommandAction, actor: String) async throws -> Frame {
+        do {
+            if action.kind == "audio.selectOutput", let uid = action.output {
+                guard AudioOutputs.select(uid) else {
+                    throw CadenzaError.failure("output_unavailable", "That audio output is not connected.")
+                }
+                guard AudioOutputs.defaultUID() == uid else {
+                    throw CadenzaError.failure("outcome_unknown", "The Mac has not confirmed the new audio output.")
+                }
+            } else if action.kind == "library.favorite", let song = action.song, let favorite = action.enabled {
+                try await music.setFavorite(song, favorite: favorite)
+            } else if let name = action.name, let songs = action.songs {
+                _ = try await music.addToPlaylist(named: name, songs)
+            } else {
+                throw CadenzaError.failure("invalid_command", "Invalid library request.")
+            }
+            let result = try journal.result(command, outcome: "applied")
+            try journal.finish(command, actor: actor, result: result)
+            return result
+        } catch {
+            let code = (error as? CadenzaError)?.code ?? "music_unavailable"
+            let rejectedBeforeMusic = [
+                "library_only", "playlist_name", "playlist_tracks", "invalid_command", "output_unavailable",
+            ].contains(
+                code)
+            let failure = CommandFailure(dispatched: !rejectedBeforeMusic, code: code)
+            let result = try journal.result(
+                command, outcome: failure.outcome, code: failure.code, message: error.localizedDescription)
+            try journal.finish(command, actor: actor, result: result)
             return result
         }
     }

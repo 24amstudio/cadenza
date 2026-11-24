@@ -39,7 +39,8 @@ private struct Marker: Codable {
 private final class Watchdog {
     private let arguments: WatchdogArguments
     private let maxRestarts = 3
-    private let restartWindowMs: Int64 = 60_000
+    // Three respawns within this window stop automatic restarts. Host's CrashLoopGuard uses the same window.
+    private let restartWindowMs: Int64 = 30_000
     private var restarts: [Int64] = []
 
     init(arguments: WatchdogArguments) { self.arguments = arguments }

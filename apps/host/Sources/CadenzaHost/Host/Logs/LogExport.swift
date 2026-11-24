@@ -27,6 +27,18 @@ enum LogExport {
         return url.lastPathComponent
     }
 
+    /// Saves the mirrored log file with every retained generation, oldest first. Returns the saved name, or nil when the
+    /// user cancelled.
+    static func saveDiagnostics(_ mirror: LogMirror) throws -> String? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "Cadenza Host Diagnostics.log"
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        try mirror.diagnosticsData().write(to: url, options: .atomic)
+        return url.lastPathComponent
+    }
+
     static func copy(_ rows: [LogRow]) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(LogTranscript.text(rows), forType: .string)

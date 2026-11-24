@@ -40,6 +40,8 @@ final class HostLogger: @unchecked Sendable {
     private let buffer = OSAllocatedUnfairLock(initialState: Buffer())
     // Only the main actor touches the database; the buffer is the only state shared across threads.
     let database: Database
+    /// Set once, before the service starts logging. Entries then also reach os.Logger and the rotating file.
+    var mirror: LogMirror?
     /// Receives each batch after it is stored, with the id of its first row. Only a visible log viewer sets it, so
     /// logging does no extra work while nobody is watching.
     var onFlush: (@MainActor (_ firstId: Int64, _ batch: [Entry]) -> Void)?
@@ -60,6 +62,7 @@ final class HostLogger: @unchecked Sendable {
             source: source, action: String(action.prefix(120)), level: level,
             category: String(category.prefix(80)), message: String(message.prefix(2_000)),
             metadataJSON: metadata.isEmpty ? nil : Self.json(metadata))
+        mirror?.record(entry)
         let plan = buffer.withLock { state -> FlushPlan? in
             state.entries.append(entry)
             if state.entries.count >= Self.batchLimit {

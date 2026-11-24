@@ -25,6 +25,8 @@ An implementation conforms to this baseline only when every applicable mandatory
 
 Android's native design library is [Compose Material 3](https://developer.android.com/jetpack/androidx/releases/compose-material3). Select compatible pinned versions at implementation time; Material 3 Expressive does not by itself imply an Android 16 installation minimum. Vendor installation guidance may vary by device and firmware. These documents do not replace testing on representative target devices.
 
+- **N07:** Cadenza must not use `Shortcuts.app` or `ScreenCaptureKit`, and cross-Remote permissions are one Host policy rather than per-device access lists. Checked in source on 24 November 2026: no Host, Remote, or web source references either framework.
+
 ## Search and playback
 
 - **B01:** Remote must search for songs in the Apple Music catalog and the Host library through Host, show identifying metadata, and submit a selected result for immediate playback or queuing subject to request protection. Full-catalog searching and playback of a song absent from the library require an explicit no-fee native Music.app proof.
@@ -120,6 +122,8 @@ The successful-control target remains below one second. A deployment cannot be c
 - **S02:** Use pushed state and local interpolation for progress and lyrics. Adapt state observation to active UI needs, batch SQLite writes, avoid persistent polling while disconnected, and stop lyric animations when hidden. No database write or network message is required for every animation frame.
 - **S03:** Measure compressed release size, installed size, idle CPU, memory, active sing-along CPU, and network traffic on the targets. Record a numeric footprint budget after the native feasibility slice and before feature implementation. Every later dependency or unexplained regression must be assessed against that baseline. These measurements have not been made; no smallest-possible-size claim is warranted yet.
 
+- **S04:** The Host `.app` must stay under 40 MB. Before stripping, a development build measured 43 MB, because the executable carried its symbols and the MLX Sing package is linked in. `apps/host/Scripts/build.sh` now writes a dSYM to `dist/` and strips the shipped executable. A development build measured 23 MB on 24 November 2026, and the dSYM's UUID matches the shipped executable.
+
 ## SQLite and automatic maintenance
 
 - **D01:** Host must use SQLite for pairing metadata, policy, attributed queue state, command receipts, and pending credit delivery. Each Remote must use SQLite for its pairing metadata, replicated-state cache, event acknowledgments, and personal aggregates. The implementation uses a small Swift SQLite layer on Host and Android's SQLiteOpenHelper on Remote to keep dependencies small; migrations and behavior must be verified on both engines.
@@ -153,6 +157,8 @@ Release keys must be backed up securely and excluded from source control and app
 - **C01:** Handshake must identify Host instance, authenticated Remote, protocol major/minor versions, and supported capabilities. Use structured bounded messages with validated IDs, durations, and revisions. No endpoint may accept arbitrary shell commands, AppleScript, filesystem paths, or update URLs from Remotes.
 - **C02:** Unknown optional fields may be ignored. Unknown commands must be rejected without side effects. Unknown permission/capability values must not grant access. An incompatible protocol major must show an actionable update state before mutation; minor-version extensions must remain backward compatible.
 - **C03:** The initial modules are Host control/pairing, shared queue, Remote analytics/Favorites, sing along, and self updates. AutoMix and quality observations are conditional capabilities. Major 1, minor 1 adds capability-negotiated Play next, editable names and idle heartbeats. The initial hello/pair shape remains compatible with older Host implementations. No general plugin/extension system is in scope.
+
+- **C04:** Protocol additions for v0.3.4 are optional fields or new values, so Remotes that ignore them keep working. `current.is_live_radio` marks radio streams. `host_budget` reports the Host thermal tier. `audio_outputs` lists the Mac's outputs, and `audio.selectOutput` chooses one. `library.favorite` and `library.addToPlaylist` are receipted host commands. The `hello` auth object may carry `taste_digest` (`top_artists`, `top_genres`, `favorited_track_ids`), sent only after the Remote's user opts in. `music_modal_blocked` is a result code. `cast` carries the presentation mode and the Cast devices found on the LAN, and no audio is sent to them. `platform` and `mac_address` appear in the welcome. The goalset's `hostHealth` name is not used; the field is `host_budget`. `recommendation.query` with `shelf: true` returns `recommendation.result` carrying `recommendation_shelf`: up to 12 ranked suggestions with their reasons. It ranks without queuing or planning, echoes `request_id`, and needs no passport, because the Host's taste ledger alone is used. `videoOutputTarget` and Cast transmission fields are not in the protocol.
 
 ## Cadenza evolution requirements
 

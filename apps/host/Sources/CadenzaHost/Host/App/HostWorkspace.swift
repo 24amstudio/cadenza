@@ -28,6 +28,11 @@ struct HostWorkspace: View {
                     ToolbarItem(placement: .primaryAction) {
                         HostStatusItem(running: model.running, starting: model.starting)
                     }
+                    if model.energy.budget != .unrestricted {
+                        ToolbarItem(placement: .primaryAction) {
+                            HostBudgetPill(budget: model.energy.budget)
+                        }
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Music.app"))

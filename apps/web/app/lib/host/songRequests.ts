@@ -2,6 +2,7 @@ import type { HostMessage } from '../protocol/decode';
 import {
   encodeBrowseGet,
   encodeOperationCancel,
+  encodeRecommendationShelf,
   encodeSearch,
   encodeSearchSuggest,
   encodeSongPrepare,
@@ -10,6 +11,7 @@ import {
 import type {
   BrowsePage,
   BrowseRequest,
+  RecommendationShelfItem,
   SearchScope,
   Song,
   SongIdentity,
@@ -42,6 +44,7 @@ const queryLimit = 200;
 const searchTimeoutMs = 20_000;
 const prepareTimeoutMs = 20_000;
 const suggestTimeoutMs = 6_000;
+const shelfTimeoutMs = 6_000;
 const browseTimeoutMs = 25_000;
 
 // Each request is sent once and settles once: with the Host's reply, with its error, or with a failure when the link
@@ -78,6 +81,18 @@ export class SongRequests {
       (message) =>
         message.type === 'search.suggestions'
           ? succeed(message.suggestions)
+          : hostFailure(message),
+      settle,
+    );
+  }
+
+  shelves(settle: Settle<RecommendationShelfItem[]>): string | null {
+    return this.start(
+      shelfTimeoutMs,
+      (requestId) => encodeRecommendationShelf(requestId),
+      (message) =>
+        message.type === 'recommendation.shelf'
+          ? succeed(message.items)
           : hostFailure(message),
       settle,
     );
@@ -195,6 +210,7 @@ function answerIdOf(message: HostMessage): string | null {
   switch (message.type) {
     case 'search.result':
     case 'search.suggestions':
+    case 'recommendation.shelf':
     case 'song.ready':
     case 'browse.result':
     case 'error':

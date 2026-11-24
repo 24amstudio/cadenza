@@ -20,6 +20,8 @@ export interface CurrentPlayback {
   sampledAtHostMs: number;
   // The song's cover at most 32 by 32 pixels, as base64 JPEG. It arrives with the song.
   artworkPreview?: string | null;
+  // A radio stream, which has no length to seek within.
+  isLiveRadio?: boolean;
 }
 
 export interface QueueEntry {
@@ -41,6 +43,44 @@ export interface AutoPlayItem {
   artist: string;
 }
 
+// A song in the Mac's Music library. Library write-back accepts only these.
+export interface LibrarySongIdentity {
+  source: 'library';
+  id: string;
+}
+
+// An audio output the Mac can play to. `id` is the device UID.
+export interface AudioOutput {
+  id: string;
+  name: string;
+  transport: string;
+  isDefault: boolean;
+}
+
+// One suggestion on a Remote's shelf. The Host ranks it, and `evidence` holds the reasons it was chosen.
+export interface RecommendationShelfItem {
+  source: 'catalog' | 'library';
+  id: string;
+  title: string;
+  artist: string;
+  evidence: string[];
+}
+
+export type CastPresentation = 'auto' | 'audio_only' | 'full_suite';
+
+// `none` is a screenless speaker, `display` a screen-capable device, and `unknown` one without a readable capability record.
+export type CastDisplay = 'none' | 'display' | 'unknown';
+
+export interface CastDevice {
+  name: string;
+  display: CastDisplay;
+}
+
+export interface CastState {
+  presentation: CastPresentation;
+  devices: CastDevice[];
+}
+
 export interface Snapshot {
   hostId: string;
   hostEpoch: string;
@@ -57,6 +97,9 @@ export interface Snapshot {
   autoPlay: AutoPlayItem[];
   synchronized: boolean;
   issue: string | null;
+  audioOutputs: AudioOutput[];
+  hostBudget: string | null;
+  cast: CastState | null;
 }
 
 export interface LyricWord {
@@ -144,6 +187,13 @@ export type CommandAction =
   | { kind: 'playback.volume'; percent: number }
   | { kind: 'playback.shuffle'; enabled: boolean }
   | { kind: 'playback.repeat'; mode: RepeatMode }
+  | { kind: 'audio.selectOutput'; output: string }
+  | { kind: 'library.favorite'; song: LibrarySongIdentity; favorite: boolean }
+  | {
+      kind: 'library.addToPlaylist';
+      name: string;
+      songs: LibrarySongIdentity[];
+    }
   | { kind: Exclude<QueueActionKind, 'queue.play_now'>; song: SongIdentity }
   | {
       kind: 'queue.play_now';

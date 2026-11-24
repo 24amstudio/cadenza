@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,14 +15,18 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import app.cadenza.remote.data.SongIdentity
 import app.cadenza.remote.debugmode.handleDebugIntent
 import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
 import app.cadenza.remote.model.RemoteModel
+import app.cadenza.remote.model.adjustVolumeFromRocker
 import app.cadenza.remote.model.dismissPrompt
 import app.cadenza.remote.model.installationResult
 import app.cadenza.remote.model.installing
+import app.cadenza.remote.model.receiveSharedTrack
 import app.cadenza.remote.model.showError
+import app.cadenza.remote.share.AppleMusicLink
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.Dispatchers
@@ -46,11 +51,23 @@ class MainActivity : ComponentActivity() {
             SessionNotification(application).update(SessionStatus.from(model.state.value), model.mediaToken)
         }
 
+    // With the rocker control on, the volume buttons change Music's volume on Host while this screen is open.
+    override fun onKeyDown(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean {
+        val up = keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        val down = keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+        if ((up || down) && model.adjustVolumeFromRocker(up)) return true
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         model = ViewModelProvider(this)[RemoteModel::class.java]
         handleDebugIntent(intent, model)
+        handleSharedIntent(intent, model)
         setContent {
             CadenzaApp(model) { path ->
                 val file = File(path)
@@ -93,6 +110,31 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleDebugIntent(intent, model)
+        handleSharedIntent(intent, model)
+    }
+
+    // A shared Apple Music link opens a dialog that sends the song to the Host. Album and playlist links name no
+    // single song, so they are explained instead of guessed at.
+    private fun handleSharedIntent(
+        intent: Intent,
+        model: RemoteModel,
+    ) {
+        val shared =
+            when (intent.action) {
+                Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+                Intent.ACTION_VIEW -> intent.dataString
+                else -> null
+            } ?: return
+        val link = AppleMusicLink.parse(shared) ?: return
+        val track = link.trackId
+        if (track == null) {
+            model.showError(
+                "Shared link",
+                "Album and playlist links are not supported yet. Share a song link instead.",
+            )
+            return
+        }
+        model.receiveSharedTrack(SongIdentity("catalog", track))
     }
 
     override fun onStart() {

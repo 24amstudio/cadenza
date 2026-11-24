@@ -147,6 +147,8 @@ fun SettingsScreen(
                 LyricsCard(model = model, state = state)
                 EnergyCard(model)
                 NotificationsCard(model = model, state = state)
+                TasteCard(model = model, state = state)
+                VolumeRockerCard(model = model, state = state)
                 BackgroundCard(model = model, state = state)
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
@@ -307,6 +309,62 @@ private fun NotificationsCard(
                 checked = state.songChangeNotifications,
                 onCheckedChange = model::setSongChangeNotifications,
                 modifier = Modifier.semantics { contentDescription = "Song change notifications" },
+            )
+        }
+    }
+}
+
+@Composable
+private fun VolumeRockerCard(
+    model: RemoteModel,
+    state: RemoteState,
+) {
+    SettingsCard(
+        icon = CadenzaIcon.MUSIC,
+        title = "Volume buttons",
+        supporting = "Use the phone's volume buttons to change Music's volume on Host.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Volume rocker control", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "While Cadenza Remote is open, each press changes Music's volume on Host by 5 percent.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(
+                checked = state.volumeRockerControl,
+                onCheckedChange = model::setVolumeRockerControl,
+                modifier = Modifier.semantics { contentDescription = "Volume rocker control" },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TasteCard(
+    model: RemoteModel,
+    state: RemoteState,
+) {
+    SettingsCard(
+        icon = CadenzaIcon.MUSIC,
+        title = "Taste",
+        supporting = "Let Host suggest music from what this Remote plays.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Share taste on connect", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Send your top artists and favorites when this Remote connects. Only names and favorite IDs are sent.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(
+                checked = state.tasteDigestOptIn,
+                onCheckedChange = model::setTasteDigestOptIn,
+                modifier = Modifier.semantics { contentDescription = "Share taste on connect" },
             )
         }
     }

@@ -63,6 +63,9 @@ application="$stage/Cadenza Host.app"
 mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"
 
 cp "$binary_root/CadenzaHost" "$application/Contents/MacOS/CadenzaHost"
+# Symbols make the executable about twice the 40 MB Host budget. The dSYM keeps them for crash symbolication.
+/usr/bin/dsymutil "$binary_root/CadenzaHost" -o "$project_root/dist/Cadenza-Host-$version-$profile-arm64.dSYM"
+/usr/bin/strip -x "$application/Contents/MacOS/CadenzaHost"
 cp "$binary_root/CadenzaWatchdog" "$application/Contents/MacOS/CadenzaWatchdog"
 cp "$binary_root/CadenzaUpdater" "$application/Contents/MacOS/CadenzaUpdater"
 cp "$host_root/Resources/Info.plist" "$application/Contents/Info.plist"

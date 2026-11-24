@@ -219,6 +219,93 @@ describe('decodeHostMessage', () => {
     });
   });
 
+  test('the Cast presentation and devices decode, and a device without a name is skipped alone', () => {
+    const message = decodeHostMessage(
+      wire({
+        type: 'state',
+        snapshot: {
+          ...snapshot,
+          cast: {
+            presentation: 'full_suite',
+            devices: [
+              { name: 'Living Room TV', display: 'display' },
+              { display: 'none' },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(message).toMatchObject({
+      type: 'state',
+      snapshot: {
+        cast: {
+          presentation: 'full_suite',
+          devices: [{ name: 'Living Room TV', display: 'display' }],
+        },
+      },
+    });
+  });
+
+  test('audio outputs and the thermal budget decode, and a malformed output is skipped alone', () => {
+    const message = decodeHostMessage(
+      wire({
+        type: 'state',
+        snapshot: {
+          ...snapshot,
+          host_budget: 'constrained',
+          audio_outputs: [
+            {
+              id: 'uid-1',
+              name: 'Mac speakers',
+              transport: 'built-in',
+              is_default: true,
+            },
+            { id: 'uid-2', name: 'Kitchen', transport: 'airplay' },
+          ],
+        },
+      }),
+    );
+
+    expect(message).toMatchObject({
+      type: 'state',
+      snapshot: {
+        hostBudget: 'constrained',
+        audioOutputs: [
+          {
+            id: 'uid-1',
+            name: 'Mac speakers',
+            transport: 'built-in',
+            isDefault: true,
+          },
+        ],
+      },
+    });
+  });
+
+  test('a radio stream is marked live, and a Host that omits the flag is not', () => {
+    const live = decodeHostMessage(
+      wire({
+        type: 'state',
+        snapshot: {
+          ...snapshot,
+          current: { ...snapshot.current, is_live_radio: true },
+        },
+      }),
+    );
+
+    const older = decodeHostMessage(wire({ type: 'state', snapshot }));
+
+    expect(live).toMatchObject({
+      type: 'state',
+      snapshot: { current: { isLiveRadio: true } },
+    });
+    expect(older).toMatchObject({
+      type: 'state',
+      snapshot: { current: { isLiveRadio: false } },
+    });
+  });
+
   test('a state carries the audio tier, AutoPlay songs and the time left', () => {
     const message = decodeHostMessage(
       wire({

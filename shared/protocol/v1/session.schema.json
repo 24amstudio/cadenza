@@ -158,6 +158,8 @@
         },
         "host_version": { "type": "string", "maxLength": 40 },
         "host_build": { "type": "integer", "minimum": 0 },
+        "platform": { "type": "string", "maxLength": 20 },
+        "mac_address": { "type": "string", "pattern": "^([0-9a-f]{2}:){5}[0-9a-f]{2}$" },
         "update_manifest": { "$ref": "urn:cadence:protocol:v1:common#/$defs/updateManifest" },
         "token": {
           "type": "string",
@@ -276,6 +278,7 @@
     "recommendation_passport": { "type": "object" },
     "recommendation_query": { "type": "object" },
     "recommendation_result": { "type": ["object", "null"] },
+    "recommendation_shelf": { "type": ["object", "null"] },
     "recommendation_feedback": { "type": "object" },
     "recommendation_plan": { "type": "object" },
     "recommendation_shadow_observation": { "type": "object" },
@@ -539,9 +542,8 @@
               "last_credit_sequence": {
                 "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
               },
-              "heartbeat": {
-                "type": "boolean"
-              },
+              "heartbeat": { "type": "boolean" },
+              "taste_digest": { "$ref": "urn:cadence:protocol:v1:common#/$defs/taste_digest" },
               "name": {
                 "type": "string",
                 "minLength": 1,
@@ -957,13 +959,6 @@
       "then": {
         "required": ["request_id", "recommendation_query"],
         "properties": { "request_id": {}, "recommendation_query": {} }
-      }
-    },
-    {
-      "if": { "properties": { "type": { "const": "recommendation.result" } } },
-      "then": {
-        "required": ["recommendation_result"],
-        "properties": { "recommendation_result": {} }
       }
     },
     {

@@ -36,6 +36,7 @@
         "outcome_unknown",
         "busy",
         "song_not_ready",
+        "music_modal_blocked",
         "queue_full",
         "native_queue_unavailable",
         "music_permission",

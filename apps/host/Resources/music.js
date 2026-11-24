@@ -9,15 +9,46 @@ function readValue(action, fallback) {
   }
 }
 
+/** Music answers error -1728 for a property a track does not have, so every track read goes through these guards. @param {() => unknown} action @returns {string} */
+function safeString(action) {
+  const value = readValue(action, null);
+
+  return value === null || value === undefined ? '' : String(value);
+}
+
+/** @param {() => unknown} action @returns {number | null} */
+function safeFiniteNumber(action) {
+  const value = readValue(action, null);
+  const number = value === null || value === undefined ? NaN : Number(value);
+
+  return Number.isFinite(number) ? number : null;
+}
+
+/** @template T @param {() => T[]} action @returns {T[]} */
+function safeArray(action) {
+  const value = readValue(action, []);
+
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * JXA reports a radio stream as a urlTrack. The AppleScript name "URL track" is accepted too, so either spelling
+ * classifies the same way.
+ * @param {string} trackClass
+ */
+function isStreamClass(trackClass) {
+  return trackClass === 'urlTrack' || trackClass === 'URL track';
+}
+
 /**
  * A streamed catalog song reports a persistent ID too, but only as a urlTrack that the library does not hold, so
  * resolving it in the library fails. Library tracks are file or shared tracks, or a urlTrack the library lists.
- * @param {MusicTrack} track @param {MusicApplication | undefined} music @param {string} persistent
+ * @param {string} trackClass @param {MusicApplication | undefined} music @param {string} persistent
  */
-function inLibrary(track, music, persistent) {
+function inLibrary(trackClass, music, persistent) {
   if (!/^[0-9A-F]{16}$/.test(persistent)) return false;
 
-  if (String(readValue(() => track.class(), '')) !== 'urlTrack') return true;
+  if (!isStreamClass(trackClass)) return true;
 
   const library = music?.libraryPlaylists[0];
 
@@ -32,23 +63,26 @@ function inLibrary(track, music, persistent) {
 
 /** @param {MusicTrack} track @param {MusicApplication} [music] */
 function describeTrack(track, music) {
-  const persistent = String(
-    readValue(() => track.persistentID(), ''),
-  ).toUpperCase();
-
-  const library = inLibrary(track, music, persistent);
-  const duration = Number(readValue(() => track.duration(), 0));
-  const title = String(readValue(() => track.name(), ''));
-  const artist = String(readValue(() => track.artist(), ''));
-  const album = String(readValue(() => track.album(), ''));
+  const persistent = safeString(() => track.persistentID()).toUpperCase();
+  const trackClass = safeString(() => track.class());
+  const library = inLibrary(trackClass, music, persistent);
+  const duration = safeFiniteNumber(() => track.duration());
+  const seconds = duration !== null && duration > 0 ? duration : null;
+  const title = safeString(() => track.name());
+  const artist = safeString(() => track.artist());
+  const album = safeString(() => track.album());
 
   return {
     source: library ? 'library' : 'unknown',
-    id: library ? persistent : opaqueIdentity([title, artist, album, duration]),
+    id: library
+      ? persistent
+      : opaqueIdentity([title, artist, album, seconds ?? 0]),
     title,
     artist,
     album,
-    duration_ms: duration > 0 ? Math.round(duration * 1000) : null,
+    duration_ms: seconds === null ? null : Math.round(seconds * 1000),
+    // A stream, or a track with no finite positive length, is live radio. The Host skips timing that needs a length.
+    is_live_radio: isStreamClass(trackClass) || seconds === null,
   };
 }
 
@@ -104,7 +138,7 @@ function describeStatus(music) {
     volume: Number(music.soundVolume()),
     position_ms: Math.max(
       0,
-      Math.round(Number(readValue(() => music.playerPosition(), 0)) * 1000),
+      Math.round((safeFiniteNumber(() => music.playerPosition()) ?? 0) * 1000),
     ),
     // Read straight after the position, so the Host can date the position to this moment rather than to process exit.
     read_at_ms: Date.now(),
@@ -164,13 +198,13 @@ function requireText(value, limit) {
  * @param {MusicTrackSet} tracks @param {number} limit
  */
 function describeTrackSet(tracks, limit) {
-  const ids = readValue(() => tracks.persistentID(), []);
-  const names = readValue(() => tracks.name(), []);
-  const artists = readValue(() => tracks.artist(), []);
-  const albums = readValue(() => tracks.album(), []);
-  const durations = readValue(() => tracks.duration(), []);
-  const discs = readValue(() => tracks.discNumber(), []);
-  const numbers = readValue(() => tracks.trackNumber(), []);
+  const ids = safeArray(() => tracks.persistentID());
+  const names = safeArray(() => tracks.name());
+  const artists = safeArray(() => tracks.artist());
+  const albums = safeArray(() => tracks.album());
+  const durations = safeArray(() => tracks.duration());
+  const discs = safeArray(() => tracks.discNumber());
+  const numbers = safeArray(() => tracks.trackNumber());
   const rows = [];
 
   for (let index = 0; index < ids.length; index++) {
@@ -329,6 +363,46 @@ function setRepeat(music, value) {
   music.songRepeat = value;
 }
 
+// Library write-back changes only what the user named: one favorite flag, or tracks added to one playlist.
+const PLAYLIST_TRACK_LIMIT = 200;
+
+/** @param {MusicApplication} music @param {string} persistent @param {string | undefined} value */
+function setFavorite(music, persistent, value) {
+  if (value !== 'true' && value !== 'false')
+    throw new Error('Invalid favorite setting');
+
+  libraryTrack(music, persistent).favorited = value === 'true';
+}
+
+/** The user's playlist with this name, created the first time it is needed. @param {MusicApplication} music @param {string} name */
+function hostPlaylist(music, name) {
+  const title = requireText(name, 100);
+  const existing = music.userPlaylists.whose({ name: title });
+
+  if (existing.length > 0 && existing[0]) return existing[0];
+
+  return music.make({ new: 'userPlaylist', withProperties: { name: title } });
+}
+
+/** @param {MusicApplication} music @param {string} name @param {string[]} identities */
+function addToPlaylist(music, name, identities) {
+  if (identities.length === 0 || identities.length > PLAYLIST_TRACK_LIMIT)
+    throw new Error('Invalid track count');
+
+  // Every track is resolved before the playlist exists, so a bad identity never leaves an empty playlist behind.
+  const tracks = identities.map((persistent) =>
+    libraryTrack(music, persistent),
+  );
+
+  const playlist = hostPlaylist(music, name);
+
+  for (const track of tracks) {
+    track.duplicate({ to: playlist });
+  }
+
+  return tracks.length;
+}
+
 // About 800 ms of settling at most, which covers Music's usual delay between a script returning and its state changing.
 const SETTLE_POLLS = 16;
 const SETTLE_INTERVAL_SECONDS = 0.05;
@@ -377,6 +451,25 @@ function settlePlayback(music, expectedPlaying) {
   return status;
 }
 
+/** The library write-back actions. Any other action returns null. @param {MusicApplication} music @param {string[]} argv @returns {string | null} */
+function writeLibrary(music, argv) {
+  const action = argv[0];
+
+  if (action === 'favorite') {
+    setFavorite(music, argv[1] ?? '', argv[2]);
+
+    return JSON.stringify({ favorited: argv[2] === 'true' });
+  }
+
+  if (action === 'playlist-add') {
+    const added = addToPlaylist(music, argv[1] ?? '', argv.slice(2));
+
+    return JSON.stringify({ added });
+  }
+
+  return null;
+}
+
 /** @param {string[]} argv @returns {string} */
 function handleRun(argv) {
   const music = Application('Music');
@@ -387,6 +480,10 @@ function handleRun(argv) {
   }
 
   const action = argv[0];
+
+  const written = writeLibrary(music, argv);
+
+  if (written !== null) return written;
 
   if (action === 'status') return readStatus(music);
 

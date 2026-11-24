@@ -22,6 +22,9 @@ struct HostMenu: View {
                 .disabled(model.starting || model.saving)
         } else {
             Label("Host is running", systemImage: "circle.fill").foregroundStyle(.green)
+            if model.energy.budget != .unrestricted {
+                Label("Power: \(model.energy.budget.title)", systemImage: "thermometer.medium")
+            }
         }
         Button("Settings...") {
             model.selectedSection = .general

@@ -38,7 +38,13 @@ extension MusicAccessibility {
             }
             try await Task.sleep(for: .milliseconds(120))
         } while monotonicMs() < deadline
-        guard let row = located else { throw CadenzaError.failure("song_not_ready", reason) }
+        guard let row = located else {
+            if modalBlocked() {
+                throw CadenzaError.failure(
+                    "music_modal_blocked", "Music is showing a dialog. Dismiss it in Music, then try again.")
+            }
+            throw CadenzaError.failure("song_not_ready", reason)
+        }
         if let route { return try await ensureSelected(row, deadline: deadline, route: route) }
         return try await escalating(deadline: max(deadline, monotonicMs() + 2_400)) { route, limit in
             try await self.ensureSelected(row, deadline: limit, route: route)

@@ -35,7 +35,10 @@
         { "$ref": "#/$defs/repeat" },
         { "$ref": "#/$defs/singEnable" },
         { "$ref": "#/$defs/singDisable" },
-        { "$ref": "#/$defs/singMix" }
+        { "$ref": "#/$defs/singMix" },
+        { "$ref": "#/$defs/libraryFavorite" },
+        { "$ref": "#/$defs/libraryPlaylist" },
+        { "$ref": "#/$defs/audioSelectOutput" }
       ]
     }
   },
@@ -146,6 +149,49 @@
       "properties": {
         "kind": { "const": "playback.repeat" },
         "mode": { "enum": ["off", "one", "all"] }
+      },
+      "additionalProperties": false
+    },
+    "libraryIdentity": {
+      "type": "object",
+      "required": ["source", "id"],
+      "properties": {
+        "source": { "const": "library" },
+        "id": { "type": "string", "pattern": "^[0-9A-F]{16}$" }
+      },
+      "additionalProperties": false
+    },
+    "libraryFavorite": {
+      "type": "object",
+      "required": ["kind", "song", "enabled"],
+      "properties": {
+        "kind": { "const": "library.favorite" },
+        "song": { "$ref": "#/$defs/libraryIdentity" },
+        "enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "libraryPlaylist": {
+      "type": "object",
+      "required": ["kind", "name", "songs"],
+      "properties": {
+        "kind": { "const": "library.addToPlaylist" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "songs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/libraryIdentity" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "audioSelectOutput": {
+      "type": "object",
+      "required": ["kind", "output"],
+      "properties": {
+        "kind": { "const": "audio.selectOutput" },
+        "output": { "type": "string", "minLength": 1, "maxLength": 256 }
       },
       "additionalProperties": false
     },

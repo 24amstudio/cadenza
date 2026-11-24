@@ -7,7 +7,7 @@ import Foundation
 @MainActor
 final class MusicAccessibility {
     let maximumElements = 6_000
-    static let messagingTimeout: Float = 0.4
+    static let messagingTimeout: Float = 0.35
     var application: AXUIElement?
     var cachedQueueTable: AXUIElement?
     // An empty queue is the History list directly above AutoPlay. Its row count and AutoPlay row confirm it cheaply.
@@ -83,6 +83,9 @@ final class MusicAccessibility {
                 requestPermission()
             }
             throw CadenzaError.failure("music_permission", "Allow Cadenza Host in Privacy & Security → Accessibility.")
+        }
+        guard !ScreenLock.isLocked else {
+            throw CadenzaError.failure("music_locked", "The Mac is locked. Unlock it to use Music's interface.")
         }
         guard let pid = runningMusic() else {
             throw CadenzaError.failure("music_unavailable", "Music is not running. Open Music, then try again.")

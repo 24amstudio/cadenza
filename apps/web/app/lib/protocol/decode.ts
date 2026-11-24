@@ -11,8 +11,13 @@ import {
   type JsonValue,
 } from './json';
 import type {
+  AudioOutput,
   AudioQuality,
   AutoPlayItem,
+  CastDevice,
+  CastDisplay,
+  CastPresentation,
+  CastState,
   HostUpdateStatus,
   BrowseCollectionKind,
   BrowseItem,
@@ -24,6 +29,7 @@ import type {
   CommandResult,
   CurrentPlayback,
   LyricDocument,
+  RecommendationShelfItem,
   LyricLine,
   LyricWord,
   QueueEntry,
@@ -49,6 +55,11 @@ export type HostMessage =
       message: string;
     }
   | { type: 'lyrics'; requestId: string | null; lyrics: LyricDocument }
+  | {
+      type: 'recommendation.shelf';
+      requestId: string | null;
+      items: RecommendationShelfItem[];
+    }
   | { type: 'lyrics.unavailable'; occurrenceId: string | null; message: string }
   | {
       type: 'artwork';
@@ -125,7 +136,69 @@ const hostDecoders = new Map<
   ['song.ready', decodeSongReadyMessage],
   ['browse.result', decodeBrowseResultMessage],
   ['host.update.status', decodeHostUpdateMessage],
+  ['recommendation.result', decodeRecommendationResultMessage],
 ]);
+
+function decodeRecommendationResultMessage(
+  object: JsonObject,
+): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+  const shelf = objectField(object, 'recommendation_shelf');
+  const errorCode = stringField(object, 'error_code');
+
+  if (shelf === null) {
+    if (errorCode === null) return null;
+
+    return {
+      type: 'error',
+      requestId,
+      commandId: null,
+      errorCode,
+      message: 'Recommendations are not available right now.',
+    };
+  }
+
+  return {
+    type: 'recommendation.shelf',
+    requestId,
+    items: decodeShelfItems(arrayField(shelf, 'items') ?? []),
+  };
+}
+
+function decodeShelfItems(values: JsonValue[]): RecommendationShelfItem[] {
+  return values.flatMap((value) => {
+    if (!isJsonObject(value)) return [];
+
+    const track = objectField(value, 'track');
+    const source = track === null ? null : stringField(track, 'source');
+    const id = track === null ? null : stringField(track, 'id');
+    const title = stringField(value, 'title');
+    const artist = stringField(value, 'artist');
+
+    if (
+      !isShelfSource(source) ||
+      id === null ||
+      title === null ||
+      artist === null
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        source,
+        id,
+        title,
+        artist,
+        evidence: stringArrayField(value, 'evidence') ?? [],
+      },
+    ];
+  });
+}
+
+function isShelfSource(value: string | null): value is 'catalog' | 'library' {
+  return value === 'catalog' || value === 'library';
+}
 
 export function decodeHostMessage(text: string): HostMessage | null {
   const value = parseJson(text);
@@ -538,7 +611,66 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     autoPlay,
     synchronized,
     issue: stringField(object, 'issue'),
+    audioOutputs: decodeAudioOutputs(arrayField(object, 'audio_outputs') ?? []),
+    hostBudget: stringField(object, 'host_budget'),
+    cast: decodeCast(objectField(object, 'cast')),
   };
+}
+
+// An output that does not decode is left out, so one unknown output never hides the rest.
+function decodeCast(object: JsonObject | null): CastState | null {
+  if (object === null) return null;
+
+  const presentation = stringField(object, 'presentation');
+
+  if (!isCastPresentation(presentation)) return null;
+
+  return {
+    presentation,
+    devices: decodeCastDevices(arrayField(object, 'devices') ?? []),
+  };
+}
+
+function isCastPresentation(value: string | null): value is CastPresentation {
+  return value === 'auto' || value === 'audio_only' || value === 'full_suite';
+}
+
+function decodeCastDevices(values: JsonValue[]): CastDevice[] {
+  return values.flatMap((value) => {
+    if (!isJsonObject(value)) return [];
+
+    const name = stringField(value, 'name');
+    const display = stringField(value, 'display');
+
+    if (name === null || !isCastDisplay(display)) return [];
+
+    return [{ name, display }];
+  });
+}
+
+function isCastDisplay(value: string | null): value is CastDisplay {
+  return value === 'none' || value === 'display' || value === 'unknown';
+}
+
+function decodeAudioOutputs(values: JsonValue[]): AudioOutput[] {
+  return values.flatMap((value) => {
+    if (!isJsonObject(value)) return [];
+
+    const output = decodeAudioOutput(value);
+
+    return output === null ? [] : [output];
+  });
+}
+
+function decodeAudioOutput(object: JsonObject): AudioOutput | null {
+  const id = stringField(object, 'id');
+  const name = stringField(object, 'name');
+  const transport = stringField(object, 'transport');
+  const isDefault = booleanField(object, 'is_default');
+
+  if (!id || !name || !transport || isDefault === null) return null;
+
+  return { id, name, transport, isDefault };
 }
 
 function isRepeatMode(value: string | null): value is RepeatMode {
@@ -588,6 +720,7 @@ function decodeCurrent(object: JsonObject): CurrentPlayback | null {
     positionMs,
     sampledAtHostMs,
     artworkPreview: stringField(object, 'artwork_preview'),
+    isLiveRadio: booleanField(object, 'is_live_radio') ?? false,
   };
 }
 

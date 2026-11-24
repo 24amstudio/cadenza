@@ -4,7 +4,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.cadenza.remote.data.BrowseTarget
-import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteState
 
 // The pages opened from Now Playing, song actions, or Search, newest last. The stack is saveable, so rotating the
@@ -35,8 +34,13 @@ class BrowseNavigator(
 
 val LocalBrowseNavigator = staticCompositionLocalOf { BrowseNavigator() }
 
-// A song from Music's own queue has no catalog or library identity the Host could resolve, so it has no page.
+// A page needs a Host that browses. A song from Music's own queue has no identity the Host could resolve, so only its
+// artist, which can be looked up by name, has a page.
 fun canBrowse(
     state: RemoteState,
-    song: Song,
-): Boolean = "library.browse" in state.capabilities && state.connected && song.source != "unknown"
+    target: BrowseTarget,
+): Boolean {
+    if ("library.browse" !in state.capabilities || !state.connected) return false
+    target.song?.let { return it.source != "unknown" }
+    return target.id != null || !target.artistName.isNullOrBlank()
+}

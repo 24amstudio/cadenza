@@ -8,14 +8,28 @@ const source = readFileSync(
   'utf8',
 );
 
-/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean }} [options] */
+/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean, lateApply?: number }} [options] */
 function nativeBoundary(
   persistentId = 'AB1234567890CDEF',
-  { trackClass = 'sharedTrack', inLibrary = true } = {},
+  { trackClass = 'sharedTrack', inLibrary = true, lateApply = 0 } = {},
 ) {
   let volume = 50;
   let position = 1.25;
   let playing = true;
+  // Music applies play and pause some reads after its script returns, as it does on a busy Mac.
+  /** @type {boolean | null} */
+  let pendingPlaying = null;
+  let readsUntilApplied = 0;
+
+  const applyLatePlaybackChange = (/** @type {boolean} */ next) => {
+    if (lateApply > 0) {
+      pendingPlaying = next;
+      readsUntilApplied = lateApply;
+    } else {
+      playing = next;
+    }
+  };
+
   let shuffle = false;
   let repeat = 'off';
   let query = '';
@@ -27,6 +41,7 @@ function nativeBoundary(
     name: () => 'A "quoted"\nsong ||| title',
     artist: () => 'Example artist',
     album: () => 'Example album',
+    kind: () => 'Apple Music AAC audio file',
   };
 
   const playlistId = '0123456789ABCDEF';
@@ -38,6 +53,7 @@ function nativeBoundary(
     name: () => [track.name()],
     artist: () => [track.artist()],
     album: () => [track.album()],
+    kind: () => [track.kind()],
     duration: () => [track.duration()],
     discNumber: () => [1],
     trackNumber: () => [1],
@@ -61,7 +77,14 @@ function nativeBoundary(
   const music = {
     running: () => true,
     launch: () => {},
-    playerState: () => (playing ? 'playing' : 'paused'),
+    playerState: () => {
+      if (pendingPlaying !== null && --readsUntilApplied <= 0) {
+        playing = pendingPlaying;
+        pendingPlaying = null;
+      }
+
+      return playing ? 'playing' : 'paused';
+    },
     currentTrack: () => track,
     libraryPlaylists: [
       {
@@ -93,10 +116,10 @@ function nativeBoundary(
     },
     reveal: () => {},
     play: () => {
-      playing = true;
+      applyLatePlaybackChange(true);
     },
     pause: () => {
-      playing = false;
+      applyLatePlaybackChange(false);
     },
     nextTrack: () => {
       position = 0;
@@ -138,7 +161,11 @@ function nativeBoundary(
   };
 
   // Application is the explicit external macOS automation boundary.
-  const context = { Application: () => music, argumentsForTest: [] };
+  const context = {
+    Application: () => music,
+    argumentsForTest: [],
+    delay: () => {},
+  };
 
   runInNewContext(source, context);
 
@@ -281,6 +308,14 @@ test('shuffle and repeat are read in the status and set only to known values', (
     /Invalid repeat mode/,
   );
   assert.equal(boundary.invoke(['status']).repeat, 'off');
+});
+
+test('a control action waits inside its own script until Music shows the new state', () => {
+  const boundary = nativeBoundary('AB1234567890CDEF', { lateApply: 2 });
+  const paused = boundary.invoke(['pause']);
+
+  assert.equal(paused.status.playing, false);
+  assert.equal(paused.status.state, 'paused');
 });
 
 test('a control action replies with the state it left, so the Host can confirm it without another launch', () => {

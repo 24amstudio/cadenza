@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.energy.BatteryDraw
 import app.cadenza.remote.energy.EnergyState
 import app.cadenza.remote.energy.ThermalLevel
 import app.cadenza.remote.ui.StatRow
@@ -28,6 +29,10 @@ internal fun EnergyDebugSection(energy: EnergyState) {
             StatRow("Charging", yesNo(inputs.charging))
             StatRow("System battery saver", yesNo(inputs.powerSave))
             StatRow("Temperature", thermalLabel(inputs.thermal))
+            inputs.draw?.let { draw ->
+                StatRow("System battery draw", drawLabel(draw))
+                StatRow("System current", draw.currentMilliAmp?.let { "${it.toInt()} mA" } ?: "Unknown")
+            }
             StatRow("Lyric frame cap", "${profile.lyricFrameCapFps} fps")
             StatRow("Lyric blur lines", if (profile.lyricBlurLines == 0) "Off" else "${profile.lyricBlurLines} each side")
             StatRow("Animated artwork", yesNo(profile.motionArtwork))
@@ -39,6 +44,13 @@ internal fun EnergyDebugSection(energy: EnergyState) {
 }
 
 private fun yesNo(value: Boolean) = if (value) "Yes" else "No"
+
+private fun drawLabel(draw: BatteryDraw): String {
+    val minutes = draw.elapsedMs / 60_000
+    val consumed = draw.consumedMilliAh ?: return "Unknown"
+    val average = draw.averageMilliAmp?.let { ", about ${it.toInt()} mA on average" }.orEmpty()
+    return "${consumed.toInt()} mAh over $minutes min$average"
+}
 
 private fun thermalLabel(level: ThermalLevel) =
     when (level) {

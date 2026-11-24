@@ -93,10 +93,7 @@
         "heartbeat": {
           "type": "boolean"
         },
-        "remote_version": {
-          "type": "string",
-          "maxLength": 80
-        }
+        "remote_version": { "type": "string", "maxLength": 80 }
       },
       "additionalProperties": false
     },
@@ -123,10 +120,8 @@
           "minLength": 1,
           "maxLength": 80
         },
-        "remote_version": {
-          "type": "string",
-          "maxLength": 80
-        }
+        "remote_version": { "type": "string", "maxLength": 80 },
+        "remote_build": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -161,6 +156,8 @@
         "host_time_ms": {
           "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
         },
+        "host_version": { "type": "string", "maxLength": 40 },
+        "host_build": { "type": "integer", "minimum": 0 },
         "token": {
           "type": "string",
           "minLength": 32,

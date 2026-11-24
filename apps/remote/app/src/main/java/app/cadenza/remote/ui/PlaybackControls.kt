@@ -92,6 +92,8 @@ internal fun PlaybackTransport(
     state: RemoteState,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    // A full-width group spreads its slots across the whole row instead of stopping at the slot maximum.
+    fillWidth: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
@@ -100,9 +102,15 @@ internal fun PlaybackTransport(
     val mayInterrupt = mayInterruptPlayback(state)
     val playback = if (snapshot.playing) "playback.pause" else "playback.resume"
     val slots = 3 + (if (leadingContent != null) 1 else 0) + (if (trailingContent != null) 1 else 0)
+    val group =
+        if (fillWidth) {
+            Modifier.fillMaxWidth()
+        } else {
+            Modifier.widthIn(max = (slots * if (compact) SLOT_MAX_COMPACT_DP else SLOT_MAX_DP).dp).fillMaxWidth()
+        }
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Row(
-            Modifier.widthIn(max = (slots * if (compact) SLOT_MAX_COMPACT_DP else SLOT_MAX_DP).dp).fillMaxWidth(),
+            group,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leadingContent?.let { TransportSlot(it) }

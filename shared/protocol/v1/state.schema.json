@@ -161,7 +161,18 @@
           "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
         },
         "quality": {
-          "enum": ["unknown", "lossless", "hi_res_lossless", "dolby_atmos"]
+          "enum": [
+            "unknown",
+            "lossless",
+            "hi_res_lossless",
+            "dolby_atmos",
+            "aac"
+          ]
+        },
+        "auto_play": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/autoPlayItem" }
         },
         "incoming": { "$ref": "#/$defs/song" },
         "mixing": { "type": "boolean" },

@@ -84,15 +84,17 @@ final class ArtworkProvider {
 
     // Album art travels at most 256 by 256 pixels, so a Bluetooth link carries a small image. A smaller image is sent as it is.
     nonisolated static let albumArtSide = 256
+    // Bluetooth carries the still cover at this size, which keeps its chunked transfer within the time a link allows.
+    nonisolated static let bluetoothAlbumArtSide = 160
 
-    nonisolated static func fullSize(of source: Data) throws -> Data {
+    nonisolated static func fullSize(of source: Data, side: Int = albumArtSide) throws -> Data {
         guard let image = CGImageSourceCreateWithData(source as CFData, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
             let width = properties[kCGImagePropertyPixelWidth] as? Int,
             let height = properties[kCGImagePropertyPixelHeight] as? Int
         else { throw CadenzaError.failure("artwork_unavailable", "The artwork is not an image.") }
-        guard max(width, height) > albumArtSide else { return source }
-        return try jpeg(source, maxPixelSize: albumArtSide, quality: 0.85)
+        guard max(width, height) > side else { return source }
+        return try jpeg(source, maxPixelSize: side, quality: 0.85)
     }
 
     private nonisolated static func jpeg(_ source: Data, maxPixelSize: Int, quality: Double) throws -> Data {

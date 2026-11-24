@@ -111,6 +111,8 @@ function describeStatus(music) {
     shuffle: readValue(() => Boolean(music.shuffleEnabled()), false),
     repeat: readRepeat(music),
     song: readValue(() => describeTrack(music.currentTrack(), music), null),
+    // The file kind of the current track, such as "Apple Music AAC audio file". It names the codec when Music shows no tier badge.
+    file_kind: readValue(() => String(music.currentTrack().kind()), null),
   };
 }
 
@@ -327,6 +329,10 @@ function setRepeat(music, value) {
   music.songRepeat = value;
 }
 
+// About 800 ms of settling at most, which covers Music's usual delay between a script returning and its state changing.
+const SETTLE_POLLS = 16;
+const SETTLE_INTERVAL_SECONDS = 0.05;
+
 /** @param {MusicApplication} music @param {string[]} argv */
 function controlMusic(music, argv) {
   const action = argv[0];
@@ -342,11 +348,33 @@ function controlMusic(music, argv) {
   else if (action === 'repeat') setRepeat(music, argv[1]);
   else throw new Error('Unknown Music action');
 
-  // The state right after the action lets the Host confirm it without another process launch.
-  return JSON.stringify({
-    dispatched: true,
-    status: readValue(() => describeStatus(music), null),
-  });
+  // Music applies play and pause a moment after the script returns. Settling here keeps the Host from launching a second
+  // script to confirm the action. A state that never settles is still returned, and the Host confirms it from there.
+  const expectedPlaying =
+    action === 'pause' ? false : action === 'resume' ? true : null;
+
+  const status =
+    expectedPlaying === null
+      ? readValue(() => describeStatus(music), null)
+      : settlePlayback(music, expectedPlaying);
+
+  return JSON.stringify({ dispatched: true, status });
+}
+
+/** @param {MusicApplication} music @param {boolean} expectedPlaying */
+function settlePlayback(music, expectedPlaying) {
+  let status = readValue(() => describeStatus(music), null);
+
+  for (
+    let poll = 0;
+    poll < SETTLE_POLLS && status && status.playing !== expectedPlaying;
+    poll += 1
+  ) {
+    delay(SETTLE_INTERVAL_SECONDS);
+    status = readValue(() => describeStatus(music), null);
+  }
+
+  return status;
 }
 
 /** @param {string[]} argv @returns {string} */

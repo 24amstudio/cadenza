@@ -68,13 +68,36 @@ fun RemoteModel.removeHistory(item: app.cadenza.remote.data.SongStatistic) {
 
 internal fun RemoteModel.requestArtwork(url: String) {
     val state = mutableState.value
-    if (!state.connected ||
-        url.isBlank() || state.artwork.containsKey(url) || !reserveArtwork(url)
-    ) {
+    if (!state.connected || url.isBlank() || state.artwork.containsKey(url)) return
+    val songs = state.snapshot?.let { listOfNotNull(it.current?.song) + it.queue.map { entry -> entry.song } }.orEmpty()
+    heldAlbumCover(url, songs) { state.artwork.containsKey(it) }?.let { alias ->
+        state.artwork[alias]?.let { storeArtwork(url, it) }
         return
     }
-    val sent = sendToHost(Wire.frame("artwork.get").put("request_id", nextRequestId()).put("artwork_url", url))
-    if (!sent) releaseArtwork(url)
+    if (!reserveArtwork(url)) return
+    // The disk tier is read off the main thread, and only a miss is sent to the Host.
+    viewModelScope.launch {
+        val stored = withContext(updateDispatcher) { artworkDisk.get(url) }
+        if (stored != null) {
+            releaseArtwork(url)
+            storeArtwork(url, stored)
+            return@launch
+        }
+        val sent = sendToHost(Wire.frame("artwork.get").put("request_id", nextRequestId()).put("artwork_url", url))
+        if (!sent) releaseArtwork(url)
+    }
+}
+
+internal fun RemoteModel.storeArtwork(
+    url: String,
+    bytes: ByteArray,
+) {
+    mutableState.update { current ->
+        val next = LinkedHashMap(current.artwork)
+        if (!next.containsKey(url) && next.size >= 8) next.remove(next.keys.first())
+        next[url] = bytes
+        current.copy(artwork = next)
+    }
 }
 
 internal fun RemoteModel.applyArtworkFrame(frame: JSONObject) {
@@ -92,12 +115,8 @@ internal fun RemoteModel.applyArtworkFrame(frame: JSONObject) {
         return
     }
     releaseArtwork(url)
-    mutableState.update { current ->
-        val next = LinkedHashMap(current.artwork)
-        if (!next.containsKey(url) && next.size >= 8) next.remove(next.keys.first())
-        next[url] = bytes
-        current.copy(artwork = next)
-    }
+    storeArtwork(url, bytes)
+    viewModelScope.launch(updateDispatcher) { artworkDisk.put(url, bytes) }
     recordComponentDuration(
         "artwork",
         (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0),

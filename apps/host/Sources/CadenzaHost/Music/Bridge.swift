@@ -46,8 +46,9 @@ final class MusicBridge {
             return
         }
         let detail = arguments.dropFirst().joined(separator: " ")
+        // A slow poll that succeeded is timing data, not a warning. Only a failed call is one.
         logger?.log(
-            failure == nil && elapsed < 1_000 ? .info : .warning, category: "music", action: "music." + action,
+            failure == nil ? .info : .warning, category: "music", action: "music." + action,
             failure?.localizedDescription ?? "Music \(action) finished",
             metadata: [
                 "ms": String(elapsed), "outcome": failure == nil ? "ok" : "failed",

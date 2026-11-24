@@ -87,6 +87,19 @@ final class QueueCoordinator {
         for song in songs { knownSongs[song.identity] = song }
     }
 
+    // The map is bounded and cleared when full, while a Remote may still hold a song as prepared. Resolving the
+    // identity again keeps a request from failing on a song that Music or the catalog still has.
+    private func knownOrResolved(_ identity: SongIdentity) async throws -> Song {
+        if let known = knownSongs[identity] { return known }
+        let song =
+            identity.source == "library"
+            ? try await music.resolve(identity)
+            : try await catalog.resolve(identity)
+        remember([song])
+        if song.identity != identity { knownSongs[identity] = song }
+        return song
+    }
+
     /// Reads Music's state. `hintedAt` is the Host time of the change notification that asked for this read. A state
     /// sampled after that moment already shows the change, so a command's own notification does not cost a second read.
     func refresh(hintedAt: Int64? = nil) async {
@@ -333,7 +346,10 @@ final class QueueCoordinator {
         if refreshQuality, now - lastQualityAt > Self.qualityIntervalMs, !connectedRemoteIds().isEmpty,
             let title = status.song?.title
         {
-            let quality = music.accessibility.quality(currentTitle: title)
+            let badgeTier = music.accessibility.quality(currentTitle: title)
+            // A tier badge always wins. The file kind names the codec only when Music shows no badge.
+            let quality =
+                badgeTier == "unknown" ? MusicQuality.tier(forFileKind: status.fileKind) ?? badgeTier : badgeTier
             if quality != lastQuality {
                 logger?.log(
                     .info, category: "playback", action: "quality.changed", "Music audio quality is \(quality)",
@@ -546,9 +562,10 @@ final class QueueCoordinator {
         }
         var plannedEntry: String?
         if ["queue.enqueue", "queue.play_now", "queue.play_next"].contains(action.kind) {
-            guard let identity = action.song, let song = knownSongs[identity] else {
+            guard let identity = action.song else {
                 throw CadenzaError.failure("song_not_ready", "Search for and select the song first.")
             }
+            let song = try await knownOrResolved(identity)
             let id = identifier()
             let plan = String(decoding: try JSONSerialization.data(withJSONObject: ["entry_id": id]), as: UTF8.self)
             try store.database.transaction {
@@ -579,9 +596,11 @@ final class QueueCoordinator {
             try store.authorize(actor: actor, command: command, entryId: target)
             // The Remote's deadline gates dispatch. A dispatched action gets a Host budget to finish and be verified, so a
             // slow read after dispatch cannot report an action Music already applied as unconfirmed. Queue edits take
-            // seconds and get the longer budget. The Remote settles either by querying the command.
+            // seconds and get the longer budget. Shuffle and repeat are set and read back by separate Music scripts, and
+            // each script start takes about a second on a busy Mac, so they also get it. The Remote settles either by
+            // querying the command.
             let nativeDeadline =
-                action.kind.hasPrefix("queue.")
+                action.kind.hasPrefix("queue.") || ["playback.shuffle", "playback.repeat"].contains(action.kind)
                 ? max(deadline, monotonicMs() + 6_000) : max(deadline, monotonicMs() + 2_000)
             // Remote positions are on the delayed timeline. Music must seek to the position its audio is at.
             if action.kind == "playback.seek", let position = action.positionMs {

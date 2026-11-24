@@ -39,6 +39,7 @@ class RemoteHandshake(
                         .put("token", token)
                         .put("last_credit_sequence", app.database.cursor(stored.hostId))
                         .put("remote_version", BuildConfig.VERSION_NAME)
+                        .put("remote_build", BuildConfig.VERSION_CODE)
                 }
             Wire.frame("hello").put("auth", credentials)
         }

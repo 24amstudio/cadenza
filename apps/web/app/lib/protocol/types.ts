@@ -31,6 +31,16 @@ export interface QueueEntry {
 
 export type RepeatMode = 'off' | 'one' | 'all';
 
+// The audio tier Music reports for the current song. 'unknown' until Music's badge has been read.
+export type AudioQuality =
+  'unknown' | 'lossless' | 'hi_res_lossless' | 'dolby_atmos' | 'aac';
+
+// A song Music plays after the requests. Only the first few arrive, and a Remote cannot change them.
+export interface AutoPlayItem {
+  title: string;
+  artist: string;
+}
+
 export interface Snapshot {
   hostId: string;
   hostEpoch: string;
@@ -42,6 +52,9 @@ export interface Snapshot {
   repeat: RepeatMode;
   current: CurrentPlayback | null;
   queue: QueueEntry[];
+  totalRemainingMs: number | null;
+  quality: AudioQuality;
+  autoPlay: AutoPlayItem[];
   synchronized: boolean;
   issue: string | null;
 }
@@ -80,6 +93,16 @@ export interface Welcome {
   token: string | null;
   hostTimeMs: number;
   capabilities: string[];
+  // The Host's version name and build number, when it reports them.
+  hostVersion: string | null;
+  hostBuild: number | null;
+}
+
+// Where a Host update stands, as the Host reports it: checking, ready, installing, current, or failed.
+export interface HostUpdateStatus {
+  state: string;
+  version: string | null;
+  message: string | null;
 }
 
 export type CommandOutcome = 'applied' | 'rejected' | 'expired' | 'unconfirmed';

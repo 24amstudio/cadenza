@@ -829,6 +829,10 @@ class RemoteUiTest {
         navigate("Home")
         compose.onNodeWithContentDescription("Lyrics").performClick()
         assertTrue(viewsKeepingScreenOn().isNotEmpty())
+        // The outgoing surface finishes its exit animation after Lyrics has claimed the window.
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertTrue(viewsKeepingScreenOn().isNotEmpty())
     }
 
     @Test

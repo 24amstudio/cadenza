@@ -4,10 +4,13 @@ import EmptyState from '~/components/common/EmptyState.vue';
 import SongRow from '~/components/library/SongRow.vue';
 import type { HistoryEntry } from '~/lib/library/history';
 import { formatHistoryTime, groupHistory } from '~/lib/library/historyGroups';
+import { summarizeHistory } from '~/lib/library/historySummary';
+import { formatListeningTime } from '~/lib/playback';
 import { useLibraryStore } from '~/stores/library';
 
 const library = useLibraryStore();
 const groups = computed(() => groupHistory(library.history, new Date()));
+const summary = computed(() => summarizeHistory(library.history));
 const dialog = useTemplateRef<HTMLDialogElement>('dialog');
 const clearButton = useTemplateRef<HTMLButtonElement>('clearButton');
 
@@ -44,6 +47,42 @@ async function onDialogClosed(): Promise<void> {
         Clear history
       </button>
     </div>
+
+    <section class="summary" aria-labelledby="history-summary-title">
+      <h2 id="history-summary-title">Listening</h2>
+      <dl class="metrics">
+        <div class="metric primary">
+          <dt>Total play time</dt>
+          <dd>{{ formatListeningTime(summary.songTimeMs) }}</dd>
+        </div>
+        <div class="metric">
+          <dt>Plays</dt>
+          <dd>{{ summary.plays }}</dd>
+        </div>
+        <div class="metric">
+          <dt>Songs</dt>
+          <dd>{{ summary.songs }}</dd>
+        </div>
+        <div class="metric">
+          <dt>Artists</dt>
+          <dd>{{ summary.artists }}</dd>
+        </div>
+      </dl>
+      <p class="note">
+        Each play counts the full length of its song. This browser keeps its
+        last
+        {{ library.history.length }} entries, so older plays are not included.
+      </p>
+      <ol v-if="summary.topArtists.length > 0" class="top-artists">
+        <li v-for="artist in summary.topArtists" :key="artist.name">
+          <span>{{ artist.name }}</span>
+          <small
+            >{{ artist.plays }}
+            {{ artist.plays === 1 ? 'play' : 'plays' }}</small
+          >
+        </li>
+      </ol>
+    </section>
 
     <section
       v-for="group in groups"
@@ -96,6 +135,83 @@ async function onDialogClosed(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   padding: 0 12px;
+}
+
+.summary {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: var(--radius-panel);
+  background: var(--color-fill);
+}
+
+.summary h2 {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.metric {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.metric.primary {
+  grid-column: 1 / -1;
+}
+
+.metric dt {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.metric dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric.primary dd {
+  font-size: 34px;
+}
+
+.note {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.top-artists {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.top-artists li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.top-artists small {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .day {

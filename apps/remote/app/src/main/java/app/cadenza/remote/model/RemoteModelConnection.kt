@@ -3,6 +3,7 @@ package app.cadenza.remote.model
 import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.viewModelScope
+import app.cadenza.remote.data.ClockSync
 import app.cadenza.remote.data.HostProfile
 import app.cadenza.remote.data.PairingInvitation
 import app.cadenza.remote.data.Wire
@@ -28,10 +29,11 @@ internal fun RemoteModel.openConnection() {
     val port = endpoint?.port ?: 0
     val version = ++generation
     clock.reset()
+    clock.readyUncertaintyMs = if (transportMode == "lan") ClockSync.LAN_READY_UNCERTAINTY_MS else ClockSync.BLUETOOTH_READY_UNCERTAINTY_MS
     lastHeartbeatAt = 0
     // A new session starts its liveness clock now, not at the previous session's last frame.
     lastReceivedAt = SystemClock.elapsedRealtime()
-    mutable.update { it.copy(connecting = true, connectionIssue = null) }
+    mutable.update { it.copy(connecting = true, connectionIssue = null, clockUncertaintyMs = null) }
     connection =
         if (transportMode == "ble") {
             BleConnection(
@@ -94,6 +96,7 @@ internal fun RemoteModel.openConnection() {
                 closed = { message -> viewModelScope.launch { connectionClosed(version, message) } },
             )
         }
+    connection = connection?.let { MeteredConnection(it, traffic) }
     connection?.connect()
     clockJob =
         viewModelScope.launch {

@@ -63,7 +63,14 @@ class BleTransport(
     private val bulk = BulkTransferTracker()
 
     private val lock = Any()
-    private val outbound = ArrayDeque<ByteArray>()
+
+    // Frames queue whole, as chunk lists. The Host reassembles one frame at a time, so chunks of two frames must never
+    // interleave. Urgent frames, such as commands and clock pings, drain before any waiting ordinary frame.
+    private val outbound = ArrayDeque<ArrayDeque<ByteArray>>()
+    private val urgentOutbound = ArrayDeque<ArrayDeque<ByteArray>>()
+
+    // Chunks of the frame being written. An urgent frame waits for this one to finish, not for the rest of the queue.
+    private var sending: ArrayDeque<ByteArray>? = null
     private var queuedBytes = 0
 
     @Volatile private var mtu = DEFAULT_MTU
@@ -343,15 +350,21 @@ class BleTransport(
         }
     }
 
-    /** Queues one frame. False when the link is not ready or is not draining, so the caller can keep the frame. */
-    fun send(payload: ByteArray): Boolean {
+    /**
+     * Queues one frame. False when the link is not ready or is not draining, so the caller can keep the frame. An urgent
+     * frame, such as a command or a clock ping, goes ahead of every waiting frame that is not urgent.
+     */
+    fun send(
+        payload: ByteArray,
+        urgent: Boolean = false,
+    ): Boolean {
         if (!ready) return false
         val chunks = frameCodec.encode(payload, mtu)
         val bytes = chunks.sumOf { it.size }
         synchronized(lock) {
             if (queuedBytes + bytes > BleLinkPolicy.MAXIMUM_QUEUED_BYTES) return false
             queuedBytes += bytes
-            outbound.addAll(chunks)
+            (if (urgent) urgentOutbound else outbound).addLast(ArrayDeque(chunks))
         }
         handler.post(::flush)
         return true
@@ -362,7 +375,8 @@ class BleTransport(
         val characteristic = writeCharacteristic ?: return
         val next =
             synchronized(lock) {
-                outbound.pollFirst()?.also { queuedBytes -= it.size }
+                if (sending.isNullOrEmpty()) sending = urgentOutbound.pollFirst() ?: outbound.pollFirst()
+                sending?.pollFirst()?.also { queuedBytes -= it.size }
             } ?: return
         characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         characteristic.value = next
@@ -397,6 +411,8 @@ class BleTransport(
     private fun resetOutbound() =
         synchronized(lock) {
             outbound.clear()
+            urgentOutbound.clear()
+            sending = null
             queuedBytes = 0
         }
 

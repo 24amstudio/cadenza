@@ -6,6 +6,20 @@ import Testing
 struct ProtocolTests {
     private let id = "00000000-0000-4000-8000-000000000001"
 
+    @Test func welcomeTellsTheRemoteWhichHostBuildItIs() throws {
+        var welcome = Welcome(
+            hostId: id, hostName: "Studio", hostEpoch: id, remoteId: id, hostTimeMs: 1,
+            updates: UpdateConfiguration())
+        welcome.hostVersion = "0.3.3"
+        welcome.hostBuild = 11
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Wire.encode(Frame(type: "welcome", welcome: welcome))) as? [String: Any])
+        let fields = try #require(object["welcome"] as? [String: Any])
+
+        #expect(fields["host_version"] as? String == "0.3.3")
+        #expect(fields["host_build"] as? Int == 11)
+    }
+
     @Test func commandRoundTripPreservesExplicitNullGuards() throws {
         var command = Frame(type: "command")
         command.commandId = id

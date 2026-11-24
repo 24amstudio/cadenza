@@ -9,7 +9,7 @@ import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.Song
 import app.cadenza.remote.model.RemoteState
 
-// Makes an artist or album name open its page. Songs the Host cannot resolve, or a Host without browsing, stay plain text.
+// Makes an artist or album name open its page. A page the Host cannot address, or a Host without browsing, stays plain text.
 @Composable
 fun Modifier.browseLink(
     state: RemoteState,
@@ -18,8 +18,9 @@ fun Modifier.browseLink(
     target: (Song) -> BrowseTarget,
 ): Modifier {
     val navigator = LocalBrowseNavigator.current
-    return if (canBrowse(state, song)) {
-        clickable(onClickLabel = label) { navigator.open(target(song)) }.padding(vertical = 6.dp)
+    val destination = target(song)
+    return if (canBrowse(state, destination)) {
+        clickable(onClickLabel = label) { navigator.open(destination) }.padding(vertical = 6.dp)
     } else {
         this
     }

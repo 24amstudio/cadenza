@@ -14,7 +14,7 @@ const song = { url, occurrenceId: 'occurrence-1' };
 class FakePort implements ArtworkPort {
   state: ArtworkSupport = 'ready';
   motion = true;
-  readonly requests: { id: string; mode: ArtworkMode }[] = [];
+  readonly requests: { id: string; mode: ArtworkMode; url: string }[] = [];
   readonly cancelled: string[] = [];
 
   support(): ArtworkSupport {
@@ -25,9 +25,9 @@ class FakePort implements ArtworkPort {
     return this.motion;
   }
 
-  request(_url: string, mode: ArtworkMode): string | null {
+  request(url: string, mode: ArtworkMode): string | null {
     const id = `request-${this.requests.length + 1}`;
-    this.requests.push({ id, mode });
+    this.requests.push({ id, mode, url });
 
     return id;
   }
@@ -229,5 +229,41 @@ describe('ArtworkCoordinator', () => {
 
     expect(port.requests).toHaveLength(0);
     expect(holder.unavailable).toEqual([url]);
+  });
+});
+
+describe('ArtworkCoordinator prefetch', () => {
+  test('the next cover is asked for only once the playing cover is settled', () => {
+    const port = new FakePort();
+    const clock = new Clock();
+    const loaded = new Set<string>();
+
+    const holder: ArtworkHolder = {
+      hasImage: (address) => loaded.has(address),
+      hasFullImage: (address) => loaded.has(address),
+      hasMotion: () => false,
+      markUnavailable: () => {},
+    };
+
+    const coordinator = new ArtworkCoordinator(
+      port,
+      holder,
+      clock.schedule,
+      () => clock.now,
+    );
+
+    const next = 'https://example.com/next.jpg';
+
+    coordinator.setPlaying(song);
+    coordinator.prefetch(next);
+
+    expect(port.requests.some((request) => request.url === next)).toBe(false);
+
+    loaded.add(url);
+    coordinator.artworkArrived(port.latest(), true, true);
+
+    coordinator.prefetch(next);
+
+    expect(port.requests.some((request) => request.url === next)).toBe(true);
   });
 });

@@ -24,6 +24,12 @@ class HybridConnection(
     @Volatile private var stopped = false
 
     @Volatile private var bleRetries = 0
+
+    // Set once Bluetooth has given up on its current attempt. Until then a lost Wi-Fi path does not end the session, since
+    // Bluetooth may still be finding the Host.
+    @Volatile private var bleFinished = false
+
+    @Volatile private var lanRetries = 0
     private val timers = Handler(Looper.getMainLooper())
     private var openedOnce = false
     private var pendingPair: JSONObject? = null
@@ -31,13 +37,22 @@ class HybridConnection(
     private val lan =
         HostConnection(host, port, ::lanOpened, received) {
             lanReady = false
-            if (!bleReady) closed(it)
+            if (!bleReady && bleFinished) closed(it) else retryLanLater()
         }
     private val ble =
         BleConnection(context, ::bleOpened, received) {
             bleReady = false
+            bleFinished = true
             if (!lanReady) closed(it) else retryBleLater()
         }
+
+    // Wi-Fi may come back while Bluetooth carries the session, so the LAN path is tried again, with a growing pause.
+    private fun retryLanLater() {
+        if (stopped) return
+        val delay = minOf(LAN_RETRY_CEILING_MS, LAN_RETRY_FLOOR_MS shl minOf(lanRetries, 4))
+        lanRetries += 1
+        timers.postDelayed({ if (!stopped && !lanReady) lan.connect() }, delay)
+    }
 
     // The LAN path carries the session while Bluetooth is down, so a lost link is retried quietly and only a few times.
     // Each retry scans for a few seconds, which is not worth repeating on a Host that has Bluetooth off.
@@ -47,18 +62,22 @@ class HybridConnection(
         timers.postDelayed({ if (!stopped && lanReady && !bleReady) ble.connect() }, delay)
     }
 
+    // A reopened LAN path resends the stored hello. Calling onOpened as well would send a second hello, which the Host
+    // rejects as an unsupported message once the path is authenticated.
     private fun lanOpened() {
         lanReady = true
+        lanRetries = 0
         openedOnce = true
         pendingPair?.let { pair ->
             if (lan.send(pair)) pendingPair = null
         }
-        handshake?.let { lan.send(it) }
-        onOpened()
+        val stored = handshake
+        if (stored == null) onOpened() else lan.send(stored)
     }
 
     private fun bleOpened() {
         bleReady = true
+        bleFinished = false
         bleRetries = 0
         handshake?.let { ble.send(it) }
         if (!openedOnce) {
@@ -103,3 +122,6 @@ class HybridConnection(
         ble.disconnect()
     }
 }
+
+private const val LAN_RETRY_FLOOR_MS = 3_000L
+private const val LAN_RETRY_CEILING_MS = 30_000L

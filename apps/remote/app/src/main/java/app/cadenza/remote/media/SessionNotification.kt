@@ -33,7 +33,8 @@ data class SessionStatus(
             val current = state.snapshot?.current
             val playing = state.snapshot?.playing == true
             return SessionStatus(
-                state.sessionActive || (current != null && (state.connected || playing)),
+                // The Host clears its current song when Music stops, so a finished playback leaves nothing to show.
+                current != null && !state.sessionInterrupted,
                 state.connected,
                 state.profile?.name.orEmpty(),
                 current?.song?.title.orEmpty(),

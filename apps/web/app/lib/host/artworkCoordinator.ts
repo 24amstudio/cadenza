@@ -110,6 +110,17 @@ export class ArtworkCoordinator {
     }
   }
 
+  // The cover of the next request, asked for while the playing song's artwork is settled, so the change needs no wait.
+  prefetch(url: string): void {
+    const playing =
+      this.playing === null
+        ? undefined
+        : this.lanes.get(`still|${this.playing.url}`);
+
+    if (playing !== undefined && !this.settled(playing)) return;
+    this.ensure(this.lane('still', url, null));
+  }
+
   connected(): void {
     this.dropRequests();
 

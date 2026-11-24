@@ -38,8 +38,22 @@ internal fun RemoteModel.reportFailure(
     }
 }
 
+// Every notice is shown. A repeat of the last notice within a minute is not logged again, so a repeated tap cannot flood
+// the Host's log with the same warning.
+internal const val WARNING_LOG_INTERVAL_MS = 60_000L
+
+internal fun shouldLogWarning(
+    last: Pair<String, Long>?,
+    message: String,
+    now: Long,
+): Boolean = last == null || last.first != message || now - last.second >= WARNING_LOG_INTERVAL_MS
+
 internal fun RemoteModel.showWarning(message: String) {
-    reportLog("warning", "ui.warning", message)
+    val now = android.os.SystemClock.elapsedRealtime()
+    if (shouldLogWarning(lastWarningLogged, message, now)) {
+        reportLog("warning", "ui.warning", message)
+        lastWarningLogged = message to now
+    }
     mutableState.update { it.copy(notice = Notice(message)) }
 }
 

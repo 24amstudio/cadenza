@@ -142,6 +142,22 @@ internal fun rankSongs(
         }.sortedByDescending { it.score }
 }
 
+// Lengths within this many milliseconds are the same recording. Albums, singles and library copies differ by seconds at most.
+private const val SAME_RECORDING_TOLERANCE_MS = 3_000L
+
+// Apple lists one recording under several albums and IDs, and the library can hold a copy too. Songs with the same title,
+// artist and length are one recording, so only the best-scoring of them is shown.
+internal fun sameRecording(
+    first: Song,
+    second: Song,
+): Boolean {
+    if (normalizeSearchText(first.title) != normalizeSearchText(second.title)) return false
+    if (normalizeSearchText(first.artist) != normalizeSearchText(second.artist)) return false
+    val firstLength = first.durationMs ?: return true
+    val secondLength = second.durationMs ?: return true
+    return abs(firstLength - secondLength) <= SAME_RECORDING_TOLERANCE_MS
+}
+
 // Ranks the typed query's results beside the corrected title's results. A song found by both keeps its best score.
 internal fun rankSearch(
     query: String,
@@ -149,9 +165,16 @@ internal fun rankSearch(
     correction: String?,
     correctedResults: List<Song>,
     signals: SearchSignals,
-): List<RankedSong> =
-    (rankSongs(query, results, signals) + rankSongs(correction.orEmpty(), correctedResults, signals))
-        .groupBy { it.song.source + ":" + it.song.id }
-        .values
-        .map { duplicates -> duplicates.maxBy { it.score } }
-        .sortedByDescending { it.score }
+): List<RankedSong> {
+    val best =
+        (rankSongs(query, results, signals) + rankSongs(correction.orEmpty(), correctedResults, signals))
+            .groupBy { it.song.source + ":" + it.song.id }
+            .values
+            .map { duplicates -> duplicates.maxBy { it.score } }
+            .sortedByDescending { it.score }
+    val shown = mutableListOf<RankedSong>()
+    for (candidate in best) {
+        if (shown.none { sameRecording(it.song, candidate.song) }) shown.add(candidate)
+    }
+    return shown
+}

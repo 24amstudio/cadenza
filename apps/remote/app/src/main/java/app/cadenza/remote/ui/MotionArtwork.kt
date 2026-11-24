@@ -2,6 +2,7 @@ package app.cadenza.remote.ui
 
 import android.net.Uri
 import android.provider.Settings
+import android.view.TextureView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,23 +11,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import app.cadenza.remote.energy.LocalEnergyProfile
 import java.io.File
 
 // Album motion loops silently in the cover slot. It plays only while this screen is resumed and the Host is playing.
 // The still cover stays on top and fades out only once the first video frame is on screen, so the switch never
-// flashes black. Reduced motion keeps the still cover. The Host sends the square rendition, so the default fit fills the slot.
+// flashes black. Reduced motion keeps the still cover. The Host sends a square rendition, which fills the slot.
 @Composable
 fun MotionArtwork(
     video: File?,
@@ -71,19 +73,16 @@ fun MotionArtwork(
         player.playWhenReady = playing
         onPauseOrDispose { player.playWhenReady = false }
     }
-    Box(modifier) {
+    Box(modifier.clip(ArtworkCornerShape)) {
         // No frame renders without the video surface, so the view is composed from the start. The still cover stays on top
-        // until the first frame is on screen, which also hides the player's own shutter.
-        AndroidView(
-            factory = { viewContext ->
-                PlayerView(viewContext).apply {
-                    useController = false
-                    this.player = player
-                }
-            },
-            update = { it.player = player },
-            modifier = Modifier.fillMaxSize(),
-        )
+        // until the first frame is on screen. A TextureView, unlike PlayerView's SurfaceView, takes the rounded clip.
+        key(player) {
+            AndroidView(
+                factory = { viewContext -> TextureView(viewContext).also(player::setVideoTextureView) },
+                onRelease = { view -> player.clearVideoTextureView(view) },
+                modifier = Modifier.fillMaxSize().clip(ArtworkCornerShape),
+            )
+        }
         AnimatedVisibility(visible = !rendered, enter = fadeIn(), exit = fadeOut()) {
             fallback()
         }

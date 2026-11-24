@@ -93,6 +93,13 @@ fun CadenzaApp(
         lyricsMode = false
         restoreLyricsFocus = true
     }
+
+    // A song with lyrics opens straight into them. Only a song without lyrics opens the player.
+    fun openNowPlaying() {
+        val current = state.snapshot?.current
+        val hasLyrics = state.lyrics?.let { it.occurrenceId == current?.occurrenceId && it.level > 0 } == true
+        if (hasLyrics) lyricsMode = true else nowPlayingOpen = true
+    }
     val darkTheme =
         state.theme == ThemePreference.DARK ||
             (state.theme == ThemePreference.SYSTEM && isSystemInDarkTheme())
@@ -149,7 +156,7 @@ fun CadenzaApp(
                                 SnackbarHost(snackbar)
                             }
                             if (state.profile != null && !lyricsMode && !nowPlayingOpen && state.snapshot?.current != null) {
-                                MiniPlayerBar(model, state, onOpen = { nowPlayingOpen = true })
+                                MiniPlayerBar(model, state, onOpen = ::openNowPlaying)
                             }
                             if (!wide && state.profile != null && !lyricsMode && !nowPlayingOpen) {
                                 NavigationBar {

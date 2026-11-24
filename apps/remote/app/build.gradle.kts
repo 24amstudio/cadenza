@@ -63,6 +63,8 @@ android {
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
+        // Off unless a local device test asks for it. Published profiles never set it, so the test invitation intake stays inert.
+        buildConfigField("boolean", "PAIRING_TEST_HOOK", (findProperty("cadenza.pairingTestHook") == "true").toString())
         applicationId = "app.cadence.remote"
         minSdk = 31
         targetSdk = 36

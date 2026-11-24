@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.CurrentPlayback
 import app.cadenza.remote.data.LyricDocument
 import app.cadenza.remote.energy.LocalEnergyProfile
@@ -43,6 +44,7 @@ import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.isStale
 import app.cadenza.remote.model.position
+import app.cadenza.remote.ui.browse.browseLink
 import app.cadenza.remote.ui.lyrics.FollowActiveLine
 import app.cadenza.remote.ui.lyrics.LyricList
 import app.cadenza.remote.ui.lyrics.LyricPlayback
@@ -95,7 +97,9 @@ fun LyricsScreen(
     ) {
         val expanded = maxWidth >= 720.dp
         val compactHeader = maxWidth < 400.dp && LocalDensity.current.fontScale >= 1.5f
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Portrait gives the lyrics the most height: the header and the cover row stay small, and the lyric pane takes the rest.
+        val gap = if (expanded) 12.dp else 8.dp
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onExit) { Icon(cadenzaVector(CadenzaIcon.BACK), contentDescription = "Back to player") }
                 if (compactHeader) {
@@ -116,15 +120,19 @@ fun LyricsScreen(
                     Column(Modifier.weight(0.42f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SongSwap(song, { it.current.occurrenceId }) { entry ->
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Artwork(
-                                    entry.artwork,
-                                    Modifier
-                                        .sharedArtwork(entry.current.occurrenceId)
-                                        .widthIn(max = 260.dp)
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f),
-                                )
-                                TrackIdentity(entry.current, state.profile?.remoteId)
+                                MotionArtwork(
+                                    video = state.motion?.takeIf { it.occurrenceId == entry.current.occurrenceId }?.file,
+                                    playing = state.snapshot.playing,
+                                    modifier =
+                                        Modifier
+                                            .sharedArtwork(entry.current.occurrenceId)
+                                            .widthIn(max = 260.dp)
+                                            .fillMaxWidth()
+                                            .aspectRatio(1f),
+                                ) {
+                                    Artwork(entry.artwork, Modifier.fillMaxSize())
+                                }
+                                TrackIdentity(state, entry.current, state.profile?.remoteId, quality = state.snapshot.quality)
                             }
                         }
                         Spacer(Modifier.weight(1f))
@@ -137,13 +145,13 @@ fun LyricsScreen(
             } else {
                 song?.let { entry ->
                     SongSwap(entry, { it.current.occurrenceId }) {
-                        CompactTrackIdentity(it.current, state.profile?.remoteId, it.artwork)
+                        CompactTrackIdentity(state, it.current, state.profile?.remoteId, it.artwork, quality = state.snapshot?.quality)
                     }
                 }
                 LyricsPane(model, state, document, shownOccurrence, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
                 if (current != null) {
                     PlaybackTimeline(model, state, currentPosition)
-                    LyricsTransport(model, state, current)
+                    LyricsTransport(model, state, current, fillWidth = true)
                     SingControls(model, state, current)
                 }
             }
@@ -157,38 +165,57 @@ private fun LyricsTransport(
     model: RemoteModel,
     state: RemoteState,
     current: CurrentPlayback,
+    fillWidth: Boolean = false,
 ) {
     PlaybackTransport(
         model,
         state,
         compact = true,
+        fillWidth = fillWidth,
         trailingContent = { FavoriteIconButton(model, state, current.song) },
     )
 }
 
 @Composable
 private fun TrackIdentity(
+    state: RemoteState,
     current: CurrentPlayback,
     remoteId: String?,
     modifier: Modifier = Modifier,
+    quality: String? = null,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(current.song.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(current.song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            current.song.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.browseLink(state, current.song, "Open artist page") { BrowseTarget.artist(it) },
+        )
         val requester = if (remoteId != null && current.requestedBy == remoteId) "you" else current.requesterName
         Text("Requested by $requester", style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        quality?.takeIf { it != "unknown" }?.let {
+            Text(
+                qualityLabel(it, current = true),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
 @Composable
 private fun CompactTrackIdentity(
+    state: RemoteState,
     current: CurrentPlayback,
     remoteId: String?,
     artwork: ArtworkData?,
+    quality: String? = null,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Artwork(artwork, Modifier.sharedArtwork(current.occurrenceId).size(56.dp))
-        TrackIdentity(current, remoteId, Modifier.weight(1f))
+        Artwork(artwork, Modifier.sharedArtwork(current.occurrenceId).size(48.dp))
+        TrackIdentity(state, current, remoteId, quality = quality, modifier = Modifier.weight(1f))
     }
 }
 

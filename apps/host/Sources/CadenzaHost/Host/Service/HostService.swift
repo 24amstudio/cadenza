@@ -490,6 +490,8 @@ final class HostService {
         if sing.capabilityAvailable { welcome.capabilities.append("sing.mode") }
         welcome.capabilities.append("artwork.progressive")
         if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
+        welcome.hostVersion = HostBuild.version
+        welcome.hostBuild = HostBuild.build
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)

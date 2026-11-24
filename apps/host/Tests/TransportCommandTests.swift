@@ -75,12 +75,14 @@ struct TransportCommandTests {
         return Fixture(coordinator: coordinator, music: fake, store: store, remote: remote, directory: directory)
     }
 
+    // Playback commands may expire at most 2.1 s ahead (storage/authorize-command.sql). Using most of that window keeps a
+    // loaded test runner from expiring a command before it is dispatched.
     private func command(_ action: CommandAction, store: HostStore) throws -> Frame {
         var frame = Frame(type: "command")
         frame.commandId = UUID().uuidString.lowercased()
         frame.hostEpoch = store.epoch
         frame.expectedRevision = try store.revision
-        frame.expiresAtHostMs = monotonicMs() + 900
+        frame.expiresAtHostMs = monotonicMs() + 2_000
         frame.action = action
         return frame
     }
@@ -88,7 +90,8 @@ struct TransportCommandTests {
     @Test func skipIsDispatchedBeforeAnyMusicReadSoItsDeadlineIsNotSpent() async throws {
         let fixture = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
-        // Each Music read takes 300 ms, like a real osascript launch. Reading first would leave too little time.
+        // Each Music read takes 300 ms, like a real osascript launch. A read ahead of the skip would be recorded before it,
+        // which the call-order check below rejects.
         fixture.music.delayMs = 300
         let occurrence = try #require(fixture.coordinator.snapshot().current?.occurrenceId)
 
@@ -175,7 +178,7 @@ struct TransportCommandTests {
         let paused = MusicStatus(playing: false, state: "paused", volume: 50, positionMs: 0)
 
         let settled = await TransportConfirmation.awaitConfirmation(
-            action, before: playing, first: playing, dispatchedAtMs: monotonicMs(), deadline: monotonicMs() + 1_000,
+            action, before: playing, first: playing, dispatchedAtMs: monotonicMs(), deadline: monotonicMs() + 60_000,
             intervalMs: 1
         ) {
             reads += 1

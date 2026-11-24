@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.CadenzaApplication
+import app.cadenza.remote.data.ARTWORK_DISK_BYTES
+import app.cadenza.remote.data.ArtworkDiskCache
 import app.cadenza.remote.data.ClockSync
 import app.cadenza.remote.data.EffectiveTransportDecision
 import app.cadenza.remote.data.HostProfile
@@ -36,9 +38,11 @@ import app.cadenza.remote.media.isSongChange
 import app.cadenza.remote.motion.MotionAssembly
 import app.cadenza.remote.motion.MotionStore
 import app.cadenza.remote.network.BleConnection
+import app.cadenza.remote.network.BluetoothAdapterMonitor
 import app.cadenza.remote.network.EndpointPool
 import app.cadenza.remote.network.HostConnection
 import app.cadenza.remote.network.HostDiscovery
+import app.cadenza.remote.network.HostLivenessPolicy
 import app.cadenza.remote.network.HybridConnection
 import app.cadenza.remote.network.LocalEndpoint
 import app.cadenza.remote.network.NetworkMonitor
@@ -65,6 +69,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -122,6 +127,10 @@ class RemoteModel(
 
     internal var generation = 0
 
+    // Set when this Remote asked the Host to check for an update itself, and counted once an automatic install is asked for.
+    internal var hostUpdateCheckedAutomatically = false
+    internal var hostUpdateInstalls = 0
+
     internal var foreground = false
 
     private var receiveJob: Job? = null
@@ -139,6 +148,8 @@ class RemoteModel(
     internal var lastReceivedAt = 0L
 
     internal var lastHeartbeatAt = 0L
+
+    internal var lastWarningLogged: Pair<String, Long>? = null
 
     internal var lastClockSentAt = 0L
 
@@ -179,6 +190,10 @@ class RemoteModel(
 
     internal var preparationTimeout: Job? = null
 
+    internal var autoPlayId: String? = null
+
+    internal var autoPlayTimeout: Job? = null
+
     internal var lyricsTimeout: Job? = null
 
     internal var lyricRequestId: String? = null
@@ -202,6 +217,17 @@ class RemoteModel(
     internal val handshake = RemoteHandshake(app, ioDispatcher) { remoteName }
 
     internal var activeEndpoint: LocalEndpoint? = null
+
+    internal val bluetoothMonitor =
+        BluetoothAdapterMonitor(app) {
+            viewModelScope.launch {
+                if (foreground && mutable.value.loaded && mutable.value.profile != null &&
+                    !mutable.value.connected && !mutable.value.connecting && transportMode != "lan"
+                ) {
+                    connect()
+                }
+            }
+        }
 
     internal val networkMonitor =
         NetworkMonitor(app) {
@@ -235,6 +261,7 @@ class RemoteModel(
     internal var hostSnapshot: HostSnapshot? = null
 
     internal val frameQueue = PrioritizedFrameQueue()
+    val traffic = TrafficPulses()
 
     // State frames are coalesced by PrioritizedFrameQueue. A conflated wakeup
     // avoids retaining one signal per network frame during transport bursts.
@@ -247,6 +274,7 @@ class RemoteModel(
     internal val mutableState get() = mutable
 
     internal val updateApp get() = app
+    internal val artworkDisk by lazy { ArtworkDiskCache(java.io.File(app.cacheDir, "artwork"), ARTWORK_DISK_BYTES) }
 
     internal val updateDispatcher get() = ioDispatcher
 
@@ -263,6 +291,16 @@ class RemoteModel(
         }
         viewModelScope.launch {
             state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
+        }
+        viewModelScope.launch {
+            state.map { it.connected }.distinctUntilChanged().collectLatest { connected ->
+                if (connected) {
+                    mutable.update { it.copy(sessionInterrupted = false) }
+                } else {
+                    delay(HostLivenessPolicy.SESSION_INTERRUPTED_MS)
+                    mutable.update { it.copy(sessionInterrupted = true) }
+                }
+            }
         }
         viewModelScope.launch {
             var previous: String? = null
@@ -298,6 +336,7 @@ class RemoteModel(
             for (ignored in frameSignal) {
                 while (true) {
                     val item = frameQueue.poll() ?: break
+                    traffic.received()
                     val version = item.version
                     if (version == generation) {
                         receiveJob =
@@ -381,6 +420,7 @@ class RemoteModel(
     fun setForeground(visible: Boolean) {
         foreground = visible
         if (visible) networkMonitor.start() else networkMonitor.close()
+        if (visible) bluetoothMonitor.start() else bluetoothMonitor.close()
         if (visible) startDiscovery()
         if (visible && mutable.value.loaded && mutable.value.profile != null && !mutable.value.connected) connect()
         if (!visible) {
@@ -504,6 +544,8 @@ class RemoteModel(
         searchTimeout?.cancel()
         preparationTimeout?.cancel()
         preparingIdentity = null
+        autoPlayTimeout?.cancel()
+        autoPlayId = null
         lyricsTimeout?.cancel()
         lyricRequestId = null
         lyricStartedAtElapsedMs = null
@@ -518,6 +560,7 @@ class RemoteModel(
                 transportPaths = emptyList(),
                 searching = false,
                 preparing = false,
+                autoPlayRequest = null,
                 lyricsLoading = false,
             )
         }
@@ -733,7 +776,6 @@ class RemoteModel(
         song: Song? = null,
     ) {
         recordRecommendationCommand(action)
-        mutable.update { it.copy(sessionActive = true) }
         viewModelScope.launch { sendCommand(action, key, song) }
     }
 
@@ -743,6 +785,7 @@ class RemoteModel(
         app.mediaAction = null
         mediaSession.release()
         networkMonitor.close()
+        bluetoothMonitor.close()
         energyMonitor.setActive(false)
         disconnect()
         discovery?.close()

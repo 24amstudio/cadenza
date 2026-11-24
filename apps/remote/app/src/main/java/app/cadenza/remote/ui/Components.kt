@@ -1,6 +1,7 @@
 package app.cadenza.remote.ui
 
 import android.os.SystemClock
+import android.view.View
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,10 @@ import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.position
 import kotlinx.coroutines.delay
+import java.util.WeakHashMap
+
+// Every cover shape: the still artwork, and the animated cover that replaces it, so both keep the same corners.
+internal val ArtworkCornerShape = RoundedCornerShape(28.dp)
 
 @Composable
 fun LoadingScreen(label: String) {
@@ -90,24 +95,46 @@ fun ConnectionStatus(state: RemoteState) {
     }
 }
 
+// One window flag serves every screen in it. An outgoing screen stays composed through its exit animation, so its
+// release can run after the incoming screen has claimed the window. The flag stays on while any claim is held.
+private val keepScreenOnClaims = WeakHashMap<View, Int>()
+
+private fun claimKeepScreenOn(view: View) {
+    keepScreenOnClaims[view] = (keepScreenOnClaims[view] ?: 0) + 1
+    view.keepScreenOn = true
+}
+
+private fun releaseKeepScreenOn(view: View) {
+    val remaining = (keepScreenOnClaims[view] ?: 1) - 1
+    if (remaining > 0) keepScreenOnClaims[view] = remaining else keepScreenOnClaims.remove(view)
+    view.keepScreenOn = remaining > 0
+}
+
 @Composable
 fun KeepScreenAwake(enabled: Boolean) {
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(view, lifecycle, enabled) {
+        var claimed = false
+
+        fun setClaimed(wanted: Boolean) {
+            if (wanted == claimed) return
+            claimed = wanted
+            if (wanted) claimKeepScreenOn(view) else releaseKeepScreenOn(view)
+        }
         val observer =
             LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_START -> view.keepScreenOn = enabled
-                    Lifecycle.Event.ON_STOP -> view.keepScreenOn = false
+                    Lifecycle.Event.ON_START -> setClaimed(enabled)
+                    Lifecycle.Event.ON_STOP -> setClaimed(false)
                     else -> Unit
                 }
             }
         lifecycle.addObserver(observer)
-        view.keepScreenOn = enabled && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        setClaimed(enabled && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
         onDispose {
             lifecycle.removeObserver(observer)
-            view.keepScreenOn = false
+            setClaimed(false)
         }
     }
 }
@@ -158,7 +185,7 @@ internal fun Artwork(
     artwork: ArtworkData?,
     modifier: Modifier,
 ) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(modifier = modifier, shape = ArtworkCornerShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Box(contentAlignment = Alignment.Center) {
             val bitmap = artwork?.image
             if (bitmap !=

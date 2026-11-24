@@ -3,6 +3,12 @@ package app.cadenza.remote.data
 import kotlin.math.abs
 
 class ClockSync {
+    /**
+     * How uncertain the clock may be before a command can be stamped. Bluetooth round trips are longer than a LAN's, so
+     * a Bluetooth session allows more uncertainty before it reports that the clock is not ready.
+     */
+    var readyUncertaintyMs: Long = LAN_READY_UNCERTAINTY_MS
+
     private data class Sample(
         val offset: Long,
         val uncertainty: Long,
@@ -16,7 +22,7 @@ class ClockSync {
 
     private val hasSample: Boolean get() = samples.isNotEmpty()
 
-    val ready: Boolean get() = samples.size >= 3 && uncertaintyMs <= 100
+    val ready: Boolean get() = samples.size >= 3 && uncertaintyMs <= readyUncertaintyMs
 
     fun reset() {
         samples.clear()
@@ -54,6 +60,8 @@ class ClockSync {
 
     companion object {
         const val DEFAULT_WINDOW_MS = 900L
+        const val LAN_READY_UNCERTAINTY_MS = 100L
+        const val BLUETOOTH_READY_UNCERTAINTY_MS = 250L
 
         // Music answers a pause or seek in 0.7 to 1.8 s on a healthy Host, and its calls run one at a time. A
         // transport tap that waits behind a slow seek needs more than the default before it is dispatched.

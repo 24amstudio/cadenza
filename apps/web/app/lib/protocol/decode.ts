@@ -11,6 +11,9 @@ import {
   type JsonValue,
 } from './json';
 import type {
+  AudioQuality,
+  AutoPlayItem,
+  HostUpdateStatus,
   BrowseCollectionKind,
   BrowseItem,
   BrowseKind,
@@ -85,56 +88,54 @@ export type HostMessage =
       suggestions: SongSuggestions;
     }
   | { type: 'song.ready'; requestId: string }
-  | { type: 'browse.result'; requestId: string; browse: BrowsePage };
+  | { type: 'browse.result'; requestId: string; browse: BrowsePage }
+  | {
+      type: 'host.update.status';
+      requestId: string | null;
+      status: HostUpdateStatus;
+    };
+
+// Each frame type has one decoder. A type without a decoder is ignored, as it always was.
+const hostDecoders = new Map<
+  string,
+  (object: JsonObject) => HostMessage | null
+>([
+  ['welcome', decodeWelcomeMessage],
+  ['state', decodeStateMessage],
+  ['command.result', decodeResultMessage],
+  [
+    'remote.configured',
+    (object) => ({
+      type: 'remote.configured',
+      requestId: stringField(object, 'request_id'),
+    }),
+  ],
+  ['error', decodeErrorMessage],
+  ['lyrics', decodeLyricsMessage],
+  ['lyrics.unavailable', decodeLyricsUnavailableMessage],
+  ['artwork', decodeArtworkMessage],
+  ['artwork.chunk', decodeArtworkChunkMessage],
+  ['artwork.unavailable', decodeArtworkUnavailableMessage],
+  ['motion.chunk', decodeMotionChunkMessage],
+  ['motion.unavailable', decodeMotionUnavailableMessage],
+  ['clock', decodeClockMessage],
+  ['analytics.credit', decodeCreditMessage],
+  ['search.result', decodeSearchResultMessage],
+  ['search.suggestions', decodeSearchSuggestionsMessage],
+  ['song.ready', decodeSongReadyMessage],
+  ['browse.result', decodeBrowseResultMessage],
+  ['host.update.status', decodeHostUpdateMessage],
+]);
 
 export function decodeHostMessage(text: string): HostMessage | null {
   const value = parseJson(text);
 
   if (!isJsonObject(value)) return null;
 
-  switch (stringField(value, 'type')) {
-    case 'welcome':
-      return decodeWelcomeMessage(value);
-    case 'state':
-      return decodeStateMessage(value);
-    case 'command.result':
-      return decodeResultMessage(value);
-    case 'remote.configured':
-      return {
-        type: 'remote.configured',
-        requestId: stringField(value, 'request_id'),
-      };
-    case 'error':
-      return decodeErrorMessage(value);
-    case 'lyrics':
-      return decodeLyricsMessage(value);
-    case 'lyrics.unavailable':
-      return decodeLyricsUnavailableMessage(value);
-    case 'artwork':
-      return decodeArtworkMessage(value);
-    case 'artwork.chunk':
-      return decodeArtworkChunkMessage(value);
-    case 'artwork.unavailable':
-      return decodeArtworkUnavailableMessage(value);
-    case 'motion.chunk':
-      return decodeMotionChunkMessage(value);
-    case 'motion.unavailable':
-      return decodeMotionUnavailableMessage(value);
-    case 'clock':
-      return decodeClockMessage(value);
-    case 'analytics.credit':
-      return decodeCreditMessage(value);
-    case 'search.result':
-      return decodeSearchResultMessage(value);
-    case 'search.suggestions':
-      return decodeSearchSuggestionsMessage(value);
-    case 'song.ready':
-      return decodeSongReadyMessage(value);
-    case 'browse.result':
-      return decodeBrowseResultMessage(value);
-    default:
-      return null;
-  }
+  const type = stringField(value, 'type');
+  const decode = type === null ? undefined : hostDecoders.get(type);
+
+  return decode?.(value) ?? null;
 }
 
 function decodeWelcomeMessage(object: JsonObject): HostMessage | null {
@@ -146,6 +147,8 @@ function decodeWelcomeMessage(object: JsonObject): HostMessage | null {
   const hostEpoch = stringField(welcome, 'host_epoch');
   const remoteId = stringField(welcome, 'remote_id');
   const hostTimeMs = counterField(welcome, 'host_time_ms');
+  const hostVersion = stringField(welcome, 'host_version');
+  const hostBuild = counterField(welcome, 'host_build');
   const capabilities = stringArrayField(welcome, 'capabilities');
 
   if (
@@ -170,6 +173,24 @@ function decodeWelcomeMessage(object: JsonObject): HostMessage | null {
       token: stringField(welcome, 'token'),
       hostTimeMs,
       capabilities,
+      hostVersion,
+      hostBuild,
+    },
+  };
+}
+
+function decodeHostUpdateMessage(object: JsonObject): HostMessage | null {
+  const state = stringField(object, 'update_state');
+
+  if (state === null) return null;
+
+  return {
+    type: 'host.update.status',
+    requestId: stringField(object, 'request_id'),
+    status: {
+      state,
+      version: stringField(object, 'update_version'),
+      message: stringField(object, 'message'),
     },
   };
 }
@@ -472,6 +493,14 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
   const repeat = stringField(object, 'repeat');
   const queue = decodeList(arrayField(object, 'queue'), decodeQueueEntry);
 
+  // Hosts before this field existed reported no tier, which is the same as an unread one.
+  const quality = stringField(object, 'quality') ?? 'unknown';
+
+  const autoPlay = decodeList(
+    arrayField(object, 'auto_play') ?? [],
+    decodeAutoPlayItem,
+  );
+
   if (
     !hostId ||
     !hostEpoch ||
@@ -483,7 +512,9 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     synchronized === null ||
     shuffle === null ||
     !isRepeatMode(repeat) ||
-    queue === null
+    !isAudioQuality(quality) ||
+    queue === null ||
+    autoPlay === null
   ) {
     return null;
   }
@@ -502,6 +533,9 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     repeat,
     current,
     queue,
+    totalRemainingMs: counterField(object, 'total_remaining_ms'),
+    quality,
+    autoPlay,
     synchronized,
     issue: stringField(object, 'issue'),
   };
@@ -509,6 +543,23 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
 
 function isRepeatMode(value: string | null): value is RepeatMode {
   return value === 'off' || value === 'one' || value === 'all';
+}
+
+function isAudioQuality(value: string): value is AudioQuality {
+  return (
+    value === 'unknown' ||
+    value === 'lossless' ||
+    value === 'hi_res_lossless' ||
+    value === 'dolby_atmos' ||
+    value === 'aac'
+  );
+}
+
+function decodeAutoPlayItem(object: JsonObject): AutoPlayItem | null {
+  const title = stringField(object, 'title');
+  const artist = stringField(object, 'artist');
+
+  return title === null || artist === null ? null : { title, artist };
 }
 
 function decodeCurrent(object: JsonObject): CurrentPlayback | null {

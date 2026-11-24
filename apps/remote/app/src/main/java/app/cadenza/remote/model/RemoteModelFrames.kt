@@ -16,6 +16,7 @@ import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
 import app.cadenza.remote.recommendation.RecommendationTrack
 import app.cadenza.remote.recommendation.newRecommendationId
+import app.cadenza.remote.updates.HostLanUpdate
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -186,6 +187,7 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
             hostUpdate = null,
             hostVersion = value.nullableString("host_version"),
             hostBuild = if (value.has("host_build")) value.getLong("host_build") else null,
+            hostOffer = value.optJSONObject("update_manifest")?.let { runCatching { HostLanUpdate.offerFrom(it) }.getOrNull() },
             capabilities =
                 value
                     .optJSONArray("capabilities")

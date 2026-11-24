@@ -19,10 +19,6 @@ let package = Package(
             url: "https://github.com/xocialize/mel-roformer-mlx-swift.git",
             from: "0.1.2"
         ),
-        .package(
-            url: "https://github.com/huggingface/swift-transformers.git",
-            from: "1.4.0"
-        ),
     ],
     targets: [
         .systemLibrary(name: "CSQLite", path: "Sources/CSQLite"),
@@ -33,7 +29,6 @@ let package = Package(
                 "CSQLite", "CadenzaSecurity",
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "SwiftRoFormer", package: "mel-roformer-mlx-swift"),
-                .product(name: "Hub", package: "swift-transformers"),
             ],
             path: ".",
             exclude: [

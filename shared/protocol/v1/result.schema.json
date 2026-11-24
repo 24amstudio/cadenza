@@ -42,7 +42,9 @@
         "storage",
         "secure_storage",
         "unavailable",
-        "catalog_unavailable"
+        "catalog_unavailable",
+        "sing_unavailable",
+        "sing_model_not_installed"
       ]
     }
   },

@@ -196,6 +196,31 @@ object RemoteUpdater {
         require(file.name == verified.asset.filename)
         ReleaseVerifier.verifyFile(file, verified.asset)
         verifyPackage(context, file, verified.build)
+        commit(context, file, verified.build)
+    }
+
+    /** Installs an APK whose digest a paired Host reported. The Host's signed release is the check for this source. */
+    fun installFromHost(
+        context: Context,
+        file: File,
+        build: Long,
+    ) {
+        check(BuildConfig.AUTOMATIC_UPDATES) { "Updates are disabled in this build." }
+        verifyPackage(context, file, build)
+        commit(context, file, build)
+    }
+
+    private fun commit(
+        context: Context,
+        file: File,
+        build: Long,
+    ) {
+        val store = preferences(context)
+        val record = UpdateLoopGuard.load(store)
+        check(!UpdateLoopGuard.paused(build, record)) {
+            "This update failed ${UpdateLoopGuard.ATTEMPT_LIMIT} times. Cadenza waits for a newer release."
+        }
+        UpdateLoopGuard.save(store, UpdateLoopGuard.recordingAttempt(build, record))
         val installer = context.packageManager.packageInstaller
         val previous = preferences(context).getInt("installation_session", -1)
         check(previous < 0 || installer.getSessionInfo(previous) == null) {

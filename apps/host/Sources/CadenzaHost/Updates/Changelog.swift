@@ -59,7 +59,10 @@ enum HostChangelog {
                 $0.build > $1.build
             } ?? []
         let notes = relevant.map { $0.version + "\n" + $0.changes.joined(separator: "\n") }.joined(separator: "\n\n")
-        return "Changes from \(HostBuild.version) to \(release.version):\n\n"
+        let changes =
+            "Changes from \(HostBuild.version) to \(release.version):\n\n"
             + (notes.isEmpty ? "The publisher did not include signed change notes." : notes)
+        // The signed notes compare this release with the previous published one, so they follow the change list.
+        return [changes, release.releaseNotes].compactMap { $0 }.joined(separator: "\n\n")
     }
 }

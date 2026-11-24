@@ -20,6 +20,8 @@ final class WebRemoteSession {
     private var buffer: [UInt8] = []
     private var queuedBytes = 0
     var onSocketOpened: ((WebRemoteSession) -> Void)?
+    /// Answers `/api/v1/updates/` requests. Nil means updates are not served, and those requests get a 404.
+    var updateReply: (@MainActor (WebRemoteRequest) -> RemoteUpdateReply)?
     var onText: (([UInt8]) -> Void)?
     var onSocketClosed: (() -> Void)?
     var onFinished: (() -> Void)?
@@ -113,6 +115,16 @@ final class WebRemoteSession {
             openSocket(key: key)
         case .file(let path, let headOnly):
             serveFile(path: path, headOnly: headOnly)
+        case .update:
+            guard let updateReply else {
+                finish(writing: response(status: 404, contentType: nil, body: []))
+                return
+            }
+            let reply = updateReply(request)
+            finish(
+                writing: response(
+                    status: reply.status, contentType: reply.contentType, body: reply.body,
+                    extraHeaders: reply.headers))
         case .reject(let status):
             finish(writing: response(status: status, contentType: nil, body: []))
         }
@@ -193,11 +205,13 @@ final class WebRemoteSession {
     }
 
     private func response(
-        status: Int, contentType: String?, body: [UInt8], cacheControl: String = "no-store", contentLength: Int? = nil
+        status: Int, contentType: String?, body: [UInt8], cacheControl: String = "no-store", contentLength: Int? = nil,
+        extraHeaders: [String] = []
     ) -> Data {
         var lines = ["HTTP/1.1 \(status) \(Self.reason(for: status))"]
         lines.append("Content-Length: \(contentLength ?? body.count)")
         if let contentType { lines.append("Content-Type: \(contentType)") }
+        lines.append(contentsOf: extraHeaders)
         lines.append("Cache-Control: \(cacheControl)")
         lines.append("Content-Security-Policy: \(bundle.contentSecurityPolicy)")
         lines.append("Referrer-Policy: no-referrer")
@@ -211,10 +225,14 @@ final class WebRemoteSession {
     private static func reason(for status: Int) -> String {
         switch status {
         case 200: return "OK"
+        case 206: return "Partial Content"
         case 400: return "Bad Request"
+        case 401: return "Unauthorized"
         case 403: return "Forbidden"
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
+        case 416: return "Range Not Satisfiable"
+        case 500: return "Internal Server Error"
         default: return "Error"
         }
     }

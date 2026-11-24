@@ -158,6 +158,7 @@
         },
         "host_version": { "type": "string", "maxLength": 40 },
         "host_build": { "type": "integer", "minimum": 0 },
+        "update_manifest": { "$ref": "urn:cadence:protocol:v1:common#/$defs/updateManifest" },
         "token": {
           "type": "string",
           "minLength": 32,

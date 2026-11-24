@@ -1,9 +1,5 @@
 import SwiftUI
 
-enum PermissionState: Equatable {
-    case notChecked, checking, granted, needed
-}
-
 /// One macOS permission with its current state and the single action that moves it forward.
 struct PermissionStatusRow: View {
     let title: String

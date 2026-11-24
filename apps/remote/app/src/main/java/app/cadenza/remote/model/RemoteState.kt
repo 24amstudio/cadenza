@@ -10,6 +10,7 @@ import app.cadenza.remote.data.SongStatistic
 import app.cadenza.remote.data.ThemePreference
 import app.cadenza.remote.data.TransportPathStatus
 import app.cadenza.remote.data.UpdateConfiguration
+import app.cadenza.remote.updates.HostLanUpdate
 import java.io.File
 import java.util.UUID
 
@@ -57,6 +58,8 @@ data class RemoteState(
     // The Host's version name and build, from its welcome. Null until a Host that reports them has welcomed this Remote.
     val hostVersion: String? = null,
     val hostBuild: Long? = null,
+    // The Remote build the Host offers over the LAN, from the welcome. Null when the Host offers nothing.
+    val hostOffer: HostLanUpdate.Offer? = null,
     // Set when the Host has been silent for several minutes. Its playback is then assumed interrupted.
     val sessionInterrupted: Boolean = false,
     val hostUpdate: HostUpdateStatus? = null,
@@ -70,6 +73,8 @@ data class RemoteState(
     val transportPaths: List<TransportPathStatus> = emptyList(),
     val transportPreference: String = "balanced",
     val songChangeNotifications: Boolean = true,
+    val lockScreenMotionArtwork: Boolean = true,
+    val silentPlaybackKeepAlive: Boolean = true,
     val transportMode: String = "lan",
     val connectionIssue: String? = null,
     val snapshot: HostSnapshot? = null,

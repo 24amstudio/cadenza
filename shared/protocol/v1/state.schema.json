@@ -258,6 +258,7 @@
         },
         "backend": { "type": "string", "maxLength": 80 },
         "model_revision": { "type": "string", "maxLength": 128 },
+        "model_ready": { "type": "boolean" },
         "issue": { "type": "string", "maxLength": 4000 }
       },
       "additionalProperties": false

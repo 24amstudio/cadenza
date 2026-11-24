@@ -14,6 +14,9 @@ extension HostService {
             return
         }
         let advertised = configuration.advertisedAddress
+        webRemote.updateReply = { @MainActor [weak self] request in
+            self?.remoteUpdateReply(request) ?? RemoteUpdateReply(status: 503)
+        }
         do {
             try await webRemote.start(
                 port: port, bundle: WebRemoteBundle(root: root),
@@ -24,6 +27,21 @@ extension HostService {
                 metadata: ["port": String(port)])
             onIssue?("Cadenza Web could not start on port \(port). Check that the port is free.")
         }
+    }
+
+    /// The Remote build cached for this Host's release, offered in the welcome so a Remote can update without asking.
+    func remoteUpdateOffer() -> RemoteUpdateCache.Offer? {
+        let root = RemoteUpdateCache.root(hostVersion: HostBuild.version, supportDirectory: supportDirectory)
+        return RemoteUpdateCache.current(root: root).map { RemoteUpdateCache.Offer(artifact: $0.artifact) }
+    }
+
+    // Remote updates come from the cache for this Host's release. Each request must carry a paired Remote's credentials.
+    func remoteUpdateReply(_ request: WebRemoteRequest) -> RemoteUpdateReply {
+        let root = RemoteUpdateCache.root(hostVersion: HostBuild.version, supportDirectory: supportDirectory)
+        return RemoteUpdateRelay(
+            current: { RemoteUpdateCache.current(root: root) },
+            authorize: { [store] auth in (try? store.authenticate(auth)) == true }
+        ).reply(to: request)
     }
 
     // Host names a browser may use. Anything else, including a DNS name that points here, is refused.

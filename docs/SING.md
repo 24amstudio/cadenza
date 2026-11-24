@@ -37,19 +37,24 @@ package. It runs the model's native STFT, mel-band split, transformer, mask,
 and inverse-STFT path on Apple Silicon. The model implements the
 [Mel-Band RoFormer](https://arxiv.org/abs/2310.01809).
 
-The Host pins the Swift Hub client to commit
-`573e5c9036c2f136b3a8a071da8e8907322403d0` and the model snapshot to commit
+The release pins the model snapshot to commit
 `64cbfcb004e39430e5f584552c05949440ec39ce`. It validates the model's
 checkpoint family, sample rate, STFT, and transformer dimensions before loading
 weights. A mutable Hugging Face `main` branch is never used for runtime
 inference.
 
-Production Host archives bundle the roughly 456 MB checkpoint and its MIT
-license. The packaging script downloads the exact pinned revision, verifies its
-size and SHA-256, and copies it into the signed Host resource bundle. Development
-runs without a bundled archive fall back to the local Hugging Face cache; the
-first preparation is represented by the published `preparing` state. Audio,
-model bytes, and cache paths never cross the authenticated Remote session.
+The roughly 456 MB checkpoint and its MIT license are never bundled in the Host
+app. The release build packages the exact pinned revision as
+`cadenza-sing-model-<version>.tar.gz`, publishes it beside the Host archive, and
+records its size and SHA-256 in the Host's Info.plist and in the signed release
+manifest. A Host installs the model only when a user presses Download in Settings,
+or when a release needs a newer model than the installed one. The archive is
+verified before extraction, must contain exactly the three expected files, and
+replaces the installed model atomically from `Cadence Host/models/sing/`. Sing
+never downloads while it prepares. Without an installed model, development builds
+report `sing_model_not_installed`, and production builds keep the model-free
+stereo fallback. Audio, model bytes, and cache paths never cross the
+authenticated Remote session.
 
 Cadenza resamples each device-rate window to 44.1 kHz, feeds one-second windows
 with 50% overlap, and resamples the vocal estimate back to the device rate.

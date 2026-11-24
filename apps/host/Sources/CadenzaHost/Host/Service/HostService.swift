@@ -5,6 +5,8 @@ import OSLog
 @MainActor
 final class HostService {
     let store: HostStore
+    /// The Host's Application Support directory, where the Remote update cache lives.
+    let supportDirectory: URL
     let music = MusicBridge()
     let catalog: Catalog
     let cache: HostCache
@@ -62,11 +64,14 @@ final class HostService {
     var onDevicesChanged: (() -> Void)?
     var onIssue: ((String) -> Void)?
     var hostUpdate: ((String) async -> HostUpdateReply)?
+    /// Called when a paired Remote authenticates on a newer build than this Host, so the Host checks for its own update.
+    var onNewerRemote: (() -> Void)?
 
     init(directory: URL, configuration: HostConfiguration) throws {
         self.configuration = configuration
         let store = try HostStore(directory: directory)
         self.store = store
+        supportDirectory = directory
         catalog = Catalog(credentials: store.credentials)
         let logDatabase = try Database(
             url: directory.appendingPathComponent("database", isDirectory: true)
@@ -105,7 +110,7 @@ final class HostService {
             if let occurrence = self.sing.currentOccurrence, occurrence != published.current?.occurrenceId {
                 self.sing.invalidate()
             }
-            published.sing = self.sing.session
+            published.sing = self.sing.publishedSession
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs
             if delay > 0, var current = published.current {
@@ -165,6 +170,7 @@ final class HostService {
         serviceRunning = true
         logger.log(.info, category: "host.lifecycle", action: "service.start", "Host service starting")
         if let observing { observationEnabled = observing }
+        music.automation.startObserving()
         do {
             try store.beginEpoch()
             try await network.start(port: configuration.port, name: configuration.name, hostId: store.hostId)
@@ -453,6 +459,7 @@ final class HostService {
             remoteId = auth.remoteId
             peer.remoteVersion = auth.remoteVersion
             peer.supportsHeartbeat = auth.heartbeat == true
+            if let build = auth.remoteBuild, build > HostBuild.build { onNewerRemote?() }
             if let requestedName = auth.name {
                 let name = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard (1...80).contains(name.count),
@@ -492,6 +499,7 @@ final class HostService {
         if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         welcome.hostVersion = HostBuild.version
         welcome.hostBuild = HostBuild.build
+        welcome.updateManifest = remoteUpdateOffer()
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
@@ -705,7 +713,7 @@ final class HostService {
 
     private func snapshot() throws -> HostSnapshot {
         var value = try queue.snapshot()
-        value.sing = sing.session
+        value.sing = sing.publishedSession
         if let url = value.current?.song.artworkUrl {
             value.current?.artworkPreview = artwork.cachedPreview(for: url)
         }
@@ -729,6 +737,7 @@ final class HostService {
                 throw CadenzaError.failure(
                     "sing_unavailable", "Sing is unavailable on this Host configuration.")
             }
+            if action.kind == "sing.enable" { try sing.requireModelForSelectedBackend() }
             if action.kind == "sing.enable",
                 sing.currentOccurrence != occurrence || sing.session.status == "failed"
                     || sing.session.status == "unavailable"

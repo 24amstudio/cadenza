@@ -42,6 +42,9 @@ func install(_ request: InstallRequest) throws {
     defer { try? manager.removeItem(at: stage) }
     _ = try run("/usr/bin/ditto", ["-x", "-k", archive.path, stage.path])
     let replacement = stage.appendingPathComponent("Cadenza Host.app")
+    // Release builds are not notarized, so Gatekeeper would block the relaunch unless the download's quarantine is cleared.
+    // The signed manifest and archive checks above are what make the bundle trustworthy.
+    _ = try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", replacement.path])
     let contents = manager.enumerator(at: replacement, includingPropertiesForKeys: [.isSymbolicLinkKey])
     while let file = contents?.nextObject() as? URL {
         if try file.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true {
@@ -69,7 +72,7 @@ func install(_ request: InstallRequest) throws {
         _ = try manager.replaceItemAt(
             application, withItemAt: replacement, backupItemName: backup, options: .withoutDeletingBackupItem)
         try Data(#"{"success":true}"#.utf8).write(to: URL(fileURLWithPath: request.resultPath), options: .atomic)
-        _ = try run("/usr/bin/open", [application.path])
+        _ = try run("/usr/bin/open", ["-n", application.path])
         try? manager.removeItem(at: backupURL)
     } catch {
         if manager.fileExists(atPath: backupURL.path) {

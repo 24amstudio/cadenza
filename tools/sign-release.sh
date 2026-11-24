@@ -39,5 +39,16 @@ printf 'Release identities: source=%s host=%s remote=%s profiles=%s/%s package=%
   printf '%s\n' 'Both Production artifacts must have been built from this exact source identity. Rebuild before signing.' >&2
   exit 2
 }
-"$binary_root/CadenzaRelease" manifest "$repository" "$version" "$build" "$host" "$remote" "$key" "$project_root/dist" "$source_id" "$project_root/shared/changelog.json"
+context="$project_root/dist/release-context.json"
+sing="$(compgen -G "$project_root/dist/cadenza-sing-model-*.tar.gz" | head -n 1 || true)"
+[[ -f "$context" && -n "$sing" ]] || {
+  printf '%s\n' 'Write the release notes and the Sing model archive before signing.' >&2
+  exit 2
+}
+host_sing_sha256="$(/usr/bin/unzip -p "$host" 'Cadenza Host.app/Contents/Info.plist' | /usr/bin/plutil -extract CadenzaSingModelSHA256 raw -o - -)"
+[[ "$host_sing_sha256" == "$(/usr/bin/shasum -a 256 "$sing" | /usr/bin/awk '{print $1}')" ]] || {
+  printf '%s\n' 'The Sing model archive does not match the expected model in this Host build.' >&2
+  exit 2
+}
+"$binary_root/CadenzaRelease" manifest "$repository" "$version" "$build" "$host" "$remote" "$key" "$project_root/dist" "$source_id" "$project_root/shared/changelog.json" "$context" "$sing"
 printf '%s\n' 'Release metadata signed. No GitHub upload was performed.'

@@ -1,6 +1,40 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.3.3 and internal build 11, following the user's explicit release-version request. Portable, Host and Remote Checking CI passed for the latest audit changes; the final branch head is `1f44a60`. macOS runtime behavior and target-device evidence remain unverified locally.
+Cadenza's current working tree declares visible version 0.3.4 and internal build 12, following the user's explicit release-version request. The 0.3.3 record below is kept as history. macOS runtime behavior and target-device evidence remain unverified locally.
+
+## Version 0.3.4 work (24 November 2026)
+
+Local macOS 27 (arm64), Swift 6.4.2, Android SDK platform 37.1, Node 26, Bun 1.4.4, and actionlint 1.7.12 from the shared `.tools`. Nothing below is marked passed on a device.
+
+Passed on this tree:
+
+- `node tools/check.mjs` (exit 0, final pass after the protocol schema move): portable checks, the Host gate, and the Remote gate.
+- `node tools/check.mjs --portable`: formatting, oxlint, strict TypeScript, source-size limits, actionlint, and 52 behavioral tests.
+- `apps/host/Scripts/check.sh`: strict `swift format lint`, then `swift test -Xswiftc -warnings-as-errors` with 169 Swift Testing tests in 38 suites plus the XCTest suites. `LiveMusicAccessibilityTests` were skipped because they need a running, unlocked Music.
+- `apps/remote/check.sh` after the widget layout fixes, with the project's build-cache directory cleared: ktlint, 250 debug and 250 release unit tests with no failures or skips, lint for both variants, and debug and release compiles. `apps/remote/gradle.properties` enables the build cache, which overrides `GRADLE_OPTS`. An earlier run restored `generateReleaseResources` and `parseReleaseLocalResources` from that cache, so the cache was cleared and the gate rerun.
+- Widget on the MLR-W09 (HarmonyOS 4.3.0), checked by adb screenshots of the launcher: the expanded layout renders instead of "Problem loading widget". Its `<View>` tint layer is not allowed in RemoteViews, so it is now a `FrameLayout`. Title, artist, and transport icons are light on the dark card, and the lyric block is weighted so the transport row stays visible. The widget resizes smaller and larger, and logcat shows no inflation errors. The launcher's cell labels (4x1, 4x2, 4x4) were not read, so the size set is not confirmed.
+- Web: `bun test tests` (209), `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun run generate`, whose bundle embeds version 0.3.4.
+- Local production Host archive, signed with a personal Apple Development identity and kept in the ignored `dist/` directory: 9.2 MB, against the 40 MB target. Its Info.plist reports 0.3.4 build 12 and the expected sing model version, SHA-256, and size. The 363 MB sing archive holds exactly `model.safetensors`, `config.json`, and `LICENSE`, and the app bundle contains no model.
+
+Not verified here, and needing target evidence:
+
+- HUAWEI MatePad Mini on HarmonyOS 4.3: widget resizing, lock-screen motion launched from the background, screen-saver activation and burn-in stages, PowerGenie behavior with the silent keep-alive, PackageInstaller auto-install, and a LAN update from a 0.3.3 Remote to a 0.3.4 Host.
+- Lock-screen and notification lyric rendering, TalkBack, large text, and phone and tablet screenshots. No device or emulator was available, so no screenshots exist.
+- Host on real hardware: automation probes against a running Music, a sing model download from a published release with live inference, Gatekeeper after quarantine removal, the self-update relaunch, and the read-only install notice.
+- Release CI: the 456 MB sing archive upload inside the release job's fifteen-minute limit, and the release notes built from GitHub's API.
+
+Build-cache caveat: Gradle's shared build cache restored Android resource symbols that were missing their layouts and view IDs, so `R` lacked them. Clearing the Remote's `build` directory did not help while the cache was enabled. CI should be checked for the same symptom, and its Gradle cache cleared if it appears.
+
+Deliberate deviations from the goal file:
+
+- The notification channel stays `IMPORTANCE_DEFAULT`. `IMPORTANCE_LOW` hides media cards on the lock screen, as the existing code comment records.
+- The Remote keeps the framework `MediaSession` with `Notification.MediaStyle`, not `MediaSessionCompat`. A compile probe against `androidx.media:media:1.8.0` marked `MediaSessionCompat` and its constructor deprecated, and `allWarningsAsErrors` turned that into a failed `:app:compileDebugKotlin`. The probe and its dependency were removed. Suppressing the warning would break the repository's no-suppression rule. The foreground service is `PlaybackMediaService`.
+- Notification transport still uses the existing `MediaActionReceiver` broadcast. The widget and lock screen send transport to `PlaybackMediaService` as a foreground-service intent, so neither opens an Activity.
+- Widget layouts live in `res/layout` and `res/drawable`, not `-v31` folders. Lint rejects the qualifier at minSdk 31.
+- The Host's support directory stays `Cadence Host`, so the sing model lives in `Cadence Host/models/sing`.
+- The welcome carries only a small `update_manifest` offer for the cached Remote build. The full manifest is at `GET /api/v1/updates/manifest`, and a Remote falls back to that endpoint when the welcome has no offer.
+- In production, Sing uses MLX once a verified model is installed. Before this change it used only the stereo fallback. MLX has no release-build validation yet.
+- Tapping install without app-install permission opens its Settings page. The background update job calls `InstallResultReceiver.notifyReady` instead of opening Settings, and `RemoteUpdater.install` throws when the permission is missing.
 
 ## Version 0.3.3 work (21 November 2026)
 

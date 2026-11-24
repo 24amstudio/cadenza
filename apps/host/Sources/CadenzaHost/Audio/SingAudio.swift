@@ -52,12 +52,14 @@ final class SingAudioBufferLease: @unchecked Sendable {
 
 enum SingAudioError: LocalizedError {
     case unavailable(String)
+    case modelNotInstalled
     case staleOccurrence
     case invalidMix
 
     var errorDescription: String? {
         switch self {
         case .unavailable(let message): return message
+        case .modelNotInstalled: return "Download the Sing model in Cadenza Host settings before using Sing."
         case .staleOccurrence: return "The current song changed. Prepare Sing again."
         case .invalidMix: return "Choose a vocal mix from 0 to 100 percent."
         }
@@ -169,8 +171,12 @@ final class SingMixState: @unchecked Sendable {
 final class SingCoordinator {
     private let maximumStartupLatencyMs: Int64 = 1_000
     private let route: SingCaptureRoute
-    private let separator: SingSeparator
+    private var separator: SingSeparator
+    /// True when no backend was passed in, so the backend follows whether the Sing model is installed.
+    private let dynamicBackend: Bool
     private let output: SingOutputSink
+    /// Answers whether the verified Sing model is installed. Wired to the Sing model manager by the Host.
+    var modelInstalled: () -> Bool = { false }
     private let mixState = SingMixState()
     private var pipeline: SingAudioPipeline?
     private(set) var session = SingSession()
@@ -190,17 +196,39 @@ final class SingCoordinator {
                 return false
             }
         #endif
-        return HostBuild.profile != "production" || separator.backend == "stereo-center"
+        return true
+    }
+
+    /// The session as published to Remotes, including whether the Sing model is installed.
+    var publishedSession: SingSession {
+        var value = session
+        value.modelReady = modelInstalled()
+        return value
     }
 
     init(
         route: SingCaptureRoute = CoreAudioSingRoute(),
-        separator: SingSeparator = SingSeparatorFactory.defaultBackend(),
+        separator: SingSeparator? = nil,
         output: SingOutputSink = AVAudioSingOutput()
     ) {
         self.route = route
-        self.separator = separator
+        self.separator = separator ?? SingSeparatorFactory.defaultBackend(modelInstalled: false)
+        dynamicBackend = separator == nil
         self.output = output
+    }
+
+    /// Default backends follow the installed model, so a verified download takes effect without a restart.
+    private func selectSeparator() {
+        guard dynamicBackend else { return }
+        separator = SingSeparatorFactory.defaultBackend(modelInstalled: modelInstalled())
+    }
+
+    /// Throws a clean `sing_model_not_installed` error when the selected backend needs a model that is missing.
+    func requireModelForSelectedBackend() throws {
+        selectSeparator()
+        guard separator.backend == "mlx-mel-roformer", !modelInstalled() else { return }
+        throw CadenzaError.failure(
+            "sing_model_not_installed", SingAudioError.modelNotInstalled.localizedDescription)
     }
 
     func prepare(for occurrence: String) async {
@@ -208,6 +236,7 @@ final class SingCoordinator {
         modelRelease?.cancel()
         modelRelease = nil
         stop()
+        selectSeparator()
         preparationGeneration += 1
         let generation = preparationGeneration
         occurrenceId = occurrence

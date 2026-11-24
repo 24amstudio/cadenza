@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
+
 // Cadenza Remote Web is a client-rendered single-page app. `nuxt generate` emits only static files that Cadenza Host
 // serves; no server bundle or server-side rendering runs at runtime.
+// SAFETY: this project's package.json always declares a string version, so the cast reads a string.
+const webVersion = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+).version as string;
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   ssr: false,
@@ -12,6 +19,11 @@ export default defineNuxtConfig({
   },
   nitro: {
     preset: 'static',
+  },
+  vite: {
+    define: {
+      __CADENZA_WEB_VERSION__: JSON.stringify(webVersion),
+    },
   },
   app: {
     // Cadenza Host serves the app at the root. GitHub Pages project sites serve it under /<repository>/, which the

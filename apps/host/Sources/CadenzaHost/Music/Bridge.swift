@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class MusicBridge {
     let accessibility = MusicAccessibility()
+    let automation = MusicAutomationChecker()
     /// Replaces the osascript process in tests, so the coordinator's dispatch and verification run without Music.
     var scriptRunner: (@MainActor ([String]) async throws -> Data)?
     var logger: HostLogger? {
@@ -29,6 +30,7 @@ final class MusicBridge {
         do {
             let data = try await Subprocess.run(
                 "/usr/bin/osascript", ["-l", "JavaScript", url.path] + arguments, timeout: timeout)
+            automation.markGranted()
             logScript(arguments, started: started, failure: nil)
             return data
         } catch {

@@ -1,5 +1,7 @@
 package app.cadenza.remote.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -38,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.data.LyricsTextSize
@@ -52,6 +55,7 @@ import app.cadenza.remote.model.installHostUpdate
 import app.cadenza.remote.model.installing
 import app.cadenza.remote.model.showChangelog
 import app.cadenza.remote.model.showError
+import app.cadenza.remote.ui.settings.BackgroundCard
 import app.cadenza.remote.ui.settings.EnergyCard
 import app.cadenza.remote.updates.Changelog
 
@@ -143,6 +147,7 @@ fun SettingsScreen(
                 LyricsCard(model = model, state = state)
                 EnergyCard(model)
                 NotificationsCard(model = model, state = state)
+                BackgroundCard(model = model, state = state)
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
         }
@@ -426,6 +431,22 @@ private fun SupportUpdatesCard(
             )
             if (!BuildConfig.AUTOMATIC_UPDATES) {
                 Text("Automatic updates are disabled in this build.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            val context = LocalContext.current
+            // Read on each composition, so the prompt disappears as soon as the user grants the permission and comes back.
+            if (BuildConfig.AUTOMATIC_UPDATES && !context.packageManager.canRequestPackageInstalls()) {
+                Text(
+                    "Allow Cadenza to install updates, so an update from Cadenza Host can be installed.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    },
+                ) { Text("Allow installs from Cadenza") }
             }
         }
     }

@@ -16,6 +16,8 @@ final class WebRemoteListener {
     private(set) var ready = false
     private var startResult: CheckedContinuation<Void, Error>?
     var onSocket: ((WebRemoteSession) -> Void)?
+    /// Serves the Remote update endpoints on this listener. Set by the Host before sessions can be accepted.
+    var updateReply: (@MainActor (WebRemoteRequest) -> RemoteUpdateReply)?
 
     func start(port: UInt16, bundle: WebRemoteBundle, allowedHosts: @escaping () -> Set<String>) async throws {
         stop()
@@ -76,6 +78,7 @@ final class WebRemoteListener {
             return
         }
         let session = WebRemoteSession(connection: connection, bundle: bundle, allowedHosts: allowedHosts)
+        session.updateReply = updateReply
         let key = ObjectIdentifier(session)
         sessions[key] = session
         session.onSocketOpened = { [weak self] socket in self?.onSocket?(socket) }

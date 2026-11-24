@@ -10,6 +10,7 @@ import {
   silentReconnectSupported,
 } from '~/lib/host/bluetooth';
 import { reconnectWithRetries } from '~/lib/host/bluetoothReconnect';
+import { reloadForNewerHostBundle } from '~/lib/bundleReload';
 import { signalBars } from '~/lib/host/linkSignal';
 import {
   artworkDataUrl,
@@ -502,6 +503,7 @@ export const useHostStore = defineStore('host', () => {
         hostName.value = change.welcome.hostName;
         capabilities.value = change.welcome.capabilities;
         hostVersion.value = change.welcome.hostVersion;
+        reloadForNewerHostBundle(change.welcome.hostVersion);
 
         return;
       case 'hostUpdate':

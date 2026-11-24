@@ -1,5 +1,6 @@
 {
   "name": "@cadenza/remote-web",
+  "version": "0.3.4",
   "private": true,
   "type": "module",
   "scripts": {

@@ -7,6 +7,7 @@ struct DeviceAuth: Codable, Sendable {
     var name: String? = nil
     var heartbeat: Bool? = nil
     var remoteVersion: String? = nil
+    var remoteBuild: Int64? = nil
 }
 
 struct PairRequest: Codable, Sendable {

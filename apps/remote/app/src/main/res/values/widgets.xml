@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_now_playing_description">Shows the song playing on Cadenza Host, with transport controls and synced lyrics.</string>
+    <string name="widget_artwork">Album artwork</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_play_pause">Play or pause</string>
+    <string name="widget_next">Next</string>
+    <string name="dream_description">Shows the playing song on a dark screen while this Remote charges and Cadenza Host plays.</string>
+</resources>

@@ -73,4 +73,8 @@ Host distributes one timed lyric document and English translation revision for t
 
 Credits have positive contiguous sequences per pairing. The first credit increments one occurrence's count only with positive observed time; later credits add playing time. Host excludes pauses and seek jumps. Remote commits aggregate and cursor changes before acknowledging. Duplicate or older credits remain ignored after raw cleanup, while a sequence gap requires replay.
 
+Sing reports `model_ready` in its state object. It is `true` only when the verified Sing model is installed on the Host. A `sing.enable` command that needs an uninstalled model is rejected with `sing_model_not_installed`. The model-free stereo fallback in production needs no model, so it is not affected.
+
+Remote updates are served by the Host's HTTP listener, not by the command socket. `GET /api/v1/updates/manifest` returns `version`, `buildNumber`, `sha256`, `sizeBytes`, and `lanDownloadPath`. `GET /api/v1/updates/remote/android.apk` returns the cached APK with `Accept-Ranges: bytes`, `X-Cadenza-SHA256`, and `206 Partial Content` for at most 8 MiB per range. Both requests must carry the paired Remote's `X-Cadenza-Remote-Id` and `X-Cadenza-Remote-Token` headers. Otherwise the Host answers `401`.
+
 These contracts define the wire format; each native application must also pass its platform-specific build and integration checks.

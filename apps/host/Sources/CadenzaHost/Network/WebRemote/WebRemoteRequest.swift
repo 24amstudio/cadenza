@@ -18,6 +18,7 @@ struct WebRemoteRequest: Equatable {
     enum Route: Equatable {
         case socket(key: String)
         case file(path: String, headOnly: Bool)
+        case update
         case reject(status: Int)
     }
 
@@ -54,6 +55,8 @@ struct WebRemoteRequest: Equatable {
             return socketRoute(request, allowedHosts: allowedHosts)
         }
         guard request.method == "GET" || request.method == "HEAD" else { return .reject(status: 405) }
+        // Update routes are answered by the relay, which checks the Remote's credentials before it serves anything.
+        if path.hasPrefix(RemoteUpdateCache.updatesPrefix) { return .update }
         return .file(path: request.path, headOnly: request.method == "HEAD")
     }
 

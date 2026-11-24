@@ -5,8 +5,9 @@ struct SettingsMusicPane: View {
     @Bindable var model: HostModel
     @State private var assignments: [String: String] = [:]
     @State private var discardMissing = false
-    @State private var automation = PermissionState.notChecked
     @State private var accessibilityGranted = false
+
+    private var automation: PermissionState { model.service?.music.automation.state ?? .notChecked }
 
     var body: some View {
         Form {
@@ -69,6 +70,8 @@ struct SettingsMusicPane: View {
 
             RecommendationSettingsSection(model: model)
 
+            SingModelSection(manager: model.singModel) { title, message in model.showError(title, message) }
+
             Section {
                 ValidatedSettingField(
                     title: "Storefront",
@@ -90,6 +93,9 @@ struct SettingsMusicPane: View {
         .onAppear {
             assignments = model.service?.queue.nativeAssignments ?? [:]
             refreshAccessibility()
+            if let checker = model.service?.music.automation {
+                Task { @MainActor in await checker.refresh(promptUser: false) }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshAccessibility()
@@ -105,18 +111,20 @@ struct SettingsMusicPane: View {
         accessibilityGranted = model.service?.music.accessibility.permitted ?? false
     }
 
-    // Automation has no passive status. Checking it can start Music and show macOS's prompt, so it runs only on request.
+    // Only this explicit action may show macOS's Automation prompt. Launch and focus refreshes stay passive.
     private func checkAutomation() {
-        guard model.service != nil else { return }
-        automation = .checking
+        guard let checker = model.service?.music.automation else { return }
         Task { @MainActor in
-            do {
-                _ = try await model.service?.music.status()
-                automation = .granted
+            switch await checker.refresh(promptUser: true) {
+            case .granted:
                 model.notify("Music Automation is available.")
-            } catch {
-                automation = .needed
-                model.showError("Allow Music Automation", error.localizedDescription)
+            case .needed:
+                model.showError(
+                    "Allow Music Automation",
+                    "Cadenza Host can't control Music. Turn on Music in System Settings → Privacy & Security → Automation, then check again."
+                )
+            case .notChecked, .checking:
+                break
             }
         }
     }

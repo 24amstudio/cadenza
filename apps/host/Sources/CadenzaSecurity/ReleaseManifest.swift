@@ -27,6 +27,12 @@ public struct ReleaseManifest: Codable, Sendable {
     public var assets: [ReleaseAsset]
     public var buildId: String? = nil
     public var changelog: [ReleaseNote]? = nil
+    /// The previous published tag, its compare link, and the release notes, all covered by the signature.
+    public var previousTag: String? = nil
+    public var compareUrl: String? = nil
+    public var releaseNotes: String? = nil
+    /// The Sing model archive published with this release. Hosts verify their download against the build's expected values.
+    public var singModel: ReleaseSingModel? = nil
 
     public init(repository: String, version: String, build: Int64, assets: [ReleaseAsset]) {
         self.repository = repository
@@ -34,6 +40,20 @@ public struct ReleaseManifest: Codable, Sendable {
         self.build = build
         tag = "v" + version
         self.assets = assets
+    }
+}
+
+public struct ReleaseSingModel: Codable, Sendable, Equatable {
+    public var version: String
+    public var filename: String
+    public var sha256: String
+    public var size: Int64
+
+    public init(version: String, filename: String, sha256: String, size: Int64) {
+        self.version = version
+        self.filename = filename
+        self.sha256 = sha256
+        self.size = size
     }
 }
 
@@ -53,6 +73,9 @@ public enum ReleaseFailure: LocalizedError {
 }
 
 public enum ReleaseValidation {
+    /// Release notes stay well inside the manifest's 64 KB size limit, leaving room for the rest of the manifest.
+    public static let releaseNotesLimit = 16_384
+
     public static func verify(
         manifest data: Data, signature: Data, publicKeySPKI: Data,
         repository: String, currentBuild: Int64, platform: String
@@ -81,6 +104,26 @@ public enum ReleaseValidation {
                         && entry.changes.allSatisfy { !$0.isEmpty && $0.count <= 1000 }
                 })
             else { throw ReleaseFailure.invalid("Invalid signed changelog.") }
+        }
+        if let previous = manifest.previousTag {
+            guard
+                previous.range(
+                    of: #"^v[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$"#, options: .regularExpression)
+                    != nil,
+                manifest.compareUrl == "https://github.com/\(manifest.repository)/compare/\(previous)...\(manifest.tag)"
+            else { throw ReleaseFailure.invalid("Invalid signed release comparison.") }
+        } else if manifest.compareUrl != nil {
+            throw ReleaseFailure.invalid("Invalid signed release comparison.")
+        }
+        if let notes = manifest.releaseNotes, notes.utf8.count > releaseNotesLimit {
+            throw ReleaseFailure.invalid("The signed release notes exceed their limit.")
+        }
+        if let model = manifest.singModel {
+            guard model.version.range(of: #"^[a-z0-9][a-z0-9.-]{0,79}$"#, options: .regularExpression) != nil,
+                model.filename == "cadenza-sing-model-\(model.version).tar.gz",
+                model.sha256.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+                model.size > 0, model.size <= 2_147_483_648
+            else { throw ReleaseFailure.invalid("Invalid signed Sing model metadata.") }
         }
         guard manifest.schema == 1, manifest.protocolMajor == 1,
             manifest.repository == repository,

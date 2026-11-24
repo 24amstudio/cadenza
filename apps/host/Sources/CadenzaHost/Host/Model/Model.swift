@@ -46,6 +46,7 @@ final class HostModel {
     var cacheStats: HostCacheStats?
     var clearingCache = false
     private var updater: HostUpdater?
+    let singModel = SingModelManager()
     private var updateScheduler: NSBackgroundActivityScheduler?
     private var toastTask: Task<Void, Never>?
     private var watchdog: HostWatchdog?
@@ -70,6 +71,9 @@ final class HostModel {
         guard !starting, !saving, !running else { return }
         starting = true
         defer { starting = false }
+        singModel.onInstalledChanged = { [weak self] in self?.service?.queue.publish() }
+        singModel.reconcileOnLaunch()
+        SelfUpdateLoopGuard.save(SelfUpdateLoopGuard.settled(SelfUpdateLoopGuard.load(), runningBuild: HostBuild.build))
         if watchdog == nil { watchdog = try? HostWatchdog() }
         watchdog?.start()
         service?.stop()
@@ -78,6 +82,10 @@ final class HostModel {
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
             ).appendingPathComponent("Cadence Host", isDirectory: true)
             let service = try HostService(directory: directory, configuration: configuration)
+            service.sing.modelInstalled = { [weak self] in self?.singModel.isInstalled ?? false }
+            // A Remote on a newer build is the signal that this Host should look for its own update now.
+            service.onNewerRemote = { [weak self] in self?.checkUpdates(automatic: true) }
+            refreshRemoteArtifact(service)
             self.service = service
             service.onInvitationChanged = { [weak self] in self?.invitation = $0 }
             service.transportPolicy = hostTransportPolicy
@@ -257,7 +265,15 @@ final class HostModel {
             }
             try service.queue.flushCredits()
             try updater?.install(configuration: configuration.updates, store: service.store)
-        } catch { showError("Update could not be installed", error.localizedDescription) }
+        } catch {
+            // A read-only install location repeats on every automatic check, so its notice is shown only once.
+            let location = (error as? CadenzaError)?.code == "update_location"
+            if location {
+                guard !UserDefaults.standard.bool(forKey: "cadenza.updateLocationNoticeShown") else { return }
+                UserDefaults.standard.set(true, forKey: "cadenza.updateLocationNoticeShown")
+            }
+            showError("Update could not be installed", error.localizedDescription)
+        }
     }
 
     /// A paired Remote asked for a Host update. The Remote's own button is the confirmation, so this path
@@ -336,14 +352,30 @@ final class HostModel {
         }
     }
 
+    /// Keeps the Remote APK for this Host's release on disk, so Remotes can update over the LAN. Failures are logged only.
+    private func refreshRemoteArtifact(_ service: HostService) {
+        guard HostBuild.updatesEnabled else { return }
+        let updates = configuration.updates
+        let directory = service.supportDirectory
+        Task { @MainActor in
+            do {
+                _ = try await RemoteUpdateCache.refresh(
+                    hostVersion: HostBuild.version, configuration: updates, supportDirectory: directory)
+            } catch {
+                service.logger.log(
+                    .warning, category: "update", action: "remote.artifact", error.localizedDescription)
+            }
+        }
+    }
+
     func scheduleUpdates() {
         updateScheduler?.invalidate()
         guard HostBuild.updatesEnabled, configuration.automaticUpdates, !configuration.updates.repository.isEmpty else {
             return
         }
         let scheduler = NSBackgroundActivityScheduler(identifier: "app.cadence.host.updates")
-        scheduler.interval = 86_400
-        scheduler.tolerance = 3_600
+        scheduler.interval = 2_700
+        scheduler.tolerance = 300
         scheduler.repeats = true
         scheduler.qualityOfService = .utility
         scheduler.schedule { [weak self] completion in

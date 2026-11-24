@@ -28,8 +28,15 @@ func keygen(_ path: String) throws {
     print(key.publicKey.derRepresentation.base64EncodedString())
 }
 
+/// Written by tools/release-notes.mjs. Its fields are signed with the manifest.
+struct ReleaseContext: Decodable {
+    var previousTag: String?
+    var compareUrl: String?
+    var releaseNotes: String?
+}
+
 func manifest(_ arguments: [String]) throws {
-    guard arguments.count == 9, let build = Int64(arguments[2]), build > 0,
+    guard arguments.count == 11, let build = Int64(arguments[2]), build > 0,
         ReleaseValidation.validRepository(arguments[0]),
         arguments[1].range(
             of: #"^[0-9]+\.[0-9]+\.[0-9]+(_[0-9]{8}\.[0-9]+-[0-9a-f]{12})?$"#,
@@ -68,6 +75,28 @@ func manifest(_ arguments: [String]) throws {
     guard historyData.count <= 65_536 else { throw ReleaseFailure.invalid("Changelog exceeds its limit.") }
     release.buildId = arguments[7]
     release.changelog = try JSONDecoder().decode(History.self, from: historyData).releases.filter { $0.build <= build }
+    let contextData = try Data(contentsOf: URL(fileURLWithPath: arguments[9]))
+    guard contextData.count <= 65_536 else { throw ReleaseFailure.invalid("Release context exceeds its limit.") }
+    let context = try JSONDecoder().decode(ReleaseContext.self, from: contextData)
+    if let notes = context.releaseNotes, notes.utf8.count > ReleaseValidation.releaseNotesLimit {
+        throw ReleaseFailure.invalid("Release notes exceed their limit.")
+    }
+    release.previousTag = context.previousTag
+    release.compareUrl = context.compareUrl
+    release.releaseNotes = context.releaseNotes
+
+    let sing = URL(fileURLWithPath: arguments[10])
+    let singName = sing.lastPathComponent
+    guard
+        singName.range(of: #"^cadenza-sing-model-[a-z0-9][a-z0-9.-]{0,79}\.tar\.gz$"#, options: .regularExpression)
+            != nil
+    else { throw ReleaseFailure.invalid("Unexpected Sing model archive name.") }
+    release.singModel = ReleaseSingModel(
+        version: String(singName.dropFirst("cadenza-sing-model-".count).dropLast(".tar.gz".count)),
+        filename: singName,
+        sha256: try fileDigest(sing),
+        size: Int64(try sing.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
+    )
     let data = try ReleaseValidation.encode(release)
     let signature = try key.signature(for: data).derRepresentation
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -85,7 +114,7 @@ do {
     case "manifest": try manifest(Array(arguments.dropFirst()))
     default:
         throw ReleaseFailure.invalid(
-            "Usage: CadenzaRelease keygen <private.pem> | manifest <repo> <version> <build> <Host.zip> <Remote.apk> <private.pem> <output> <source-id> <changelog.json>"
+            "Usage: CadenzaRelease keygen <private.pem> | manifest <repo> <version> <build> <Host.zip> <Remote.apk> <private.pem> <output> <source-id> <changelog.json> <release-context.json> <sing-model.tar.gz>"
         )
     }
 } catch {

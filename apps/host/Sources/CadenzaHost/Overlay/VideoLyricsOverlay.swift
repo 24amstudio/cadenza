@@ -6,6 +6,7 @@ import ApplicationServices
 @MainActor
 final class VideoLyricsOverlay {
     private let window: NSWindow
+    private let container = NSView()
     private let label = NSTextField(labelWithString: "")
     private var observer: AXObserver?
     private var musicWindow: AXUIElement?
@@ -20,17 +21,38 @@ final class VideoLyricsOverlay {
         window.ignoresMouseEvents = true
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.62).cgColor
+        container.layer?.cornerRadius = 14
+        container.autoresizingMask = [.width, .height]
+
         label.alignment = .center
         label.textColor = .white
         label.font = .systemFont(ofSize: 26, weight: .semibold)
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 2
-        label.autoresizingMask = [.width, .height]
-        window.contentView = label
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        window.contentView = container
+
         activation = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshVisibility() }
+        }
+    }
+
+    isolated deinit {
+        detachObserver()
+        if let activation {
+            NSWorkspace.shared.notificationCenter.removeObserver(activation)
         }
     }
 
@@ -42,6 +64,7 @@ final class VideoLyricsOverlay {
             return
         }
         let application = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(application, 0.35)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value) == .success,
             let windows = value as? [AXUIElement], let first = windows.first
@@ -76,8 +99,9 @@ final class VideoLyricsOverlay {
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let visible = VideoLyricsVisibility.shouldShow(
             frontmostBundleIdentifier: frontmost, videoIsCurrent: line != nil, windowIsKnown: musicWindow != nil)
-        label.stringValue = line ?? ""
-        guard visible else {
+        let text = line ?? ""
+        label.stringValue = text
+        guard visible, !text.isEmpty else {
             window.orderOut(nil)
             return
         }

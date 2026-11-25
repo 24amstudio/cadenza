@@ -54,9 +54,40 @@ extension HostService {
         guard let lanHost = LANAddresses.all().first else {
             throw CadenzaError.failure("cast_unavailable", "This Host has no LAN address for Cast to reach.")
         }
-        await publishedState.castTransmitter.start(device: device, lanHost: lanHost)
+        let current = try? queue.snapshot().current
+        let currentSong = current?.song
+        let artworkData: Data? =
+            if let artURL = currentSong?.artworkUrl, let cached = try? await artwork.data(for: artURL) {
+                cached
+            } else { nil }
+        let motionData: Data? =
+            if publishedState.hostBudget < .constrained, let song = currentSong, !song.album.isEmpty {
+                try? await motion.video(album: song.album, artist: song.artist)
+            } else { nil }
+        let localVideo =
+            currentSong?.mediaType == .musicVideo && currentSong?.source == "library"
+            ? await music.videoFileURL(for: currentSong!.identity) : nil
+        await publishedState.castTransmitter.start(
+            device: device, lanHost: lanHost, localVideoFile: localVideo, artwork: artworkData, motion: motionData)
         if case .failed(_, let reason) = publishedState.castTransmitter.state {
             throw CadenzaError.failure("cast_unavailable", reason)
+        }
+        if let currentSong, publishedState.castTransmitter.streamPort != 0 {
+            let route = await CastVideoSource.resolve(
+                song: currentSong,
+                catalog: catalog,
+                music: music,
+                credentials: store.credentials,
+                lanHost: lanHost,
+                streamPort: publishedState.castTransmitter.streamPort,
+                hasArtwork: artworkData != nil,
+                hasMotion: motionData != nil)
+            publishedState.castTransmitter.updateVideoSession(
+                CastTransmitter.VideoSessionMetadata(
+                    title: currentSong.title,
+                    artist: currentSong.artist,
+                    route: route,
+                    lipSyncOffsetMs: publishedState.lipSyncOffsetMs))
         }
         // Cast audio takes the karaoke display, so the Mac stops drawing the line while the Cast device is the target.
         publishedState.setVideoOutputTarget(.castTransmitter)
@@ -83,11 +114,14 @@ extension HostService {
             throw CadenzaError.failure("invalid_command", "The lyric offset must be between -5 and 5 seconds.")
         }
         try LyricOffsetStore(database: store.database).save(Int(offset), for: identity, at: Date())
-        // The lyric document in use is updated too, so the next Remote that asks starts from the saved value.
+        // The lyric document in use is updated too, so Remotes stay synchronized with the saved nudge.
         if let current = try? queue.snapshot().current, current.song.identity == identity,
-            lyricDocument?.occurrenceId == current.occurrenceId
+            var updated = lyricDocument, updated.occurrenceId == current.occurrenceId
         {
-            lyricDocument?.userOffsetMs = Int(offset)
+            updated.userOffsetMs = Int(offset)
+            lyricDocument = updated
+            publishAirPlayKaraokeVTT(for: current.song, document: updated)
+            network.broadcast(Frame(type: "lyrics", lyrics: updated))
         }
     }
 
@@ -103,5 +137,10 @@ extension HostService {
             throw CadenzaError.failure("invalid_command", "The lip-sync offset must be between -500 and 500 ms.")
         }
         publishedState.setLipSyncOffset(Int(offset))
+        if let current = try? queue.snapshot().current, let doc = lyricDocument,
+            doc.occurrenceId == current.occurrenceId
+        {
+            publishAirPlayKaraokeVTT(for: current.song, document: doc)
+        }
     }
 }

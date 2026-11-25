@@ -1,15 +1,26 @@
-/// Finds a music video's studio track, so its timed lyrics can be used when the two have the same length. A video that
-/// is longer or shorter than the studio track by more than the aligner's fast-path tolerance is not matched: its lyrics
-/// would be misplaced, and the segment map that would correct them needs the video's audio.
+/// Finds a music video's studio track so its timed lyrics can be used. When the video's length matches the studio
+/// track within the fast-path tolerance, the studio timeline applies directly; otherwise the envelope aligner computes
+/// the segment map from the studio preview and captured playback audio.
 enum VideoStudioMatch {
     /// The first candidate with the video's title, an overlapping artist, and a length within the fast-path tolerance.
     static func pick(video: Song, candidates: [Song]) -> Song? {
         candidates.first { candidate in
-            candidate.source == "catalog"
-                && titleKey(candidate.title) == titleKey(video.title)
-                && artistsOverlap(candidate.artist, video.artist)
+            matchesIdentity(video: video, candidate: candidate)
                 && lengthsMatch(studioMs: candidate.durationMs, videoMs: video.durationMs)
         }
+    }
+
+    /// Best matching studio candidate regardless of duration delta, preferring fast-path length matches first.
+    static func pickBestCandidate(video: Song, candidates: [Song]) -> Song? {
+        if let fastPath = pick(video: video, candidates: candidates) { return fastPath }
+        return candidates.first { matchesIdentity(video: video, candidate: $0) }
+    }
+
+    static func matchesIdentity(video: Song, candidate: Song) -> Bool {
+        candidate.source == "catalog"
+            && candidate.mediaType != .musicVideo
+            && titleKey(candidate.title) == titleKey(video.title)
+            && artistsOverlap(candidate.artist, video.artist)
     }
 
     static func lengthsMatch(studioMs: Int64?, videoMs: Int64?) -> Bool {

@@ -6,12 +6,17 @@ import Foundation
 /// Owns the macOS process-tap and private aggregate-device lifetime.
 /// The real-time IO callback is intentionally added only with a validated separator/output graph.
 final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
+    private let muteWhenTapped: Bool
     private var tapID: AudioObjectID = kAudioObjectUnknown
     private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
     private var ioProcID: AudioDeviceIOProcID?
     private var receive: (@Sendable (SingAudioBuffer) -> Void)?
     private var bufferPool: SingAudioBufferPool?
     private let ioQueue = DispatchQueue(label: "app.cadence.host.sing.audio")
+
+    init(muteWhenTapped: Bool = true) {
+        self.muteWhenTapped = muteWhenTapped
+    }
 
     var format: SingAudioFormat? {
         guard isAvailable else { return nil }
@@ -44,7 +49,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         tapDescription.isPrivate = true
         tapDescription.isMixdown = true
         tapDescription.isMono = false
-        tapDescription.muteBehavior = .mutedWhenTapped
+        tapDescription.muteBehavior = muteWhenTapped ? .mutedWhenTapped : .unmuted
         var createdTap = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &createdTap)
         guard tapStatus == noErr else { throw audioError("create process tap", status: tapStatus) }

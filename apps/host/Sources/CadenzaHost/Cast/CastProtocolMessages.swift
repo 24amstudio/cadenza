@@ -31,21 +31,26 @@ enum CastProtocolMessages {
 
     static func loadAudio(
         url: String, transportId: String, sessionId: String, title: String, requestId: Int,
-        contentType: String = "audio/aac"
+        contentType: String = "audio/aac", streamType: String = "LIVE",
+        customData: [String: Any]? = nil
     ) -> CastMessage {
-        message(
+        var media: [String: Any] = [
+            "contentId": url,
+            "contentType": contentType,
+            "streamType": streamType,
+            "metadata": ["metadataType": 0, "title": title],
+        ]
+        if let customData {
+            media["customData"] = customData
+        }
+        return message(
             mediaNamespace, to: transportId,
             [
                 "type": "LOAD",
                 "requestId": requestId,
                 "sessionId": sessionId,
                 "autoplay": true,
-                "media": [
-                    "contentId": url,
-                    "contentType": contentType,
-                    "streamType": "LIVE",
-                    "metadata": ["metadataType": 0, "title": title],
-                ],
+                "media": media,
             ])
     }
 

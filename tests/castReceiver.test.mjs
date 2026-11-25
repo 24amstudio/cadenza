@@ -5,11 +5,23 @@ import {
   reduceKaraoke,
 } from '../apps/cast-receiver/karaoke-state.js';
 
-test('a session message names the track and switches to Full Suite only when asked for it', () => {
-  const full = reduceKaraoke(initialReceiverState(), {
+test('a session message sets mode, artwork, motion, and clamped lip-sync offset', () => {
+  const theater = reduceKaraoke(initialReceiverState(), {
     type: 'session',
     title: 'Pedida perfeita',
-    mode: 'full_suite',
+    artist: 'Akad',
+    mode: 'theater',
+    artworkUrl: 'http://192.168.1.10:9000/cast/artwork',
+    motionUrl: 'http://192.168.1.10:9000/cast/motion.mp4',
+    lipSyncOffsetMs: 120,
+  });
+
+  const video = reduceKaraoke(initialReceiverState(), {
+    type: 'session',
+    title: 'Video',
+    mode: 'karaoke_video',
+    artworkUrl: 'javascript:alert(1)',
+    lipSyncOffsetMs: 9999,
   });
 
   const unknown = reduceKaraoke(initialReceiverState(), {
@@ -18,23 +30,33 @@ test('a session message names the track and switches to Full Suite only when ask
     mode: 'surround',
   });
 
-  assert.deepEqual(full, {
-    mode: 'full_suite',
+  assert.deepEqual(theater, {
+    mode: 'theater',
     title: 'Pedida perfeita',
+    artist: 'Akad',
+    artworkUrl: 'http://192.168.1.10:9000/cast/artwork',
+    motionUrl: 'http://192.168.1.10:9000/cast/motion.mp4',
+    lipSyncOffsetMs: 120,
     line: '',
     next: '',
+    translation: '',
   });
+  assert.equal(video.mode, 'karaoke_video');
+  assert.equal(video.artworkUrl, null);
+  assert.equal(video.lipSyncOffsetMs, 500);
   assert.equal(unknown.mode, 'audio_only');
 });
 
-test('a line message sets the sung line and the next one, and long text is bounded', () => {
+test('a line message sets sung line, translation, and next line with bounded text', () => {
   const state = reduceKaraoke(initialReceiverState(), {
     type: 'line',
     text: 'first line',
+    translation: 'terjemahan',
     next: 'x'.repeat(2_000),
   });
 
   assert.equal(state.line, 'first line');
+  assert.equal(state.translation, 'terjemahan');
   assert.equal(state.next.length, 500);
 });
 

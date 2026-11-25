@@ -35,7 +35,7 @@ struct LyricDocument: Codable, Sendable {
 
     init(
         occurrenceId: String, revision: String, language: String?, translationSource: String,
-        lines: [LyricLine], issue: String? = nil, source: String = "apple_music"
+        lines: [LyricLine], issue: String? = nil, source: String = "apple_music", userOffsetMs: Int? = nil
     ) {
         self.occurrenceId = occurrenceId
         self.revision = revision
@@ -44,6 +44,7 @@ struct LyricDocument: Codable, Sendable {
         self.lines = lines
         self.issue = issue
         self.source = source
+        self.userOffsetMs = userOffsetMs
     }
 
     init(from decoder: Decoder) throws {
@@ -55,5 +56,6 @@ struct LyricDocument: Codable, Sendable {
         lines = try values.decode([LyricLine].self, forKey: .lines)
         issue = try values.decodeIfPresent(String.self, forKey: .issue)
         source = try values.decodeIfPresent(String.self, forKey: .source) ?? "apple_music"
+        userOffsetMs = try values.decodeIfPresent(Int.self, forKey: .userOffsetMs)
     }
 }

@@ -17,8 +17,6 @@ struct VideoEnvelopeAlignmentTests {
     @Test func aVideoThatStartsLaterThanItsStudioTrackIsFoundAtThatLag() throws {
         let rate = 16_000.0
         let studioSamples = music(seconds: 30, sampleRate: rate)
-        // The captured output begins 2.5 seconds before the studio track's preview would, so the studio track starts 250
-        // frames in: the lag is the offset of the studio track inside the captured audio.
         let captured = Array(repeating: Float(0), count: Int(2.5 * rate)) + studioSamples
         let studio = VideoEnvelopeAlignment.envelope(samples: studioSamples, sampleRate: rate)
         let heard = VideoEnvelopeAlignment.envelope(samples: captured, sampleRate: rate)
@@ -38,5 +36,27 @@ struct VideoEnvelopeAlignmentTests {
         let match = try #require(VideoEnvelopeAlignment.bestLag(studio: studio, captured: heard, maximumLag: 1_000))
 
         #expect(match.correlation < 0.6)
+    }
+
+    @Test func piecewiseSegmentsSkipStoryBreaksAndTrackShiftedOffsets() {
+        let rate = 16_000.0
+        let studioSamples = music(seconds: 16, sampleRate: rate)
+        let studio = VideoEnvelopeAlignment.envelope(samples: studioSamples, sampleRate: rate)
+        let firstHalf = Array(studio[0..<800])
+        let secondHalf = Array(studio[800..<1600])
+        let storyBreak = [Float](repeating: 0.02, count: 400)
+        let intro = [Float](repeating: 0.01, count: 200)
+        let captured = intro + firstHalf + storyBreak + secondHalf
+
+        let segments = VideoEnvelopeAlignment.piecewiseSegments(
+            studio: studio, captured: captured, chunkFrames: 400, minCorrelation: 0.85)
+
+        #expect(segments.count == 2)
+        #expect(segments[0].studioStartMs == 0)
+        #expect(segments[0].studioEndMs == 8_000)
+        #expect(segments[0].videoOffsetMs == 2_000)
+        #expect(segments[1].studioStartMs == 8_000)
+        #expect(segments[1].studioEndMs == 16_000)
+        #expect(segments[1].videoOffsetMs == 6_000)
     }
 }

@@ -4,7 +4,7 @@ enum VideoLyricAligner {
     /// Videos within this length of the studio track keep the studio timeline unchanged.
     static let fastPathToleranceMs: Int64 = 3_000
 
-    struct Segment: Equatable, Sendable {
+    struct Segment: Codable, Equatable, Sendable {
         /// Studio time from `studioStartMs` up to, but not including, `studioEndMs`.
         var studioStartMs: Int64
         var studioEndMs: Int64
@@ -22,5 +22,28 @@ enum VideoLyricAligner {
             return nil
         }
         return time + segment.videoOffsetMs + userOffsetMs
+    }
+
+    /// Rewrites a studio lyric document onto the music video's timeline, hiding lines during non-musical story scenes.
+    static func remap(_ document: LyricDocument, segments: [Segment]) -> LyricDocument {
+        guard !segments.isEmpty else { return document }
+        var remapped = document
+        remapped.lines = document.lines.compactMap { line in
+            let match = segments.first { line.startMs >= $0.studioStartMs && line.startMs < $0.studioEndMs }
+            guard let segment = match else {
+                return nil
+            }
+            var copy = line
+            copy.startMs = max(0, line.startMs + segment.videoOffsetMs)
+            copy.endMs = max(copy.startMs, line.endMs + segment.videoOffsetMs)
+            copy.words = line.words.map { word in
+                var mappedWord = word
+                mappedWord.startMs = max(0, word.startMs + segment.videoOffsetMs)
+                mappedWord.endMs = max(mappedWord.startMs, word.endMs + segment.videoOffsetMs)
+                return mappedWord
+            }
+            return copy
+        }
+        return remapped
     }
 }

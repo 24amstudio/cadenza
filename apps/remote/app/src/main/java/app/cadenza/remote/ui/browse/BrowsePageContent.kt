@@ -1,5 +1,6 @@
 package app.cadenza.remote.ui.browse
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,6 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.BrowseItem
 import app.cadenza.remote.data.BrowsePage
@@ -166,14 +170,32 @@ private fun PageHeader(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (page.kind == "artist" && artistMotion != null) {
-            // The artist's motion video fills a wide band. The still artwork stays until the first frame, and under
-            // reduced motion or energy saver it stays for good.
-            MotionArtwork(
-                artistMotion,
-                playing = true,
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-                fallback = { Artwork(page.artworkUrl, Modifier.fillMaxSize(), large = true) },
-            )
+            // The artist's motion video fills a wide band with a bottom readability scrim. The still artwork stays
+            // until the first frame, and under reduced motion, BLE, or constrained Host budget it stays for good.
+            val scrimColor = MaterialTheme.colorScheme.surface
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(MaterialTheme.shapes.extraLarge),
+            ) {
+                MotionArtwork(
+                    artistMotion,
+                    playing = true,
+                    modifier = Modifier.fillMaxSize(),
+                    fallback = { Artwork(page.artworkUrl, Modifier.fillMaxSize(), large = true) },
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0.35f to Color.Transparent,
+                                1.0f to scrimColor.copy(alpha = 0.85f),
+                            ),
+                        ),
+                )
+            }
         } else if (page.kind != "playlists") {
             Artwork(
                 page.artworkUrl,

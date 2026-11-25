@@ -7,6 +7,8 @@ actor Catalog {
     private var songs: [SongIdentity: Song] = [:]
     // Music video IDs found by search. Apple's song lookup must not be used for them, because they are not songs.
     private var videos: [String: Song] = [:]
+    // Public AAC preview URLs for catalog songs, used by VideoEnvelopeAlignment without storing them in Song wire payloads.
+    private var previewURLs: [String: URL] = [:]
     private let http = AppleHTTP()
     private let credentials: CredentialFile
 
@@ -35,6 +37,7 @@ actor Catalog {
         let songResults = results?["songs"] as? [String: Any]
         let videoResults = results?["music-videos"] as? [String: Any]
         var found = Self.parseSongs(songResults?["data"] as? [[String: Any]] ?? [])
+        rememberPreviews(songResults?["data"] as? [[String: Any]] ?? [])
         if videos {
             found += Self.parseSongs(videoResults?["data"] as? [[String: Any]] ?? [], mediaType: .musicVideo)
         }
@@ -74,6 +77,44 @@ actor Catalog {
 
     // A music video the last search returned. Playback reads its Music link from here.
     func video(id: String) -> Song? { videos[id] }
+
+    /// Public AAC preview URL for a catalog song, fetching the song record if not yet cached.
+    func previewURL(for songId: String) async -> URL? {
+        if let cached = previewURLs[songId] { return cached }
+        guard Wire.validate(SongIdentity(source: "catalog", id: songId)),
+            let data = try? await request(path: "songs/\(songId)", query: [])
+        else { return nil }
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        rememberPreviews(root?["data"] as? [[String: Any]] ?? [])
+        return previewURLs[songId]
+    }
+
+    /// Downloads a public AAC preview from Apple's preview CDN (<= 4 MB).
+    func previewAudioData(for songId: String) async throws -> Data? {
+        guard let url = await previewURL(for: songId) else { return nil }
+        let (data, _) = try await http.data(URLRequest(url: url), maximum: AudioEnvelopeDecoder.previewSizeLimit)
+        return data
+    }
+
+    private func rememberPreviews(_ items: [[String: Any]]) {
+        if previewURLs.count > 1_000 { previewURLs.removeAll(keepingCapacity: true) }
+        for item in items {
+            guard let id = item["id"] as? String,
+                let attributes = item["attributes"] as? [String: Any],
+                let previews = attributes["previews"] as? [[String: Any]],
+                let raw = previews.first?["url"] as? String,
+                let url = Self.safePreviewURL(raw)
+            else { continue }
+            previewURLs[id] = url
+        }
+    }
+
+    static func safePreviewURL(_ value: String?) -> URL? {
+        guard let value, let url = URL(string: value), url.scheme == "https",
+            let host = url.host, host == "audio-ssl.itunes.apple.com" || host.hasSuffix(".itunes.apple.com")
+        else { return nil }
+        return url
+    }
 
     func remember(_ found: [Song]) -> [Song] {
         if songs.count > 1_000 { songs.removeAll(keepingCapacity: true) }
@@ -142,6 +183,10 @@ actor Catalog {
                 "catalog_unavailable", "Apple's catalog returned HTTP \(response.statusCode). Try again later.")
         }
         return data
+    }
+
+    func currentDeveloperToken() async throws -> String {
+        try await developerToken()
     }
 
     private func developerToken() async throws -> String {

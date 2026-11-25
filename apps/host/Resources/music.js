@@ -211,6 +211,7 @@ function describeTrackSet(tracks, limit) {
   const durations = safeArray(() => tracks.duration());
   const discs = safeArray(() => tracks.discNumber());
   const numbers = safeArray(() => tracks.trackNumber());
+  const mediaKinds = safeArray(() => tracks.mediaKind?.() ?? []);
   const rows = [];
 
   for (let index = 0; index < ids.length; index++) {
@@ -238,14 +239,22 @@ function describeTrackSet(tracks, limit) {
   for (const { index, id } of rows.slice(0, limit)) {
     const duration = Number(durations[index] ?? 0);
 
-    songs.push({
+    const isVideo =
+      String(mediaKinds[index] ?? '').toLowerCase() === 'music video';
+
+    /** @type {{ source: string, id: string, title: string, artist: string, album: string, duration_ms: number | null, media_type?: string }} */
+    const entry = {
       source: 'library',
       id,
       title: String(names[index]),
       artist: String(artists[index] ?? ''),
       album: String(albums[index] ?? ''),
       duration_ms: duration > 0 ? Math.round(duration * 1000) : null,
-    });
+    };
+
+    if (isVideo) entry.media_type = 'musicVideo';
+
+    songs.push(entry);
   }
 
   return songs;
@@ -476,6 +485,41 @@ function writeLibrary(music, argv) {
   return null;
 }
 
+/** @param {MusicApplication} music @param {string} persistent */
+function playVideoTrack(music, persistent) {
+  const track = libraryTrack(music, persistent);
+
+  try {
+    track.play();
+  } catch {
+    music.reveal(track);
+    music.play();
+  }
+
+  return JSON.stringify(describeTrack(track, music));
+}
+
+/** @param {MusicApplication} music @param {string} persistent */
+function readVideoPath(music, persistent) {
+  const track = libraryTrack(music, persistent);
+  const trackClass = safeString(() => track.class());
+
+  const location = isStreamClass(trackClass)
+    ? ''
+    : safeString(() => track.location?.() ?? '');
+
+  return JSON.stringify({ path: location });
+}
+
+/** @param {MusicApplication} music @param {string[]} argv @returns {string | null} */
+function readVideoAction(music, argv) {
+  if (argv[0] === 'play-video') return playVideoTrack(music, argv[1] ?? '');
+
+  if (argv[0] === 'video-path') return readVideoPath(music, argv[1] ?? '');
+
+  return null;
+}
+
 /** @param {string[]} argv @returns {string} */
 function handleRun(argv) {
   const music = Application('Music');
@@ -490,6 +534,10 @@ function handleRun(argv) {
   const written = writeLibrary(music, argv);
 
   if (written !== null) return written;
+
+  const videoReply = readVideoAction(music, argv);
+
+  if (videoReply !== null) return videoReply;
 
   if (action === 'status') return readStatus(music);
 

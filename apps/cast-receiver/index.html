@@ -8,9 +8,26 @@
   </head>
   <body>
     <main id="stage" data-mode="audio_only">
-      <p id="title" class="title"></p>
+      <cast-media-player id="player" class="player"></cast-media-player>
+      <div id="backdrop" class="backdrop" aria-hidden="true">
+        <img id="artwork" class="artwork" alt="" />
+        <video
+          id="motion"
+          class="motion"
+          autoplay
+          loop
+          muted
+          playsinline
+        ></video>
+        <div class="scrim"></div>
+      </div>
+      <header class="meta">
+        <p id="title" class="title"></p>
+        <p id="artist" class="artist"></p>
+      </header>
       <section class="lyrics" aria-live="polite">
         <p id="line" class="line"></p>
+        <p id="translation" class="translation"></p>
         <p id="next" class="next"></p>
       </section>
     </main>

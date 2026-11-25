@@ -57,6 +57,10 @@ function nativeBoundary(
     album: () => 'Example album',
     kind: () => 'Apple Music AAC audio file',
     mediaKind: () => mediaKind,
+    location: () => '/Users/example/Music/clip.mp4',
+    play: () => {
+      playing = true;
+    },
     /** @returns {() => boolean} */
     get favorited() {
       return () => favorited;
@@ -82,6 +86,7 @@ function nativeBoundary(
     duration: () => [track.duration()],
     discNumber: () => [1],
     trackNumber: () => [1],
+    mediaKind: () => [mediaKind],
     whose: (/** @type {{ persistentID: string }} */ value) =>
       value.persistentID === persistentId ? [track] : [],
   };
@@ -491,4 +496,29 @@ test('a playlist write with no tracks, a bad name, or a bad identity changes not
   );
   assert.deepEqual(boundary.playlists(), []);
   assert.deepEqual(boundary.duplicates(), []);
+});
+
+test('library music videos report media_type in track sets, start with play-video, and expose local path only for file tracks', () => {
+  const fileVideo = nativeBoundary('AB1234567890CDEF', {
+    trackClass: 'fileTrack',
+    mediaKind: 'music video',
+  });
+
+  const streamVideo = nativeBoundary('AB1234567890CDEF', {
+    trackClass: 'urlTrack',
+    mediaKind: 'music video',
+  });
+
+  const playlist = fileVideo.invoke(['playlist', '0123456789ABCDEF']);
+
+  assert.equal(playlist.songs[0].media_type, 'musicVideo');
+  assert.equal(
+    fileVideo.invoke(['play-video', 'AB1234567890CDEF']).media_type,
+    'musicVideo',
+  );
+  assert.equal(
+    fileVideo.invoke(['video-path', 'AB1234567890CDEF']).path,
+    '/Users/example/Music/clip.mp4',
+  );
+  assert.equal(streamVideo.invoke(['video-path', 'AB1234567890CDEF']).path, '');
 });

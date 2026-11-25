@@ -68,9 +68,17 @@ final class MusicBridge {
         return status
     }
 
-    /// Opens a music video's Music link, then waits until Music reports that video as the current item. The video never
-    /// joins Music's queue, so the Host queue keeps its place.
+    /// Starts a catalog or library music video in Music's window without inserting it into the queue.
     func playVideo(_ song: Song) async throws {
+        if song.source == "library" {
+            guard Wire.validate(song.identity) else {
+                throw CadenzaError.failure("invalid_command", "Invalid library video.")
+            }
+            do {
+                _ = try await script(["play-video", song.id], timeout: 6)
+                return
+            } catch { throw Self.libraryFailure(error) }
+        }
         try await Self.openInBackground(Self.musicLink(for: song), failure: "Music could not open this video.")
         let deadline = monotonicMs() + 8_000
         repeat {
@@ -80,6 +88,45 @@ final class MusicBridge {
             try await Task.sleep(for: .milliseconds(300))
         } while monotonicMs() < deadline
         throw CadenzaError.failure("music_unavailable", "Music did not start this video.")
+    }
+
+    /// Returns a verified local `.mp4` or `.m4v` file URL for a library music video when DRM-free local playback applies.
+    func videoFileURL(for identity: SongIdentity) async -> URL? {
+        guard identity.source == "library", Wire.validate(identity) else { return nil }
+        struct PathReply: Decodable { let path: String }
+        guard let data = try? await script(["video-path", identity.id], timeout: 3),
+            let reply = try? Wire.decode(PathReply.self, from: data),
+            !reply.path.isEmpty
+        else { return nil }
+        return Self.safeLocalVideoURL(reply.path)
+    }
+
+    static func safeLocalVideoURL(_ rawPath: String) -> URL? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let url = trimmed.hasPrefix("file://") ? URL(string: trimmed) : URL(fileURLWithPath: trimmed)
+        guard let url, url.isFileURL else { return nil }
+        let ext = url.pathExtension.lowercased()
+        guard ext == "mp4" || ext == "m4v" else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return nil
+        }
+        return url
+    }
+
+    /// Resolves a library music video identity for `video.play`.
+    func resolveVideo(_ identity: SongIdentity) async throws -> Song {
+        guard identity.source == "library", Wire.validate(identity) else {
+            throw CadenzaError.failure("invalid_command", "Invalid library track.")
+        }
+        do {
+            let song = try await Wire.decode(Song.self, from: script(["resolve", identity.id]))
+            guard song.mediaType == .musicVideo else {
+                throw CadenzaError.failure("invalid_command", "This library track is not a music video.")
+            }
+            return song
+        } catch { throw Self.libraryFailure(error) }
     }
 
     func librarySearch(_ query: String) async throws -> [Song] {

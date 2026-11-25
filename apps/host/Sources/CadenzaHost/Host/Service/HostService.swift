@@ -17,6 +17,10 @@ final class HostService {
     let sing: SingCoordinator
     let sleepAssertion = SleepAssertion()
     let publishedState = HostPublishedState()
+    let airPlayKaraokeProxy = AirPlayHlsKaraokeProxy()
+    var activeAirPlaySessionId: String?
+    var alignmentTap: CoreAudioSingRoute?
+    var alignmentCollector: VideoAudioEnvelopeCollector?
     let network = NetworkService()
     let bluetooth = BluetoothPeripheral()
     let webRemote = WebRemoteListener()
@@ -256,6 +260,9 @@ final class HostService {
         lyricJob = nil
         lyricOccurrence = nil
         lyricDocument = nil
+        stopAlignmentCapture()
+        airPlayKaraokeProxy.stop()
+        activeAirPlaySessionId = nil
         sing.stop()
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
@@ -803,52 +810,33 @@ final class HostService {
             lyricJob = Task { @MainActor [weak self] in
                 guard let self else { return }
                 defer { if self.lyricOccurrence == current.occurrenceId { self.lyricJob = nil } }
-                // A music video has no identity Music's lyrics know, so its studio track supplies the timed lines.
-                let lyricSong = await self.lyricSong(for: current.song)
+                // A music video may use its studio track directly (<= 3s delta) or align via vDSP_conv.
+                let resolution = await self.resolveLyricSource(for: current.song)
                 do {
-                    var document: LyricDocument?
-                    var lastError: Error?
-                    for attempt in 0..<6 {
-                        do {
-                            // Disk and provider caches do not require Music's
-                            // Accessibility permission. Check them first so a Host
-                            // restart can restore lyrics immediately.
-                            document = try await self.lyrics.document(
-                                song: lyricSong, occurrence: current.occurrenceId)
-                            break
-                        } catch let error as CadenzaError where error.code == "lyrics_unavailable" {
-                            lastError = error
-                            guard attempt < 5, self.music.accessibility.permitted else { break }
-                            // Music may not have written its local TTML cache yet.
-                            // Prime it and retry with a bounded backoff instead of
-                            // turning a transient read into a permission warning.
-                            try? await self.queue.primeLyrics(occurrence: current.occurrenceId)
-                            try await Task.sleep(for: .milliseconds(1_000 << min(attempt, 3)))
-                        }
-                    }
-                    guard let document else {
-                        if let lastError { throw lastError }
-                        throw CadenzaError.failure(
-                            "lyrics_unavailable", "Lyrics are unavailable. Try again from the Lyrics pane.")
-                    }
+                    let document = try await self.loadDocument(
+                        for: resolution.lyricSong, occurrence: current.occurrenceId)
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
                     else { return }
-                    let stored = self.withUserOffset(document, for: current.song)
+                    let alignedDocument = await self.applyVideoAlignment(
+                        document, video: current.song, resolution: resolution)
+                    let stored = self.withUserOffset(alignedDocument, for: current.song)
                     self.lyricDocument = stored
+                    self.publishAirPlayKaraokeVTT(for: current.song, document: stored)
                     self.logger.log(
                         .info, category: "lyrics", action: "lyrics.loaded",
-                        "Lyrics ready with \(document.lines.count) lines",
+                        "Lyrics ready with \(stored.lines.count) lines",
                         metadata: [
-                            "occurrence_id": current.occurrenceId, "source": document.source,
-                            "translation": document.translationSource,
+                            "occurrence_id": current.occurrenceId, "source": stored.source,
+                            "translation": stored.translationSource,
                         ])
                     self.network.broadcast(Frame(type: "lyrics", lyrics: stored))
-                    let translated = await self.lyrics.english(document, song: current.song)
+                    let translated = await self.lyrics.english(stored, song: current.song)
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == translated.occurrenceId
                     else { return }
                     let shown = self.withUserOffset(translated, for: current.song)
                     self.lyricDocument = shown
-                    if translated.revision != document.revision {
+                    self.publishAirPlayKaraokeVTT(for: current.song, document: shown)
+                    if translated.revision != stored.revision {
                         self.network.broadcast(Frame(type: "lyrics", lyrics: shown))
                     }
                 } catch {

@@ -13,6 +13,9 @@ interface MusicTrack {
   kind(): string;
   // Music names a music video's media kind "music video". Songs and streams have other media kinds.
   mediaKind(): string;
+  // File tracks expose a POSIX path or file URL via location().
+  location?(): string | null;
+  play(): void;
 }
 
 // A set of tracks read one property at a time: each call is a single Apple event for the whole set.
@@ -26,6 +29,7 @@ interface MusicTrackSet {
   duration(): (number | null)[];
   discNumber(): number[];
   trackNumber(): number[];
+  mediaKind?(): string[];
 }
 
 interface MusicTrackCollection extends ArrayLike<MusicTrack> {

@@ -52,7 +52,10 @@ final class HostPublishedState {
         case .castTransmitter:
             followedOccurrence = nil
             videoLyrics.show(line: nil)
-            castTransmitter.sendKaraoke(line: window.current?.text ?? "", next: window.next?.text ?? "")
+            castTransmitter.sendKaraoke(
+                line: window.current?.text ?? "",
+                next: window.next?.text ?? "",
+                translation: window.current?.translation ?? "")
         }
     }
 

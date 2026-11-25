@@ -168,6 +168,11 @@ extension HostService {
                 request: Frame(type: "artist.motion.get", requestId: requestId), peer: peer)
             return
         }
+        // Over Bluetooth or under constrained/survival thermal budget, clients fall back to static artist portraits.
+        if peer.transport == "ble" || publishedState.hostBudget >= .constrained {
+            network.send(Frame(type: "artist.motion.unavailable", requestId: requestId), to: peer)
+            return
+        }
         let key = peer.id + requestId
         jobs[key]?.cancel()
         let deadline = monotonicMs() + Self.motionDeadlineMs

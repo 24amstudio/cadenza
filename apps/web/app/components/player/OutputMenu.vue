@@ -103,8 +103,8 @@ const presentations: { value: CastPresentation; label: string }[] = [
         Cast device
       </button>
       <p v-if="videoOutput === 'cast_transmitter'" class="cast-note">
-        Karaoke on a Cast device needs the custom receiver, which is not built
-        yet.
+        Karaoke lyrics display on the active Cast receiver rather than on this
+        Mac.
       </p>
       <p class="cast-title">AVR lip-sync offset, {{ lipSyncOffsetMs }} ms</p>
       <button
@@ -142,7 +142,8 @@ const presentations: { value: CastPresentation; label: string }[] = [
         </button>
       </div>
       <p v-if="cast.presentation === 'full_suite'" class="cast-note">
-        Full Suite visuals need the custom receiver, which is not built yet.
+        Displays motion artwork and synced lyrics on screen-capable Cast
+        receivers.
       </p>
       <p v-if="transmit?.state === 'starting'" class="cast-note" role="status">
         Connecting to {{ transmit.device }}.
@@ -190,8 +191,8 @@ const presentations: { value: CastPresentation; label: string }[] = [
       </ul>
       <p v-else class="cast-note">No Cast devices found on this network.</p>
       <p class="cast-note">
-        Audio is sent as stereo AAC. Full Cadenza Suite visuals need a
-        registered receiver app, which is not set up.
+        Stereo audio streams as AAC; 5.1 surround streams as AC-3 when the
+        encoder helper is bundled.
       </p>
     </section>
   </div>

@@ -1,12 +1,24 @@
 import Foundation
 import Network
 
-/// The codec of one Cast audio stream. AAC is the stereo path; AC-3 carries six-channel output.
+/// The codec of one Cast audio stream. AAC is the stereo path; AC-3 carries six-channel output; FLAC is lossless.
 enum CastAudioCodec: Sendable {
-    case aac, ac3
+    case aac, ac3, flac
 
-    var path: String { self == .aac ? "/cast/audio.aac" : "/cast/audio.ac3" }
-    var contentType: String { self == .aac ? "audio/aac" : "audio/ac3" }
+    var path: String {
+        switch self {
+        case .aac: return "/cast/audio.aac"
+        case .ac3: return "/cast/audio.ac3"
+        case .flac: return "/cast/audio.flac"
+        }
+    }
+    var contentType: String {
+        switch self {
+        case .aac: return "audio/aac"
+        case .ac3: return "audio/ac3"
+        case .flac: return "audio/flac"
+        }
+    }
 }
 
 /// Serves live chunked Cast audio and optional LAN media assets (byte-range DRM-free `.mp4`/`.m4v` files, still

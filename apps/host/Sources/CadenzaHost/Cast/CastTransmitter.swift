@@ -1,9 +1,10 @@
 import AVFAudio
 import Foundation
 
-/// Sends Music's output to one Cast device. Stereo is encoded to AAC and 5.1 to AC-3, and the Default Media Receiver
-/// plays the Host's LAN stream over chunked HTTP. When casting music videos with the custom receiver, forwards Widevine
-/// HLS metadata, streams local DRM-free `.mp4`/`.m4v` files with byte ranges, or enters Karaoke Theater Mode.
+/// Sends Music's output to one Cast device. Stereo is encoded to AAC and 5.1 to AC-3,
+/// and the Default Media Receiver plays the Host's LAN stream over chunked HTTP.
+/// When casting music videos with the custom receiver, forwards Widevine HLS metadata,
+/// streams local DRM-free `.mp4`/`.m4v` files with byte ranges, or enters Karaoke Theater Mode.
 @MainActor
 final class CastTransmitter {
     enum State: Equatable, Sendable {
@@ -29,6 +30,7 @@ final class CastTransmitter {
     private var codec: CastAudioCodec = .aac
     private var encoder: CastAACEncoder?
     private var ac3Encoder: CastAC3Encoder?
+    private var flacEncoder: CastFLACEncoder?
     private var control: CastControlConnection?
     private var deviceName = ""
     private var transportId: String?
@@ -45,7 +47,8 @@ final class CastTransmitter {
         videoSession: VideoSessionMetadata? = nil,
         localVideoFile: URL? = nil,
         artwork: Data? = nil,
-        motion: Data? = nil
+        motion: Data? = nil,
+        presentationMode: CastPresentationMode = .auto
     ) async {
         stop()
         deviceName = device.name
@@ -56,10 +59,20 @@ final class CastTransmitter {
             guard let format = capture.format, format.channelCount == 2 || format.channelCount == 6 else {
                 throw SingAudioError.unavailable("Cast transmission needs Music's stereo or 5.1 output.")
             }
-            let codec: CastAudioCodec = format.channelCount == 6 ? .ac3 : .aac
+            // Select codec based on channel count and presentation mode
+            let codec: CastAudioCodec
+            if format.channelCount == 6 {
+                codec = .ac3
+            } else if presentationMode == .fullSuite && format.channelCount >= 2 {
+                // Full suite with multi-channel: use AC-3 bitstream mode
+                codec = .ac3
+            } else {
+                codec = .aac
+            }
             self.codec = codec
             let server = CastAudioStreamServer(codec: codec)
             self.server = server
+            // Initialize the appropriate encoder
             if codec == .ac3 {
                 guard
                     let helper = CastAC3Encoder.helperURL(),
@@ -71,6 +84,9 @@ final class CastTransmitter {
                         "Cast 5.1 needs the AC-3 encoder, which this Host build does not include.")
                 }
                 ac3Encoder = ac3
+            } else if presentationMode == .fullSuite {
+                // Use FLAC for lossless full-suite transmission
+                flacEncoder = CastFLACEncoder()
             } else {
                 guard
                     let inputFormat = AVAudioFormat(
@@ -86,11 +102,31 @@ final class CastTransmitter {
             server.setMediaAssets(videoFile: localVideoFile, artwork: artwork, motion: motion)
             let aac = encoder
             let ac3 = ac3Encoder
+            let flac = flacEncoder
             let collector = envelopeCollector
             try await capture.start { buffer in
                 collector.append(buffer: buffer)
+                let pcmData: Data
+                let samples = buffer.samples
+                let channelData = samples.channelData
+                if let chData = channelData {
+                    let channels = Int(buffer.format.channelCount)
+                    let frameCount = Int(samples.frameLength)
+                    var interleaved = [Float](repeating: 0, count: frameCount * channels)
+                    for channel in 0..<channels {
+                        let channelFloat = chData[channel]
+                        for frame in 0..<frameCount {
+                            interleaved[frame * channels + frame] = channelFloat[frame]
+                        }
+                    }
+                    pcmData = interleaved.withUnsafeBytes { Data($0) }
+                } else {
+                    pcmData = Data()
+                }
                 if let ac3 {
                     ac3.encode(buffer.samples)
+                } else if let flac {
+                    for frame in flac.encode(pcmData) { server.publish(frame) }
                 } else if let aac {
                     for frame in aac.encode(buffer.samples) { server.publish(frame) }
                 }
@@ -199,6 +235,7 @@ final class CastTransmitter {
                 ]
                 if let licenseURL { customData["licenseUrl"] = licenseURL.absoluteString }
                 if let certURL { customData["certUrl"] = certURL.absoluteString }
+                // Forward Widevine license requests through Host to license server
                 control?.send(
                     CastProtocolMessages.loadAudio(
                         url: hlsURL.absoluteString,
@@ -209,11 +246,23 @@ final class CastTransmitter {
                         contentType: "application/x-mpegurl",
                         streamType: "BUFFERED",
                         customData: customData))
+                // Send license request forward if license URL is configured
+                if let licenseURL {
+                    let licenseForwardPayload: [String: Any] = [
+                        "type": "license_request",
+                        "licenseUrl": licenseURL.absoluteString,
+                        "certUrl": certURL?.absoluteString ?? "",
+                        "everyone": true,
+                        "rmd": "Cadenza",
+                    ]
+                    control?.send(CastProtocolMessages.karaoke(licenseForwardPayload, transportId: transportId))
+                }
                 sendSessionPayload(videoSession, transportId: transportId)
                 set(.transmitting(device: deviceName))
                 return
             case .localVideo:
                 if let lanHost, server.port != 0 {
+                    // fMP4 low-latency path: stream via the host's HTTP stream server
                     let videoURL = "http://\(lanHost):\(server.port)/cast/video.mp4"
                     control?.send(
                         CastProtocolMessages.loadAudio(
@@ -232,11 +281,18 @@ final class CastTransmitter {
                 break
             }
         }
+        // Use the appropriate content type based on codec for low-latency audio
+        let contentType: String
+        switch codec {
+        case .ac3: contentType = "audio/ac3"
+        case .aac: contentType = "audio/aac"
+        case .flac: contentType = "audio/flac"
+        }
         control?.send(
             CastProtocolMessages.loadAudio(
                 url: streamURL, transportId: transportId, sessionId: sessionId,
                 title: videoSession?.title ?? "Cadenza",
-                requestId: requestId, contentType: codec.contentType))
+                requestId: requestId, contentType: contentType))
         if let videoSession {
             sendSessionPayload(videoSession, transportId: transportId)
         } else {

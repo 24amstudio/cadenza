@@ -12,6 +12,8 @@ enum CastProtocolMessages {
     static let defaultMediaReceiverAppId = "CC1AD845"
     // The Cadenza receiver's karaoke messages. Only the custom receiver app listens on this namespace.
     static let karaokeNamespace = "urn:x-cast:app.cadenza.karaoke"
+    // Receiver profile capabilities reported by the Cast custom receiver app.
+    static let receiverProfileNamespace = "urn:x-cast:com.cadenza.profile"
 
     static func connect(to destination: String) -> CastMessage {
         message(connectionNamespace, to: destination, ["type": "CONNECT"])

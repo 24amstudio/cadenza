@@ -145,7 +145,10 @@ final class CastAudioStreamServer: @unchecked Sendable {
         }
     }
 
-    private static func sendBytes(_ data: Data, rangeHeader: String?, contentType: String, on connection: NWConnection) {
+    private static func sendBytes(
+        _ data: Data, rangeHeader: String?, contentType: String, on connection: NWConnection
+    ) {
+        // Split across two lines for length limit
         let size = Int64(data.count)
         switch ByteRange.parse(rangeHeader, size: size) {
         case .unsatisfiable:

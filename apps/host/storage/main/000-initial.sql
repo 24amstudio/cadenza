@@ -81,6 +81,7 @@ CREATE UNIQUE INDEX credit_counts_occurrence_once ON playback_credit_outbox(remo
 
 
 
+ALTER TABLE paired_remotes ADD COLUMN mac_address TEXT NOT NULL DEFAULT '';
 ALTER TABLE paired_remotes ADD COLUMN next_credit_sequence INTEGER NOT NULL DEFAULT 1 CHECK(next_credit_sequence BETWEEN 1 AND 9007199254740991);
 UPDATE paired_remotes SET next_credit_sequence=coalesce((
   SELECT max(sequence)+1 FROM playback_credit_outbox WHERE remote_id=paired_remotes.remote_id

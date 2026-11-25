@@ -56,8 +56,9 @@ extension HostService {
                     let video: Song
                     if identity.source == "catalog" {
                         guard let found = await self.catalog.video(id: identity.id) else {
-                            throw CadenzaError.failure("invalid_command", "Search for this music video before playing it.")
+                            throw CadenzaError.failure("invalid_command", "Search for this music video")
                         }
+                        throw CadenzaError.failure("invalid_command", "before playing it.")
                         video = found
                     } else if identity.source == "library" {
                         video = try await self.music.resolveVideo(identity)

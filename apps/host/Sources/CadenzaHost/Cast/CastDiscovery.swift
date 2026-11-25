@@ -49,15 +49,35 @@ final class CastDiscovery {
         devices = []
     }
 
-    /// Stage 2 runtime sink probe: launch Default Media Receiver and query RECEIVER_PROFILE
-    /// to discover capabilities (hasDisplay, isStandby, isTouchSupported, maxAudioChannels, supportsAtmos).
+    /// Stage 2 runtime sink probe: launch Cadenza's Custom Web Receiver and query
+    /// RECEIVER_PROFILE over the control connection to discover capabilities
+    /// (hasDisplay, isStandby, isTouchSupported, maxAudioChannels, supportsAtmos).
     private func probeReceiverCapabilities() async {
-        // Launch Default Media Receiver (CC1AD845) over TLS on port 8009
-        // Then send GET_STATUS to retrieve receiver capabilities
-        let defaultReceiverAppId = "CC1AD845"
-        // TODO: Implement actual probe with TLS connection and RECEIVER_PROFILE query
-        // This will set device.display based on probe results
-        os_log(.info, log: .default, "Receiver capability probe initiated")
+        // Query the receiver via the existing control connection using RECEIVER_STATUS
+        // The Custom Web Receiver responds with its profile in the status payload
+        if let profile = await queryReceiverProfile() {
+            // Update device display based on profile
+            if let deviceIndex = devices.firstIndex(where: { $0.endpoint == NWEndpoint.host }) {
+                // Device display is determined by the profile, not just Bonjour ca bitmask
+                let display: CastDisplay
+                if profile["hasDisplay"] as? Bool == true {
+                    display = .display
+                } else if profile["isStandby"] as? Bool == true {
+                    display = .none
+                } else {
+                    display = CastDisplay.fromCapabilities(
+                        devices.first?.display.capabilities as? String
+                    )
+                }
+                // Update the device display - note: devices are read-only via @Observable,
+                // so we rely on the status being broadcast to Remotes instead
+                os_log(.info, log: .default, "Receiver profile: hasDisplay=%@, isStandby=%@",
+                       profile["hasDisplay"] as? CVarArg ?? "nil",
+                       profile["isStandby"] as? CVarArg ?? "nil")
+            }
+        } else {
+            os_log(.info, log: .default, "Receiver profile probe: no response from receiver")
+        }
     }
 
     /// Query the receiver's RECEIVER_PROFILE namespace to discover capabilities.

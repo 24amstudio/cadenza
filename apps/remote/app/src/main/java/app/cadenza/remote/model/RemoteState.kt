@@ -49,6 +49,12 @@ data class MotionVideo(
     val file: File,
 )
 
+// An artist's motion video for the Artist Details header. The file is verified before it is published.
+data class ArtistMotionVideo(
+    val artistName: String,
+    val file: File,
+)
+
 data class RemoteState(
     val loaded: Boolean = false,
     val clientName: String = "Android Remote",
@@ -84,6 +90,8 @@ data class RemoteState(
     val artwork: Map<String, ByteArray> = emptyMap(),
     val lastStateAt: Long = 0,
     val lyrics: LyricDocument? = null,
+    // The karaoke nudge in use, in milliseconds. Lyrics are matched against the position minus this.
+    val lyricDelayMs: Int = 0,
     val lyricsLoading: Boolean = false,
     val lyricsIssue: String? = null,
     val results: List<Song> = emptyList(),
@@ -93,6 +101,7 @@ data class RemoteState(
     val correctedQuery: String? = null,
     val correctedResults: List<Song> = emptyList(),
     val motion: MotionVideo? = null,
+    val artistMotion: ArtistMotionVideo? = null,
     val searching: Boolean = false,
     val preparing: Boolean = false,
     val preparedSong: String? = null,

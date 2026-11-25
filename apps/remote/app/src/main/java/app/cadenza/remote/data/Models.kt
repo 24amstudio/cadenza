@@ -22,8 +22,13 @@ data class Song(
     val album: String = "",
     val durationMs: Long? = null,
     val artworkUrl: String? = null,
+    // Null on songs from Hosts that predate music-video search; those are songs.
+    val mediaType: String? = null,
 ) {
     val identity: SongIdentity get() = SongIdentity(source, id)
+
+    // A music video is listed for discovery. Cadenza Host cannot queue it yet.
+    val isMusicVideo: Boolean get() = mediaType == "musicVideo"
 }
 
 data class QueueEntry(
@@ -86,6 +91,30 @@ data class HostSnapshot(
     val repeat: String = "off",
     val audioOutputs: List<AudioOutput> = emptyList(),
     val hostBudget: String? = null,
+    val cast: CastState? = null,
+    // Where a music video's karaoke line is shown: "host_display" or "cast_transmitter".
+    val videoOutput: String? = null,
+    // The AVR lip-sync offset in milliseconds, from -500 to 500.
+    val lipSyncOffsetMs: Int? = null,
+)
+
+// A Google Cast device the Host can send audio to. `display` is none, display, or unknown.
+data class CastDevice(
+    val name: String,
+    val display: String,
+)
+
+// What the Host is sending to a Cast device. `reason` is set when a transmission failed.
+data class CastTransmitState(
+    val state: String,
+    val device: String?,
+    val reason: String?,
+)
+
+data class CastState(
+    val presentation: String,
+    val devices: List<CastDevice>,
+    val transmit: CastTransmitState?,
 )
 
 // An audio output the Mac can play to. `id` is the device UID.
@@ -121,6 +150,8 @@ data class LyricDocument(
     val lines: List<LyricLine>,
     val issue: String?,
     val source: String = "apple_music",
+    // The nudge the person saved for this track, in milliseconds. It starts the Remote's nudge.
+    val userOffsetMs: Int = 0,
 ) {
     /** 0: unavailable, 1: plain text, 2: timed lines, 3: timed words. */
     val level: Int
@@ -199,8 +230,10 @@ object Wire {
             album = value.optString("album"),
             durationMs = value.nullableLong("duration_ms"),
             artworkUrl = value.nullableString("artwork_url"),
+            mediaType = value.nullableString("media_type"),
         ).also {
             require(it.title.length <= 500 && it.artist.length <= 500 && it.album.length <= 500) { "Song metadata is too long." }
+            require(it.mediaType == null || it.mediaType == "song" || it.mediaType == "musicVideo") { "Invalid media type." }
             require(
                 when (it.source) {
                     "catalog" -> it.id.matches(Regex("[0-9]{1,20}"))
@@ -278,6 +311,9 @@ object Wire {
             value.optString("repeat", "off"),
             audioOutputs(value.optJSONArray("audio_outputs")),
             value.optString("host_budget").takeIf { it.isNotEmpty() },
+            castState(value.optJSONObject("cast")),
+            value.nullableString("video_output"),
+            value.takeIf { it.has("lip_sync_offset_ms") }?.optInt("lip_sync_offset_ms"),
         ).also {
             require(it.repeat in listOf("off", "one", "all")) { "Unknown repeat mode." }
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos", "aac")) {
@@ -285,6 +321,33 @@ object Wire {
             }
             require(queue.map { entry -> entry.id }.toSet().size == queue.size) { "Duplicate queue request identity." }
         }
+    }
+
+    // A Cast block that does not parse is dropped, so the rest of the snapshot still shows.
+    private fun castState(value: JSONObject?): CastState? {
+        if (value == null) return null
+        val presentation = value.optString("presentation")
+        if (presentation !in listOf("auto", "audio_only", "full_suite")) return null
+        val devices =
+            value.optJSONArray("devices")?.objects().orEmpty().mapNotNull { item ->
+                val name = item.optString("name")
+                val display = item.optString("display")
+                if (name.isEmpty() || display !in listOf("none", "display", "unknown")) {
+                    null
+                } else {
+                    CastDevice(name, display)
+                }
+            }
+        val transmit =
+            value.optJSONObject("transmit")?.let { item ->
+                val state = item.optString("state")
+                if (state !in listOf("idle", "starting", "transmitting", "failed")) {
+                    null
+                } else {
+                    CastTransmitState(state, item.nullableString("device"), item.nullableString("reason"))
+                }
+            }
+        return CastState(presentation, devices, transmit)
     }
 
     // An output that does not parse is left out, so one unknown output never hides the rest.
@@ -356,6 +419,7 @@ object Wire {
             lines,
             value.nullableString("issue"),
             source,
+            value.optInt("user_offset_ms", 0).coerceIn(-5000, 5000),
         )
     }
 

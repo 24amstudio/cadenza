@@ -8,7 +8,7 @@ const source = readFileSync(
   'utf8',
 );
 
-/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean, lateApply?: number, duration?: number | null, artist?: string }} [options] */
+/** @param {string} [persistentId] @param {{ trackClass?: string, inLibrary?: boolean, lateApply?: number, duration?: number | null, artist?: string, mediaKind?: string }} [options] */
 function nativeBoundary(
   persistentId = 'AB1234567890CDEF',
   {
@@ -18,6 +18,7 @@ function nativeBoundary(
     // null is the value Music returns as "missing value", as a radio station reports it.
     duration = 183.125,
     artist = 'Example artist',
+    mediaKind = '',
   } = {},
 ) {
   let volume = 50;
@@ -55,6 +56,7 @@ function nativeBoundary(
     artist: () => artist,
     album: () => 'Example album',
     kind: () => 'Apple Music AAC audio file',
+    mediaKind: () => mediaKind,
     /** @returns {() => boolean} */
     get favorited() {
       return () => favorited;
@@ -254,6 +256,31 @@ test('Music search passes a query as data and rejects injected identities or unk
     () => boundary.invoke(['execute', query]),
     /Unknown Music action/,
   );
+});
+
+test('a music video is labelled as a video and a song is labelled as a song', () => {
+  const video = nativeBoundary('AB1234567890CDEF', {
+    mediaKind: 'music video',
+  }).invoke(['search', 'akad']);
+
+  const song = nativeBoundary().invoke(['search', 'akad']);
+
+  assert.equal(video[0].media_type, 'musicVideo');
+  assert.equal(song[0].media_type, 'song');
+});
+
+test('a music video that Music plays as a URL track with a length is not live radio', () => {
+  // Music reported this shape for a live catalog video: class "urlTrack", a finite duration, media kind "music video".
+  const status = nativeBoundary('2AA0E2DB2E7FD4EC', {
+    trackClass: 'urlTrack',
+    inLibrary: false,
+    duration: 180.2,
+    mediaKind: 'music video',
+  }).invoke(['status']);
+
+  assert.equal(status.song.is_live_radio, false);
+  assert.equal(status.song.media_type, 'musicVideo');
+  assert.equal(status.song.duration_ms, 180200);
 });
 
 test('invalid volume and seek input cannot mutate Music through the script boundary', () => {

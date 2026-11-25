@@ -217,7 +217,10 @@ export function answerClockProbes(
   }
 }
 
-export function snapshotFrame(revision: number): JsonObject {
+export function snapshotFrame(
+  revision: number,
+  hostBudget: string | null = null,
+): JsonObject {
   return {
     type: 'state',
     snapshot: {
@@ -236,6 +239,7 @@ export function snapshotFrame(revision: number): JsonObject {
       quality: 'unknown',
       synchronized: true,
       observation_gap: false,
+      host_budget: hostBudget,
     },
   };
 }

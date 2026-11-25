@@ -41,7 +41,7 @@ internal suspend fun RemoteModel.applyMotionChunk(frame: JSONObject) {
         return
     }
     val assembly =
-        motionAssembly?.takeIf { it.occurrenceId == occurrenceId }
+        motionAssembly?.takeIf { it.key == occurrenceId }
             ?: MotionAssembly
                 .open(occurrenceId, frame.optInt("chunk_count"), frame.optInt("total_bytes"), frame.optString("sha256"))
                 ?.also { motionAssembly = it }

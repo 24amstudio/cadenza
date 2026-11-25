@@ -1,4 +1,6 @@
+import type { PairingProof } from '../protocol/encode';
 import type { CredentialStore } from './credentials';
+import type { TasteDigest } from '../tasteDigest';
 import type {
   CommandResult,
   HostUpdateStatus,
@@ -17,6 +19,22 @@ export type HostPhase =
   | 'bluetooth-idle';
 
 export type Readiness = 'ready' | 'syncing' | 'offline';
+
+// What the client is waiting on from the Host, keyed by request ID.
+export interface PendingPairing {
+  proof: PairingProof;
+  name: string;
+}
+
+export type PendingRequest =
+  | { kind: 'lyrics'; occurrenceId: string }
+  | {
+      kind: 'artwork';
+      artworkUrl: string;
+      lane: ArtworkLane;
+      occurrenceId: string | null;
+    }
+  | { kind: 'rename'; name: string };
 
 export type HostChange =
   | { kind: 'phase'; phase: HostPhase; attempt: number; message: string | null }
@@ -69,6 +87,8 @@ export interface HostClientOptions {
   onChange: (change: HostChange) => void;
   // Asks for a preview before the full artwork. Only the Bluetooth page sets this, and only the Host's capability enables it.
   progressiveArtwork?: boolean;
+  // What this browser shares at connect once the listener opts in. Null sends no digest.
+  tasteDigest?: () => TasteDigest | null;
 }
 
 export type ArtworkLane = 'preview' | 'still' | 'motion';

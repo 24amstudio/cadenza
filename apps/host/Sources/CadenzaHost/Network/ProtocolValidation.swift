@@ -20,6 +20,11 @@ enum ProtocolValidation {
         "sing.enable": ["kind", "occurrence_id"],
         "sing.disable": ["kind", "occurrence_id"],
         "sing.mix": ["kind", "occurrence_id", "vocal_percent"],
+        "cast.transmit": ["kind", "device", "start"],
+        "video.output": ["kind", "video_output"],
+        "cast.presentation": ["kind", "presentation"],
+        "lip_sync.offset": ["kind", "lip_sync_offset_ms"],
+        "lyrics.offset": ["kind", "song", "user_offset_ms"],
         "library.favorite": ["kind", "song", "enabled"],
         "library.addToPlaylist": ["kind", "name", "songs"],
         "audio.selectOutput": ["kind", "output"],
@@ -39,11 +44,12 @@ enum ProtocolValidation {
         if frame.type == "command" {
             try validateCommand(frame, raw: data)
         } else if ![
-            "pair", "hello", "clock", "search", "search.suggest", "browse.get", "song.prepare", "operation.cancel",
+            "pair", "hello", "clock", "search", "search.suggest", "browse.get", "song.prepare", "video.play",
+            "operation.cancel",
             "lyrics.get",
             "analytics.ack",
             "state.get", "command.status", "remote.configure", "log.report", "artwork.get", "artwork.cancel",
-            "motion.get",
+            "motion.get", "artist.motion.get",
             "transport.configure", "session.status", "host.update",
             "recommendation.passport", "recommendation.query", "recommendation.feedback", "recommendation.plan",
             "recommendation.shadow_observation",
@@ -81,6 +87,8 @@ enum ProtocolValidation {
             "recommendation.plan": ["recommendation_plan"],
             "recommendation.shadow_observation": ["recommendation_shadow_observation"],
             "motion.get": ["request_id", "occurrence_id"],
+            "artist.motion.get": ["request_id", "artist_name"],
+            "video.play": ["request_id", "song"],
             "host.update": ["update_action", "request_id"],
         ]
         guard let fields = required[type] else { throw invalid("Unknown message type.") }
@@ -185,7 +193,12 @@ enum ProtocolValidation {
                 }
             }
         }
-        if type == "song.prepare" { try nested(object["song"], fields: ["source", "id"]) }
+        if type == "song.prepare" || type == "video.play" { try nested(object["song"], fields: ["source", "id"]) }
+        if type == "artist.motion.get" {
+            guard let name = object["artist_name"] as? String, (1...200).contains(name.count) else {
+                throw invalid("Invalid artist.")
+            }
+        }
         if type == "browse.get" { try validateBrowse(object["browse"]) }
         if type == "search", let scope = object["scope"] as? String, !["catalog", "library"].contains(scope) {
             throw invalid("Choose catalog or library search.")
@@ -303,6 +316,28 @@ enum ProtocolValidation {
         case "queue.remove", "queue.move":
             guard let entry = action.entryId, Wire.isIdentifier(entry) else { throw invalid("Invalid queue request.") }
             if let anchor = action.beforeEntryId, !Wire.isIdentifier(anchor) { throw invalid("Invalid queue anchor.") }
+        case "cast.transmit":
+            guard let flag = rawAction["start"] as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID(),
+                let device = action.device, !device.isEmpty, device.count <= 200
+            else { throw invalid("Invalid Cast request.") }
+        case "cast.presentation":
+            guard let presentation = action.presentation, ["auto", "audio_only", "full_suite"].contains(presentation)
+            else {
+                throw invalid("Invalid Cast presentation.")
+            }
+        case "lyrics.offset":
+            guard let song = action.song, Wire.validate(song),
+                let object = rawAction["song"] as? [String: Any], Set(object.keys) == Set(["source", "id"]),
+                let offset = action.userOffsetMs, (-5000...5000).contains(offset)
+            else { throw invalid("Invalid lyric offset.") }
+        case "lip_sync.offset":
+            guard let offset = action.lipSyncOffsetMs, (-500...500).contains(offset) else {
+                throw invalid("Invalid lip-sync offset.")
+            }
+        case "video.output":
+            guard let target = action.videoOutput, VideoOutputTarget(rawValue: target) != nil else {
+                throw invalid("Invalid video output.")
+            }
         case "playback.volume":
             guard let percent = action.percent, (0...100).contains(percent) else { throw invalid("Invalid volume.") }
         case "playback.shuffle":

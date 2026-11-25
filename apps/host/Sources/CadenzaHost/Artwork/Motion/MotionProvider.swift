@@ -38,6 +38,23 @@ final class MotionProvider {
         return video
     }
 
+    /// The artist's motion video, or nil when Apple has none for that artist. Lookup failures throw instead of being remembered.
+    func artistVideo(name: String) async throws -> Data? {
+        // The record separator keeps artist keys apart from album keys, which also hold an artist name.
+        let key = "\u{1E}artist\u{1F}" + name.lowercased()
+        guard !withoutMotion.contains(key) else { return nil }
+        guard let source = try await catalog.animatedArtist(name: name) else {
+            if withoutMotion.count >= 512 { withoutMotion.removeAll() }
+            withoutMotion.insert(key)
+            return nil
+        }
+        let cacheKey = "motion256:artist:" + source.artistId
+        if let cached = try cache.data(for: cacheKey), cached.count <= Self.videoLimit { return cached }
+        let video = try await download(source.masterURL)
+        try cache.put(video, for: cacheKey, kind: "animated_artwork")
+        return video
+    }
+
     // The key names the rescaled video, so a video cached before rescaling is never served.
     private static func cacheKey(_ albumId: String) -> String { "motion256:" + albumId }
 

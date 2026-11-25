@@ -207,6 +207,17 @@ class RemoteModel(
 
     internal val motionStore by lazy { MotionStore(File(app.filesDir, "motion")) }
 
+    internal var artistMotionRequestId: String? = null
+
+    internal var artistMotionName: String? = null
+
+    internal var artistMotionAssembly: MotionAssembly? = null
+
+    internal var videoPlayId: String? = null
+
+    // Its own directory, because MotionStore keeps only the newest file it holds and the song's video must survive.
+    internal val artistMotionStore by lazy { MotionStore(File(app.filesDir, "artist-motion")) }
+
     internal var preparationId: String? = null
 
     // Host may resolve a catalog identity to a concrete Music row before replying. Keep the

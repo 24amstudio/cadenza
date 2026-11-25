@@ -11,6 +11,8 @@ interface MusicTrack {
   artist(): string;
   album(): string;
   kind(): string;
+  // Music names a music video's media kind "music video". Songs and streams have other media kinds.
+  mediaKind(): string;
 }
 
 // A set of tracks read one property at a time: each call is a single Apple event for the whole set.

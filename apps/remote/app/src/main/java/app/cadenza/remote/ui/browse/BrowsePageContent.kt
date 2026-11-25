@@ -41,11 +41,14 @@ import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.browse
 import app.cadenza.remote.model.cancelBrowse
+import app.cadenza.remote.model.requestArtistMotion
 import app.cadenza.remote.ui.ActionButton
 import app.cadenza.remote.ui.Artwork
 import app.cadenza.remote.ui.CadenzaIcon
+import app.cadenza.remote.ui.MotionArtwork
 import app.cadenza.remote.ui.SongActions
 import app.cadenza.remote.ui.cadenzaVector
+import java.io.File
 
 // One album, artist or playlist. The page loads when it opens, survives rotation through the model's short-lived cache,
 // and cancels its Host request when it is left while still loading.
@@ -59,16 +62,20 @@ internal fun BrowsePageContent(
 ) {
     val navigator = LocalBrowseNavigator.current
     var selected by remember(target.key) { mutableStateOf<Song?>(null) }
+    val artistPage = (state.browse[target.key] as? BrowseLoad.Ready)?.page?.takeIf { it.kind == "artist" }
+    val artistName = artistPage?.title
+    val artistMotion = state.artistMotion?.takeIf { it.artistName == artistName }?.file
     LaunchedEffect(target.key, state.connected) { model.browse(target) }
+    LaunchedEffect(artistName, state.connected) { artistName?.let { model.requestArtistMotion(it) } }
     DisposableEffect(target.key) { onDispose { model.cancelBrowse(target) } }
     Box(modifier.fillMaxSize()) {
         when (val load = state.browse[target.key]) {
             is BrowseLoad.Ready ->
-                PageBody(load.page, target) { item ->
+                PageBody(load.page, target, artistMotion) { item ->
                     when (item) {
                         is BrowseItem.Track -> {
                             selected = item.song
-                            model.prepare(item.song)
+                            if (!item.song.isMusicVideo) model.prepare(item.song)
                         }
                         is BrowseItem.Collection -> navigator.open(BrowseTarget.of(item))
                     }
@@ -120,13 +127,14 @@ private fun PageMessage(
 private fun PageBody(
     page: BrowsePage,
     target: BrowseTarget,
+    artistMotion: File?,
     onItem: (BrowseItem) -> Unit,
 ) {
     val sections = page.sections.filter { it.items.isNotEmpty() }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-                PageHeader(page, target, Modifier.weight(0.38f).fillMaxHeight(), expanded = true)
+                PageHeader(page, target, artistMotion, Modifier.weight(0.38f).fillMaxHeight(), expanded = true)
                 SectionList(sections, onItem, Modifier.weight(0.62f).fillMaxHeight(), emptyMessage(page))
             }
         } else {
@@ -135,7 +143,7 @@ private fun PageBody(
                 onItem,
                 Modifier.fillMaxSize(),
                 emptyMessage(page),
-                header = { PageHeader(page, target, Modifier.fillMaxWidth(), expanded = false) },
+                header = { PageHeader(page, target, artistMotion, Modifier.fillMaxWidth(), expanded = false) },
             )
         }
     }
@@ -152,11 +160,21 @@ private fun emptyMessage(page: BrowsePage): String =
 private fun PageHeader(
     page: BrowsePage,
     target: BrowseTarget,
+    artistMotion: File?,
     modifier: Modifier,
     expanded: Boolean,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (page.kind != "playlists") {
+        if (page.kind == "artist" && artistMotion != null) {
+            // The artist's motion video fills a wide band. The still artwork stays until the first frame, and under
+            // reduced motion or energy saver it stays for good.
+            MotionArtwork(
+                artistMotion,
+                playing = true,
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                fallback = { Artwork(page.artworkUrl, Modifier.fillMaxSize(), large = true) },
+            )
+        } else if (page.kind != "playlists") {
             Artwork(
                 page.artworkUrl,
                 Modifier.widthIn(max = if (expanded) 320.dp else 220.dp).fillMaxWidth().aspectRatio(1f),

@@ -134,6 +134,39 @@ describe('HostClient pairing and reconnection', () => {
     ).toBe(false);
   });
 
+  test('holds log entries while the Host is under thermal pressure and sends them after it recovers', () => {
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 0,
+    };
+    const { client, sockets } = harness(credentials);
+
+    const sentActions = () =>
+      socketAt(sockets, 0)
+        .framesOfType('log.report')
+        .flatMap((frame) => frame.log_entries ?? []);
+
+    client.start(null);
+    socketAt(sockets, 0).open();
+    socketAt(sockets, 0).receive(welcome(null));
+    socketAt(sockets, 0).receive(snapshotFrame(1, 'constrained'));
+    sharedLocalLog().record('warning', 'log test under pressure', 'held');
+    socketAt(sockets, 0).receive(snapshotFrame(2, 'constrained'));
+
+    expect(sentActions()).not.toContainEqual(
+      expect.objectContaining({ action: 'log test under pressure' }),
+    );
+
+    socketAt(sockets, 0).receive(snapshotFrame(3, 'balanced'));
+
+    expect(sentActions()).toContainEqual(
+      expect.objectContaining({ action: 'log test under pressure' }),
+    );
+  });
+
   test('forgets a credential that the Host revokes', () => {
     const credentials = new MemoryCredentials();
     credentials.value = {

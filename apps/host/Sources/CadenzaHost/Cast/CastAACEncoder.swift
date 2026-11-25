@@ -51,14 +51,17 @@ final class CastAACEncoder: @unchecked Sendable {
 
             return input
         }
-        guard status != .error, packets.packetCount > 0, let descriptions = packets.packetDescriptions else { return [] }
+        guard status != .error, packets.packetCount > 0, let descriptions = packets.packetDescriptions else {
+            return []
+        }
 
         return (0..<Int(packets.packetCount)).map { index in
             let description = descriptions[index]
             let start = Int(description.mStartOffset)
             let size = Int(description.mDataByteSize)
-            let payload = Array(UnsafeRawBufferPointer(
-                start: packets.data.advanced(by: start), count: size))
+            let payload = Array(
+                UnsafeRawBufferPointer(
+                    start: packets.data.advanced(by: start), count: size))
 
             return adtsHeader(payloadLength: size) + payload
         }

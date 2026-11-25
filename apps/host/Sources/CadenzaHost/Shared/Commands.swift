@@ -34,10 +34,20 @@ struct CommandAction: Codable, Sendable {
     var songs: [SongIdentity]? = nil
     // The UID of the audio output to make the Mac's default.
     var output: String? = nil
+    // Cast transmission: the device to send Music's audio to, and whether to start or stop sending it.
+    var device: String? = nil
+    var start: Bool? = nil
+    // Where a music video's karaoke line is shown: "host_display" or "cast_transmitter".
+    var videoOutput: String? = nil
+    // Cast presentation ("auto", "audio_only", or "full_suite") and the AVR lip-sync offset in milliseconds.
+    var presentation: String? = nil
+    var lipSyncOffsetMs: Int64? = nil
+    // The karaoke nudge for one track, in milliseconds, saved on the Host.
+    var userOffsetMs: Int64? = nil
 
     enum CodingKeys: String, CodingKey {
         case kind, song, entryId, beforeEntryId, occurrenceId, positionMs, percent, vocalPercent, enabled, mode
-        case name, songs, output
+        case name, songs, output, device, start, videoOutput, presentation, lipSyncOffsetMs, userOffsetMs
     }
 
     func encode(to encoder: Encoder) throws {
@@ -46,6 +56,12 @@ struct CommandAction: Codable, Sendable {
         try container.encodeIfPresent(name, forKey: .name)
         try container.encodeIfPresent(songs, forKey: .songs)
         try container.encodeIfPresent(output, forKey: .output)
+        try container.encodeIfPresent(device, forKey: .device)
+        try container.encodeIfPresent(start, forKey: .start)
+        try container.encodeIfPresent(videoOutput, forKey: .videoOutput)
+        try container.encodeIfPresent(presentation, forKey: .presentation)
+        try container.encodeIfPresent(lipSyncOffsetMs, forKey: .lipSyncOffsetMs)
+        try container.encodeIfPresent(userOffsetMs, forKey: .userOffsetMs)
         try container.encodeIfPresent(song, forKey: .song)
         try container.encodeIfPresent(entryId, forKey: .entryId)
         if kind == "queue.move" { try container.encode(beforeEntryId, forKey: .beforeEntryId) }

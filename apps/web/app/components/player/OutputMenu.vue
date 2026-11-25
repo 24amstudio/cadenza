@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { castDisplayLabel, castPresentationLabel } from '~/lib/cast';
+import type { CastPresentation } from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
 
 // Chooses the Mac's audio output. Music plays to the default output, so the choice routes Music's audio there.
@@ -8,6 +9,17 @@ const host = useHostStore();
 
 const outputs = computed(() => host.snapshot?.audioOutputs ?? []);
 const cast = computed(() => host.snapshot?.cast ?? null);
+const transmit = computed(() => cast.value?.transmit ?? null);
+
+const videoOutput = computed(
+  () => host.snapshot?.videoOutput ?? 'host_display',
+);
+
+const sending = computed(
+  () =>
+    transmit.value?.state === 'starting' ||
+    transmit.value?.state === 'transmitting',
+);
 
 const selected = computed(
   () => outputs.value.find((output) => output.isDefault)?.id ?? '',
@@ -18,6 +30,42 @@ function choose(event: Event): void {
 
   host.setOutput(event.target.value);
 }
+
+function isSendingTo(name: string): boolean {
+  return sending.value && transmit.value?.device === name;
+}
+
+function sendAudio(name: string): void {
+  host.setCastTransmit(name, true);
+}
+
+function stopAudio(): void {
+  host.setCastTransmit(transmit.value?.device ?? '', false);
+}
+
+// The karaoke line is drawn in one place: over Music's window on this Mac, or on a Cast device.
+function chooseLyricTarget(target: 'host_display' | 'cast_transmitter'): void {
+  host.setVideoOutput(target);
+}
+
+const lipSyncOffsetMs = computed(() => host.snapshot?.lipSyncOffsetMs ?? 0);
+
+// The AVR delay moves karaoke lines later or earlier, in steps of 50 ms, within the Host's limit of 500 ms.
+function nudgeLipSync(step: number): void {
+  host.setLipSyncOffset(
+    Math.max(-500, Math.min(500, lipSyncOffsetMs.value + step)),
+  );
+}
+
+function choosePresentation(value: CastPresentation): void {
+  host.setCastPresentation(value);
+}
+
+const presentations: { value: CastPresentation; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'audio_only', label: 'Audio Only' },
+  { value: 'full_suite', label: 'Full Suite' },
+];
 </script>
 
 <template>
@@ -34,17 +82,117 @@ function choose(event: Event): void {
         {{ output.name }}
       </option>
     </select>
+    <section class="cast" aria-label="Karaoke lyrics">
+      <p class="cast-title">Karaoke lyrics on</p>
+      <button
+        class="cast-button"
+        type="button"
+        :aria-pressed="videoOutput === 'host_display'"
+        :disabled="!host.connected"
+        @click="chooseLyricTarget('host_display')"
+      >
+        This Mac
+      </button>
+      <button
+        class="cast-button"
+        type="button"
+        :aria-pressed="videoOutput === 'cast_transmitter'"
+        :disabled="!host.connected"
+        @click="chooseLyricTarget('cast_transmitter')"
+      >
+        Cast device
+      </button>
+      <p v-if="videoOutput === 'cast_transmitter'" class="cast-note">
+        Karaoke on a Cast device needs the custom receiver, which is not built
+        yet.
+      </p>
+      <p class="cast-title">AVR lip-sync offset, {{ lipSyncOffsetMs }} ms</p>
+      <button
+        class="cast-button"
+        type="button"
+        :disabled="!host.connected"
+        @click="nudgeLipSync(-50)"
+      >
+        Earlier 50 ms
+      </button>
+      <button
+        class="cast-button"
+        type="button"
+        :disabled="!host.connected"
+        @click="nudgeLipSync(50)"
+      >
+        Later 50 ms
+      </button>
+    </section>
     <section v-if="cast" class="cast" aria-label="Google Cast">
       <p class="cast-title">
         Google Cast, {{ castPresentationLabel(cast.presentation) }}
       </p>
+      <div class="cast-presentation" role="group" aria-label="Cast mode">
+        <button
+          v-for="option in presentations"
+          :key="option.value"
+          class="cast-button"
+          type="button"
+          :aria-pressed="cast.presentation === option.value"
+          :disabled="!host.connected"
+          @click="choosePresentation(option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+      <p v-if="cast.presentation === 'full_suite'" class="cast-note">
+        Full Suite visuals need the custom receiver, which is not built yet.
+      </p>
+      <p v-if="transmit?.state === 'starting'" class="cast-note" role="status">
+        Connecting to {{ transmit.device }}.
+      </p>
+      <p
+        v-else-if="transmit?.state === 'transmitting'"
+        class="cast-note"
+        role="status"
+      >
+        Sending audio to {{ transmit.device }}.
+      </p>
+      <p
+        v-else-if="transmit?.state === 'failed'"
+        class="cast-note"
+        role="alert"
+      >
+        {{ transmit.reason }}
+      </p>
       <ul v-if="cast.devices.length > 0" class="cast-devices">
-        <li v-for="device in cast.devices" :key="device.name">
-          {{ device.name }}, {{ castDisplayLabel(device.display) }}
+        <li
+          v-for="device in cast.devices"
+          :key="device.name"
+          class="cast-device"
+        >
+          <span>{{ device.name }}, {{ castDisplayLabel(device.display) }}</span>
+          <button
+            v-if="isSendingTo(device.name)"
+            class="cast-button"
+            type="button"
+            :disabled="!host.connected"
+            @click="stopAudio"
+          >
+            Stop sending audio
+          </button>
+          <button
+            v-else
+            class="cast-button"
+            type="button"
+            :disabled="!host.connected || sending"
+            @click="sendAudio(device.name)"
+          >
+            Send audio here
+          </button>
         </li>
       </ul>
       <p v-else class="cast-note">No Cast devices found on this network.</p>
-      <p class="cast-note">Cadenza does not send audio to Cast devices yet.</p>
+      <p class="cast-note">
+        Audio is sent as stereo AAC. Full Cadenza Suite visuals need a
+        registered receiver app, which is not set up.
+      </p>
     </section>
   </div>
 </template>
@@ -85,9 +233,34 @@ function choose(event: Event): void {
 }
 
 .cast-devices {
+  display: grid;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.cast-device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cast-button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fill-strong);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.cast-button:disabled {
+  opacity: 0.5;
 }
 
 .cast-note {

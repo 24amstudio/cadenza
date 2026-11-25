@@ -111,6 +111,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                 mutable.update {
                     it.copy(
                         lyrics = document,
+                        lyricDelayMs = document.userOffsetMs,
                         lyricsLoading = false,
                         lyricsIssue = document.issue,
                         notice = if (notify) Notice("Music lyrics received") else it.notice,
@@ -121,6 +122,9 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
         "artwork" -> applyArtworkFrame(frame)
         "motion.chunk" -> applyMotionChunk(frame)
         "motion.unavailable" -> motionUnavailable(frame)
+        "artist.motion.chunk" -> applyArtistMotionChunk(frame)
+        "artist.motion.unavailable" -> artistMotionUnavailable(frame)
+        "video.started" -> videoStarted(frame)
         "artwork.unavailable" -> frame.nullableString("artwork_url")?.let(::releaseArtwork)
         "analytics.credit" -> applyCredit(frame)
         "lyrics.unavailable" ->
@@ -290,6 +294,7 @@ internal suspend fun RemoteModel.applyState(value: JSONObject) {
             snapshot = snapshot.withOptimisticIntents(optimisticIntents()),
             lastStateAt = SystemClock.elapsedRealtime(),
             lyrics = if (changedSong) null else it.lyrics,
+            lyricDelayMs = if (changedSong) 0 else it.lyricDelayMs,
             lyricsIssue = if (changedSong) null else it.lyricsIssue,
             lyricsLoading = if (changedSong) false else it.lyricsLoading,
             motion = if (changedSong) null else it.motion,

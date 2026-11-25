@@ -1,8 +1,8 @@
 import AVFAudio
 import Foundation
 
-/// Sends Music's stereo output to one Cast device. The device plays the Default Media Receiver with the Host's LAN
-/// stream. Audio is captured from Music, encoded to AAC, and served over chunked HTTP.
+/// Sends Music's output to one Cast device. Stereo is encoded to AAC and 5.1 to AC-3, and the Default Media Receiver
+/// plays the Host's LAN stream over chunked HTTP.
 /// The Cast protocol path has not been run against a device yet.
 @MainActor
 final class CastTransmitter {
@@ -17,8 +17,10 @@ final class CastTransmitter {
     var onChange: ((State) -> Void)?
 
     private let capture: SingCaptureRoute = CoreAudioSingRoute()
-    private let server = CastAudioStreamServer()
+    private var server = CastAudioStreamServer(codec: .aac)
+    private var codec: CastAudioCodec = .aac
     private var encoder: CastAACEncoder?
+    private var ac3Encoder: CastAC3Encoder?
     private var control: CastControlConnection?
     private var deviceName = ""
     private var transportId: String?
@@ -31,24 +33,46 @@ final class CastTransmitter {
         deviceName = device.name
         set(.starting(device: device.name))
         do {
-            guard let format = capture.format, format.channelCount == 2 else {
-                throw SingAudioError.unavailable("Cast transmission needs Music's stereo output.")
+            guard let format = capture.format, format.channelCount == 2 || format.channelCount == 6 else {
+                throw SingAudioError.unavailable("Cast transmission needs Music's stereo or 5.1 output.")
             }
-            guard
-                let inputFormat = AVAudioFormat(
-                    commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate,
-                    channels: AVAudioChannelCount(format.channelCount), interleaved: false),
-                let encoder = CastAACEncoder(sampleRate: format.sampleRate, channels: 2, inputFormat: inputFormat)
-            else {
-                throw SingAudioError.unavailable("The Music output could not be encoded for Cast.")
+            let codec: CastAudioCodec = format.channelCount == 6 ? .ac3 : .aac
+            self.codec = codec
+            let server = CastAudioStreamServer(codec: codec)
+            self.server = server
+            if codec == .ac3 {
+                guard
+                    let helper = CastAC3Encoder.helperURL(),
+                    let ac3 = CastAC3Encoder(
+                        helper: helper, sampleRate: format.sampleRate,
+                        onOutput: { data in server.publish([UInt8](data)) })
+                else {
+                    throw SingAudioError.unavailable(
+                        "Cast 5.1 needs the AC-3 encoder, which this Host build does not include.")
+                }
+                ac3Encoder = ac3
+            } else {
+                guard
+                    let inputFormat = AVAudioFormat(
+                        commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate,
+                        channels: AVAudioChannelCount(format.channelCount), interleaved: false),
+                    let aac = CastAACEncoder(sampleRate: format.sampleRate, channels: 2, inputFormat: inputFormat)
+                else {
+                    throw SingAudioError.unavailable("The Music output could not be encoded for Cast.")
+                }
+                encoder = aac
             }
-            self.encoder = encoder
             let port = try await server.start()
-            let server = self.server
+            let aac = encoder
+            let ac3 = ac3Encoder
             try await capture.start { buffer in
-                for frame in encoder.encode(buffer.samples) { server.publish(frame) }
+                if let ac3 {
+                    ac3.encode(buffer.samples)
+                } else if let aac {
+                    for frame in aac.encode(buffer.samples) { server.publish(frame) }
+                }
             }
-            let url = "http://\(lanHost):\(port)\(CastAudioStreamServer.path)?seq=\(UUID().uuidString.prefix(8))"
+            let url = "http://\(lanHost):\(port)\(codec.path)?seq=\(UUID().uuidString.prefix(8))"
             streamURL = url
             control = CastControlConnection(
                 endpoint: device.endpoint,
@@ -73,14 +97,33 @@ final class CastTransmitter {
         capture.stop()
         server.stop()
         encoder = nil
+        ac3Encoder?.stop()
+        ac3Encoder = nil
         transportId = nil
         sessionId = nil
         launched = false
         streamURL = nil
+        lastKaraoke = nil
         set(.idle)
     }
 
     private var streamURL: String?
+    private var lastKaraoke: String?
+
+    // The Default Media Receiver plays audio alone. A custom receiver app, set in defaults, shows the karaoke lines.
+    private var receiverAppId: String {
+        UserDefaults.standard.string(forKey: "castReceiverAppId") ?? CastProtocolMessages.defaultMediaReceiverAppId
+    }
+
+    /// Sends the karaoke line to the receiver app once it runs. Repeats of the same line are not sent again.
+    func sendKaraoke(line: String, next: String) {
+        guard state != .idle, let transportId else { return }
+        let key = line + "\u{1F}" + next
+        guard key != lastKaraoke else { return }
+        lastKaraoke = key
+        control?.send(
+            CastProtocolMessages.karaoke(["type": "line", "text": line, "next": next], transportId: transportId))
+    }
 
     private func receive(_ message: CastMessage) {
         if CastProtocolMessages.isPing(message) {
@@ -90,7 +133,7 @@ final class CastTransmitter {
         }
         guard transportId == nil else { return }
         if let session = CastProtocolMessages.runningSession(
-            in: message, appId: CastProtocolMessages.defaultMediaReceiverAppId)
+            in: message, appId: receiverAppId)
         {
             transportId = session.transportId
             sessionId = session.sessionId
@@ -100,7 +143,8 @@ final class CastTransmitter {
             launched = true
             requestId += 1
             control?.send(
-                CastProtocolMessages.launch(appId: CastProtocolMessages.defaultMediaReceiverAppId, requestId: requestId))
+                CastProtocolMessages.launch(appId: receiverAppId, requestId: requestId)
+            )
         }
     }
 
@@ -110,7 +154,12 @@ final class CastTransmitter {
         control?.send(
             CastProtocolMessages.loadAudio(
                 url: streamURL, transportId: transportId, sessionId: sessionId, title: "Cadenza",
-                requestId: requestId))
+                requestId: requestId, contentType: codec.contentType))
+        let mode =
+            UserDefaults.standard.string(forKey: "castPresentationMode") == "fullSuite" ? "full_suite" : "audio_only"
+        control?.send(
+            CastProtocolMessages.karaoke(
+                ["type": "session", "title": "Cadenza", "mode": mode], transportId: transportId))
         set(.transmitting(device: deviceName))
     }
 

@@ -43,7 +43,17 @@ type Intent =
 
 export type HostCommandAction = Extract<
   CommandAction,
-  { kind: 'audio.selectOutput' | 'library.favorite' | 'library.addToPlaylist' }
+  {
+    kind:
+      | 'audio.selectOutput'
+      | 'cast.transmit'
+      | 'video.output'
+      | 'cast.presentation'
+      | 'lip_sync.offset'
+      | 'lyrics.offset'
+      | 'library.favorite'
+      | 'library.addToPlaylist';
+  }
 >;
 
 export interface ControlPort {

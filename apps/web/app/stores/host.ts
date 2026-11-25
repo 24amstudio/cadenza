@@ -38,7 +38,9 @@ import {
   remoteVersion,
   socketUrlFor,
 } from '~/lib/host/endpoint';
+import { browserStorage } from '~/lib/host/browserStorage';
 import { randomUuid } from '~/lib/host/ids';
+import { currentTasteDigest } from '~/lib/tasteDigestSource';
 import { describeCommandResult } from '~/lib/host/messages';
 import { readInvitationSecret } from '~/lib/host/pairing';
 import type { Settle } from '~/lib/host/songRequests';
@@ -377,6 +379,7 @@ export const useHostStore = defineStore('host', () => {
       defaultName: defaultRemoteName(navigator.userAgent),
       openSocket: openBrowserSocket,
       progressiveArtwork: bluetoothSupported,
+      tasteDigest: currentTasteDigest,
       credentials: createCredentialStore(browserStorage()),
       monotonicNow: () => performance.now(),
       schedule: scheduleTask,
@@ -954,10 +957,14 @@ export const useHostStore = defineStore('host', () => {
     suggestSongs,
     shelf: (settle: Settle<RecommendationShelfItem[]>) =>
       client?.songs.shelves(settle) ?? null,
+    artistMotion: (artistName: string) =>
+      client?.artistMotion.request(artistName) ?? Promise.resolve(null),
     cancelSongRequest,
     browse,
     abortBrowse,
     prepareSong,
+    playVideo: (song: SongIdentity, settle: Settle<null>) =>
+      client?.songs.playVideo(song, settle) ?? null,
     queueSong,
     renameRemote,
     forgetBrowser,
@@ -988,12 +995,4 @@ function scheduleTask(callback: () => void, delayMs: number): () => void {
   const handle = setTimeout(callback, delayMs);
 
   return () => clearTimeout(handle);
-}
-
-function browserStorage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
 }

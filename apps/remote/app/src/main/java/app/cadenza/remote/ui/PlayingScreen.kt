@@ -430,6 +430,10 @@ private fun PortraitPlayerPanel(
             )
         }
         AudioOutputChooser(model, snapshot.audioOutputs, enabled = state.connected)
+        CastChooser(model, snapshot.cast, enabled = state.connected)
+        if (current.song.isMusicVideo) {
+            LyricTargetChooser(model, snapshot.videoOutput, snapshot.lipSyncOffsetMs, enabled = state.connected)
+        }
         LibraryActions(model, current.song, enabled = state.connected)
         PlaybackTimeline(model, state, currentPosition)
         PlaybackTransport(
@@ -488,6 +492,10 @@ private fun PlayerPanel(
         }
         HorizontalDivider()
         AudioOutputChooser(model, snapshot.audioOutputs, enabled = state.connected)
+        CastChooser(model, snapshot.cast, enabled = state.connected)
+        if (current.song.isMusicVideo) {
+            LyricTargetChooser(model, snapshot.videoOutput, snapshot.lipSyncOffsetMs, enabled = state.connected)
+        }
         LibraryActions(model, current.song, enabled = state.connected)
         PlaybackTimeline(model, state, currentPosition)
         TabletTransport(model, state, lyricsButton)

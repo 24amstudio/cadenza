@@ -74,6 +74,35 @@ class HostWireTest {
     }
 
     @Test
+    fun aSnapshotCarriesTheCastDevicesAndWhatIsBeingSent() {
+        val cast =
+            JSONObject()
+                .put("presentation", "full_suite")
+                .put("devices", JSONArray().put(JSONObject().put("name", "Living Room TV").put("display", "display")))
+                .put("transmit", JSONObject().put("state", "transmitting").put("device", "Living Room TV"))
+
+        val value = Wire.snapshot(snapshot().put("cast", cast))
+
+        assertEquals("full_suite", value.cast?.presentation)
+        assertEquals(
+            "Living Room TV",
+            value.cast
+                ?.devices
+                ?.single()
+                ?.name,
+        )
+        assertEquals("transmitting", value.cast?.transmit?.state)
+    }
+
+    @Test
+    fun aMalformedCastBlockIsDroppedWithoutHidingTheRestOfTheSnapshot() {
+        val value = Wire.snapshot(snapshot().put("cast", JSONObject().put("presentation", "bogus")))
+
+        assertTrue(value.cast == null)
+        assertEquals("off", value.repeat)
+    }
+
+    @Test
     fun theSnapshotCarriesTheMacsAudioOutputsAndBudgetAndSkipsAMalformedOutput() {
         val speakers =
             JSONObject()
@@ -90,6 +119,12 @@ class HostWireTest {
 
         assertEquals(listOf(AudioOutput("uid-1", "Mac speakers", "built-in", true)), value.audioOutputs)
         assertEquals("constrained", value.hostBudget)
+    }
+
+    @Test
+    fun aMusicVideoIsMarkedAndASongWithoutTheFieldIsASong() {
+        assertTrue(Wire.song(song().put("media_type", "musicVideo")).isMusicVideo)
+        assertFalse(Wire.song(song()).isMusicVideo)
     }
 
     @Test

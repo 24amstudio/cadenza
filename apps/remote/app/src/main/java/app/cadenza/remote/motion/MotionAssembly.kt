@@ -4,8 +4,9 @@ import java.security.MessageDigest
 
 // The Host sends the MP4 in bounded chunks. The file is used only after every chunk arrived once and the whole file
 // matches the Host's SHA-256 digest, so a damaged or truncated transfer is never shown.
+// The key names what the video belongs to: a song's occurrence, or an artist request's ID.
 internal class MotionAssembly private constructor(
-    val occurrenceId: String,
+    val key: String,
     val sha256: String,
     private val totalBytes: Int,
     private val chunks: Array<ByteArray?>,
@@ -50,7 +51,7 @@ internal class MotionAssembly private constructor(
 
         /** Opens a transfer only when the Host's announced count, size, and digest are within the protocol limits. */
         fun open(
-            occurrenceId: String,
+            key: String,
             chunkCount: Int,
             totalBytes: Int,
             sha256: String,
@@ -58,7 +59,7 @@ internal class MotionAssembly private constructor(
             if (chunkCount !in 1..MAXIMUM_CHUNKS || totalBytes !in 1..MAXIMUM_BYTES || !digestPattern.matches(sha256)) {
                 return null
             }
-            return MotionAssembly(occurrenceId, sha256, totalBytes, arrayOfNulls(chunkCount))
+            return MotionAssembly(key, sha256, totalBytes, arrayOfNulls(chunkCount))
         }
     }
 }

@@ -84,7 +84,7 @@ final class QueueCoordinator {
 
     func remember(_ songs: [Song]) {
         if knownSongs.count > 1_000 { knownSongs.removeAll(keepingCapacity: true) }
-        for song in songs { knownSongs[song.identity] = song }
+        for song in songs where song.mediaType != .musicVideo { knownSongs[song.identity] = song }
     }
 
     // The map is bounded and cleared when full, while a Remote may still hold a song as prepared. Resolving the

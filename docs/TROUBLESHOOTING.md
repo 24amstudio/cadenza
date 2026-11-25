@@ -84,7 +84,7 @@ Open Logs on Host and choose Export Diagnostic Logs. The mirrored log rotates th
 
 ## Cast devices are listed but play nothing
 
-Settings lists Google Cast devices and keeps your presentation choice, but this build does not transmit audio to them. Use the output picker to choose a Mac audio device.
+The output menu lists the Google Cast devices on your network. If Send audio here fails, the reason appears under the Cast heading. Check that the device is on the same network and awake, and that Music is playing on the Mac. Transmission has not yet been checked against a real Cast device in this build.
 
 ## Lock screen and screen saver on Android
 

@@ -3,6 +3,7 @@ import {
   booleanField,
   counterField,
   isJsonObject,
+  isOffsetMilliseconds,
   objectField,
   parseJson,
   stringArrayField,
@@ -14,10 +15,12 @@ import type {
   AudioOutput,
   AudioQuality,
   AutoPlayItem,
+  VideoOutputTarget,
   CastDevice,
   CastDisplay,
   CastPresentation,
   CastState,
+  CastTransmitState,
   HostUpdateStatus,
   BrowseCollectionKind,
   BrowseItem,
@@ -90,6 +93,16 @@ export type HostMessage =
       dataBase64: string;
     }
   | { type: 'motion.unavailable'; requestId: string; occurrenceId: string }
+  | {
+      type: 'artist.motion.chunk';
+      requestId: string;
+      index: number;
+      count: number;
+      totalBytes: number;
+      sha256: string;
+      dataBase64: string;
+    }
+  | { type: 'artist.motion.unavailable'; requestId: string }
   | { type: 'clock'; requestId: string; sample: ClockSample }
   | { type: 'analytics.credit'; sequence: number }
   | { type: 'search.result'; requestId: string; songs: Song[] }
@@ -99,6 +112,7 @@ export type HostMessage =
       suggestions: SongSuggestions;
     }
   | { type: 'song.ready'; requestId: string }
+  | { type: 'video.started'; requestId: string }
   | { type: 'browse.result'; requestId: string; browse: BrowsePage }
   | {
       type: 'host.update.status';
@@ -129,11 +143,14 @@ const hostDecoders = new Map<
   ['artwork.unavailable', decodeArtworkUnavailableMessage],
   ['motion.chunk', decodeMotionChunkMessage],
   ['motion.unavailable', decodeMotionUnavailableMessage],
+  ['artist.motion.chunk', decodeArtistMotionChunkMessage],
+  ['artist.motion.unavailable', decodeArtistMotionUnavailableMessage],
   ['clock', decodeClockMessage],
   ['analytics.credit', decodeCreditMessage],
   ['search.result', decodeSearchResultMessage],
   ['search.suggestions', decodeSearchSuggestionsMessage],
   ['song.ready', decodeSongReadyMessage],
+  ['video.started', decodeVideoStartedMessage],
   ['browse.result', decodeBrowseResultMessage],
   ['host.update.status', decodeHostUpdateMessage],
   ['recommendation.result', decodeRecommendationResultMessage],
@@ -386,8 +403,37 @@ function decodeMotionUnavailableMessage(
 }
 
 function decodeMotionChunkMessage(object: JsonObject): HostMessage | null {
-  const requestId = stringField(object, 'request_id');
   const occurrenceId = stringField(object, 'occurrence_id');
+  const chunk = decodeChunkFields(object);
+
+  if (occurrenceId === null || chunk === null) return null;
+
+  return { type: 'motion.chunk', occurrenceId, ...chunk };
+}
+
+function decodeArtistMotionChunkMessage(
+  object: JsonObject,
+): HostMessage | null {
+  const chunk = decodeChunkFields(object);
+
+  if (chunk === null) return null;
+
+  return { type: 'artist.motion.chunk', ...chunk };
+}
+
+function decodeArtistMotionUnavailableMessage(
+  object: JsonObject,
+): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+
+  if (requestId === null) return null;
+
+  return { type: 'artist.motion.unavailable', requestId };
+}
+
+// The fields every motion video chunk carries, whether it belongs to the playing song or to an artist.
+function decodeChunkFields(object: JsonObject) {
+  const requestId = stringField(object, 'request_id');
   const index = counterField(object, 'chunk_index');
   const count = counterField(object, 'chunk_count');
   const totalBytes = counterField(object, 'total_bytes');
@@ -396,7 +442,6 @@ function decodeMotionChunkMessage(object: JsonObject): HostMessage | null {
 
   if (
     requestId === null ||
-    occurrenceId === null ||
     index === null ||
     count === null ||
     totalBytes === null ||
@@ -405,16 +450,7 @@ function decodeMotionChunkMessage(object: JsonObject): HostMessage | null {
   )
     return null;
 
-  return {
-    type: 'motion.chunk',
-    requestId,
-    occurrenceId,
-    index,
-    count,
-    totalBytes,
-    sha256,
-    dataBase64,
-  };
+  return { requestId, index, count, totalBytes, sha256, dataBase64 };
 }
 
 function decodeClockMessage(object: JsonObject): HostMessage | null {
@@ -475,6 +511,12 @@ function decodeSongReadyMessage(object: JsonObject): HostMessage | null {
   const requestId = stringField(object, 'request_id');
 
   return requestId === null ? null : { type: 'song.ready', requestId };
+}
+
+function decodeVideoStartedMessage(object: JsonObject): HostMessage | null {
+  const requestId = stringField(object, 'request_id');
+
+  return requestId === null ? null : { type: 'video.started', requestId };
 }
 
 function decodeBrowseResultMessage(object: JsonObject): HostMessage | null {
@@ -614,7 +656,29 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     audioOutputs: decodeAudioOutputs(arrayField(object, 'audio_outputs') ?? []),
     hostBudget: stringField(object, 'host_budget'),
     cast: decodeCast(objectField(object, 'cast')),
+    videoOutput: decodeVideoOutput(stringField(object, 'video_output')),
+    lipSyncOffsetMs: lipSyncOffsetField(object),
   };
+}
+
+// The AVR offset can be negative, so it has its own range check: whole milliseconds from -500 to 500.
+// The saved karaoke nudge for the track, in milliseconds, from -5 to 5 seconds.
+function userOffsetField(object: JsonObject): number | null {
+  const value = object['user_offset_ms'];
+
+  return isOffsetMilliseconds(value, 5000) ? value : null;
+}
+
+function lipSyncOffsetField(object: JsonObject): number | null {
+  const value = object['lip_sync_offset_ms'];
+
+  return isOffsetMilliseconds(value, 500) ? value : null;
+}
+
+function decodeVideoOutput(value: string | null): VideoOutputTarget | null {
+  return value === 'host_display' || value === 'cast_transmitter'
+    ? value
+    : null;
 }
 
 // An output that does not decode is left out, so one unknown output never hides the rest.
@@ -628,7 +692,35 @@ function decodeCast(object: JsonObject | null): CastState | null {
   return {
     presentation,
     devices: decodeCastDevices(arrayField(object, 'devices') ?? []),
+    transmit: decodeCastTransmit(objectField(object, 'transmit')),
   };
+}
+
+function decodeCastTransmit(
+  object: JsonObject | null,
+): CastTransmitState | null {
+  if (object === null) return null;
+
+  const state = stringField(object, 'state');
+
+  if (!isCastTransmitState(state)) return null;
+
+  return {
+    state,
+    device: stringField(object, 'device'),
+    reason: stringField(object, 'reason'),
+  };
+}
+
+function isCastTransmitState(
+  value: string | null,
+): value is CastTransmitState['state'] {
+  return (
+    value === 'idle' ||
+    value === 'starting' ||
+    value === 'transmitting' ||
+    value === 'failed'
+  );
 }
 
 function isCastPresentation(value: string | null): value is CastPresentation {
@@ -764,7 +856,14 @@ function decodeSong(object: JsonObject): Song | null {
     album,
     durationMs: counterField(object, 'duration_ms'),
     artworkUrl: stringField(object, 'artwork_url'),
+    mediaType: decodeMediaType(object),
   };
+}
+
+function decodeMediaType(object: JsonObject): Song['mediaType'] {
+  const value = stringField(object, 'media_type');
+
+  return value === 'song' || value === 'musicVideo' ? value : undefined;
 }
 
 function isSongSource(value: string | null): value is Song['source'] {
@@ -794,6 +893,7 @@ function decodeLyricDocument(object: JsonObject): LyricDocument | null {
     source,
     lines,
     issue: stringField(object, 'issue'),
+    userOffsetMs: userOffsetField(object),
   };
 }
 

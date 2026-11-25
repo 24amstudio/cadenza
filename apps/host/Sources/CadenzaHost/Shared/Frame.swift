@@ -72,6 +72,8 @@ struct Frame: Codable, Sendable {
     var motion: Bool? = nil
     // artwork.get with previewOnly sends the preview and nothing more, for rows that are not playing yet.
     var previewOnly: Bool? = nil
+    // artist.motion.get names the artist whose Artist Details header wants a motion video.
+    var artistName: String? = nil
     var variant: String? = nil
 }
 

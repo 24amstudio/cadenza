@@ -96,6 +96,10 @@ internal fun RemoteModel.operationErrorInternal(frame: JSONObject) {
     }
     if (request != null && request == favoriteResolveId) failFavoriteResolution("Music could not look up this song. Try again.")
     if (request != null && request == autoPlayId) failAutoPlay("Music could not look up this song. Try again.")
+    if (request != null && request == videoPlayId) {
+        videoPlayId = null
+        mutable.update { it.copy(notice = Notice(message)) }
+    }
     if (request != null && request == preparationId) {
         preparationTimeout?.cancel()
         preparingIdentity = null

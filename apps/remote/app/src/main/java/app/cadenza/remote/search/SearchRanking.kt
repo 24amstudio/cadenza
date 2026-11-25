@@ -151,6 +151,7 @@ internal fun sameRecording(
     first: Song,
     second: Song,
 ): Boolean {
+    if (first.isMusicVideo != second.isMusicVideo) return false
     if (normalizeSearchText(first.title) != normalizeSearchText(second.title)) return false
     if (normalizeSearchText(first.artist) != normalizeSearchText(second.artist)) return false
     val firstLength = first.durationMs ?: return true
@@ -171,7 +172,8 @@ internal fun rankSearch(
             .groupBy { it.song.source + ":" + it.song.id }
             .values
             .map { duplicates -> duplicates.maxBy { it.score } }
-            .sortedByDescending { it.score }
+            // Music videos are listed after songs, so a video never takes the top result's place.
+            .sortedWith(compareBy<RankedSong> { it.song.isMusicVideo }.thenByDescending { it.score })
     val shown = mutableListOf<RankedSong>()
     for (candidate in best) {
         if (shown.none { sameRecording(it.song, candidate.song) }) shown.add(candidate)

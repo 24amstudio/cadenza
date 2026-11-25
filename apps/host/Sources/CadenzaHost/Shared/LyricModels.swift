@@ -26,9 +26,11 @@ struct LyricDocument: Codable, Sendable {
     var lines: [LyricLine]
     var issue: String? = nil
     var source: String = "apple_music"
+    // The nudge the person saved for this track, in milliseconds. Remotes start their nudge from it.
+    var userOffsetMs: Int? = nil
 
     enum CodingKeys: String, CodingKey {
-        case occurrenceId, revision, language, translationSource, lines, issue, source
+        case occurrenceId, revision, language, translationSource, lines, issue, source, userOffsetMs
     }
 
     init(

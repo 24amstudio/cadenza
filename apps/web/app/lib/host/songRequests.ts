@@ -6,6 +6,7 @@ import {
   encodeSearch,
   encodeSearchSuggest,
   encodeSongPrepare,
+  encodeVideoPlay,
   type SongDetails,
 } from '../protocol/encode';
 import type {
@@ -43,6 +44,9 @@ interface Pending {
 const queryLimit = 200;
 const searchTimeoutMs = 20_000;
 const prepareTimeoutMs = 20_000;
+
+// The Host waits up to 8 seconds for Music to show the video, so the request needs more than a prepare.
+const videoPlayTimeoutMs = 20_000;
 const suggestTimeoutMs = 6_000;
 const shelfTimeoutMs = 6_000;
 const browseTimeoutMs = 25_000;
@@ -94,6 +98,17 @@ export class SongRequests {
         message.type === 'recommendation.shelf'
           ? succeed(message.items)
           : hostFailure(message),
+      settle,
+    );
+  }
+
+  // Plays a music video in Music's own window. The video never joins Music's queue.
+  playVideo(song: SongIdentity, settle: Settle<null>): string | null {
+    return this.start(
+      videoPlayTimeoutMs,
+      (requestId) => encodeVideoPlay(requestId, song),
+      (message) =>
+        message.type === 'video.started' ? succeed(null) : hostFailure(message),
       settle,
     );
   }
@@ -212,6 +227,7 @@ function answerIdOf(message: HostMessage): string | null {
     case 'search.suggestions':
     case 'recommendation.shelf':
     case 'song.ready':
+    case 'video.started':
     case 'browse.result':
     case 'error':
       return message.requestId;

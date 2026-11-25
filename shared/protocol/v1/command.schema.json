@@ -31,6 +31,11 @@
         { "$ref": "#/$defs/transport" },
         { "$ref": "#/$defs/seek" },
         { "$ref": "#/$defs/volume" },
+        { "$ref": "#/$defs/castTransmit" },
+        { "$ref": "#/$defs/videoOutput" },
+        { "$ref": "#/$defs/castPresentation" },
+        { "$ref": "#/$defs/lipSyncOffset" },
+        { "$ref": "#/$defs/lyricOffset" },
         { "$ref": "#/$defs/shuffle" },
         { "$ref": "#/$defs/repeat" },
         { "$ref": "#/$defs/singEnable" },
@@ -122,6 +127,69 @@
         "position_ms": {
           "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
         }
+      },
+      "additionalProperties": false
+    },
+    "castTransmit": {
+      "type": "object",
+      "required": ["kind", "device", "start"],
+      "properties": {
+        "kind": { "const": "cast.transmit" },
+        "device": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "start": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "castPresentation": {
+      "type": "object",
+      "required": ["kind", "presentation"],
+      "properties": {
+        "kind": { "const": "cast.presentation" },
+        "presentation": { "enum": ["auto", "audio_only", "full_suite"] }
+      },
+      "additionalProperties": false
+    },
+    "lyricOffset": {
+      "type": "object",
+      "required": ["kind", "song", "user_offset_ms"],
+      "properties": {
+        "kind": { "const": "lyrics.offset" },
+        "song": {
+          "type": "object",
+          "required": ["source", "id"],
+          "properties": {
+            "source": { "enum": ["catalog", "library"] },
+            "id": { "type": "string", "maxLength": 128 }
+          },
+          "additionalProperties": false
+        },
+        "user_offset_ms": {
+          "type": "integer",
+          "minimum": -5000,
+          "maximum": 5000
+        }
+      },
+      "additionalProperties": false
+    },
+    "lipSyncOffset": {
+      "type": "object",
+      "required": ["kind", "lip_sync_offset_ms"],
+      "properties": {
+        "kind": { "const": "lip_sync.offset" },
+        "lip_sync_offset_ms": {
+          "type": "integer",
+          "minimum": -500,
+          "maximum": 500
+        }
+      },
+      "additionalProperties": false
+    },
+    "videoOutput": {
+      "type": "object",
+      "required": ["kind", "video_output"],
+      "properties": {
+        "kind": { "const": "video.output" },
+        "video_output": { "enum": ["host_display", "cast_transmitter"] }
       },
       "additionalProperties": false
     },

@@ -27,6 +27,7 @@ cadenza/
     host/          Cadenza Host for macOS
     remote/        Cadenza Remote for Android
     web/           Browser Cadenza Remote, served by Cadenza Host
+    cast-receiver/ Custom Cast receiver page (source; not yet registered with Google Cast)
   shared/
     protocol/      Shared LAN protocol contracts and fixtures
   tests/           Protocol and SQLite behavior checks
@@ -35,7 +36,7 @@ cadenza/
   SPEC.md
 ```
 
-Each application retains its native build tooling. The root specification governs both applications and the shared protocol.
+Each application retains its native build tooling. The root specification governs both applications and the shared protocol. The custom Cast receiver's source is here, but it cannot run on a Cast device until it is registered with Google.
 
 ## Development checks
 
@@ -65,21 +66,26 @@ The strict interpretation that every operation must successfully finish within o
 Built and checked locally. Device, live Music, and screenshot checks are not yet done, and [docs/agents/VALIDATION.md](docs/agents/VALIDATION.md) records what each check covers.
 
 - Radio streams show LIVE, and their lyric lookup is skipped. The Host records its diagnostics in a rotating log and exports them. A fatal crash leaves a record that the next launch shows. Three launches in thirty seconds enter safe recovery, which pauses automatic Music polling until the user resumes it.
-- The Host reports a four-tier thermal budget. The budget pauses new Sing sessions and early cover fetching in the web Remote.
+- The Host reports a four-tier thermal budget. The budget pauses new Sing sessions, early cover fetching, and the web Remote's log uploads.
 - The Host keeps the Mac awake while Music plays or a Remote is connected. A Remote sends a Wake-on-LAN packet to a sleeping Host after a LAN outage.
-- Menu bar only mode hides the Dock icon. Google Cast devices are listed in Settings and in the web output menu, and the presentation choice is saved. Cast audio is not transmitted yet.
+- Menu bar only mode hides the Dock icon. Google Cast devices are listed in Settings and in the web and Android output menus, and the presentation choice is saved. Web and Android can send Music's audio to a Cast device, but this has not been checked against a real Cast device.
 - Remote and web clients can choose the Mac's audio output, favorite a library song in Music, and add it to a Cadenza Host playlist.
 - Android can receive an Apple Music song link from the share sheet. The web Remote has a share target, OLED ambient mode, and media controls for the operating system.
 - Recommendations rank with each Remote's taste history. With several Remotes connected, Room Blend drops an artist one of them dislikes and places shared artists first. Results carry reason tags. Taste is recorded for play now, play next, add to queue, promotion, completion, and early skip.
 - An Android Remote can share a taste digest at connect when its Settings switch is on.
 - Music's storefront and region dialogs are reported as `music_modal_blocked`.
 - The web Remote's timed lyrics have a timing nudge for the current song. It is not saved to Host yet.
-- The web search screen shows "For You" and "Room Blend" suggestions when the search is empty. They are read-only until you queue one.
+- The web search screen shows "For You" and "Room Blend" suggestions when the search is empty. They are read-only until you queue one. On an artist page, the web and Android Remotes can show a muted motion video, when Apple has one.
 - Android can use the volume buttons to change Music's volume on Host when its Settings switch is on, and dismisses the session notification after five minutes of pause or lost connection.
+- A Remote can play a music video in Music's window. Its karaoke line appears over Music's window on the Mac, or on a Cast device, and the two never show at once.
+- The AVR lip-sync offset, the Cast mode, and each track's karaoke nudge are set on the Host and kept across launches. The Cast 5.1 path uses a bundled LGPL AC-3 helper, which is verified to encode but not yet checked against a six-channel device.
+- Android has a home-screen now-playing widget, a motion lock screen for tracks with motion artwork, and a charging screen saver. None has been checked on a device.
 
 Built but not verified against a live Music session: the MediaRemote and HID media-key fallbacks, which apply only after Music refuses Cadenza's Apple events.
 
-Not built yet: the Cast transmit pipeline and receiver app, the karaoke overlay and video discovery, the web taste digest, and Cast transmit controls. DRM license forwarding is declined and not implemented.
+Built, not yet tested against a Cast device: sending Music's stereo audio to a Cast device through Google's default media receiver, the web output menu's send and stop controls, and the web taste digest sent at connect when opted in.
+
+Not built yet: a registered custom Cast receiver (its source is in `apps/cast-receiver`), Full Cadenza Suite artwork, and Bitstream output, which Music cannot provide because it decodes its audio. Karaoke for a music video uses its studio track's timed lyrics when the two have the same length within 3 seconds. Otherwise the video shows no karaoke, because Music does not expose lyrics for videos. The video segment alignment needs the video's audio, and DRM license forwarding is declined and not implemented.
 
 ## License
 

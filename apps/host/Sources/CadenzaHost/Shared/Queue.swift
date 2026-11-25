@@ -53,6 +53,10 @@ struct HostSnapshot: Codable, Equatable, Sendable {
     var audioOutputs: [AudioOutput] = []
     // Google Cast devices on the LAN and the presentation mode chosen in Settings. Audio is not sent to them yet.
     var cast: CastSnapshot? = nil
+    // Where a music video's karaoke line is shown: "host_display" or "cast_transmitter".
+    var videoOutput: String? = nil
+    // The AVR lip-sync offset in milliseconds. Karaoke lines are chosen this much later to match the delayed audio.
+    var lipSyncOffsetMs: Int? = nil
 }
 
 // Music's AutoPlay songs, which play after the queue. Only the first few travel, so a state frame stays small.

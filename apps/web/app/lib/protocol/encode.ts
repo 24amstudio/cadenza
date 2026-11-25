@@ -1,3 +1,4 @@
+import type { TasteDigest } from '../tasteDigest';
 import type {
   BrowseRequest,
   CommandAction,
@@ -14,6 +15,7 @@ export interface AuthPayload {
   lastCreditSequence: number;
   name: string;
   remoteVersion: string;
+  tasteDigest?: TasteDigest | null;
 }
 
 export interface CommandEnvelope {
@@ -48,6 +50,16 @@ export function encodePair(
 }
 
 export function encodeHello(auth: AuthPayload): string {
+  const digest = auth.tasteDigest
+    ? {
+        taste_digest: {
+          top_artists: auth.tasteDigest.topArtists,
+          top_genres: auth.tasteDigest.topGenres,
+          favorited_track_ids: auth.tasteDigest.favoritedTrackIds,
+        },
+      }
+    : null;
+
   return JSON.stringify({
     version: 1,
     type: 'hello',
@@ -58,6 +70,7 @@ export function encodeHello(auth: AuthPayload): string {
       name: auth.name,
       remote_version: auth.remoteVersion,
       heartbeat: true,
+      ...digest,
     },
   });
 }
@@ -155,6 +168,18 @@ export function encodeMotionGet(
   });
 }
 
+export function encodeArtistMotionGet(
+  requestId: string,
+  artistName: string,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'artist.motion.get',
+    request_id: requestId,
+    artist_name: artistName,
+  });
+}
+
 export function encodeArtworkCancel(requestId: string): string {
   return JSON.stringify({
     version: 1,
@@ -248,6 +273,16 @@ export interface SongDetails {
   durationMs: number | null;
 }
 
+// Asks the Host to play a music video in Music's own window. The Host answers with video.started or an error.
+export function encodeVideoPlay(requestId: string, song: SongIdentity): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'video.play',
+    request_id: requestId,
+    song: encodeIdentity(song),
+  });
+}
+
 export function encodeSongPrepare(
   requestId: string,
   song: SongIdentity,
@@ -317,6 +352,20 @@ function encodeAction(action: CommandAction) {
       return { kind: action.kind, mode: action.mode };
     case 'audio.selectOutput':
       return { kind: action.kind, output: action.output };
+    case 'cast.transmit':
+      return { kind: action.kind, device: action.device, start: action.start };
+    case 'video.output':
+      return { kind: action.kind, video_output: action.target };
+    case 'cast.presentation':
+      return { kind: action.kind, presentation: action.presentation };
+    case 'lip_sync.offset':
+      return { kind: action.kind, lip_sync_offset_ms: action.offsetMs };
+    case 'lyrics.offset':
+      return {
+        kind: action.kind,
+        song: encodeIdentity(action.song),
+        user_offset_ms: action.offsetMs,
+      };
     case 'library.favorite':
       return {
         kind: action.kind,

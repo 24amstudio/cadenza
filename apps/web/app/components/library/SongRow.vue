@@ -19,6 +19,13 @@ const actions = useSongActionsStore();
 
 const armed = ref(false);
 
+// A music video is listed for discovery. Cadenza Host cannot queue it yet, so it stays out of the library.
+const video = computed(() => props.song.mediaType === 'musicVideo');
+
+const displayNote = computed(
+  () => props.note ?? (video.value ? 'Music video' : undefined),
+);
+
 const requestActions: RowAction[] = ['next', 'add'];
 
 const requestLabels: Record<RowAction, string> = {
@@ -38,6 +45,17 @@ function phaseOf(action: RowAction) {
 }
 
 function disabled(action: RowAction): boolean {
+  // A music video only plays now. It never joins the queue, so queue-only rules do not apply to it.
+  if (video.value) {
+    if (action !== 'now') return true;
+
+    return (
+      !host.connected ||
+      identityOf(props.song) === null ||
+      phaseOf(action) !== null
+    );
+  }
+
   if (!host.connected || identityOf(props.song) === null) return true;
 
   // Cadenza Host refuses every queue change until it has read Music's queue, so the button waits for that read.
@@ -51,6 +69,9 @@ function disabled(action: RowAction): boolean {
 
 // Why a request is unavailable, so a greyed-out button says what to wait for instead of looking broken.
 function unavailableReason(action: RowAction): string | null {
+  if (video.value && action !== 'now')
+    return 'A music video plays now. It cannot be queued.';
+
   if (!host.connected) return 'Connect to Cadenza Host to request songs.';
 
   if (identityOf(props.song) === null)
@@ -117,7 +138,7 @@ function label(action: RowAction): string {
     </div>
     <div class="side">
       <span v-if="duration !== ''">{{ duration }}</span>
-      <small v-if="note !== undefined">{{ note }}</small>
+      <small v-if="displayNote !== undefined">{{ displayNote }}</small>
     </div>
     <div class="actions">
       <button
@@ -137,7 +158,7 @@ function label(action: RowAction): string {
       >
         {{ label(action) }}
       </button>
-      <FavoriteToggle :song="song" />
+      <FavoriteToggle v-if="!video" :song="song" />
     </div>
   </li>
 </template>

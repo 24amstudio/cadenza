@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import LyricLines from '~/components/lyrics/LyricLines.vue';
 import LyricNudge from '~/components/lyrics/LyricNudge.vue';
+import { identityOf } from '~/lib/library/identity';
 import { lyricsLevel } from '~/lib/lyrics';
 import { lyricClockMs, syncFirstLineDelay } from '~/lib/lyricNudge';
 import { useHostStore } from '~/stores/host';
@@ -20,15 +21,25 @@ const preferences = usePreferencesStore();
 const root = ref<HTMLElement | null>(null);
 const level = computed(() => lyricsLevel(host.lyricsDocument));
 
-// The timing nudge belongs to one occurrence, so the next song starts with no delay.
+// The timing nudge belongs to one track. A track starts from the nudge the person saved on the Host, or from none.
 const delayMs = ref(0);
 
 watch(
   () => host.lyricsDocument?.occurrenceId,
   () => {
-    delayMs.value = 0;
+    delayMs.value = host.lyricsDocument?.userOffsetMs ?? 0;
   },
 );
+
+// Each change is saved on the Host, so the nudge is kept for this track on later visits.
+watch(delayMs, (value) => {
+  const song = host.current?.song;
+  const identity = song === undefined ? null : identityOf(song);
+
+  if (identity === null || value === (host.lyricsDocument?.userOffsetMs ?? 0))
+    return;
+  host.setLyricOffset(identity, Math.max(-5000, Math.min(5000, value)));
+});
 
 const lyricPositionMs = computed(() =>
   lyricClockMs(host.positionMs, delayMs.value),

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadenza</title>
+    <link rel="stylesheet" href="receiver.css" />
+  </head>
+  <body>
+    <main id="stage" data-mode="audio_only">
+      <p id="title" class="title"></p>
+      <section class="lyrics" aria-live="polite">
+        <p id="line" class="line"></p>
+        <p id="next" class="next"></p>
+      </section>
+    </main>
+    <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+    <script type="module" src="receiver.js"></script>
+  </body>
+</html>

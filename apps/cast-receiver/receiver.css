@@ -1,0 +1,60 @@
+:root {
+  color-scheme: dark;
+  --canvas: #0b0b0d;
+  --text: #f5f5f7;
+  --quiet: #a1a1a8;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: -apple-system, system-ui, 'Helvetica Neue', Arial, sans-serif;
+}
+
+main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 4vh;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 6vh 6vw;
+}
+
+.title {
+  margin: 0;
+  font-size: 3.2vh;
+  font-weight: 600;
+  color: var(--quiet);
+}
+
+.lyrics {
+  display: grid;
+  align-content: center;
+  gap: 2.5vh;
+  text-align: center;
+}
+
+.line {
+  margin: 0;
+  font-size: 7vh;
+  font-weight: 750;
+  line-height: 1.15;
+  min-height: 1.2em;
+  overflow-wrap: anywhere;
+}
+
+.next {
+  margin: 0;
+  font-size: 3.6vh;
+  color: var(--quiet);
+  min-height: 1.2em;
+  overflow-wrap: anywhere;
+}
+
+/* Audio Only shows the title alone, so the lyric lines are hidden there. */
+main[data-mode='audio_only'] .lyrics {
+  display: none;
+}

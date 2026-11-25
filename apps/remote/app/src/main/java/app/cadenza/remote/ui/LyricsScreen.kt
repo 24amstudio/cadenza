@@ -76,7 +76,8 @@ fun LyricsScreen(
     val stale = !state.connected || model.isStale()
     // A small lead compensates for the Host sample and Compose frame boundary so the
     // highlighted line changes when the performer hears the cue instead of after it.
-    val currentPosition = (position(model, LocalEnergyProfile.current.lyricTickMs) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0)
+    val rawPosition = position(model, LocalEnergyProfile.current.lyricTickMs)
+    val currentPosition = (rawPosition + LYRIC_VISUAL_LEAD_MS - state.lyricDelayMs).coerceAtLeast(0)
     // The song on screen trails the playing one until its artwork is ready, so a song change swaps both together.
     val shown = rememberShownSong(current)
     val shownOccurrence = shown?.current?.occurrenceId
@@ -136,6 +137,7 @@ fun LyricsScreen(
                             }
                         }
                         Spacer(Modifier.weight(1f))
+                        LyricNudgePill(model, state, document, rawPosition)
                         PlaybackTimeline(model, state, currentPosition)
                         LyricsTransport(model, state, current)
                         SingControls(model, state, current)
@@ -150,6 +152,7 @@ fun LyricsScreen(
                 }
                 LyricsPane(model, state, document, shownOccurrence, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
                 if (current != null) {
+                    LyricNudgePill(model, state, document, rawPosition)
                     PlaybackTimeline(model, state, currentPosition)
                     LyricsTransport(model, state, current, fillWidth = true)
                     SingControls(model, state, current)
@@ -285,7 +288,10 @@ internal fun LyricsContent(
         val energy = LocalEnergyProfile.current
         FollowActiveLine(list, anchor, document?.revision, following, reduced || energy.reduceTransitions)
         // The sweep reads a frame-sampled position while the song plays and this screen is started.
-        val clock = remember(model) { LyricsClock { now -> (model.position(now) + LYRIC_VISUAL_LEAD_MS).coerceAtLeast(0) } }
+        val clock =
+            remember(model, state.lyricDelayMs) {
+                LyricsClock { now -> (model.position(now) + LYRIC_VISUAL_LEAD_MS - state.lyricDelayMs).coerceAtLeast(0) }
+            }
         val sweep by rememberSweeps(
             lines = document?.lines.orEmpty(),
             clock = clock,

@@ -3,11 +3,24 @@ import Network
 
 /// Serves the Cast audio as chunked HTTP on the LAN. Every encoded frame goes to each connected receiver, so a receiver
 /// that joins late picks up the live stream at the next frame. A new URL nonce starts a fresh response on the device.
+/// The codec of one Cast stream. AAC is the stereo path; AC-3 carries six-channel output.
+enum CastAudioCodec: Sendable {
+    case aac, ac3
+
+    var path: String { self == .aac ? "/cast/audio.aac" : "/cast/audio.ac3" }
+    var contentType: String { self == .aac ? "audio/aac" : "audio/ac3" }
+}
+
 final class CastAudioStreamServer: @unchecked Sendable {
-    static let path = "/cast/audio.aac"
-    private static let head =
-        "HTTP/1.1 200 OK\r\nContent-Type: audio/aac\r\nTransfer-Encoding: chunked\r\n"
-        + "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    private let codec: CastAudioCodec
+    private var head: String {
+        "HTTP/1.1 200 OK\r\nContent-Type: \(codec.contentType)\r\nTransfer-Encoding: chunked\r\n"
+            + "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    }
+
+    init(codec: CastAudioCodec) {
+        self.codec = codec
+    }
 
     private let queue = DispatchQueue(label: "app.cadenza.host.cast.stream")
     private var listener: NWListener?
@@ -65,7 +78,7 @@ final class CastAudioStreamServer: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4_096) { [weak self] data, _, _, _ in
             guard let self else { return }
             let request = String(decoding: data ?? Data(), as: UTF8.self)
-            let wanted = request.hasPrefix("GET \(Self.path)?") || request.hasPrefix("GET \(Self.path) ")
+            let wanted = request.hasPrefix("GET \(codec.path)?") || request.hasPrefix("GET \(codec.path) ")
             guard wanted else {
                 connection.send(
                     content: Data("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n".utf8),
@@ -79,7 +92,7 @@ final class CastAudioStreamServer: @unchecked Sendable {
                 if case .cancelled = state { self?.drop(key) }
                 if case .failed = state { self?.drop(key) }
             }
-            connection.send(content: Data(Self.head.utf8), completion: .contentProcessed { _ in })
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
         }
     }
 

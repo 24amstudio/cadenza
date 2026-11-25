@@ -10,6 +10,8 @@ enum CastProtocolMessages {
     static let receiverId = "receiver-0"
     /// Google's Default Media Receiver plays an audio stream without a registered receiver app.
     static let defaultMediaReceiverAppId = "CC1AD845"
+    // The Cadenza receiver's karaoke messages. Only the custom receiver app listens on this namespace.
+    static let karaokeNamespace = "urn:x-cast:app.cadenza.karaoke"
 
     static func connect(to destination: String) -> CastMessage {
         message(connectionNamespace, to: destination, ["type": "CONNECT"])
@@ -28,7 +30,8 @@ enum CastProtocolMessages {
     }
 
     static func loadAudio(
-        url: String, transportId: String, sessionId: String, title: String, requestId: Int
+        url: String, transportId: String, sessionId: String, title: String, requestId: Int,
+        contentType: String = "audio/aac"
     ) -> CastMessage {
         message(
             mediaNamespace, to: transportId,
@@ -39,7 +42,7 @@ enum CastProtocolMessages {
                 "autoplay": true,
                 "media": [
                     "contentId": url,
-                    "contentType": "audio/aac",
+                    "contentType": contentType,
                     "streamType": "LIVE",
                     "metadata": ["metadataType": 0, "title": title],
                 ],
@@ -52,6 +55,10 @@ enum CastProtocolMessages {
 
     static func isPing(_ message: CastMessage) -> Bool {
         messageType(message) == "PING"
+    }
+
+    static func isReceiverStatus(_ message: CastMessage) -> Bool {
+        messageType(message) == "RECEIVER_STATUS"
     }
 
     /// The transport and session IDs of the running app, once the device reports it.
@@ -73,6 +80,10 @@ enum CastProtocolMessages {
         return nil
     }
 
+    static func karaoke(_ body: [String: Any], transportId: String) -> CastMessage {
+        message(karaokeNamespace, to: transportId, body)
+    }
+
     private static func message(_ namespace: String, to destination: String, _ body: [String: Any]) -> CastMessage {
         CastMessage(
             sourceId: senderId, destinationId: destination, namespace: namespace, payload: json(body))
@@ -83,7 +94,8 @@ enum CastProtocolMessages {
     }
 
     private static func json(_ body: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return "{}" }
+        let options: JSONSerialization.WritingOptions = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? JSONSerialization.data(withJSONObject: body, options: options) else { return "{}" }
 
         return String(decoding: data, as: UTF8.self)
     }

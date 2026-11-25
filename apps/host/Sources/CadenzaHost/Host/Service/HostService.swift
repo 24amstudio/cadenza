@@ -40,7 +40,7 @@ final class HostService {
     var jobs: [String: Task<Void, Never>] = [:]
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
-    private var lyricDocument: LyricDocument?
+    var lyricDocument: LyricDocument?
     var lastCreditSent: [String: Int64] = [:]
     var acknowledgedCredits: [String: Int64] = [:]
     private var lastMaintenance: Int64 = 0
@@ -114,6 +114,7 @@ final class HostService {
             }
             published.sing = self.sing.publishedSession
             self.publishedState.apply(to: &published)
+            self.publishedState.updateVideoLyrics(snapshot: published, lyrics: self.lyricDocument)
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs
             if delay > 0, var current = published.current {
@@ -425,7 +426,7 @@ final class HostService {
                     receivedCommands.contains(actor + (frame.commandId ?? ""))
                     || queue.commandQueued(frame.commandId ?? "", actor: actor)
                 network.send(try queue.journal.status(frame, actor: actor, queued: queued), to: peer)
-            case "search", "search.suggest", "song.prepare": operation(frame, peer: peer)
+            case "search", "search.suggest", "song.prepare", "video.play": operation(frame, peer: peer)
             case "browse.get": startBrowse(frame, peer: peer)
             case "recommendation.passport": try receiveRecommendationPassport(frame, actor: actor, peer: peer)
             case "recommendation.query": startRecommendationQuery(frame, actor: actor, peer: peer)
@@ -435,7 +436,7 @@ final class HostService {
             case "operation.cancel":
                 if let id = frame.requestId { jobs.removeValue(forKey: peer.id + id)?.cancel() }
             case "lyrics.get": loadLyrics(peer: peer, requestId: frame.requestId)
-            case "motion.get": loadMotion(peer: peer, requestId: frame.requestId, occurrenceId: frame.occurrenceId)
+            case "motion.get", "artist.motion.get": loadMotion(frame, peer: peer)
             default: throw CadenzaError.failure("invalid_command", "Unsupported message.")
             }
         } catch { fail(error, request: frame, peer: peer) }
@@ -739,7 +740,7 @@ final class HostService {
 
     private func executeCommand(_ frame: Frame, actor: String) async throws -> Frame {
         guard frame.action?.kind.hasPrefix("sing.") == true else {
-            return try await queue.execute(frame, actor: actor)
+            return try await executeOtherCommand(frame, actor: actor)
         }
         guard let action = frame.action, let occurrence = action.occurrenceId else {
             throw CadenzaError.failure("invalid_command", "Sing requires the current playback occurrence.")
@@ -782,60 +783,6 @@ final class HostService {
         }
     }
 
-    private func operation(_ frame: Frame, peer: NetworkService.Peer) {
-        guard let requestId = frame.requestId, jobs.count < 16 else {
-            fail(CadenzaError.failure("busy", "Too many searches are running."), request: frame, peer: peer)
-            return
-        }
-        let key = peer.id + requestId
-        jobs[key]?.cancel()
-        network.send(Frame(type: "operation.started", requestId: requestId), to: peer)
-        jobs[key] = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.jobs.removeValue(forKey: key) }
-            let startedAt = monotonicMs()
-            do {
-                if frame.type == "search.suggest" {
-                    // Suggestions are counted rather than logged one by one: they arrive as the user types.
-                    let suggestions = try await self.catalog.suggest(frame.query ?? "")
-                    try Task.checkCancellation()
-                    self.queue.remember(suggestions.songs)
-                    var reply = Frame(type: "search.suggestions", requestId: requestId, songs: suggestions.songs)
-                    reply.terms = suggestions.terms
-                    self.network.send(reply, to: peer)
-                    self.logger.count("search.suggest")
-                } else if frame.type == "search" {
-                    let songs: [Song]
-                    if frame.scope == "library" {
-                        songs = try await self.music.librarySearch(frame.query ?? "")
-                    } else {
-                        songs = try await self.catalog.search(frame.query ?? "")
-                    }
-                    try Task.checkCancellation()
-                    self.logger.log(
-                        .info, category: "catalog", action: "search.completed", "Search returned \(songs.count) songs",
-                        remoteVersion: peer.remoteVersion,
-                        metadata: [
-                            "scope": frame.scope ?? "catalog", "query": String((frame.query ?? "").prefix(80)),
-                            "count": String(songs.count), "ms": String(monotonicMs() - startedAt),
-                            "remote_id": peer.remoteId ?? "",
-                        ])
-                    self.queue.remember(songs)
-                    self.network.send(Frame(type: "search.result", requestId: requestId, songs: songs), to: peer)
-                } else {
-                    guard let song = frame.song, Wire.validate(song) else {
-                        throw CadenzaError.failure("invalid_command", "Invalid song identity.")
-                    }
-                    try await self.queue.prepare(song, metadata: frame.songMetadata)
-                    try Task.checkCancellation()
-                    self.network.send(Frame(type: "song.ready", requestId: requestId, song: song), to: peer)
-                }
-            } catch {
-                if !Task.isCancelled { self.fail(error, request: frame, peer: peer) }
-            }
-        }
-    }
-
     private func loadLyrics(peer: NetworkService.Peer, requestId: String?) {
         do {
             guard let current = try queue.snapshot().current else {
@@ -856,6 +803,8 @@ final class HostService {
             lyricJob = Task { @MainActor [weak self] in
                 guard let self else { return }
                 defer { if self.lyricOccurrence == current.occurrenceId { self.lyricJob = nil } }
+                // A music video has no identity Music's lyrics know, so its studio track supplies the timed lines.
+                let lyricSong = await self.lyricSong(for: current.song)
                 do {
                     var document: LyricDocument?
                     var lastError: Error?
@@ -865,7 +814,7 @@ final class HostService {
                             // Accessibility permission. Check them first so a Host
                             // restart can restore lyrics immediately.
                             document = try await self.lyrics.document(
-                                song: current.song, occurrence: current.occurrenceId)
+                                song: lyricSong, occurrence: current.occurrenceId)
                             break
                         } catch let error as CadenzaError where error.code == "lyrics_unavailable" {
                             lastError = error
@@ -884,7 +833,8 @@ final class HostService {
                     }
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
                     else { return }
-                    self.lyricDocument = document
+                    let stored = self.withUserOffset(document, for: current.song)
+                    self.lyricDocument = stored
                     self.logger.log(
                         .info, category: "lyrics", action: "lyrics.loaded",
                         "Lyrics ready with \(document.lines.count) lines",
@@ -892,13 +842,14 @@ final class HostService {
                             "occurrence_id": current.occurrenceId, "source": document.source,
                             "translation": document.translationSource,
                         ])
-                    self.network.broadcast(Frame(type: "lyrics", lyrics: document))
+                    self.network.broadcast(Frame(type: "lyrics", lyrics: stored))
                     let translated = await self.lyrics.english(document, song: current.song)
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == translated.occurrenceId
                     else { return }
-                    self.lyricDocument = translated
+                    let shown = self.withUserOffset(translated, for: current.song)
+                    self.lyricDocument = shown
                     if translated.revision != document.revision {
-                        self.network.broadcast(Frame(type: "lyrics", lyrics: translated))
+                        self.network.broadcast(Frame(type: "lyrics", lyrics: shown))
                     }
                 } catch {
                     if !Task.isCancelled {

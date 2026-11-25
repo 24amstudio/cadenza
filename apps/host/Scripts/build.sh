@@ -92,6 +92,13 @@ if [[ -n "$sing_archive" ]]; then
   /usr/bin/plutil -insert CadenzaSingModelURL -string "$sing_url" "$application/Contents/Info.plist"
 fi
 
+# The AC-3 helper for six-channel Cast output. It is optional: without it, Cast reports that 5.1 needs the helper.
+if [[ -x "$host_root/.helpers/cadenza-ac3" ]]; then
+  mkdir -p "$application/Contents/Helpers"
+  cp "$host_root/.helpers/cadenza-ac3" "$application/Contents/Helpers/cadenza-ac3"
+  cp "$host_root/.helpers/COPYING.LGPLv2.1" "$application/Contents/Resources/COPYING.FFmpeg-LGPLv2.1"
+  /usr/bin/codesign --force --sign "$signing_identity" --timestamp=none "$application/Contents/Helpers/cadenza-ac3"
+fi
 /usr/bin/codesign --force --sign "$signing_identity" --timestamp=none "$application/Contents/MacOS/CadenzaUpdater"
 /usr/bin/codesign --force --sign "$signing_identity" --timestamp=none --entitlements "$host_root/Resources/entitlements.plist" "$application"
 /usr/bin/codesign --verify --deep --strict "$application"

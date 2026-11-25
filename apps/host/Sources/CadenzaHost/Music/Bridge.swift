@@ -68,6 +68,20 @@ final class MusicBridge {
         return status
     }
 
+    /// Opens a music video's Music link, then waits until Music reports that video as the current item. The video never
+    /// joins Music's queue, so the Host queue keeps its place.
+    func playVideo(_ song: Song) async throws {
+        try await Self.openInBackground(Self.musicLink(for: song), failure: "Music could not open this video.")
+        let deadline = monotonicMs() + 8_000
+        repeat {
+            try Task.checkCancellation()
+            let current = try await status(deadline: deadline).song
+            if current?.mediaType == .musicVideo, current?.title == song.title { return }
+            try await Task.sleep(for: .milliseconds(300))
+        } while monotonicMs() < deadline
+        throw CadenzaError.failure("music_unavailable", "Music did not start this video.")
+    }
+
     func librarySearch(_ query: String) async throws -> [Song] {
         // Broad queries scan the whole library and take over 2 seconds to describe their results.
         do {
@@ -80,7 +94,11 @@ final class MusicBridge {
             throw CadenzaError.failure("invalid_command", "Invalid library track.")
         }
         do {
-            return try await Wire.decode(Song.self, from: script(["resolve", identity.id]))
+            let song = try await Wire.decode(Song.self, from: script(["resolve", identity.id]))
+            guard song.mediaType != .musicVideo else {
+                throw CadenzaError.failure("unsupported_media", "Music video playback is not available yet.")
+            }
+            return song
         } catch { throw Self.libraryFailure(error) }
     }
 
@@ -180,6 +198,35 @@ final class MusicBridge {
         throw CadenzaError.failure("invalid_command", "Unknown playback action.")
     }
 
+    /// The music:// link for a catalog song or music video. Only an https music.apple.com link that names the item is used.
+    static func musicLink(for song: Song) throws -> URL {
+        guard let value = song.url, var components = URLComponents(string: value),
+            components.scheme == "https", components.host == "music.apple.com",
+            components.user == nil, components.password == nil,
+            components.queryItems?.contains(where: { $0.name == "i" && $0.value == song.id }) == true
+                || components.path.hasSuffix("/\(song.id)")
+        else {
+            throw CadenzaError.failure("invalid_command", "This catalog result has no verified Music link.")
+        }
+        components.scheme = "music"
+        guard let url = components.url else {
+            throw CadenzaError.failure("music_unavailable", "Music could not open this item.")
+        }
+        return url
+    }
+
+    /// Music is opened in the background so the user's current app keeps focus. If Music then exposes no window to
+    /// Accessibility, selectSong brings it forward once and hands focus back afterwards.
+    static func openInBackground(_ url: URL, failure: String) async throws {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        do {
+            _ = try await NSWorkspace.shared.open(url, configuration: configuration)
+        } catch {
+            throw CadenzaError.failure("music_unavailable", failure)
+        }
+    }
+
     func prepare(_ song: Song, isCurrent: () -> Bool) async throws {
         try accessibility.requireAccess()
         let songDetails = ["song": song.source + ":" + song.id, "artist": song.artist]
@@ -189,27 +236,7 @@ final class MusicBridge {
         if song.source == "library" {
             do { _ = try await script(["reveal", song.id]) } catch { throw Self.libraryFailure(error) }
         } else {
-            guard let value = song.url, var components = URLComponents(string: value),
-                components.scheme == "https", components.host == "music.apple.com",
-                components.user == nil, components.password == nil,
-                components.queryItems?.contains(where: { $0.name == "i" && $0.value == song.id }) == true
-                    || components.path.hasSuffix("/\(song.id)")
-            else {
-                throw CadenzaError.failure("invalid_command", "This catalog result has no verified Music link.")
-            }
-            components.scheme = "music"
-            guard let url = components.url else {
-                throw CadenzaError.failure("music_unavailable", "Music could not open this song.")
-            }
-            // Music is opened in the background so the user's current app keeps focus. If Music then exposes no
-            // window to Accessibility, selectSong brings it forward once and hands focus back afterwards.
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = false
-            do {
-                _ = try await NSWorkspace.shared.open(url, configuration: configuration)
-            } catch {
-                throw CadenzaError.failure("music_unavailable", "Music could not open this song.")
-            }
+            try await Self.openInBackground(Self.musicLink(for: song), failure: "Music could not open this song.")
         }
         // The music:// link already opens the album with this track selected, so only the selection is checked here. Each
         // pass has its own budget, so one slow Accessibility read cannot consume the whole wait.

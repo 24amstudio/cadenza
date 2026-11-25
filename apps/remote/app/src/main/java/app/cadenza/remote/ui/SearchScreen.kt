@@ -84,7 +84,8 @@ fun SearchScreen(
 
     fun open(song: Song) {
         selected = song
-        model.prepare(song)
+        // A music video is started from its sheet, not prepared in Music's queue.
+        if (!song.isMusicVideo) model.prepare(song)
     }
 
     fun submit(text: String) {
@@ -280,7 +281,9 @@ private fun SongRow(
                 )
                 Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    listOf(song.album, duration(song.durationMs)).filter { it.isNotBlank() }.joinToString(" · "),
+                    listOf(if (song.isMusicVideo) "Music video" else song.album, duration(song.durationMs))
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

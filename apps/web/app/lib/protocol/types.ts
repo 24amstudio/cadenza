@@ -9,7 +9,11 @@ export interface Song {
   album: string;
   durationMs: number | null;
   artworkUrl: string | null;
+  // Absent on songs from Hosts that predate music-video search; those are songs.
+  mediaType?: 'song' | 'musicVideo' | undefined;
 }
+
+export type VideoOutputTarget = 'host_display' | 'cast_transmitter';
 
 export interface CurrentPlayback {
   occurrenceId: string;
@@ -76,9 +80,17 @@ export interface CastDevice {
   display: CastDisplay;
 }
 
+// What the Host is sending to a Cast device, if anything. `reason` is set when a transmission failed.
+export interface CastTransmitState {
+  state: 'idle' | 'starting' | 'transmitting' | 'failed';
+  device: string | null;
+  reason: string | null;
+}
+
 export interface CastState {
   presentation: CastPresentation;
   devices: CastDevice[];
+  transmit: CastTransmitState | null;
 }
 
 export interface Snapshot {
@@ -100,6 +112,10 @@ export interface Snapshot {
   audioOutputs: AudioOutput[];
   hostBudget: string | null;
   cast: CastState | null;
+  // Where a music video's karaoke line is shown. Absent from Hosts that predate the setting.
+  videoOutput?: VideoOutputTarget | null;
+  // The AVR lip-sync offset, in milliseconds. Absent from Hosts that predate it.
+  lipSyncOffsetMs?: number | null;
 }
 
 export interface LyricWord {
@@ -126,6 +142,8 @@ export interface LyricDocument {
   source: string;
   lines: LyricLine[];
   issue: string | null;
+  // The karaoke nudge the person saved for this track, in milliseconds. Absent from Hosts that predate it.
+  userOffsetMs?: number | null;
 }
 
 export interface Welcome {
@@ -188,6 +206,11 @@ export type CommandAction =
   | { kind: 'playback.shuffle'; enabled: boolean }
   | { kind: 'playback.repeat'; mode: RepeatMode }
   | { kind: 'audio.selectOutput'; output: string }
+  | { kind: 'cast.transmit'; device: string; start: boolean }
+  | { kind: 'video.output'; target: VideoOutputTarget }
+  | { kind: 'cast.presentation'; presentation: CastPresentation }
+  | { kind: 'lip_sync.offset'; offsetMs: number }
+  | { kind: 'lyrics.offset'; song: SongIdentity; offsetMs: number }
   | { kind: 'library.favorite'; song: LibrarySongIdentity; favorite: boolean }
   | {
       kind: 'library.addToPlaylist';

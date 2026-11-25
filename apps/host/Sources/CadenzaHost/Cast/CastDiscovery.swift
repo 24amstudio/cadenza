@@ -10,6 +10,8 @@ final class CastDiscovery {
     struct Device: Equatable, Sendable {
         let name: String
         let display: CastDisplay
+        /// The Bonjour endpoint, which the control connection uses to reach the device's TLS port.
+        let endpoint: NWEndpoint
     }
 
     private(set) var devices: [Device] = []
@@ -24,7 +26,8 @@ final class CastDiscovery {
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
                 var capabilities: String?
                 if case .bonjour(let record) = result.metadata { capabilities = record.dictionary["ca"] }
-                return Device(name: name, display: CastDisplay.fromCapabilities(capabilities))
+                return Device(
+                    name: name, display: CastDisplay.fromCapabilities(capabilities), endpoint: result.endpoint)
             }
             .sorted { $0.name < $1.name }
             Task { @MainActor in

@@ -3,6 +3,9 @@ import Testing
 
 @testable import CadenzaHost
 
+// The tests share the main actor, and each command must dispatch inside a 2.1 s window. Running them one at a time keeps
+// that window from depending on sibling tests under load.
+@Suite(.serialized)
 @MainActor
 struct TransportCommandTests {
     /// A Music that records every script call. `reply` answers a call, and `delayMs` is how long a call takes.

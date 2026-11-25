@@ -23,7 +23,8 @@
           "type": "string",
           "maxLength": 4096,
           "pattern": "^https://music\\.apple\\.com/"
-        }
+        },
+        "media_type": { "enum": ["song", "musicVideo"] }
       },
       "additionalProperties": false
     },
@@ -189,7 +190,13 @@
           "maxItems": 32,
           "items": { "$ref": "#/$defs/audioOutput" }
         },
-        "cast": { "$ref": "#/$defs/cast" }
+        "cast": { "$ref": "#/$defs/cast" },
+        "video_output": { "enum": ["host_display", "cast_transmitter"] },
+        "lip_sync_offset_ms": {
+          "type": "integer",
+          "minimum": -500,
+          "maximum": 500
+        }
       },
       "additionalProperties": false
     },
@@ -219,6 +226,16 @@
       "required": ["presentation", "devices"],
       "properties": {
         "presentation": { "enum": ["auto", "audio_only", "full_suite"] },
+        "transmit": {
+          "type": "object",
+          "required": ["state"],
+          "properties": {
+            "state": { "enum": ["idle", "starting", "transmitting", "failed"] },
+            "device": { "type": "string", "maxLength": 200 },
+            "reason": { "type": "string", "maxLength": 500 }
+          },
+          "additionalProperties": false
+        },
         "devices": {
           "type": "array",
           "maxItems": 32,
@@ -287,6 +304,11 @@
         },
         "source": {
           "enum": ["apple_music", "lrclib", "unknown"]
+        },
+        "user_offset_ms": {
+          "type": "integer",
+          "minimum": -5000,
+          "maximum": 5000
         },
         "lines": {
           "type": "array",

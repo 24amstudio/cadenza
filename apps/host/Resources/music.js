@@ -72,6 +72,10 @@ function describeTrack(track, music) {
   const artist = safeString(() => track.artist());
   const album = safeString(() => track.album());
 
+  // Music reports a music video's media kind as "music video", even when its class is a URL track with a real length.
+  const musicVideo =
+    safeString(() => track.mediaKind()).toLowerCase() === 'music video';
+
   return {
     source: library ? 'library' : 'unknown',
     id: library
@@ -82,7 +86,9 @@ function describeTrack(track, music) {
     album,
     duration_ms: seconds === null ? null : Math.round(seconds * 1000),
     // A stream, or a track with no finite positive length, is live radio. The Host skips timing that needs a length.
-    is_live_radio: isStreamClass(trackClass) || seconds === null,
+    is_live_radio:
+      !musicVideo && (isStreamClass(trackClass) || seconds === null),
+    media_type: musicVideo ? 'musicVideo' : 'song',
   };
 }
 

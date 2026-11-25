@@ -1,4 +1,5 @@
 import { encodeLogReport } from '../protocol/encode';
+import { hostUnderPressure } from './hostBudget';
 import {
   counterField,
   isJsonArray,
@@ -80,7 +81,13 @@ export class LocalLog {
 }
 
 // Sends the held entries through `send`, and removes them only once it returned, so a send that throws keeps them.
-export function flushLocalLog(send: (text: string) => void): void {
+// Under thermal pressure nothing is sent, and the entries wait for the Host's budget to recover.
+export function flushLocalLog(
+  send: (text: string) => void,
+  budget: string | null | undefined,
+): void {
+  if (hostUnderPressure(budget)) return;
+
   const log = sharedLocalLog();
   const batch = log.pending();
 

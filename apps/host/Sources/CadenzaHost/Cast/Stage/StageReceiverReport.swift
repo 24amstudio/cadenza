@@ -3,6 +3,7 @@ import Foundation
 /// What a stage receiver reports about itself: what its output is playing, and its log lines. The Host shows the
 /// playback next to what it sends and records the log lines. Neither changes what the Host sends.
 enum StageReceiverReport: Equatable, Sendable {
+    /// `channels` 0 means the receiver cannot tell the channel count of its output.
     case playback(codec: String, channels: Int, path: String, active: Bool)
     case log(level: HostLogLevel, message: String)
 
@@ -16,7 +17,7 @@ enum StageReceiverReport: Equatable, Sendable {
         switch object["type"] as? String {
         case "STAGE_PLAYBACK":
             guard let codec = object["codec"] as? String, codecs.contains(codec),
-                let channels = object["channels"] as? Int, (1...8).contains(channels),
+                let channels = object["channels"] as? Int, (0...8).contains(channels),
                 let path = object["path"] as? String, isPath(path),
                 let active = object["active"] as? Bool
             else { return nil }

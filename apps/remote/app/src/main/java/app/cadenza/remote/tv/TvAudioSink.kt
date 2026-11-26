@@ -2,7 +2,10 @@ package app.cadenza.remote.tv
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioRouting
 import android.media.AudioTrack
+import android.os.Handler
+import android.os.Looper
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -15,10 +18,33 @@ import java.nio.ByteOrder
 internal class TvAudioSink {
     private var track: AudioTrack? = null
     private var mode: Mode? = null
+    private var sentChannels = 0
+
+    /** Called when the platform routes the open track to another output, so the report can follow it. */
+    var onRoutingChanged: (() -> Unit)? = null
+
+    private val routingListener =
+        object : AudioRouting.OnRoutingChangedListener {
+            override fun onRoutingChanged(router: AudioRouting?) {
+                onRoutingChanged?.invoke()
+            }
+        }
 
     /** What the open track plays: its codec, its channel count, and the path it takes. Null when no track is open. */
-    var route: Route? = null
-        private set
+    val route: Route?
+        get() {
+            val current = track ?: return null
+            val nextMode = mode ?: return null
+            val widest = current.routedDevice?.channelCounts?.maxOrNull()
+            val passthrough = nextMode == Mode.AC3
+            val channels = deliveredChannels(sentChannels, widest, passthrough)
+
+            return if (passthrough) {
+                Route("ac3", channels, "audiotrack_ac3")
+            } else {
+                Route("pcm", channels, "audiotrack_pcm")
+            }
+        }
 
     data class Route(
         val codec: String,
@@ -63,12 +89,8 @@ internal class TvAudioSink {
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build()
         mode = nextMode
-        route =
-            if (nextMode == Mode.AC3) {
-                Route("ac3", channelCount(mask), "audiotrack_ac3")
-            } else {
-                Route("pcm", channelCount(mask), "audiotrack_pcm")
-            }
+        sentChannels = channelCount(mask)
+        track?.addOnRoutingChangedListener(routingListener, Handler(Looper.getMainLooper()))
         track?.play()
         return true
     }
@@ -102,12 +124,13 @@ internal class TvAudioSink {
 
     fun release() {
         track?.runCatching {
+            removeOnRoutingChangedListener(routingListener)
             stop()
             release()
         }
         track = null
         mode = null
-        route = null
+        sentChannels = 0
     }
 
     private fun channelMask(
@@ -127,5 +150,20 @@ internal class TvAudioSink {
     companion object {
         /** The AC-3 encodings an output reports. Passthrough needs one of them, so the profile lists AC-3 only then. */
         fun supportsAc3(encodings: Collection<Int>): Boolean = AudioFormat.ENCODING_AC3 in encodings
+
+        /**
+         * The channel count the listener hears. The platform mixes a track to the widest layout its output accepts, so a
+         * narrower output receives a downmix. Zero means unknown: no output is routed yet, the output reports no layouts,
+         * or the receiver decodes an AC-3 bitstream itself, so the layout it plays is not visible here.
+         */
+        fun deliveredChannels(
+            sent: Int,
+            widest: Int?,
+            passthrough: Boolean,
+        ): Int {
+            if (passthrough || widest == null || widest <= 0) return 0
+
+            return minOf(sent, widest)
+        }
     }
 }

@@ -138,7 +138,8 @@ test('a playback report names only a codec and channel count the Host can send',
   };
 
   assert.equal(validateCast({ ...report, codec: 'flac' }), false);
-  assert.equal(validateCast({ ...report, channels: 0 }), false);
+  assert.equal(validateCast({ ...report, channels: 0 }), true);
+  assert.equal(validateCast({ ...report, channels: 9 }), false);
   assert.equal(validateCast({ ...report, path: 'mse path' }), false);
 });
 

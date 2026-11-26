@@ -48,6 +48,8 @@ struct CastRouteStatus: Codable, Equatable, Sendable {
             return CastRouteStatus(text: "\(sentText) (Unknown)", mismatch: false)
         case .stopped:
             return CastRouteStatus(text: "\(sentText) (not playing)", mismatch: false)
+        case .playing(let playing, _) where playing.channels == 0:
+            return CastRouteStatus(text: "\(sentText) (Unknown)", mismatch: false)
         case .playing(let playing, _):
             return CastRouteStatus(text: "\(sentText) (\(format(playing)))", mismatch: playing != sent)
         }

@@ -39,6 +39,11 @@ internal class TvStageModel(
             .pingInterval(20, TimeUnit.SECONDS)
             .build()
     private val sink = TvAudioSink()
+
+    init {
+        sink.onRoutingChanged = { reportPlayback() }
+    }
+
     private val audio: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val _state = MutableStateFlow(TvStageState())
     val state: StateFlow<TvStageState> = _state.asStateFlow()
@@ -51,7 +56,8 @@ internal class TvStageModel(
 
     // Reports and log lines go out only on a socket the Host has approved. The Host drops them before approval.
     @Volatile private var approved = false
-    private var lastPlayback: String? = null
+
+    @Volatile private var lastPlayback: String? = null
 
     /** The Host address the stage uses, if one was saved. */
     val savedAddress: String? get() = address
@@ -220,7 +226,8 @@ internal class TvStageModel(
         if (text == lastPlayback || !approved) return
         lastPlayback = text
         socket?.send(text)
-        sendLog("info", "Stage audio: ${route.codec.uppercase()} ${route.channels} channels through ${route.path}.")
+        val layout = if (route.channels == 0) "unknown channels" else "${route.channels} channels"
+        sendLog("info", "Stage audio: ${route.codec.uppercase()}, $layout, through ${route.path}.")
     }
 
     /** Sends one log line to the Host, which records it. Dropped before approval, as the Host only accepts it then. */

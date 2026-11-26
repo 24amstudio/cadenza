@@ -359,7 +359,12 @@
         "version": { "const": 1 },
         "type": { "const": "STAGE_PLAYBACK" },
         "codec": { "enum": ["aac", "ac3", "pcm"] },
-        "channels": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "channels": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8,
+          "description": "The channel count of the receiver's output. 0 means the receiver cannot tell it."
+        },
         "path": {
           "type": "string",
           "minLength": 1,

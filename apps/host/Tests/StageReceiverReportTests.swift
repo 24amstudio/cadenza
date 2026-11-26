@@ -76,6 +76,22 @@ struct StageReceiverReportTests {
         #expect(status.mismatch)
     }
 
+    @Test func aReceiverThatCannotTellItsChannelsIsShownAsUnknownNotAsAMatch() {
+        let sent = CastSnapshot.Route(codec: "ac3", channels: 6)
+        let report = json([
+            "version": 1, "type": "STAGE_PLAYBACK", "codec": "ac3", "channels": 0, "path": "mse", "active": true,
+        ])
+
+        #expect(StageReceiverReport.parse(report) == .playback(codec: "ac3", channels: 0, path: "mse", active: true))
+
+        let status = CastRouteStatus.stage(
+            source: "Darrell's MacBook Air", receiver: "TCL55203G", sent: sent,
+            playback: .playing(CastSnapshot.Route(codec: "ac3", channels: 0), path: "mse"))
+
+        #expect(status.text == "Darrell's MacBook Air (AC-3 5.1) → TCL55203G (Unknown)")
+        #expect(!status.mismatch)
+    }
+
     @Test func aStoppedReceiverIsShownAsNotPlaying() {
         let sent = CastSnapshot.Route(codec: "aac", channels: 2)
         let status = CastRouteStatus.stage(source: "Mac", receiver: "TV", sent: sent, playback: .stopped)

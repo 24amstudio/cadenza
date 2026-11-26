@@ -518,6 +518,7 @@ export const STAGE_LOG_MAX_LENGTH = 500;
 /** What this browser's audio output is playing. The Host shows it beside the route it sends. */
 export interface StagePlaybackReport {
   codec: 'aac' | 'ac3' | 'pcm';
+  /** The channels this output plays, or 0 when the page cannot tell. */
   channels: number;
   path: 'mse' | 'pcm_worklet';
   active: boolean;

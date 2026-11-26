@@ -229,10 +229,17 @@ export class StageAudioEngine {
       const name = reportCodec(codec);
 
       if (name) {
-        this.setCurrent({ codec: name, channels, path: 'mse', active: false });
+        // The browser decodes the stream and sends it to the system output, which can downmix. Its output layout is not
+        // visible to the page, so the report says 0 channels, meaning unknown.
+        this.setCurrent({
+          codec: name,
+          channels: 0,
+          path: 'mse',
+          active: false,
+        });
         this.onLog(
           'info',
-          `Stage audio: ${name.toUpperCase()} with ${channels} channels through MediaSource.`,
+          `Stage audio: ${name.toUpperCase()} with ${channels} channels through MediaSource. The output layout is not known.`,
         );
       }
     }

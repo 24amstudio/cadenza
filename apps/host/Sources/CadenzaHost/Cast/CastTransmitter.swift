@@ -47,6 +47,8 @@ final class CastTransmitter {
     private var sessionId: String?
     private var launched = false
     private var requestId = 0
+    /// The codec and channel count of the encoder this transmission started with. Nil unless it is transmitting.
+    private(set) var route: CastSnapshot.Route?
     private var videoSession: VideoSessionMetadata?
     private var webLoader: WebLoader?
     private var webLoaderSession: (transportId: String, sessionId: String)?
@@ -79,6 +81,7 @@ final class CastTransmitter {
                 throw SingAudioError.unavailable("Cast transmission needs Music's stereo or 5.1 output.")
             }
             self.codec = codec
+            route = CastSnapshot.Route(codec: codec == .ac3 ? "ac3" : "aac", channels: format.channelCount)
             let server = CastAudioStreamServer(codec: codec)
             self.server = server
             // Initialize the appropriate encoder
@@ -153,6 +156,7 @@ final class CastTransmitter {
     }
 
     func stop() {
+        route = nil
         webLoaderRefresh?.cancel()
         webLoaderRefresh = nil
         if let webLoaderSession {

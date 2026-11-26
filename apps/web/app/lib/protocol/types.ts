@@ -85,6 +85,21 @@ export interface CastTransmitState {
   state: 'idle' | 'starting' | 'transmitting' | 'failed';
   device: string | null;
   reason: string | null;
+  // The codec and channel count the Host sends, and the one status line to show. Absent when nothing is sent.
+  route?: CastRoute | null;
+  status?: CastRouteStatus | null;
+}
+
+// A codec and channel count, such as AC-3 with 6 channels.
+export interface CastRoute {
+  codec: string;
+  channels: number;
+}
+
+// The Host's status line for a transmission. `mismatch` marks a receiver that plays something other than what is sent.
+export interface CastRouteStatus {
+  text: string;
+  mismatch: boolean;
 }
 
 // A Cadenza TV browser or Android TV that the Host has approved. `transmitting` means it is receiving audio.
@@ -93,6 +108,10 @@ export interface StageDevice {
   name: string;
   transport: string;
   transmitting: boolean;
+  sent?: CastRoute | null;
+  playing?: CastRoute | null;
+  playingPath?: string | null;
+  status?: CastRouteStatus | null;
 }
 
 // A TV that shows a PIN and waits for approval. Any paired Remote may approve it with the PIN.

@@ -14,6 +14,10 @@ final class StageHub {
         var profile: StageReceiverProfile?
         var isApproved = false
         var isTransmitting = false
+        /// The route the Host sends this receiver while it transmits. Nil when it is not transmitting.
+        var sentRoute: CastSnapshot.Route?
+        var playback: StagePlayback = .unreported
+        var logLimiter = StageLogLimiter()
 
         init(id: String, role: String, send: @escaping (Data, Bool) -> Bool, close: @escaping () -> Void) {
             self.id = id
@@ -31,6 +35,8 @@ final class StageHub {
     var onChange: () -> Void = {}
     /// Called with the playback kind of each command an approved receiver sends.
     var onCommand: (Session, String) -> Void = { _, _ in }
+    /// Called with each log line an approved receiver sends, after the per-receiver limit.
+    var onReceiverLog: (Session, HostLogLevel, String) -> Void = { _, _, _ in }
 
     init(receivers: StageReceivers) {
         self.receivers = receivers
@@ -55,9 +61,15 @@ final class StageHub {
     func receive(_ text: Data, from sessionId: String, now: Date = Date()) {
         guard let session = sessions[sessionId] else { return }
         if session.isApproved {
-            if let kind = StageCommand.kind(text) { onCommand(session, kind) }
+            if let kind = StageCommand.kind(text) {
+                onCommand(session, kind)
+            } else if let report = StageReceiverReport.parse(text) {
+                handle(report, from: session)
+            }
             return
         }
+        // A report that arrives before approval is dropped, not treated as a broken profile.
+        if StageReceiverReport.parse(text) != nil { return }
         guard let profile = StageReceiverProfile.parse(text), profile.matches(role: session.role) else {
             session.close()
             return
@@ -105,12 +117,43 @@ final class StageHub {
     }
 
     /// The approved receivers as the state snapshot lists them, in a stable order.
-    func snapshot() -> [CastSnapshot.Stage] {
+    func snapshot(sourceName: String) -> [CastSnapshot.Stage] {
         approvedSessions.compactMap { session in
             guard let profile = session.profile else { return nil }
-            return CastSnapshot.Stage(
+            var stage = CastSnapshot.Stage(
                 receiverId: profile.receiverId, name: profile.displayName,
                 transport: profile.transport.rawValue, transmitting: session.isTransmitting)
+            if let sent = session.sentRoute {
+                stage.sent = sent
+                if case .playing(let playing, let path) = session.playback {
+                    stage.playing = playing
+                    stage.playingPath = path
+                }
+                stage.status = CastRouteStatus.stage(
+                    source: sourceName, receiver: profile.displayName, sent: sent, playback: session.playback)
+            }
+
+            return stage
+        }
+    }
+
+    /// Records the route each transmitting receiver is sent. A receiver missing from `routes` is not transmitting.
+    func setSentRoutes(_ routes: [String: CastSnapshot.Route]) {
+        for session in sessions.values {
+            session.sentRoute = routes[session.id]
+        }
+        onChange()
+    }
+
+    private func handle(_ report: StageReceiverReport, from session: Session) {
+        switch report {
+        case .playback(let codec, let channels, let path, let active):
+            session.playback =
+                active ? .playing(CastSnapshot.Route(codec: codec, channels: channels), path: path) : .stopped
+            onChange()
+        case .log(let level, let message):
+            guard session.logLimiter.allow(now: Date()) else { return }
+            onReceiverLog(session, level, message)
         }
     }
 

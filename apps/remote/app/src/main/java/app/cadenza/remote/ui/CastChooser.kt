@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import app.cadenza.remote.data.CastRouteStatus
 import app.cadenza.remote.data.CastState
 import app.cadenza.remote.model.RemoteModel
 import org.json.JSONObject
@@ -55,6 +56,7 @@ internal fun CastChooser(
                 )
             }
         }
+        transmit?.status?.let { RouteStatusLine(it) }
         if (transmit?.state == "failed") {
             Text(transmit.reason ?: "Cast could not send audio.", style = MaterialTheme.typography.bodySmall)
         }
@@ -106,4 +108,15 @@ private fun StageRows(
             )
         }
     }
+    cast.stages.forEach { stage -> stage.status?.let { RouteStatusLine(it) } }
+}
+
+// The Host's status line. A mismatch, such as a TV that plays a different codec than the one sent, uses the error color.
+@Composable
+private fun RouteStatusLine(status: CastRouteStatus) {
+    Text(
+        status.text,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (status.mismatch) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

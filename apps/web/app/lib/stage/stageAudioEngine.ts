@@ -2,10 +2,28 @@
 // to an AudioWorklet over its message port. SharedArrayBuffer is not used, because the Host serves no cross-origin
 // isolation headers. A flush empties both paths, and a new generation starts with a fresh init segment.
 
-import { decodeStageFrame, type StageFrame } from './stageProtocol';
+import {
+  decodeStageFrame,
+  type StageFrame,
+  type StagePlaybackReport,
+} from './stageProtocol';
 
 const MAX_QUEUED_FRAGMENTS = 64;
 const TRIM_MARGIN_S = 2;
+
+/** The report's codec name for a codec number. FLAC is not a route the Host sends, so it has no name. */
+function reportCodec(codec: number): StagePlaybackReport['codec'] | null {
+  switch (codec) {
+    case 1:
+      return 'ac3';
+    case 3:
+      return 'pcm';
+    case 4:
+      return 'aac';
+    default:
+      return null;
+  }
+}
 
 /** The MSE type for each fragmented codec. PCM (codec 3) has no container and goes to the worklet. */
 export function stageMime(codec: number): string | null {
@@ -51,12 +69,32 @@ export class StageAudioEngine {
   private track: Track | null = null;
   private generation = -1;
   private readonly media: HTMLAudioElement | null;
+  /** What the engine is playing now. Reported to the Host whenever it changes. */
+  private current: StagePlaybackReport | null = null;
 
-  constructor(private readonly onError: (message: string) => void = () => {}) {
+  constructor(
+    private readonly onError: (message: string) => void = () => {},
+    private readonly onPlayback: (
+      report: StagePlaybackReport,
+    ) => void = () => {},
+    private readonly onLog: (
+      level: 'info' | 'warn' | 'error',
+      message: string,
+    ) => void = () => {},
+  ) {
     this.media =
       'document' in globalThis ? document.createElement('audio') : null;
 
     if (this.media) this.media.autoplay = true;
+    this.media?.addEventListener('playing', () => this.setActive(true));
+
+    for (const event of ['pause', 'emptied', 'ended'])
+      this.media?.addEventListener(event, () => this.setActive(false));
+  }
+
+  /** Reports the playback in progress again, for a socket that has just connected to a Host with no record of it. */
+  reportCurrent(): void {
+    if (this.current) this.onPlayback(this.current);
   }
 
   /** Called from a user gesture, because browsers refuse to start audio otherwise. */
@@ -188,6 +226,15 @@ export class StageAudioEngine {
         url,
         queue: [],
       };
+      const name = reportCodec(codec);
+
+      if (name) {
+        this.setCurrent({ codec: name, channels, path: 'mse', active: false });
+        this.onLog(
+          'info',
+          `Stage audio: ${name.toUpperCase()} with ${channels} channels through MediaSource.`,
+        );
+      }
     }
 
     // SAFETY: slice() copies the bytes into a buffer that no other view shares.
@@ -216,6 +263,27 @@ export class StageAudioEngine {
 
   private pcm(channels: number, payload: Uint8Array): void {
     if (!this.worklet) return;
+
+    // The worklet has two outputs, and each takes the source channel of the same index. A source with more channels
+    // therefore plays only its front pair, and the report says so.
+    const active = this.context?.state === 'running';
+
+    if (
+      this.current?.path !== 'pcm_worklet' ||
+      this.current.active !== active
+    ) {
+      if (this.current?.path !== 'pcm_worklet' && channels > 2)
+        this.onLog(
+          'warn',
+          `PCM with ${channels} channels plays only its front pair on this TV.`,
+        );
+      this.setCurrent({
+        codec: 'pcm',
+        channels: 2,
+        path: 'pcm_worklet',
+        active,
+      });
+    }
 
     const samples = new Float32Array(
       payload.buffer.slice(
@@ -275,8 +343,24 @@ export class StageAudioEngine {
     const track = this.track;
     this.track = null;
 
+    if (this.current) {
+      this.onPlayback({ ...this.current, active: false });
+      this.current = null;
+    }
+
     if (!track) return;
     URL.revokeObjectURL(track.url);
     this.media?.removeAttribute('src');
+  }
+
+  private setCurrent(report: StagePlaybackReport): void {
+    this.current = report;
+    this.onPlayback(report);
+  }
+
+  /** The media element starts and stops; only a MediaSource track is driven by it. */
+  private setActive(active: boolean): void {
+    if (this.current?.path !== 'mse') return;
+    this.setCurrent({ ...this.current, active });
   }
 }

@@ -49,6 +49,10 @@ internal class TvStageModel(
     private var ac3Mode = false
     private var address: String? = prefs.address
 
+    // Reports and log lines go out only on a socket the Host has approved. The Host drops them before approval.
+    @Volatile private var approved = false
+    private var lastPlayback: String? = null
+
     /** The Host address the stage uses, if one was saved. */
     val savedAddress: String? get() = address
 
@@ -135,7 +139,9 @@ internal class TvStageModel(
                 response: Response,
             ) {
                 attempt = 0
-                if (prefs.token != null) _state.update { it.copy(phase = TvStageState.Phase.READY) }
+                lastPlayback = null
+                approved = prefs.token != null
+                if (approved) _state.update { it.copy(phase = TvStageState.Phase.READY) }
                 webSocket.send(profileJson())
             }
 
@@ -144,7 +150,11 @@ internal class TvStageModel(
                 text: String,
             ) {
                 val message = TvStageMessages.parse(text) ?: return
-                if (message is TvStageMessage.Accepted) prefs.token = message.receiverToken
+                if (message is TvStageMessage.Accepted) {
+                    prefs.token = message.receiverToken
+                    approved = true
+                    reportPlayback()
+                }
                 _state.update { it.reduce(message, SystemClock.elapsedRealtime()) }
             }
 
@@ -176,6 +186,7 @@ internal class TvStageModel(
     private fun closed(webSocket: WebSocket) {
         if (socket !== webSocket) return
         socket = null
+        approved = false
         _state.update { it.disconnected() }
         scheduleRetry()
     }
@@ -185,7 +196,11 @@ internal class TvStageModel(
         when (frame) {
             is StageFrame.InitSegment -> {
                 ac3Mode = frame.codec == StageFrameDecoder.CODEC_AC3_FMP4
-                sink.configure(frame.codec, frame.channels, frame.sampleRate)
+                if (sink.configure(frame.codec, frame.channels, frame.sampleRate)) {
+                    reportPlayback()
+                } else {
+                    sendLog("error", "This TV cannot play ${frame.channels} channels of this stage audio.")
+                }
             }
             is StageFrame.Flush -> {
                 generation = frame.generationSeq
@@ -193,6 +208,27 @@ internal class TvStageModel(
             }
             is StageFrame.Audio -> play(frame)
         }
+    }
+
+    /**
+     * Reports what the open track plays, once per change. The route is what the sink opened, so a TV that cannot open
+     * the layout is reported as an error instead. Playing means the track is playing, not that the speakers are audible.
+     */
+    private fun reportPlayback() {
+        val route = sink.route ?: return
+        val text = TvStageMessages.playback(route.codec, route.channels, route.path, sink.isPlaying())
+        if (text == lastPlayback || !approved) return
+        lastPlayback = text
+        socket?.send(text)
+        sendLog("info", "Stage audio: ${route.codec.uppercase()} ${route.channels} channels through ${route.path}.")
+    }
+
+    /** Sends one log line to the Host, which records it. Dropped before approval, as the Host only accepts it then. */
+    private fun sendLog(
+        level: String,
+        message: String,
+    ) {
+        if (approved) socket?.send(TvStageMessages.log(level, message))
     }
 
     private fun play(frame: StageFrame.Audio) {

@@ -104,11 +104,18 @@ data class CastDevice(
     val display: String,
 )
 
-// What the Host is sending to a Cast device. `reason` is set when a transmission failed.
+// The Host's one status line for a transmission. `mismatch` marks a receiver that plays something other than what is sent.
+data class CastRouteStatus(
+    val text: String,
+    val mismatch: Boolean,
+)
+
+// What the Host is sending to a Cast device. `reason` is set when a transmission failed. `status` is set while sending.
 data class CastTransmitState(
     val state: String,
     val device: String?,
     val reason: String?,
+    val status: CastRouteStatus? = null,
 )
 
 // A Cadenza TV that the Host approved. `transmitting` means it is receiving Music's audio.
@@ -116,6 +123,7 @@ data class StageDevice(
     val receiverId: String,
     val name: String,
     val transmitting: Boolean,
+    val status: CastRouteStatus? = null,
 )
 
 // A TV that shows a PIN and waits for approval. Any paired Remote can approve it with that PIN.
@@ -209,6 +217,14 @@ data class UpdateConfiguration(
 )
 
 fun JSONObject.nullableString(key: String): String? = if (has(key) && !isNull(key)) getString(key) else null
+
+/** The `status` of a cast transmit or stage entry, when the Host sent one with text. */
+private fun routeStatus(item: JSONObject): CastRouteStatus? {
+    val status = item.optJSONObject("status") ?: return null
+    val text = status.optString("text")
+
+    return if (text.isEmpty()) null else CastRouteStatus(text, status.optBoolean("mismatch"))
+}
 
 fun JSONObject.counter(key: String): Long {
     val value = get(key)
@@ -360,7 +376,12 @@ object Wire {
                 if (state !in listOf("idle", "starting", "transmitting", "failed")) {
                     null
                 } else {
-                    CastTransmitState(state, item.nullableString("device"), item.nullableString("reason"))
+                    CastTransmitState(
+                        state,
+                        item.nullableString("device"),
+                        item.nullableString("reason"),
+                        routeStatus(item),
+                    )
                 }
             }
         val stages =
@@ -370,7 +391,7 @@ object Wire {
                 if (receiverId.isEmpty() || name.isEmpty() || !item.has("transmitting")) {
                     null
                 } else {
-                    StageDevice(receiverId, name, item.optBoolean("transmitting"))
+                    StageDevice(receiverId, name, item.optBoolean("transmitting"), routeStatus(item))
                 }
             }
         val pending =

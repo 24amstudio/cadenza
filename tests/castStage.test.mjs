@@ -102,6 +102,20 @@ test('every stage message type validates from its fixture', () => {
       subtitleUrl: 'http://192.168.1.10:8765/api/v1/cast/video/7/lyrics.vtt',
       userOffsetMs: -500,
     },
+    {
+      version: 1,
+      type: 'STAGE_PLAYBACK',
+      codec: 'ac3',
+      channels: 6,
+      path: 'mse',
+      active: true,
+    },
+    {
+      version: 1,
+      type: 'STAGE_LOG',
+      level: 'warn',
+      message: 'Playback paused: the audio context was suspended.',
+    },
   ];
 
   for (const fixture of fixtures) {
@@ -111,6 +125,21 @@ test('every stage message type validates from its fixture', () => {
       `${fixture.type}: ${JSON.stringify(validateCast.errors)}`,
     );
   }
+});
+
+test('a playback report names only a codec and channel count the Host can send', () => {
+  const report = {
+    version: 1,
+    type: 'STAGE_PLAYBACK',
+    codec: 'ac3',
+    channels: 6,
+    path: 'mse',
+    active: true,
+  };
+
+  assert.equal(validateCast({ ...report, codec: 'flac' }), false);
+  assert.equal(validateCast({ ...report, channels: 0 }), false);
+  assert.equal(validateCast({ ...report, path: 'mse path' }), false);
 });
 
 test('stage messages reject unknown types, unknown fields, and out-of-range values', () => {

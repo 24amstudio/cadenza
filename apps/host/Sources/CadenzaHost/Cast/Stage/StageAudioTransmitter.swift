@@ -67,6 +67,7 @@ final class StageAudioTransmitter {
         encoders = nil
         isRunning = false
         routes = [:]
+        hub.setSentRoutes([:])
         initSent = []
         ac3Track = nil
     }
@@ -83,6 +84,7 @@ final class StageAudioTransmitter {
             routes[session.id] = route
         }
         encoders?.setRoutes(Set(routes.values))
+        hub.setSentRoutes(routes.mapValues(\.sentRoute))
     }
 
     /// Tells every transmitting receiver to drop what it buffered. The next frames start a new generation with a fresh

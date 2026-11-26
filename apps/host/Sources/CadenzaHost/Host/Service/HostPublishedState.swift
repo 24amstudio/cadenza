@@ -88,6 +88,7 @@ final class HostPublishedState {
         castDiscovery.start()
         snapshot.cast = CastSnapshot.make(
             devices: castDiscovery.devices, presentation: castPresentation, transmit: castTransmitter.state,
-            stages: stageHub.snapshot(), pending: stageHub.receivers.pending)
+            transmitRoute: castTransmitter.route, stages: stageHub.snapshot(sourceName: CastRouteStatus.sourceName),
+            pending: stageHub.receivers.pending)
     }
 }

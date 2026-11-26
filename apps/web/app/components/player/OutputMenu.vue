@@ -170,6 +170,14 @@ const presentations: { value: CastPresentation; label: string }[] = [
           >
             {{ stage.transmitting ? 'Stop sending audio' : 'Send audio here' }}
           </button>
+          <p
+            v-if="stage.status"
+            class="cast-status"
+            :class="{ mismatch: stage.status.mismatch }"
+            role="status"
+          >
+            {{ stage.status.text }}
+          </p>
         </li>
       </ul>
     </section>
@@ -199,10 +207,11 @@ const presentations: { value: CastPresentation; label: string }[] = [
       </p>
       <p
         v-else-if="transmit?.state === 'transmitting'"
-        class="cast-note"
+        class="cast-status"
+        :class="{ mismatch: transmit.status?.mismatch }"
         role="status"
       >
-        Sending audio to {{ transmit.device }}.
+        {{ transmit.status?.text ?? `Sending audio to ${transmit.device}.` }}
       </p>
       <p
         v-else-if="transmit?.state === 'failed'"
@@ -316,5 +325,16 @@ const presentations: { value: CastPresentation; label: string }[] = [
 .cast-note {
   margin: 0;
   color: var(--color-text-tertiary);
+}
+
+/* A route line spans the whole row, so it wraps below its device name and button. */
+.cast-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-text-tertiary);
+}
+
+.cast-status.mismatch {
+  color: var(--color-danger);
 }
 </style>

@@ -88,6 +88,8 @@ A receiver sends `RECEIVER_PROFILE` on connect. Its `transportType` is `cadenza_
 
 A profile without an approved `receiverToken` gets `STAGE_PAIRING` with a four-digit `pin` and `expiresInMs`. The Host shows the PIN and a `/tv` QR code, and a listener approves it on the Host or on a paired Remote. Approval returns `STAGE_ACCEPTED` with a `receiverToken` that the receiver stores and sends in its next profile. The Host stores only a hash of that token, so a receiver never reconnects without it. Until approval, the Host sends no audio, no lyrics, and no track data.
 
+After approval, a receiver may send two advisory messages. `STAGE_PLAYBACK` (`codec`, `channels`, `path`, `active`) says what its audio output is playing. It is sent when playback starts, changes path, or stops, and the Host shows it beside the route it sends. `STAGE_LOG` (`level`, `message`) records one line on the Host, and the Host limits each receiver to 30 lines in 10 seconds. A report that arrives before approval is ignored, and the socket stays open. The Host's status line names what was sent and what was reported, and it flags a mismatch. Google Cast devices send no reports, so their line says that playback is not reported.
+
 An approved receiver sends `STAGE_COMMAND` with `action` set to `playback.pause`, `playback.resume`, `playback.skip`, or `playback.previous`, for example from a TV remote key. The Host runs it as an ordinary playback command, with the receiver as the actor, and a receiver that is not approved cannot send one.
 
 ### Track, clock, and video messages

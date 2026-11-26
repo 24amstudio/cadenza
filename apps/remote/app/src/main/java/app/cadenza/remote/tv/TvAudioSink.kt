@@ -16,7 +16,20 @@ internal class TvAudioSink {
     private var track: AudioTrack? = null
     private var mode: Mode? = null
 
+    /** What the open track plays: its codec, its channel count, and the path it takes. Null when no track is open. */
+    var route: Route? = null
+        private set
+
+    data class Route(
+        val codec: String,
+        val channels: Int,
+        val path: String,
+    )
+
     private enum class Mode { PCM, AC3 }
+
+    /** True while the open track is playing. It is false when the track is paused or none is open. */
+    fun isPlaying(): Boolean = track?.playState == AudioTrack.PLAYSTATE_PLAYING
 
     /** Starts or restarts the track for a codec and layout. A layout that is already playing keeps its track. */
     fun configure(
@@ -50,6 +63,12 @@ internal class TvAudioSink {
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build()
         mode = nextMode
+        route =
+            if (nextMode == Mode.AC3) {
+                Route("ac3", channelCount(mask), "audiotrack_ac3")
+            } else {
+                Route("pcm", channelCount(mask), "audiotrack_pcm")
+            }
         track?.play()
         return true
     }
@@ -88,6 +107,7 @@ internal class TvAudioSink {
         }
         track = null
         mode = null
+        route = null
     }
 
     private fun channelMask(

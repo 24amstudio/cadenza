@@ -29,6 +29,12 @@
     },
     {
       "$ref": "#/$defs/stageCommand"
+    },
+    {
+      "$ref": "#/$defs/stagePlayback"
+    },
+    {
+      "$ref": "#/$defs/stageLog"
     }
   ],
   "$defs": {
@@ -342,6 +348,37 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
         }
+      },
+      "additionalProperties": false
+    },
+    "stagePlayback": {
+      "description": "What the receiver's output is playing now. Sent when playback starts, changes path, or stops. Advisory: the Host shows it beside the route it sends.",
+      "type": "object",
+      "required": ["version", "type", "codec", "channels", "path", "active"],
+      "properties": {
+        "version": { "const": 1 },
+        "type": { "const": "STAGE_PLAYBACK" },
+        "codec": { "enum": ["aac", "ac3", "pcm"] },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9_]+$"
+        },
+        "active": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "stageLog": {
+      "description": "One log line from the receiver. The Host records it in its own log, with a per-receiver limit.",
+      "type": "object",
+      "required": ["version", "type", "level", "message"],
+      "properties": {
+        "version": { "const": 1 },
+        "type": { "const": "STAGE_LOG" },
+        "level": { "enum": ["debug", "info", "warn", "error"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 }
       },
       "additionalProperties": false
     },

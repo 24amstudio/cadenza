@@ -7,6 +7,9 @@ import { StageClock, stageRetryDelayMs } from './stageClock';
 import {
   parseStageMessage,
   receiverProfile,
+  stageLogMessage,
+  stagePlaybackMessage,
+  type StagePlaybackReport,
   type StageServerMessage,
   type StageTrackSuite,
   type StageVideoPayload,
@@ -72,6 +75,9 @@ export class StageController {
   private attempt = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  // Reports and log lines are sent only on an approved socket. The Host closes a socket that sends them before approval.
+  private approved = false;
+  private lastPlayback = '';
   private readonly receiverId: string;
   private readonly onChange: () => void;
 
@@ -79,10 +85,15 @@ export class StageController {
     this.onChange = onChange;
     this.receiverId = readStorage(RECEIVER_KEY) ?? newReceiverId();
     writeStorage(RECEIVER_KEY, this.receiverId);
-    this.engine = new StageAudioEngine((message) => {
-      this.state.error = message;
-      this.onChange();
-    });
+    this.engine = new StageAudioEngine(
+      (message) => {
+        this.state.error = message;
+        this.log('error', message);
+        this.onChange();
+      },
+      (report) => this.reportPlayback(report),
+      (level, message) => this.log(level, message),
+    );
   }
 
   start(): void {
@@ -142,9 +153,14 @@ export class StageController {
     this.socket = socket;
     socket.onopen = () => {
       this.attempt = 0;
+      this.lastPlayback = '';
 
       // A receiver with a token is approved on connect, so it is ready before the first track arrives.
-      if (readStorage(TOKEN_KEY) !== null) this.state.phase = 'ready';
+      if (readStorage(TOKEN_KEY) !== null) {
+        this.state.phase = 'ready';
+        this.approved = true;
+      }
+
       socket.send(this.profile());
     };
 
@@ -166,7 +182,11 @@ export class StageController {
     };
 
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = null;
+      if (this.socket === socket) {
+        this.socket = null;
+        this.approved = false;
+      }
+
       this.state.phase = 'offline';
       this.state.playing = false;
       this.onChange();
@@ -198,6 +218,23 @@ export class StageController {
     });
   }
 
+  /** Whether a report or log line may go out now: the socket is open and the Host has approved it. */
+  private canReport(): boolean {
+    return this.approved && this.socket?.readyState === WebSocket.OPEN;
+  }
+
+  private reportPlayback(report: StagePlaybackReport): void {
+    const text = stagePlaybackMessage(report);
+
+    if (text === this.lastPlayback || !this.canReport()) return;
+    this.lastPlayback = text;
+    this.socket?.send(text);
+  }
+
+  private log(level: 'info' | 'warn' | 'error', message: string): void {
+    if (this.canReport()) this.socket?.send(stageLogMessage(level, message));
+  }
+
   private apply(message: StageServerMessage): void {
     const now = performance.now();
 
@@ -212,6 +249,8 @@ export class StageController {
         this.state.phase = 'ready';
         this.state.pin = null;
         this.state.pinExpiresAt = null;
+        this.approved = true;
+        this.engine.reportCurrent();
         break;
       case 'TRACK_SUITE_PAYLOAD':
         this.state.phase = 'ready';

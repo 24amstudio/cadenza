@@ -8,10 +8,19 @@ struct CastSnapshot: Codable, Equatable, Sendable {
         var display: String
     }
 
+    /// A codec and channel count, as the Host sends it or the receiver reports playing it.
+    struct Route: Codable, Equatable, Sendable {
+        var codec: String
+        var channels: Int
+    }
+
     struct Transmit: Codable, Equatable, Sendable {
         var state: String
         var device: String?
         var reason: String?
+        /// The route the Host sends while transmitting. Google Cast devices do not report what they play.
+        var route: Route?
+        var status: CastRouteStatus?
     }
 
     static let deviceLimit = 32
@@ -22,6 +31,12 @@ struct CastSnapshot: Codable, Equatable, Sendable {
         var name: String
         var transport: String
         var transmitting: Bool
+        /// The route the Host sends this receiver while it transmits.
+        var sent: Route?
+        /// The route the receiver last reported playing, and its path. Nil until it reports playback.
+        var playing: Route?
+        var playingPath: String?
+        var status: CastRouteStatus?
     }
 
     /// A stage receiver that shows a PIN and waits for approval. Approval is one tap on the Host or a paired Remote.
@@ -42,14 +57,22 @@ struct CastSnapshot: Codable, Equatable, Sendable {
         devices: [CastDiscovery.Device],
         presentation: CastPresentationMode,
         transmit: CastTransmitter.State,
+        transmitRoute: Route? = nil,
         stages: [Stage] = [],
         pending: [StageReceivers.Pending] = [],
         now: Date = Date()
     ) -> CastSnapshot {
-        CastSnapshot(
+        var transmitSnapshot = transmit.snapshot
+        if let route = transmitRoute, let device = transmitSnapshot.device {
+            transmitSnapshot.route = route
+            transmitSnapshot.status = CastRouteStatus.cast(
+                source: CastRouteStatus.sourceName, device: device, sent: route)
+        }
+
+        return CastSnapshot(
             presentation: presentation.wireName,
             devices: devices.prefix(deviceLimit).map { Device(name: $0.name, display: $0.display.wireName) },
-            transmit: transmit.snapshot,
+            transmit: transmitSnapshot,
             stages: stages,
             pendingStages: pending.map {
                 PendingStage(

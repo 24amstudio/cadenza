@@ -511,3 +511,30 @@ export function receiverProfile(input: StageProfileInput): string {
 
   return JSON.stringify(profile);
 }
+
+/** The most characters of one log line the Host keeps. */
+export const STAGE_LOG_MAX_LENGTH = 500;
+
+/** What this browser's audio output is playing. The Host shows it beside the route it sends. */
+export interface StagePlaybackReport {
+  codec: 'aac' | 'ac3' | 'pcm';
+  channels: number;
+  path: 'mse' | 'pcm_worklet';
+  active: boolean;
+}
+
+export function stagePlaybackMessage(report: StagePlaybackReport): string {
+  return JSON.stringify({ version: 1, type: 'STAGE_PLAYBACK', ...report });
+}
+
+export function stageLogMessage(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'STAGE_LOG',
+    level,
+    message: message.slice(0, STAGE_LOG_MAX_LENGTH),
+  });
+}

@@ -45,6 +45,10 @@ struct SettingsGeneralPane: View {
                 ForEach(castDevices, id: \.name) { device in
                     LabeledContent(device.name, value: device.display.label)
                 }
+                if let status = model.snapshot?.cast?.transmit?.status {
+                    Text(status.text)
+                        .foregroundStyle(status.mismatch ? Color.orange : Color.secondary)
+                }
             } header: {
                 Text("Google Cast")
             } footer: {

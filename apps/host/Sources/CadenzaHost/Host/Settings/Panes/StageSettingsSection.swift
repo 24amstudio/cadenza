@@ -65,10 +65,12 @@ struct StageSettingsSection: View {
 
         Section {
             ForEach(cast?.stages ?? [], id: \.receiverId) { stage in
-                LabeledContent(stage.name, value: stage.transmitting ? "Playing audio" : "Connected")
-                    .contextMenu {
-                        Button("Forget This TV", role: .destructive) { forgetting = stage }
-                    }
+                LabeledContent(
+                    stage.name, value: stage.status?.text ?? (stage.transmitting ? "Playing audio" : "Connected")
+                )
+                .contextMenu {
+                    Button("Forget This TV", role: .destructive) { forgetting = stage }
+                }
             }
             if (cast?.stages ?? []).isEmpty {
                 Text("No approved TV is connected.").foregroundStyle(.secondary)

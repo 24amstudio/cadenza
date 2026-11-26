@@ -142,6 +142,37 @@ internal object TvStageMessages {
             null
         }
 
+    /** The most characters of one log line the Host keeps. */
+    const val LOG_MAX_LENGTH = 500
+
+    /** The `STAGE_PLAYBACK` that says what this TV's audio track is playing now. */
+    fun playback(
+        codec: String,
+        channels: Int,
+        path: String,
+        active: Boolean,
+    ): String =
+        JSONObject()
+            .put("version", 1)
+            .put("type", "STAGE_PLAYBACK")
+            .put("codec", codec)
+            .put("channels", channels)
+            .put("path", path)
+            .put("active", active)
+            .toString()
+
+    /** The `STAGE_LOG` that records one line on the Host. */
+    fun log(
+        level: String,
+        message: String,
+    ): String =
+        JSONObject()
+            .put("version", 1)
+            .put("type", "STAGE_LOG")
+            .put("level", level)
+            .put("message", message.take(LOG_MAX_LENGTH))
+            .toString()
+
     private fun pairing(json: JSONObject): TvStageMessage? {
         val pin = json.str("pin")?.takeIf { pinPattern.matches(it) } ?: return null
         val expires = json.counter("expiresInMs") ?: return null

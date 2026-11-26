@@ -28,7 +28,9 @@
         "Lets each Remote choose the Mac's audio output, and favorite or add library songs.",
         "Keeps the Mac awake during playback, and wakes a sleeping Mac with Wake-on-LAN.",
         "Pauses new Sing sessions when the Mac runs hot, using a four-tier thermal budget.",
-        "Records a rotating diagnostics log, and enters safe recovery after three launches in thirty seconds."
+        "Records a rotating diagnostics log, and enters safe recovery after three launches in thirty seconds.",
+        "Shows the codec and channels Cadenza sends to each Cast device and TV, and what a TV reports it plays.",
+        "Sends the log lines from a TV browser or Android TV to the Host's log, with a limit per TV."
       ]
     },
     {

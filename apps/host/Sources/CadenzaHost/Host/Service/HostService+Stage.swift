@@ -25,6 +25,11 @@ extension HostService {
         publishedState.stageHub.onCommand = { [weak self] session, kind in
             self?.runStageCommand(kind: kind, receiverId: session.profile?.receiverId ?? session.id)
         }
+        publishedState.stageHub.onReceiverLog = { [weak self] session, level, message in
+            self?.logger.log(
+                level, category: "tv", action: "receiver.log", message, source: "tv",
+                metadata: ["receiver": session.profile?.displayName ?? session.role])
+        }
     }
 
     /// The Host address that stage receivers reach. Nil when no LAN address is available.

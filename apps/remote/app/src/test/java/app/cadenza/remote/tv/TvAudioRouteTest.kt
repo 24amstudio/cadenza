@@ -5,19 +5,24 @@ import org.junit.Test
 
 class TvAudioRouteTest {
     @Test
-    fun aWideOutputReceivesTheLayoutThatWasSent() {
-        assertEquals(6, TvAudioSink.deliveredChannels(sent = 6, widest = 8, passthrough = false))
-        assertEquals(2, TvAudioSink.deliveredChannels(sent = 2, widest = 8, passthrough = false))
+    fun aFiveOneSendToAFiveOneOutputIsUnknownBecauseTheTvMayStillDownmix() {
+        assertEquals(0, TvAudioSink.deliveredChannels(sent = 6, widest = 6, passthrough = false))
+        assertEquals(0, TvAudioSink.deliveredChannels(sent = 6, widest = 8, passthrough = false))
     }
 
     @Test
-    fun aNarrowerOutputReceivesTheDownmixThePlatformMakes() {
+    fun aFiveOneSendToAStereoOutputIsTheStereoThePlatformMixed() {
         assertEquals(2, TvAudioSink.deliveredChannels(sent = 6, widest = 2, passthrough = false))
     }
 
     @Test
+    fun aStereoSendIsReportedAsStereo() {
+        assertEquals(2, TvAudioSink.deliveredChannels(sent = 2, widest = 8, passthrough = false))
+    }
+
+    @Test
     fun anUnroutedOrUnknownOutputIsReportedAsUnknown() {
-        assertEquals(0, TvAudioSink.deliveredChannels(sent = 6, widest = null, passthrough = false))
+        assertEquals(0, TvAudioSink.deliveredChannels(sent = 2, widest = null, passthrough = false))
         assertEquals(0, TvAudioSink.deliveredChannels(sent = 6, widest = 0, passthrough = false))
     }
 

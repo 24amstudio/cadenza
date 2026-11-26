@@ -152,9 +152,13 @@ internal class TvAudioSink {
         fun supportsAc3(encodings: Collection<Int>): Boolean = AudioFormat.ENCODING_AC3 in encodings
 
         /**
-         * The channel count the listener hears. The platform mixes a track to the widest layout its output accepts, so a
-         * narrower output receives a downmix. Zero means unknown: no output is routed yet, the output reports no layouts,
-         * or the receiver decodes an AC-3 bitstream itself, so the layout it plays is not visible here.
+         * The channel count the listener can be sure of. Zero means unknown.
+         *
+         * - AC-3 passthrough is unknown, because the receiver decodes the bitstream itself.
+         * - Unknown when no output is routed yet, or the output reports no layouts.
+         * - A 5.1 send to an output that accepts 5.1 is unknown, because the TV may still downmix after HDMI.
+         * - A 5.1 send to a narrower output is the stereo the platform itself mixed, so it is known.
+         * - A stereo send is reported as stereo, because the output accepts it.
          */
         fun deliveredChannels(
             sent: Int,
@@ -162,8 +166,9 @@ internal class TvAudioSink {
             passthrough: Boolean,
         ): Int {
             if (passthrough || widest == null || widest <= 0) return 0
+            if (sent <= 2) return minOf(sent, widest)
 
-            return minOf(sent, widest)
+            return if (widest >= sent) 0 else widest
         }
     }
 }

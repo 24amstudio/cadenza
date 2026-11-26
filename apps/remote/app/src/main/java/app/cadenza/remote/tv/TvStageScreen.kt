@@ -9,9 +9,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -87,7 +89,7 @@ internal fun TvStageScreen(
         contentAlignment = Alignment.Center,
     ) {
         when {
-            state.phase == TvStageState.Phase.PAIRING -> PairingPanel(state.pin)
+            state.phase == TvStageState.Phase.PAIRING -> PairingPanel(model.savedAddress, state.pin)
             state.suite == null && state.phase == TvStageState.Phase.OFFLINE ->
                 StatusPanel(
                     "Reconnecting to Cadenza",
@@ -121,18 +123,34 @@ private fun nudge(
 }
 
 @Composable
-private fun PairingPanel(pin: String?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Text("Approve this TV", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.SemiBold)
-        Text(pin.orEmpty(), color = Color.White, fontSize = 128.sp, fontWeight = FontWeight.Bold)
-        Text(
-            "Approve it in Cadenza on your Mac, or scan the code with a paired Cadenza Remote.",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 22.sp,
-            modifier = Modifier.widthIn(max = 720.dp),
-        )
+private fun PairingPanel(
+    address: String?,
+    pin: String?,
+) {
+    val approvalUrl = if (address != null && pin != null) TvStageConfig.approvalUrl(address, pin) else null
+    val qr = remember(approvalUrl) { approvalUrl?.let { pairingQrBitmap(it, QR_PIXELS) } }
+    Row(horizontalArrangement = Arrangement.spacedBy(72.dp), verticalAlignment = Alignment.CenterVertically) {
+        qr?.let {
+            Image(
+                bitmap = it.asImageBitmap(),
+                contentDescription = "QR code that opens Cadenza to approve this TV",
+                modifier = Modifier.size(360.dp),
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text("Approve this TV", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.SemiBold)
+            Text(pin.orEmpty(), color = Color.White, fontSize = 128.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Scan the code with a phone, or enter this PIN in Cadenza on your Mac.",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 22.sp,
+                modifier = Modifier.widthIn(max = 520.dp),
+            )
+        }
     }
 }
+
+private const val QR_PIXELS = 512
 
 @Composable
 private fun StatusPanel(

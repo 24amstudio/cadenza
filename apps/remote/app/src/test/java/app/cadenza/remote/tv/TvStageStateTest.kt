@@ -91,6 +91,14 @@ class TvStageStateTest {
     }
 
     @Test
+    fun theApprovalLinkOpensTheHostWebRemoteWithTheDigitPin() {
+        assertEquals("http://192.168.1.10:8765/?stage=0427", TvStageConfig.approvalUrl("192.168.1.10:8765", "0427"))
+        assertNull(TvStageConfig.approvalUrl("192.168.1.10:8765", "427"))
+        assertNull(TvStageConfig.approvalUrl("192.168.1.10:8765", "04a7"))
+        assertNull(TvStageConfig.approvalUrl("https://192.168.1.10:8765", "0427"))
+    }
+
+    @Test
     fun aTvStartsTheStageUnlessTheSettingSaysOtherwise() {
         assertTrue(TvStageConfig.startsStage(isTelevision = true, manualSetting = null))
         assertFalse(TvStageConfig.startsStage(isTelevision = true, manualSetting = false))

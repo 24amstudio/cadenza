@@ -27,6 +27,23 @@ enum CastProtocolMessages {
         message(receiverNamespace, to: receiverId, ["type": "LAUNCH", "appId": appId, "requestId": requestId])
     }
 
+    /// Asks a URL-loading Cast app to open a page. The DashCast family reads `contentId` as the page to display, so
+    /// Cadenza's own `/tv` stage runs in the TV's browser without an installed receiver.
+    static func loadWebPage(url: String, transportId: String, sessionId: String, requestId: Int) -> CastMessage {
+        message(
+            mediaNamespace, to: transportId,
+            [
+                "type": "LOAD",
+                "requestId": requestId,
+                "sessionId": sessionId,
+                "media": [
+                    "contentId": url,
+                    "contentType": "text/html",
+                    "streamType": "BUFFERED",
+                ],
+            ])
+    }
+
     static func loadAudio(
         url: String, transportId: String, sessionId: String, title: String, requestId: Int,
         contentType: String = "audio/aac", streamType: String = "LIVE",

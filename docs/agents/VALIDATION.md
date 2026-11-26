@@ -14,7 +14,7 @@ Decisions that differ from the contract, each for a stated reason:
 - AudioToolbox cannot create an AC-3 encoder on this Mac: `AudioConverterNew` with `kAudioFormatAC3` returns `fmt?`. 5.1 uses the AC-3 helper when one is configured. Without one, 5.1 folds to stereo for browsers and Remotes.
 - Browsers receive PCM through a message-port AudioWorklet, not a SharedArrayBuffer ring. The Host serves no cross-origin-isolation headers, so SharedArrayBuffer is unavailable.
 - Remote and web approval uses a PIN, and the TV's QR code opens the Remote with that PIN. The Host never serves a PIN as an image, because a LAN client could then approve a waiting TV.
-- The experimental web loader for Chromecast and Nest Hub is not built. Its app namespace is not verified.
+- The experimental web loader is built behind a Cast app ID that the person supplies. Cadenza bundles and verifies no app ID.
 - Thermal rules: no stage motion at `constrained` and above, and stereo-only receivers at `survival`. The Cast route drops to audio at `survival`. Motion for Cast is not fetched at `constrained`.
 
 Built and checked here (macOS 27, Swift 6.4.2, Node 26.13, Bun 1.4.4, Kotlin with the Android SDK, headless Chromium):
@@ -28,6 +28,14 @@ Built and checked here (macOS 27, Swift 6.4.2, Node 26.13, Bun 1.4.4, Kotlin wit
 - Controls (ZC-07): the Host has a Cadenza TV settings section with the address, a QR sheet, PIN approval, the approved list, and forget. The web output menu has Cadenza TV approve and send. The Android chooser has the same. Thermal rules are in place as listed above.
 - Docs (ZC-08): `docs/CAST.md` (tiers, setup, audio formats, lip sync, limits), README, SPEC C05, USAGE, TROUBLESHOOTING, COMPATIBILITY, BUILDING, credits, and AGENTS structure.
 
+Closed in the follow-up pass:
+
+- Realtime capture: the CoreAudio IOProc copies each block into a preallocated single-producer ring (`RealtimeCaptureRing`), and a user-interactive consumer queue builds the pooled buffers. In a release build, 64 producer blocks made 0 heap allocations. A sanity run of the same probe counted 16 of 16 deliberate allocations, so the probe can see an allocation.
+- Android TV QR code: the TV's PIN panel shows a QR code for `http://<address>/?stage=<pin>`, the same link the web TV shows. It opens the Host's web Remote with the PIN. Unit tests cover the link, and ktlint, debug compile, and the TV test suites pass. The code has not been scanned on a real TV or phone.
+- Experimental web loader: Settings → Cadenza TV → Experimental Web Loader takes a URL-loading Cast app ID. The Host then opens `/tv` through that app. The Host gate passes, but no device has run it.
+- Host gate: `apps/host/Scripts/check.sh` passed. Strict `swift format lint` passed. Swift Testing reported 331 tests passing. XCTest reported 55 passing and 1 skipped, and the skipped test is the allocation probe, which runs only in release.
+- Remote: `:app:ktlintCheck`, `:app:compileDebugKotlin`, and the `app.cadenza.remote.tv` unit tests passed in debug. The full `apps/remote/check.sh`, release variants, and lint were not run in this pass.
+
 Not verified here (these need target evidence, and no row here counts as passed on a device):
 
 - Any real Cast device, Chromecast with Google TV, Google TV Streamer, Fire TV, LG or Samsung TV browser, Apple TV, or HomePod. Playback, latency, lip sync, and HDMI AC-3 passthrough are unmeasured.
@@ -35,10 +43,9 @@ Not verified here (these need target evidence, and no row here counts as passed 
 - AC-3 passthrough to an AVR. The Android path is written, but its AudioTrack output is unproven.
 - The AirPlay `/play` integration with `Content-Location` and `Caption-Location`.
 - The sub-120 ms reaction budget on real devices. The Host fan-out budget is measured (under 15 ms with eight receivers). The end-to-end figure is not.
-- Zero heap allocations in the CoreAudio callback. Stage encoders allocate per buffer, so this is not met.
-- The Android TV QR code. The TV shows its PIN only.
-- A unified Host output drawer. The Host has a settings section, and the web and Android menus carry the controls.
-- Visual checks of the Android TV screen. Only compile and unit tests ran for it.
+- Allocation-free stage encoding. The CoreAudio callback is allocation-free, but the stage encoders and the consumer queue still allocate per buffer.
+- A unified Host output drawer. The Host has a settings section, and the web and Android menus carry the controls. This needs a designed surface on all three platforms, so it is not done.
+- Visual checks of the Android TV screen, including the new QR layout at 10-foot size. Only compile and unit tests ran for it.
 - The web TV browser's `wakeLock` and MSE behavior on TV browsers, and the 45-second OLED drift on a real panel.
 
 ## Goalset implementation slice (24 November 2026, continued)

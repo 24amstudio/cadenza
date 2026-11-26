@@ -23,6 +23,15 @@ final class CastTransmitter {
         var lipSyncOffsetMs: Int
     }
 
+    /// A third-party Cast app that opens a URL in the TV's own browser, so the TV needs no installed Cadenza receiver.
+    /// Experimental: the app ID is whatever the person found for a URL-loading receiver such as DashCast.
+    struct WebLoader: Equatable, Sendable {
+        var appId: String
+        var url: String
+        /// The page is reloaded this often, so a TV that slept or lost its socket comes back on its own.
+        static let refreshInterval: Duration = .seconds(480)
+    }
+
     private(set) var state: State = .idle
     var onChange: ((State) -> Void)?
 
@@ -39,6 +48,9 @@ final class CastTransmitter {
     private var launched = false
     private var requestId = 0
     private var videoSession: VideoSessionMetadata?
+    private var webLoader: WebLoader?
+    private var webLoaderSession: (transportId: String, sessionId: String)?
+    private var webLoaderRefresh: Task<Void, Never>?
 
     var streamPort: UInt16 { server.port }
 
@@ -48,13 +60,20 @@ final class CastTransmitter {
         videoSession: VideoSessionMetadata? = nil,
         localVideoFile: URL? = nil,
         artwork: Data? = nil,
-        motion: Data? = nil
+        motion: Data? = nil,
+        webLoader: WebLoader? = nil
     ) async {
         stop()
         deviceName = device.name
         self.videoSession = videoSession
         envelopeCollector.reset()
         set(.starting(device: device.name))
+        if let webLoader {
+            // The TV's browser pulls audio and track data from the stage channel, so no capture or encoder runs here.
+            self.webLoader = webLoader
+            connect(device)
+            return
+        }
         do {
             guard let format = capture.format, let codec = CastAudioCodec.forChannelCount(format.channelCount) else {
                 throw SingAudioError.unavailable("Cast transmission needs Music's stereo or 5.1 output.")
@@ -101,17 +120,21 @@ final class CastTransmitter {
             let url = "http://\(lanHost):\(port)\(codec.path)?seq=\(UUID().uuidString.prefix(8))"
             streamURL = url
             self.lanHost = lanHost
-            control = CastControlConnection(
-                endpoint: device.endpoint,
-                onMessage: { [weak self] message in Task { @MainActor in self?.receive(message) } },
-                onClose: { [weak self] reason in Task { @MainActor in self?.closed(reason) } })
-            control?.start()
-            control?.send(CastProtocolMessages.connect(to: CastProtocolMessages.receiverId))
-            requestId += 1
-            control?.send(CastProtocolMessages.receiverStatus(requestId: requestId))
+            connect(device)
         } catch {
             fail(error.localizedDescription)
         }
+    }
+
+    private func connect(_ device: CastDiscovery.Device) {
+        control = CastControlConnection(
+            endpoint: device.endpoint,
+            onMessage: { [weak self] message in Task { @MainActor in self?.receive(message) } },
+            onClose: { [weak self] reason in Task { @MainActor in self?.closed(reason) } })
+        control?.start()
+        control?.send(CastProtocolMessages.connect(to: CastProtocolMessages.receiverId))
+        requestId += 1
+        control?.send(CastProtocolMessages.receiverStatus(requestId: requestId))
     }
 
     func updateMediaAssets(localVideoFile: URL? = nil, artwork: Data? = nil, motion: Data? = nil) {
@@ -130,6 +153,14 @@ final class CastTransmitter {
     }
 
     func stop() {
+        webLoaderRefresh?.cancel()
+        webLoaderRefresh = nil
+        if let webLoaderSession {
+            requestId += 1
+            control?.send(CastProtocolMessages.stop(sessionId: webLoaderSession.sessionId, requestId: requestId))
+        }
+        webLoader = nil
+        webLoaderSession = nil
         if let sessionId {
             requestId += 1
             control?.send(CastProtocolMessages.stop(sessionId: sessionId, requestId: requestId))
@@ -160,6 +191,11 @@ final class CastTransmitter {
 
             return
         }
+        if let webLoader {
+            receiveWebLoader(message, loader: webLoader)
+
+            return
+        }
         guard transportId == nil else { return }
         if let session = CastProtocolMessages.runningSession(
             in: message, appId: CastProtocolMessages.defaultMediaReceiverAppId)
@@ -174,6 +210,48 @@ final class CastTransmitter {
             control?.send(
                 CastProtocolMessages.launch(appId: CastProtocolMessages.defaultMediaReceiverAppId, requestId: requestId)
             )
+        }
+    }
+
+    /// Launches the URL-loading app, then opens the stage page once the device reports its session.
+    private func receiveWebLoader(_ message: CastMessage, loader: WebLoader) {
+        if webLoaderSession == nil,
+            let session = CastProtocolMessages.runningSession(in: message, appId: loader.appId)
+        {
+            webLoaderSession = session
+            control?.send(CastProtocolMessages.connect(to: session.transportId))
+            loadWebPage(loader)
+            set(.transmitting(device: deviceName))
+            startWebLoaderRefresh()
+
+            return
+        }
+        if CastProtocolMessages.isReceiverStatus(message), !launched {
+            launched = true
+            requestId += 1
+            control?.send(CastProtocolMessages.launch(appId: loader.appId, requestId: requestId))
+        }
+    }
+
+    private func loadWebPage(_ loader: WebLoader) {
+        guard let webLoaderSession else { return }
+        requestId += 1
+        control?.send(
+            CastProtocolMessages.loadWebPage(
+                url: loader.url, transportId: webLoaderSession.transportId,
+                sessionId: webLoaderSession.sessionId, requestId: requestId))
+    }
+
+    /// Reloads the page on an interval. A TV that slept or dropped its socket reopens the stage without a person
+    /// touching it, and a page that is already current simply reloads.
+    private func startWebLoaderRefresh() {
+        webLoaderRefresh?.cancel()
+        webLoaderRefresh = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: WebLoader.refreshInterval)
+                guard !Task.isCancelled, let self, let loader = self.webLoader else { return }
+                self.loadWebPage(loader)
+            }
         }
     }
 

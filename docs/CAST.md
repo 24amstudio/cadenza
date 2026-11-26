@@ -42,5 +42,5 @@ Play a track with a visible lyric change, then move the offset until the line ch
 
 - Catalog music videos never reach a Cast device or a stage receiver. Their pictures are FairPlay-protected, and only a local file can be played there.
 - Protected audio is not read for alignment, so video alignment uses the local file's audio only.
-- The experimental web loader for a Chromecast or Nest Hub is not built. Its app namespace is not verified.
+- The experimental web loader is built but unverified. Settings → Cadenza TV → Experimental Web Loader takes a URL-loading Cast app ID that you supply. Cadenza then opens `/tv` through that app on the TV instead of streaming audio to the Default Media Receiver. No app ID is bundled, and no device has run it.
 - Nothing in this stage has been run on a real TV, Chromecast, Google TV, Fire TV, or Apple TV in this build. See `docs/agents/VALIDATION.md`.

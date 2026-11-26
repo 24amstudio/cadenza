@@ -84,7 +84,7 @@ Built but not verified against a live Music session: the MediaRemote and HID med
 
 Built, not yet tested against a Cast device or a TV: sending Music's stereo audio to a Cast device through Google's default media receiver, the browser TV stage at `/tv`, the Android TV receiver, the Cadenza TV approval and send controls on the Remotes, and the web taste digest sent at connect when opted in. The TV stage is checked in headless Chromium with a simulated Host, and in JVM and Swift tests.
 
-Not built: compressed Bitstream passthrough, which Music cannot provide because it decodes its audio. The experimental web loader for a Chromecast or Nest Hub is not built, because its app namespace is unverified. Raw PCM is the Bitstream mode that is built. Karaoke for a music video uses its studio track's timed lyrics when the two have the same length within 3 seconds. Otherwise the video shows no karaoke, because Music does not expose lyrics for videos. The video segment alignment needs the video's audio, and DRM license forwarding is declined and not implemented.
+Not built: compressed Bitstream passthrough, which Music cannot provide because it decodes its audio. Raw PCM is the Bitstream mode that is built. The experimental web loader is built, but it needs a URL-loading Cast app ID that you supply, and no device has run it. Karaoke for a music video uses its studio track's timed lyrics when the two have the same length within 3 seconds. Otherwise the video shows no karaoke, because Music does not expose lyrics for videos. The video segment alignment needs the video's audio, and DRM license forwarding is declined and not implemented.
 
 ## License
 

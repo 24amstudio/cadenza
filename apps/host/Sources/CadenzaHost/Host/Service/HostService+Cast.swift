@@ -43,6 +43,9 @@ extension HostService {
     /// Stage receivers are named `stage:<receiverId>` in a `cast.transmit` command, so they never collide with Cast names.
     static let stageDevicePrefix = "stage:"
 
+    /// A URL-loading Cast app ID. Empty means Cadenza uses its own stream and the Default Media Receiver.
+    static let webLoaderAppIdKey = "experimentalCastWebLoaderAppId"
+
     private func transmitToStage(_ receiverId: String, start: Bool) async throws {
         guard
             let session = publishedState.stageHub.approvedSessions.first(where: { $0.profile?.receiverId == receiverId }
@@ -77,6 +80,15 @@ extension HostService {
         guard let lanHost = LANAddresses.all().first else {
             throw CadenzaError.failure("cast_unavailable", "This Host has no LAN address for Cast to reach.")
         }
+        if let loader = webLoaderConfiguration(lanHost: lanHost) {
+            await publishedState.castTransmitter.start(device: device, lanHost: lanHost, webLoader: loader)
+            if case .failed(_, let reason) = publishedState.castTransmitter.state {
+                throw CadenzaError.failure("cast_unavailable", reason)
+            }
+            publishedState.setVideoOutputTarget(.castTransmitter)
+
+            return
+        }
         let current = try? queue.snapshot().current
         let currentSong = current?.song
         let lookedUpVideo: URL? =
@@ -106,6 +118,16 @@ extension HostService {
         }
         // Cast audio takes the karaoke display, so the Mac stops drawing the line while the Cast device is the target.
         publishedState.setVideoOutputTarget(.castTransmitter)
+    }
+
+    /// The experimental web loader, when an app ID is configured and the Host can serve the stage page.
+    private func webLoaderConfiguration(lanHost: String) -> CastTransmitter.WebLoader? {
+        let appId =
+            (UserDefaults.standard.string(forKey: Self.webLoaderAppIdKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appId.isEmpty else { return nil }
+        let base = stageMediaBase() ?? "http://\(lanHost):\(configuration.webPort)"
+        return CastTransmitter.WebLoader(appId: appId, url: "\(base)/tv")
     }
 
     /// The video session for a local music video: its suite ID, its karaoke WebVTT, and the saved offsets.

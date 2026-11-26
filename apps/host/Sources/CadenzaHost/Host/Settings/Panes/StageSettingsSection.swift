@@ -7,6 +7,7 @@ import SwiftUI
 struct StageSettingsSection: View {
     @Bindable var model: HostModel
     @AppStorage("castTransmitChannelFormat") private var transmitFormat = CastTransmitChannelFormat.transcodeAuto
+    @AppStorage(HostService.webLoaderAppIdKey) private var webLoaderAppId = ""
     @State private var showingQRCode = false
     @State private var failure: String?
     @State private var forgetting: CastSnapshot.Stage?
@@ -82,6 +83,16 @@ struct StageSettingsSection: View {
             Text(
                 "Transcode (Auto) sends stereo as AAC and 5.1 as AC-3 when the AC-3 encoder is installed. "
                     + "Bitstream sends uncompressed PCM, which uses more network bandwidth."
+            )
+        }
+        Section {
+            TextField("App ID", text: $webLoaderAppId, prompt: Text("DashCast or another URL-loading app"))
+        } header: {
+            Text("Experimental Web Loader")
+        } footer: {
+            Text(
+                "A Cast app that opens a web address, such as DashCast. Cadenza then opens its own /tv page on the TV "
+                    + "instead of streaming audio to the Default Media Receiver. Leave empty to stream audio normally."
             )
         }
         .alert(

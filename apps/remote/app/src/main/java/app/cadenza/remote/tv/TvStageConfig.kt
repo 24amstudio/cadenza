@@ -11,14 +11,31 @@ internal object TvStageConfig {
      * The socket URL for a Host address the person typed, such as `192.168.1.10:8765` or `http://192.168.1.10:8765`.
      * The stage is plain HTTP on the LAN, so anything else, including HTTPS, is refused.
      */
-    fun socketUrl(address: String): String? {
+    fun socketUrl(address: String): String? = hostAuthority(address)?.let { "ws://$it$SOCKET_PATH?role=$ROLE" }
+
+    /**
+     * The page a phone opens to approve this TV. The TV's QR code carries it, so one scan opens this Host's web Remote
+     * with the PIN filled in. Null when the address or PIN cannot form a link.
+     */
+    fun approvalUrl(
+        address: String,
+        pin: String,
+    ): String? {
+        if (pin.length != PIN_LENGTH || !pin.all { it.isDigit() }) return null
+        return hostAuthority(address)?.let { "http://$it/?stage=$pin" }
+    }
+
+    const val PIN_LENGTH = 4
+
+    /** The `host:port` of a plain-HTTP address the person typed. Null for HTTPS, paths, queries, or blank input. */
+    private fun hostAuthority(address: String): String? {
         val trimmed = address.trim().trimEnd('/')
         val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
         val uri = runCatching { URI(withScheme) }.getOrNull() ?: return null
         if (uri.scheme != "http" || uri.host.isNullOrBlank()) return null
         if (!uri.rawPath.isNullOrEmpty() || uri.rawQuery != null) return null
         val port = if (uri.port == -1) "" else ":${uri.port}"
-        return "ws://${uri.host}$port$SOCKET_PATH?role=$ROLE"
+        return "${uri.host}$port"
     }
 
     /**

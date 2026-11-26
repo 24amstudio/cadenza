@@ -9,7 +9,10 @@ import Network
 @MainActor
 final class CastDiscovery {
     struct Device: Equatable, Sendable {
+        /// The Bonjour instance name. It carries the device's ID, so it identifies the device and is not shown.
         let name: String
+        /// The name a person recognizes, from the `fn` record, such as "Bedroom TV".
+        let label: String
         let display: CastDisplay
         /// The Bonjour endpoint, which the control connection uses to reach the device's TLS port.
         let endpoint: NWEndpoint
@@ -37,10 +40,11 @@ final class CastDiscovery {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> Device? in
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
-                var capabilities: String?
-                if case .bonjour(let record) = result.metadata { capabilities = record.dictionary["ca"] }
+                var txt: [String: String] = [:]
+                if case .bonjour(let record) = result.metadata { txt = record.dictionary }
                 return Device(
-                    name: name, display: CastDisplay.fromCapabilities(capabilities), endpoint: result.endpoint)
+                    name: name, label: Self.label(txt: txt, instance: name),
+                    display: CastDisplay.fromCapabilities(txt["ca"]), endpoint: result.endpoint)
             }
             .sorted { $0.name < $1.name }
             Task { @MainActor in
@@ -57,6 +61,15 @@ final class CastDiscovery {
         browser = nil
         devices = []
         lastProblem = nil
+    }
+
+    /// The friendly name (`fn`), else the model (`md`). The instance name is only the fallback, because it carries an ID.
+    nonisolated static func label(txt: [String: String], instance: String) -> String {
+        for key in ["fn", "md"] {
+            let value = txt[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !value.isEmpty { return value }
+        }
+        return instance
     }
 
     /// Reports a problem once, when it appears. A browse that recovers clears it, so a later failure is reported again.

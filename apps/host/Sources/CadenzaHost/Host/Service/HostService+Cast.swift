@@ -36,6 +36,14 @@ extension HostService {
         publishedState.castDiscovery.onFailure = { [weak self] message in
             self?.logger.log(.warning, category: "cast", action: "discovery.failed", message)
         }
+        // A transmission can fail after its command has already returned, when the TV never answers. The failure is
+        // logged and published, so the Remote shows its reason.
+        publishedState.castTransmitter.onChange = { [weak self] state in
+            if case .failed(_, let reason) = state {
+                self?.logger.log(.warning, category: "cast", action: "transmit.failed", reason)
+            }
+            self?.queue.publish()
+        }
     }
 
     static let settingKinds: Set<String> = [

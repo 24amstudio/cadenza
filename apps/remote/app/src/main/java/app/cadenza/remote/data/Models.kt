@@ -98,10 +98,12 @@ data class HostSnapshot(
     val lipSyncOffsetMs: Int? = null,
 )
 
-// A Google Cast device the Host can send audio to. `display` is none, display, or unknown.
+// A Google Cast device the Host can send audio to. `name` identifies it in commands. `label` is what to show, and
+// `display` is none, display, or unknown.
 data class CastDevice(
     val name: String,
     val display: String,
+    val label: String = name,
 )
 
 // The Host's one status line for a transmission. `mismatch` marks a receiver that plays something other than what is sent.
@@ -367,7 +369,7 @@ object Wire {
                 if (name.isEmpty() || display !in listOf("none", "display", "unknown")) {
                     null
                 } else {
-                    CastDevice(name, display)
+                    CastDevice(name, display, item.optString("label").ifEmpty { name })
                 }
             }
         val transmit =

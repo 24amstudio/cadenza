@@ -77,6 +77,7 @@ export type CastDisplay = 'none' | 'display' | 'unknown';
 
 export interface CastDevice {
   name: string;
+  label: string;
   display: CastDisplay;
 }
 

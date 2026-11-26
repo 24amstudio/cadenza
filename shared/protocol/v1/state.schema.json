@@ -288,6 +288,7 @@
             "required": ["name", "display"],
             "properties": {
               "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "label": { "type": "string", "minLength": 1, "maxLength": 200 },
               "display": { "enum": ["none", "display", "unknown"] }
             },
             "additionalProperties": false

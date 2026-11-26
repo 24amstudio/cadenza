@@ -4,9 +4,9 @@ import Testing
 @testable import CadenzaHost
 
 struct CastSnapshotTests {
-    private func device(_ name: String, display: CastDisplay) -> CastDiscovery.Device {
+    private func device(_ name: String, label: String? = nil, display: CastDisplay) -> CastDiscovery.Device {
         CastDiscovery.Device(
-            name: name, display: display,
+            name: name, label: label ?? name, display: display,
             endpoint: .service(name: name, type: "_googlecast._tcp", domain: "local.", interface: nil))
     }
 
@@ -18,8 +18,8 @@ struct CastSnapshotTests {
         #expect(snapshot.presentation == "full_suite")
         #expect(
             snapshot.devices == [
-                CastSnapshot.Device(name: "Living Room TV", display: "display"),
-                CastSnapshot.Device(name: "Kitchen speaker", display: "none"),
+                CastSnapshot.Device(name: "Living Room TV", label: "Living Room TV", display: "display"),
+                CastSnapshot.Device(name: "Kitchen speaker", label: "Kitchen speaker", display: "none"),
             ])
     }
 
@@ -36,5 +36,28 @@ struct CastSnapshotTests {
 
         #expect(
             snapshot.transmit == CastSnapshot.Transmit(state: "failed", device: "Kitchen speaker", reason: "Refused"))
+    }
+
+    @Test func theFriendlyNameIsPreferredAndTheInstanceIDIsOnlyTheLastResort() {
+        let named = CastDiscovery.label(txt: ["fn": " Bedroom TV ", "md": "Smart TV"], instance: "Smart-TV-830c3b")
+        let modelOnly = CastDiscovery.label(txt: ["md": "Smart TV"], instance: "Smart-TV-830c3b")
+        let bare = CastDiscovery.label(txt: [:], instance: "Smart-TV-830c3b")
+
+        #expect(named == "Bedroom TV")
+        #expect(modelOnly == "Smart TV")
+        #expect(bare == "Smart-TV-830c3b")
+    }
+
+    @Test func aTransmissionIsIdentifiedByTheDeviceIDButDescribedByItsLabel() {
+        let snapshot = CastSnapshot.make(
+            devices: [device("Smart-TV-830c3b", label: "Bedroom TV", display: .unknown)],
+            presentation: .auto,
+            transmit: .transmitting(device: "Smart-TV-830c3b"),
+            transmitRoute: CastSnapshot.Route(codec: "aac", channels: 2))
+
+        #expect(
+            snapshot.devices == [CastSnapshot.Device(name: "Smart-TV-830c3b", label: "Bedroom TV", display: "unknown")])
+        #expect(snapshot.transmit?.device == "Smart-TV-830c3b")
+        #expect(snapshot.transmit?.status?.text.hasSuffix("→ Bedroom TV (Unknown)") == true)
     }
 }

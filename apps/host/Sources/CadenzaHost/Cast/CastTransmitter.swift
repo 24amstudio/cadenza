@@ -53,6 +53,7 @@ final class CastTransmitter {
     private var webLoader: WebLoader?
     private var webLoaderSession: (transportId: String, sessionId: String)?
     private var webLoaderRefresh: Task<Void, Never>?
+    private var handshake: Task<Void, Never>?
 
     var streamPort: UInt16 { server.port }
 
@@ -129,6 +130,9 @@ final class CastTransmitter {
         }
     }
 
+    /// Long enough for a TV that is awake to launch the receiver, short enough that a Remote does not wait on a dead one.
+    private static let handshakeDeadline: Duration = .seconds(15)
+
     private func connect(_ device: CastDiscovery.Device) {
         control = CastControlConnection(
             endpoint: device.endpoint,
@@ -138,6 +142,13 @@ final class CastTransmitter {
         control?.send(CastProtocolMessages.connect(to: CastProtocolMessages.receiverId))
         requestId += 1
         control?.send(CastProtocolMessages.receiverStatus(requestId: requestId))
+        // A TV that is off this network never answers, and its connection can wait without failing. Music's audio is
+        // muted while the tap runs, so the transmission ends here instead of leaving the Mac silent.
+        handshake = Task { [weak self] in
+            try? await Task.sleep(for: Self.handshakeDeadline)
+            guard !Task.isCancelled, let self, case .starting = self.state else { return }
+            self.fail("\(device.label) did not answer. Check that it is on this network.")
+        }
     }
 
     func updateMediaAssets(localVideoFile: URL? = nil, artwork: Data? = nil, motion: Data? = nil) {
@@ -157,6 +168,8 @@ final class CastTransmitter {
 
     func stop() {
         route = nil
+        handshake?.cancel()
+        handshake = nil
         webLoaderRefresh?.cancel()
         webLoaderRefresh = nil
         if let webLoaderSession {

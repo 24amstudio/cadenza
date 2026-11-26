@@ -38,18 +38,10 @@ final class CastAACEncoder: @unchecked Sendable {
     func encode(_ input: AVAudioPCMBuffer) -> [[UInt8]] {
         let packets = AVAudioCompressedBuffer(
             format: outputFormat, packetCapacity: 32, maximumPacketSize: converter.maximumOutputPacketSize)
-        var supplied = false
+        let supply = ConverterInputSupply(input)
         var error: NSError?
         let status = converter.convert(to: packets, error: &error) { _, inputStatus in
-            if supplied {
-                inputStatus.pointee = .noDataNow
-
-                return nil
-            }
-            supplied = true
-            inputStatus.pointee = .haveData
-
-            return input
+            supply.next(inputStatus)
         }
         guard status != .error, packets.packetCount > 0, let descriptions = packets.packetDescriptions else {
             return []
@@ -79,5 +71,28 @@ final class CastAACEncoder: @unchecked Sendable {
             UInt8((frameLength & 0x7) << 5 | 0x1F),
             0xFC,
         ]
+    }
+}
+
+/// Hands one captured buffer to `AVAudioConverter`, once. The converter calls its input block synchronously inside
+/// `convert`, on the calling thread, so the buffer never crosses threads. The SDK marks that block `@Sendable`, so the
+/// one-shot state lives in a reference box instead of a captured variable.
+private final class ConverterInputSupply: @unchecked Sendable {
+    private var pending: AVAudioPCMBuffer?
+
+    init(_ buffer: AVAudioPCMBuffer) {
+        pending = buffer
+    }
+
+    func next(_ inputStatus: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
+        guard let buffer = pending else {
+            inputStatus.pointee = .noDataNow
+
+            return nil
+        }
+        pending = nil
+        inputStatus.pointee = .haveData
+
+        return buffer
     }
 }

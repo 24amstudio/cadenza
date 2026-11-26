@@ -4,7 +4,10 @@ import Foundation
 /// a transmission is active.
 struct CastSnapshot: Codable, Equatable, Sendable {
     struct Device: Codable, Equatable, Sendable {
+        /// The identity a Remote sends back in a transmit command.
         var name: String
+        /// What a Remote shows. Older Remotes that ignore it still list the device by `name`.
+        var label: String
         var display: String
     }
 
@@ -65,13 +68,16 @@ struct CastSnapshot: Codable, Equatable, Sendable {
         var transmitSnapshot = transmit.snapshot
         if let route = transmitRoute, let device = transmitSnapshot.device {
             transmitSnapshot.route = route
+            let label = devices.first { $0.name == device }?.label ?? device
             transmitSnapshot.status = CastRouteStatus.cast(
-                source: CastRouteStatus.sourceName, device: device, sent: route)
+                source: CastRouteStatus.sourceName, device: label, sent: route)
         }
 
         return CastSnapshot(
             presentation: presentation.wireName,
-            devices: devices.prefix(deviceLimit).map { Device(name: $0.name, display: $0.display.wireName) },
+            devices: devices.prefix(deviceLimit).map {
+                Device(name: $0.name, label: $0.label, display: $0.display.wireName)
+            },
             transmit: transmitSnapshot,
             stages: stages,
             pendingStages: pending.map {

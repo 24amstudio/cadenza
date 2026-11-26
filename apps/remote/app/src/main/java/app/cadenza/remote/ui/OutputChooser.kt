@@ -45,10 +45,12 @@ internal fun OutputChooser(
     var sheetOpen by rememberSaveable { mutableStateOf(false) }
     val sending = cast?.transmit?.takeIf { it.state == "starting" || it.state == "transmitting" }
     val playingStage = cast?.stages?.firstOrNull { it.transmitting }
+    val sendingLabel =
+        sending?.device?.let { device -> cast.devices.firstOrNull { it.name == device }?.label ?: device }
     val label =
         when {
             playingStage != null -> "Cadenza TV: ${playingStage.name}"
-            sending != null -> "Google Cast: ${sending.device.orEmpty()}"
+            sending != null -> "Google Cast: ${sendingLabel.orEmpty()}"
             else -> outputs.firstOrNull { it.isDefault }?.name ?: "No output"
         }
 
@@ -130,7 +132,7 @@ private fun OutputSheet(
             OutputSection("Google Cast") {
                 cast.devices.forEach { device ->
                     val active = sending?.device == device.name
-                    OutputRow(device.name, if (active) "Sending audio" else null, active, enabled) {
+                    OutputRow(device.label, if (active) "Sending audio" else null, active, enabled) {
                         sendTransmit(model, device.name, start = !active)
                         onChosen()
                     }

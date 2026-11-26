@@ -120,7 +120,7 @@ function decodeCastDevices(values: JsonValue[]): CastDevice[] {
 
     if (name === null || !isCastDisplay(display)) return [];
 
-    return [{ name, display }];
+    return [{ name, label: stringField(value, 'label') ?? name, display }];
   });
 }
 

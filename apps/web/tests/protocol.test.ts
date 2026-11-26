@@ -228,7 +228,8 @@ describe('decodeHostMessage', () => {
           cast: {
             presentation: 'full_suite',
             devices: [
-              { name: 'Living Room TV', display: 'display' },
+              { name: 'tv1', label: 'Bedroom TV', display: 'display' },
+              { name: 'tv2', display: 'none' },
               { display: 'none' },
             ],
           },
@@ -241,7 +242,10 @@ describe('decodeHostMessage', () => {
       snapshot: {
         cast: {
           presentation: 'full_suite',
-          devices: [{ name: 'Living Room TV', display: 'display' }],
+          devices: [
+            { name: 'tv1', label: 'Bedroom TV', display: 'display' },
+            { name: 'tv2', label: 'tv2', display: 'none' },
+          ],
         },
       },
     });

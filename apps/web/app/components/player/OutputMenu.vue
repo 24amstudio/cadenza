@@ -35,6 +35,15 @@ function isSendingTo(name: string): boolean {
   return sending.value && transmit.value?.device === name;
 }
 
+// The name a person recognizes. The device ID that commands carry is not shown.
+function labelOf(name: string | null): string {
+  return (
+    cast.value?.devices.find((device) => device.name === name)?.label ??
+    name ??
+    ''
+  );
+}
+
 function sendAudio(name: string): void {
   host.setCastTransmit(name, true);
 }
@@ -203,7 +212,7 @@ const presentations: { value: CastPresentation; label: string }[] = [
         receivers.
       </p>
       <p v-if="transmit?.state === 'starting'" class="cast-note" role="status">
-        Connecting to {{ transmit.device }}.
+        Connecting to {{ labelOf(transmit.device) }}.
       </p>
       <p
         v-else-if="transmit?.state === 'transmitting'"
@@ -226,7 +235,9 @@ const presentations: { value: CastPresentation; label: string }[] = [
           :key="device.name"
           class="cast-device"
         >
-          <span>{{ device.name }}, {{ castDisplayLabel(device.display) }}</span>
+          <span
+            >{{ device.label }}, {{ castDisplayLabel(device.display) }}</span
+          >
           <button
             v-if="isSendingTo(device.name)"
             class="cast-button"

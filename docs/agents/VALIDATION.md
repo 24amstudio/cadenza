@@ -1,6 +1,6 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.3.4 and internal build 12, following the user's explicit release-version request. The 0.3.3 record below is kept as history. macOS runtime behavior and target-device evidence remain unverified locally.
+Cadenza's current working tree declares visible version 0.4.0 and internal build 13, following the user's explicit release-version request. Version 0.3.4 was drafted as build 12 but never published, so its work is part of 0.4.0. The 0.3.3 record below is kept as history. macOS runtime behavior and target-device evidence remain unverified locally.
 
 ## Zero-account Cast and TV stage (26 November 2026)
 

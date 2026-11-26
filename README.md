@@ -60,7 +60,7 @@ Portable checks include strict development-script analysis, lint with warnings t
 
 The strict interpretation that every operation must successfully finish within one second remains a platform feasibility limit. Native queue control, lyric cache access, AutoMix state, live quality indicators, and updates all need proof on the target devices before their support can be claimed.
 
-## Version 0.3.4 status
+## Version 0.4.0 status
 
 Built and checked locally. Device, live Music, and screenshot checks are not yet done, and [docs/agents/VALIDATION.md](docs/agents/VALIDATION.md) records what each check covers.
 

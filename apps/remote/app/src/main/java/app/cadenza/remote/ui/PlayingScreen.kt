@@ -429,8 +429,7 @@ private fun PortraitPlayerPanel(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        AudioOutputChooser(model, snapshot.audioOutputs, enabled = state.connected)
-        CastChooser(model, snapshot.cast, enabled = state.connected)
+        OutputChooser(model, snapshot.audioOutputs, snapshot.cast, enabled = state.connected)
         if (current.song.isMusicVideo) {
             LyricTargetChooser(model, snapshot.videoOutput, snapshot.lipSyncOffsetMs, enabled = state.connected)
         }
@@ -491,8 +490,7 @@ private fun PlayerPanel(
             )
         }
         HorizontalDivider()
-        AudioOutputChooser(model, snapshot.audioOutputs, enabled = state.connected)
-        CastChooser(model, snapshot.cast, enabled = state.connected)
+        OutputChooser(model, snapshot.audioOutputs, snapshot.cast, enabled = state.connected)
         if (current.song.isMusicVideo) {
             LyricTargetChooser(model, snapshot.videoOutput, snapshot.lipSyncOffsetMs, enabled = state.connected)
         }

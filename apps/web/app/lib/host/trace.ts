@@ -23,7 +23,13 @@ export function traceEvent(message: string, ...details: unknown[]): void {
   const text = details
     .map((detail) => {
       try {
-        return redactedText(JSON.stringify(detail) ?? String(detail));
+        // An Error's fields are not enumerable, so JSON.stringify would record it as {}. Its name and message are kept.
+        const recorded =
+          detail instanceof Error
+            ? { name: detail.name, message: detail.message }
+            : detail;
+
+        return redactedText(JSON.stringify(recorded) ?? String(detail));
       } catch {
         return '(not recorded)';
       }

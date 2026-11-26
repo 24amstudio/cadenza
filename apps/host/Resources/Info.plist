@@ -16,6 +16,6 @@
     <key>NSLocalNetworkUsageDescription</key><string>Cadenza connects to your paired Remotes on this network.</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Cadenza uses Bluetooth to connect to paired Remotes when you choose Bluetooth transport.</string>
     <key>NSAudioCaptureUsageDescription</key><string>Cadenza captures Music audio locally to separate vocals for Sing mode.</string>
-    <key>NSBonjourServices</key><array><string>_cadence._tcp</string></array>
+    <key>NSBonjourServices</key><array><string>_cadence._tcp</string><string>_googlecast._tcp</string></array>
 </dict>
 </plist>

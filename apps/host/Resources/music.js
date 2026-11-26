@@ -85,9 +85,9 @@ function describeTrack(track, music) {
     artist,
     album,
     duration_ms: seconds === null ? null : Math.round(seconds * 1000),
-    // A stream, or a track with no finite positive length, is live radio. The Host skips timing that needs a length.
-    is_live_radio:
-      !musicVideo && (isStreamClass(trackClass) || seconds === null),
+    // A track with no finite positive length is live radio, and the Host skips timing that needs a length. A streamed
+    // catalog song is also a urlTrack, but Music reports its length, so it is a song with a timeline.
+    is_live_radio: !musicVideo && seconds === null,
     media_type: musicVideo ? 'musicVideo' : 'song',
   };
 }

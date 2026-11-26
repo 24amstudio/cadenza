@@ -21,7 +21,7 @@ struct NetworkRemoteFanoutTests {
             remotes[central] = remote
             network.acceptBluetooth(
                 centralID: central,
-                send: { data in
+                send: { data, _ in
                     guard remote.result == .accepted else { return remote.result }
                     remote.received.append(data)
                     return .accepted

@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  flushLocalLog,
   LocalLog,
+  localLogBatchBytes,
   localLogBatchLimit,
   localLogLimit,
   localLogStorageKey,
+  reportBatch,
+  sharedLocalLog,
 } from '../app/lib/host/localLog';
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -47,6 +51,46 @@ describe('LocalLog', () => {
 
     expect(log.pending()).toHaveLength(localLogBatchLimit);
     expect(log.pending()[0]?.message).toBe('frame 10');
+  });
+
+  test('a report stays within the Bluetooth byte budget, and an oversized entry goes alone', () => {
+    const log = new LocalLog(() => null);
+
+    log.record('debug', 'in bluetooth state', 'x'.repeat(localLogBatchBytes));
+
+    for (let index = 0; index < 50; index++) {
+      log.record('debug', 'out bluetooth clock', 'tick');
+    }
+
+    const pending = log.pending();
+    expect(reportBatch(pending).map((entry) => entry.action)).toEqual([
+      'in bluetooth state',
+    ]);
+
+    const batch = reportBatch(pending.slice(1));
+    expect(batch.length).toBeGreaterThan(1);
+    expect(
+      batch.reduce(
+        (total, entry) => total + entry.action.length + entry.message.length,
+        0,
+      ),
+    ).toBeLessThanOrEqual(localLogBatchBytes);
+  });
+
+  test('logs wait while the link still has frames queued', () => {
+    sharedLocalLog().record('info', 'uplink.busy', 'held until idle');
+    const pendingBefore = sharedLocalLog().pending().length;
+    const sent: string[] = [];
+
+    flushLocalLog((text) => void sent.push(text), undefined, 4_096);
+
+    expect(sent).toEqual([]);
+    expect(sharedLocalLog().pending()).toHaveLength(pendingBefore);
+
+    flushLocalLog((text) => void sent.push(text), undefined, 0);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('"type":"log.report"');
   });
 
   test('a stored list that is damaged keeps only the entries that are whole', () => {

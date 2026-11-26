@@ -22,6 +22,7 @@ import {
   token,
   welcome,
 } from './support/hostClient';
+import { emptySharedLog } from './support/sharedLocalLog';
 
 describe('HostClient pairing and reconnection', () => {
   test('opens no socket while the browser has never been paired', () => {
@@ -97,6 +98,7 @@ describe('HostClient pairing and reconnection', () => {
   });
 
   test('sends the held log entries once connected, and keeps them until the socket takes them', () => {
+    emptySharedLog();
     const log = sharedLocalLog();
     log.record('warning', 'log test before connecting', 'held while offline');
     const credentials = new MemoryCredentials();
@@ -135,6 +137,7 @@ describe('HostClient pairing and reconnection', () => {
   });
 
   test('holds log entries while the Host is under thermal pressure and sends them after it recovers', () => {
+    emptySharedLog();
     const credentials = new MemoryCredentials();
     credentials.value = {
       remoteId,
@@ -160,7 +163,17 @@ describe('HostClient pairing and reconnection', () => {
       expect.objectContaining({ action: 'log test under pressure' }),
     );
 
-    socketAt(sockets, 0).receive(snapshotFrame(3, 'balanced'));
+    // A report carries a small batch, so the entry can wait behind older entries for a few frames.
+    for (let sequence = 3; sequence < 40; sequence++) {
+      socketAt(sockets, 0).receive(snapshotFrame(sequence, 'balanced'));
+
+      const delivered = sentActions().some(
+        (entry) =>
+          isJsonObject(entry) && entry.action === 'log test under pressure',
+      );
+
+      if (delivered) break;
+    }
 
     expect(sentActions()).toContainEqual(
       expect.objectContaining({ action: 'log test under pressure' }),

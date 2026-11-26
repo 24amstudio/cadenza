@@ -29,6 +29,9 @@ export const localLogLimit = 200;
 // The Host accepts at most this many entries in one log.report frame.
 export const localLogBatchLimit = 100;
 
+// Over Bluetooth a report shares the uplink with commands, so it stays small. An entry larger than this goes out alone.
+export const localLogBatchBytes = 512;
+
 const actionLimit = 120;
 const messageLimit = 2_000;
 
@@ -80,16 +83,36 @@ export class LocalLog {
   }
 }
 
+// The leading entries one report carries: at most localLogBatchBytes of text. An entry larger than that goes alone.
+export function reportBatch(
+  entries: readonly LocalLogEntry[],
+): LocalLogEntry[] {
+  const batch: LocalLogEntry[] = [];
+  let bytes = 0;
+
+  for (const entry of entries) {
+    const size = entry.action.length + entry.message.length;
+
+    if (batch.length > 0 && bytes + size > localLogBatchBytes) break;
+    batch.push(entry);
+    bytes += size;
+  }
+
+  return batch;
+}
+
 // Sends the held entries through `send`, and removes them only once it returned, so a send that throws keeps them.
-// Under thermal pressure nothing is sent, and the entries wait for the Host's budget to recover.
+// Under thermal pressure, or while the link still has frames queued, nothing is sent and the entries wait. A report
+// therefore never sits in front of a command on a busy link.
 export function flushLocalLog(
   send: (text: string) => void,
   budget: string | null | undefined,
+  queuedBytes: number,
 ): void {
-  if (hostUnderPressure(budget)) return;
+  if (hostUnderPressure(budget) || queuedBytes > 0) return;
 
   const log = sharedLocalLog();
-  const batch = log.pending();
+  const batch = reportBatch(log.pending());
 
   if (batch.length === 0) return;
 

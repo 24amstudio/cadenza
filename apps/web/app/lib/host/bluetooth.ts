@@ -433,6 +433,9 @@ function linkSocket(
     onOpen: null,
     onMessage: null,
     onClose: null,
+    get queuedBytes() {
+      return queuedBytes;
+    },
     send(text) {
       if (closed) return;
 

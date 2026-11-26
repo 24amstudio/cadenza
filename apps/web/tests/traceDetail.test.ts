@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { traceEvent } from '../app/lib/host/trace';
 import { sharedLocalLog } from '../app/lib/host/localLog';
+import { emptySharedLog } from './support/sharedLocalLog';
 
 // The trace text is what the Host receives from this page's log, so it is read back from there.
 function lastRecordedText(): string {
@@ -11,6 +12,8 @@ function lastRecordedText(): string {
 }
 
 describe('Bluetooth trace details', () => {
+  beforeEach(emptySharedLog);
+
   test('a failure is recorded by its name and message, not as an empty object', () => {
     traceEvent(
       'bluetooth: connection failed',

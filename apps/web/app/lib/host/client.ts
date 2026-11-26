@@ -533,7 +533,11 @@ export class HostClient {
       this.dispatch(socket, message);
     }
 
-    flushLocalLog((text) => socket.send(text), this.snapshot?.hostBudget);
+    flushLocalLog(
+      (text) => socket.send(text),
+      this.snapshot?.hostBudget,
+      socket.queuedBytes ?? 0,
+    );
   }
 
   private transport(): TraceTransport {

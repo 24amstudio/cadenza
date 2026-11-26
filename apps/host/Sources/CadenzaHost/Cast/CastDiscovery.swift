@@ -17,11 +17,23 @@ final class CastDiscovery {
 
     private(set) var devices: [Device] = []
     @ObservationIgnored var onChange: (([Device]) -> Void)?
+    /// Called when the browse starts waiting or fails, with the reason, so a blocked browse is not silent.
+    @ObservationIgnored var onFailure: ((String) -> Void)?
     @ObservationIgnored private var browser: NWBrowser?
+    @ObservationIgnored private var lastProblem: String?
 
     func start() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: "_googlecast._tcp", domain: nil), using: .tcp)
+        browser.stateUpdateHandler = { [weak self] state in
+            let problem: String? =
+                switch state {
+                case .waiting(let error): "Google Cast discovery is waiting: \(error.localizedDescription)"
+                case .failed(let error): "Google Cast discovery failed: \(error.localizedDescription)"
+                default: nil
+                }
+            Task { @MainActor in self?.browserProblemChanged(problem) }
+        }
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> Device? in
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
@@ -44,5 +56,13 @@ final class CastDiscovery {
         browser?.cancel()
         browser = nil
         devices = []
+        lastProblem = nil
+    }
+
+    /// Reports a problem once, when it appears. A browse that recovers clears it, so a later failure is reported again.
+    private func browserProblemChanged(_ problem: String?) {
+        guard problem != lastProblem else { return }
+        lastProblem = problem
+        if let problem { onFailure?(problem) }
     }
 }

@@ -25,4 +25,19 @@ enum LANAddresses {
         }
         return Array(Set(addresses)).sorted()
     }
+
+    /// The address a LAN device such as a Cast TV can reach. Carrier-grade NAT (100.64.0.0/10, which Tailscale uses) is
+    /// not on the LAN, so it is chosen only when no other address exists.
+    static func lanAddress() -> String? {
+        preferred(among: all())
+    }
+
+    static func preferred(among addresses: [String]) -> String? {
+        addresses.first { !isCarrierNAT($0) } ?? addresses.first
+    }
+
+    private static func isCarrierNAT(_ address: String) -> Bool {
+        let octets = address.split(separator: ".").compactMap { Int($0) }
+        return octets.count == 4 && octets[0] == 100 && (64...127).contains(octets[1])
+    }
 }

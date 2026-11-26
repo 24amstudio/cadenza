@@ -71,6 +71,8 @@ export interface SocketLike {
   onOpen: (() => void) | null;
   onMessage: ((text: string) => void) | null;
   onClose: (() => void) | null;
+  // Bytes accepted by the link but not yet written. Only links that queue writes report it.
+  readonly queuedBytes?: number;
   send(text: string): void;
   close(): void;
 }

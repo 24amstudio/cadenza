@@ -34,12 +34,20 @@ class RemoteHandshake(
                         requireNotNull(app.vault.read("host." + stored.hostId)) {
                             "Pairing credentials are unavailable. Pair again."
                         }
-                    JSONObject()
-                        .put("remote_id", stored.remoteId)
-                        .put("token", token)
-                        .put("last_credit_sequence", app.database.cursor(stored.hostId))
-                        .put("remote_version", BuildConfig.VERSION_NAME)
-                        .put("remote_build", BuildConfig.VERSION_CODE)
+                    val auth =
+                        JSONObject()
+                            .put("remote_id", stored.remoteId)
+                            .put("token", token)
+                            .put("last_credit_sequence", app.database.cursor(stored.hostId))
+                            .put("remote_version", BuildConfig.VERSION_NAME)
+                            .put("remote_build", BuildConfig.VERSION_CODE)
+                    if (app.settings.getString(TASTE_DIGEST_OPT_IN) == "true") {
+                        auth.put(
+                            "taste_digest",
+                            tasteDigest(app.database.statistics(stored.hostId), app.library.load().songs),
+                        )
+                    }
+                    auth
                 }
             Wire.frame("hello").put("auth", credentials)
         }

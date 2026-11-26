@@ -30,7 +30,7 @@ In Settings → Network:
 
 Choose **Save settings**. Connected Remotes reconnect after a network-setting change.
 
-Wi-Fi client isolation, guest networks, firewalls, separate router subnets, and VPN routing can prevent devices from reaching each other. SSH is a development tool, not a Cadenza runtime requirement; Cadenza uses its own local TLS connection.
+Wi-Fi client isolation, guest networks, firewalls, separate router subnets, and VPN routing can prevent devices from reaching each other. SSH is a development tool, not a Cadenza runtime requirement. Cadenza's local connection uses no TLS; the pairing secret and per-device tokens authenticate it.
 
 ## Pair a Remote
 
@@ -41,7 +41,7 @@ Wi-Fi client isolation, guest networks, firewalls, separate router subnets, and 
 
 Each invitation expires after five minutes and can pair one Remote. Generate another invitation to pair Remote B; Remote A keeps its connection and identity. Device credentials are distinct: the Host keeps them in an owner-only file beside its database, and the Remote keeps its own in Android Keystore-backed storage.
 
-Discovery helps locate Host; the QR supplies its one-use secret and certificate fingerprint, then Remote retrieves the public certificate over the authenticated local bootstrap socket before establishing pinned TLS. A changed Host identity requires verification and pairing again. No private certificate key is transferred.
+Discovery helps locate Host. The QR supplies the Host address, control port, and a one-use secret that expires after five minutes. It carries no key or certificate. Remote then authenticates with its per-device token, so a Host that rejects that token needs pairing again.
 
 The Android 12 / API 31 baseline uses the normal `INTERNET` permission for the LAN connection. This build targets Android 16 / API 36, so it does not request Android 17's `ACCESS_LOCAL_NETWORK` permission. Vendor Android versions may apply their own network restrictions; verify the target device during installation.
 

@@ -15,3 +15,10 @@ Cadenza's LRCLIB and artwork adapters use only fixed HTTPS origins, bounded resp
 Before adopting code or a dependency from any of these repositories, verify its current license, attribution requirements, security posture, and compatibility with Cadenza's AGPL-3.0 license.
 
 The implementation uses no copied source or bundled dependency from the karaoke reference repositories. The explicitly bundled MLX runtime is listed above with its MIT license; the reviewed licenses include MIT for LyricFever, MPL-2.0 for LyricsX, AGPL-3.0 for AMLL, and LGPL-3.0 for Kawarp-AGSL. Repositories with missing or unclear license metadata remain reference-only until separately reviewed.
+
+## Bundled FFmpeg helper (Cast 5.1 AC-3)
+
+- Cast and the TV stage send six-channel output as AC-3 through a helper process, `Contents/Helpers/cadenza-ac3`. The build bundles the helper only when `apps/host/.helpers/cadenza-ac3` exists, and the public source tree ships none. A development build may name another helper with `CADENZA_AC3_HELPER`. It is built from [FFmpeg 9.0.2](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz) by `apps/host/Scripts/build-ac3-helper.sh`, which checks the tarball's pinned SHA-256 before it builds.
+- The helper is configured with `--disable-gpl --disable-nonfree` and only the AC-3 encoder, the raw float input, the AC-3 muxer, and the pipe protocol. It reports LGPL-2.1-or-later, and its license text ships as `Contents/Resources/COPYING.FFmpeg-LGPLv2.1`.
+- Cadenza's Host is not linked with FFmpeg. The helper runs as a separate process that reads PCM on stdin and writes AC-3 on stdout. The corresponding FFmpeg source is the pinned tarball above.
+- Reviewed: LGPL-2.1-or-later permits this use in an AGPL-3.0 application when the library stays a separately replaceable component with its notice and source offer. A future change that enables GPL or nonfree components, or links FFmpeg into the Host, needs a new license review.

@@ -57,6 +57,7 @@ struct Frame: Codable, Sendable {
     var recommendationPassport: SignedRecommendationPassport? = nil
     var recommendationQuery: RecommendationQuery? = nil
     var recommendationResult: RecommendationResult? = nil
+    var recommendationShelf: RecommendationShelf? = nil
     var recommendationFeedback: RecommendationFeedback? = nil
     var recommendationPlan: RecommendationPlanEnvelope? = nil
     var recommendationShadowObservation: RecommendationShadowObservation? = nil
@@ -71,6 +72,8 @@ struct Frame: Codable, Sendable {
     var motion: Bool? = nil
     // artwork.get with previewOnly sends the preview and nothing more, for rows that are not playing yet.
     var previewOnly: Bool? = nil
+    // artist.motion.get names the artist whose Artist Details header wants a motion video.
+    var artistName: String? = nil
     var variant: String? = nil
 }
 
@@ -79,6 +82,8 @@ struct RecommendationQuery: Codable, Sendable {
     var horizon: Int
     var filters: RecommendationFilters
     var modelVersion: Int
+    /// A shelf asks for the ranked list, not a single recommendation to play.
+    var shelf: Bool? = nil
 }
 
 struct RecommendationFilters: Codable, Sendable {

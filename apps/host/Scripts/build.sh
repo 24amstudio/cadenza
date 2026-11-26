@@ -50,22 +50,22 @@ fi
 cd "$host_root"
 /usr/bin/swift build -c release --arch arm64 -Xswiftc -warnings-as-errors
 binary_root="$(/usr/bin/swift build -c release --arch arm64 --show-bin-path)"
+# The Sing model is never bundled. Production packages it as a separate release archive that Host downloads on request.
+rm -rf "$binary_root/CadenzaHost_CadenzaHost.bundle/Resources/SingModel"
+sing_archive=""
 if [[ "$profile" == production ]]; then
   sing_model_directory="$host_root/.build/sing-model"
   /bin/bash "$project_root/tools/sing/fetch_model.sh" "$sing_model_directory" >/dev/null
-  sing_resource_directory="$binary_root/CadenzaHost_CadenzaHost.bundle/Resources/SingModel"
-  mkdir -p "$sing_resource_directory"
-  cp "$sing_model_directory/model.safetensors" "$sing_resource_directory/model.safetensors"
-  cp "$sing_model_directory/config.json" "$sing_resource_directory/config.json"
-  cp "$sing_model_directory/LICENSE" "$sing_resource_directory/LICENSE"
-else
-  rm -rf "$binary_root/CadenzaHost_CadenzaHost.bundle/Resources/SingModel"
+  sing_archive="$(/bin/bash "$project_root/tools/sing/package_model.sh" "$sing_model_directory" "$project_root/dist")"
 fi
 stage="$(mktemp -d "$host_root/.build/staging/package.XXXXXX")"
 application="$stage/Cadenza Host.app"
 mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources"
 
 cp "$binary_root/CadenzaHost" "$application/Contents/MacOS/CadenzaHost"
+# Symbols make the executable about twice the 40 MB Host budget. The dSYM keeps them for crash symbolication.
+/usr/bin/dsymutil "$binary_root/CadenzaHost" -o "$project_root/dist/Cadenza-Host-$version-$profile-arm64.dSYM"
+/usr/bin/strip -x "$application/Contents/MacOS/CadenzaHost"
 cp "$binary_root/CadenzaWatchdog" "$application/Contents/MacOS/CadenzaWatchdog"
 cp "$binary_root/CadenzaUpdater" "$application/Contents/MacOS/CadenzaUpdater"
 cp "$host_root/Resources/Info.plist" "$application/Contents/Info.plist"
@@ -76,7 +76,29 @@ cp "$project_root/shared/changelog.json" "$application/Contents/Resources/change
 /usr/bin/plutil -replace CFBundleVersion -string "$build" "$application/Contents/Info.plist"
 /usr/bin/plutil -insert CadenzaBuildProfile -string "$profile" "$application/Contents/Info.plist"
 /usr/bin/plutil -insert CadenzaBuildID -string "$build_identity" "$application/Contents/Info.plist"
+if [[ -n "$sing_archive" ]]; then
+  # The expected model is what this build downloads and verifies. A development build has no release URL to download from.
+  sing_model_version="$(source "$project_root/tools/sing/model.env"; printf '%s' "$model_version")"
+  sing_sha256="$(/usr/bin/shasum -a 256 "$sing_archive" | /usr/bin/awk '{print $1}')"
+  sing_bytes="$(/usr/bin/stat -f %z "$sing_archive")"
+  sing_url=""
+  if [[ -n "${CADENZA_RELEASE_VERSION:-}" ]]; then
+    release_repository="$(/usr/bin/plutil -extract repository raw -o - "$project_root/shared/release-config.json")"
+    sing_url="https://github.com/$release_repository/releases/download/v$CADENZA_RELEASE_VERSION/$(basename "$sing_archive")"
+  fi
+  /usr/bin/plutil -insert CadenzaSingModelVersion -string "$sing_model_version" "$application/Contents/Info.plist"
+  /usr/bin/plutil -insert CadenzaSingModelSHA256 -string "$sing_sha256" "$application/Contents/Info.plist"
+  /usr/bin/plutil -insert CadenzaSingModelBytes -string "$sing_bytes" "$application/Contents/Info.plist"
+  /usr/bin/plutil -insert CadenzaSingModelURL -string "$sing_url" "$application/Contents/Info.plist"
+fi
 
+# The AC-3 helper for six-channel Cast output. It is optional: without it, Cast reports that 5.1 needs the helper.
+if [[ -x "$host_root/.helpers/cadenza-ac3" ]]; then
+  mkdir -p "$application/Contents/Helpers"
+  cp "$host_root/.helpers/cadenza-ac3" "$application/Contents/Helpers/cadenza-ac3"
+  cp "$host_root/.helpers/COPYING.LGPLv2.1" "$application/Contents/Resources/COPYING.FFmpeg-LGPLv2.1"
+  /usr/bin/codesign --force --sign "$signing_identity" --timestamp=none "$application/Contents/Helpers/cadenza-ac3"
+fi
 /usr/bin/codesign --force --sign "$signing_identity" --timestamp=none "$application/Contents/MacOS/CadenzaUpdater"
 /usr/bin/codesign --force --sign "$signing_identity" --timestamp=none --entitlements "$host_root/Resources/entitlements.plist" "$application"
 /usr/bin/codesign --verify --deep --strict "$application"

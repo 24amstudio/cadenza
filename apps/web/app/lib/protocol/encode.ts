@@ -1,3 +1,4 @@
+import type { TasteDigest } from '../tasteDigest';
 import type {
   BrowseRequest,
   CommandAction,
@@ -14,6 +15,7 @@ export interface AuthPayload {
   lastCreditSequence: number;
   name: string;
   remoteVersion: string;
+  tasteDigest?: TasteDigest | null;
 }
 
 export interface CommandEnvelope {
@@ -48,6 +50,16 @@ export function encodePair(
 }
 
 export function encodeHello(auth: AuthPayload): string {
+  const digest = auth.tasteDigest
+    ? {
+        taste_digest: {
+          top_artists: auth.tasteDigest.topArtists,
+          top_genres: auth.tasteDigest.topGenres,
+          favorited_track_ids: auth.tasteDigest.favoritedTrackIds,
+        },
+      }
+    : null;
+
   return JSON.stringify({
     version: 1,
     type: 'hello',
@@ -58,6 +70,7 @@ export function encodeHello(auth: AuthPayload): string {
       name: auth.name,
       remote_version: auth.remoteVersion,
       heartbeat: true,
+      ...digest,
     },
   });
 }
@@ -155,6 +168,18 @@ export function encodeMotionGet(
   });
 }
 
+export function encodeArtistMotionGet(
+  requestId: string,
+  artistName: string,
+): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'artist.motion.get',
+    request_id: requestId,
+    artist_name: artistName,
+  });
+}
+
 export function encodeArtworkCancel(requestId: string): string {
   return JSON.stringify({
     version: 1,
@@ -194,6 +219,22 @@ export function encodeCommandStatus(commandId: string): string {
   });
 }
 
+/** Asks the Host for the ranked shelf. Nothing is queued by it, and the reply echoes the request id. */
+export function encodeRecommendationShelf(requestId: string): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'recommendation.query',
+    request_id: requestId,
+    recommendation_query: {
+      intent: null,
+      horizon: 1,
+      filters: { explicit_allowed: false, locked: false },
+      model_version: 1,
+      shelf: true,
+    },
+  });
+}
+
 export function encodeCreditAck(sequence: number): string {
   return JSON.stringify({ version: 1, type: 'analytics.ack', sequence });
 }
@@ -230,6 +271,16 @@ export interface SongDetails {
   artist: string;
   album: string;
   durationMs: number | null;
+}
+
+// Asks the Host to play a music video in Music's own window. The Host answers with video.started or an error.
+export function encodeVideoPlay(requestId: string, song: SongIdentity): string {
+  return JSON.stringify({
+    version: 1,
+    type: 'video.play',
+    request_id: requestId,
+    song: encodeIdentity(song),
+  });
 }
 
 export function encodeSongPrepare(
@@ -285,6 +336,22 @@ export function encodeCommand(envelope: CommandEnvelope): string {
   });
 }
 
+// The Cast, video output, and Cadenza TV commands. Kept apart so the action switch stays within the complexity limit.
+function encodeCastAction(action: CommandAction) {
+  switch (action.kind) {
+    case 'cast.transmit':
+      return { kind: action.kind, device: action.device, start: action.start };
+    case 'video.output':
+      return { kind: action.kind, video_output: action.target };
+    case 'cast.presentation':
+      return { kind: action.kind, presentation: action.presentation };
+    case 'stage.approve':
+      return { kind: action.kind, pin: action.pin };
+    default:
+      return null;
+  }
+}
+
 function encodeAction(action: CommandAction) {
   switch (action.kind) {
     case 'playback.seek':
@@ -299,6 +366,28 @@ function encodeAction(action: CommandAction) {
       return { kind: action.kind, enabled: action.enabled };
     case 'playback.repeat':
       return { kind: action.kind, mode: action.mode };
+    case 'audio.selectOutput':
+      return { kind: action.kind, output: action.output };
+    case 'lip_sync.offset':
+      return { kind: action.kind, lip_sync_offset_ms: action.offsetMs };
+    case 'lyrics.offset':
+      return {
+        kind: action.kind,
+        song: encodeIdentity(action.song),
+        user_offset_ms: action.offsetMs,
+      };
+    case 'library.favorite':
+      return {
+        kind: action.kind,
+        song: encodeIdentity(action.song),
+        enabled: action.favorite,
+      };
+    case 'library.addToPlaylist':
+      return {
+        kind: action.kind,
+        name: action.name,
+        songs: action.songs.map(encodeIdentity),
+      };
     case 'playback.pause':
     case 'playback.resume':
     case 'playback.skip':
@@ -313,6 +402,8 @@ function encodeAction(action: CommandAction) {
         song: encodeIdentity(action.song),
         occurrence_id: action.occurrenceId,
       };
+    default:
+      return encodeCastAction(action);
   }
 }
 

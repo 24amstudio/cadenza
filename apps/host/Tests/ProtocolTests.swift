@@ -10,14 +10,14 @@ struct ProtocolTests {
         var welcome = Welcome(
             hostId: id, hostName: "Studio", hostEpoch: id, remoteId: id, hostTimeMs: 1,
             updates: UpdateConfiguration())
-        welcome.hostVersion = "0.3.3"
-        welcome.hostBuild = 11
+        welcome.hostVersion = "0.3.4"
+        welcome.hostBuild = 12
         let object = try #require(
             JSONSerialization.jsonObject(with: Wire.encode(Frame(type: "welcome", welcome: welcome))) as? [String: Any])
         let fields = try #require(object["welcome"] as? [String: Any])
 
-        #expect(fields["host_version"] as? String == "0.3.3")
-        #expect(fields["host_build"] as? Int == 11)
+        #expect(fields["host_version"] as? String == "0.3.4")
+        #expect(fields["host_build"] as? Int == 12)
     }
 
     @Test func commandRoundTripPreservesExplicitNullGuards() throws {

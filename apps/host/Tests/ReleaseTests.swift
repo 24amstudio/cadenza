@@ -39,6 +39,41 @@ struct ReleaseTests {
         }
     }
 
+    @Test func signedComparisonAndNotesMustMatchTheReleaseTheyDescribe() throws {
+        let key = P256.Signing.PrivateKey()
+        let asset = ReleaseAsset(
+            platform: "macos-arm64", filename: "Cadenza-Host-0.3.4-arm64.zip",
+            sha256: String(repeating: "a", count: 64), size: 100, minimumOS: 26
+        )
+        var manifest = ReleaseManifest(repository: "example/cadenza", version: "0.3.4", build: 12, assets: [asset])
+        manifest.previousTag = "v0.3.3"
+        manifest.compareUrl = "https://github.com/example/cadenza/compare/v0.3.3...v0.3.4"
+        manifest.releaseNotes = "Automated Production build 7 from `abc123`."
+        func verify(_ value: ReleaseManifest) throws -> ReleaseManifest {
+            let data = try ReleaseValidation.encode(value)
+            return try ReleaseValidation.verify(
+                manifest: data, signature: try key.signature(for: data).derRepresentation,
+                publicKeySPKI: key.publicKey.derRepresentation, repository: "example/cadenza",
+                currentBuild: 11, platform: "macos-arm64"
+            ).0
+        }
+        let verified = try verify(manifest)
+        #expect(verified.releaseNotes == manifest.releaseNotes)
+        #expect(verified.compareUrl == manifest.compareUrl)
+
+        var otherComparison = manifest
+        otherComparison.compareUrl = "https://github.com/example/cadenza/compare/v0.3.2...v0.3.4"
+        #expect(throws: (any Error).self) { try verify(otherComparison) }
+
+        var orphanedComparison = manifest
+        orphanedComparison.previousTag = nil
+        #expect(throws: (any Error).self) { try verify(orphanedComparison) }
+
+        var oversized = manifest
+        oversized.releaseNotes = String(repeating: "x", count: ReleaseValidation.releaseNotesLimit + 1)
+        #expect(throws: (any Error).self) { try verify(oversized) }
+    }
+
     @Test func archiveRejectsTraversalLinksAndNonAppleSiliconExecutables() throws {
         try ArchiveInspection.validate(zip(name: "Cadenza Host.app/Contents/Info.plist", mode: 0x8000))
         #expect(throws: (any Error).self) {

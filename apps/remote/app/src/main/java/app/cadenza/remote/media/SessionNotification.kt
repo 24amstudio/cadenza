@@ -27,6 +27,8 @@ data class SessionStatus(
     val occurrenceId: String = "",
     val canInterrupt: Boolean = false,
     val artworkBytes: ByteArray? = null,
+    /** The active timed lyric line, set only while the screen is on. It changes at line boundaries, never on a timer. */
+    val lyricLine: String? = null,
 ) {
     companion object {
         fun from(state: RemoteState): SessionStatus {
@@ -94,6 +96,7 @@ class SessionNotification(
                     status.artworkBytes
                         ?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
                         ?.let(::setLargeIcon)
+                    status.lyricLine?.let(::setSubText)
                 }
         if (mediaToken != null && status.title.isNotEmpty()) {
             val style = Notification.MediaStyle().setMediaSession(mediaToken)

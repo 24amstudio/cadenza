@@ -34,6 +34,7 @@ import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.RemoteState
 import app.cadenza.remote.model.matches
 import app.cadenza.remote.model.mayInterruptCurrent
+import app.cadenza.remote.model.playVideo
 import app.cadenza.remote.ui.browse.LocalBrowseNavigator
 import app.cadenza.remote.ui.browse.canBrowse
 import org.json.JSONObject
@@ -91,9 +92,13 @@ fun SongActions(
     val mayInterrupt = state.mayInterruptCurrent()
     // Requests stay disabled until the Host reconciles Music's queue, so the sheet says why instead of greying out silently.
     val queueIssue =
-        state.snapshot
-            ?.takeIf { state.connected && !it.synchronized }
-            ?.let { it.issue ?: "Review Music's queue in Cadenza Host to change requests." }
+        if (song.isMusicVideo) {
+            "A music video plays now. It cannot be queued."
+        } else {
+            state.snapshot
+                ?.takeIf { state.connected && !it.synchronized }
+                ?.let { it.issue ?: "Review Music's queue in Cadenza Host to change requests." }
+        }
 
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val spacious = maxWidth >= 500.dp
@@ -124,7 +129,7 @@ fun SongActions(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ActionButton(
                             "Add to queue",
-                            enabled = canQueue,
+                            enabled = canQueue && !song.isMusicVideo,
                             modifier = Modifier.weight(1f),
                         ) {
                             model.command(JSONObject().put("kind", "queue.enqueue").put("song", song.identity.json()), key, song)
@@ -133,7 +138,7 @@ fun SongActions(
                             onClick = {
                                 model.command(JSONObject().put("kind", "queue.play_next").put("song", song.identity.json()), key, song)
                             },
-                            enabled = canQueue && "queue.play-next" in state.capabilities,
+                            enabled = canQueue && !song.isMusicVideo && "queue.play-next" in state.capabilities,
                             modifier = Modifier.weight(1f).sizeIn(minHeight = 56.dp),
                         ) { Text("Play next", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         FavoriteIconButton(model, state, song)
@@ -141,19 +146,23 @@ fun SongActions(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilledTonalButton(
                             onClick = {
-                                model.command(
-                                    JSONObject().put("kind", "queue.play_now").put("song", song.identity.json()).put(
-                                        "occurrence_id",
-                                        current?.occurrenceId ?: JSONObject.NULL,
-                                    ),
-                                    key,
-                                    song,
-                                )
+                                if (song.isMusicVideo) {
+                                    model.playVideo(song)
+                                } else {
+                                    model.command(
+                                        JSONObject().put("kind", "queue.play_now").put("song", song.identity.json()).put(
+                                            "occurrence_id",
+                                            current?.occurrenceId ?: JSONObject.NULL,
+                                        ),
+                                        key,
+                                        song,
+                                    )
+                                }
                             },
-                            enabled = canQueue && mayInterrupt,
+                            enabled = if (song.isMusicVideo) state.connected else canQueue && mayInterrupt,
                             modifier = Modifier.weight(1f).sizeIn(minHeight = 56.dp),
                         ) { Text("Play now", maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        if (!prepared) {
+                        if (!prepared && !song.isMusicVideo) {
                             OutlinedButton(
                                 onClick = { model.prepare(song) },
                                 enabled = state.connected && !state.preparing,

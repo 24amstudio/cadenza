@@ -10,16 +10,17 @@ Cadenza Web is a browser Remote that uses the same v1 frames. When it is on, the
 
 ## Contracts
 
-| Schema                | Purpose                                                                        |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `common.schema.json`  | Identifiers, counters, catalog/library identities                              |
-| `command.schema.json` | Strict mutation envelope and allowlisted actions                               |
-| `result.schema.json`  | Confirmed, rejected, expired, or unconfirmed results                           |
-| `state.schema.json`   | Authoritative playback, queue, quality, and timed lyrics                       |
-| `session.schema.json` | Pairing, authentication, clock, search, preparation, state and status requests |
-| `media.schema.json`   | Artwork and animated album art requests, responses, and chunks                 |
-| `browse.schema.json`  | Album, artist, and playlist browse requests and results                        |
-| `credit.schema.json`  | Ordered, per-Remote playback credits                                           |
+| Schema                | Purpose                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| `common.schema.json`  | Identifiers, counters, catalog/library identities                                                   |
+| `command.schema.json` | Strict mutation envelope and allowlisted actions                                                    |
+| `result.schema.json`  | Confirmed, rejected, expired, or unconfirmed results                                                |
+| `state.schema.json`   | Authoritative playback, queue, quality, and timed lyrics                                            |
+| `session.schema.json` | Pairing, authentication, clock, search, preparation, state and status requests                      |
+| `media.schema.json`   | Artwork and animated album art requests, responses, and chunks                                      |
+| `browse.schema.json`  | Album, artist, and playlist browse requests and results                                             |
+| `cast.schema.json`    | Zero-account Cast stage messages: receiver profile, track suite, prefetch, clock, and karaoke video |
+| `credit.schema.json`  | Ordered, per-Remote playback credits                                                                |
 
 Messages are bounded to 1 MiB; command messages to 64 KiB. Counters are nonnegative integers no greater than `2^53 - 1`. IDs use their documented string form. A catalog ID, library persistent ID, queue request ID, playback occurrence ID, and command ID are distinct concepts. Duplicate songs retain separate queue occurrences.
 
@@ -73,4 +74,54 @@ Host distributes one timed lyric document and English translation revision for t
 
 Credits have positive contiguous sequences per pairing. The first credit increments one occurrence's count only with positive observed time; later credits add playing time. Host excludes pauses and seek jumps. Remote commits aggregate and cursor changes before acknowledging. Duplicate or older credits remain ignored after raw cleanup, while a sequence gap requires replay.
 
-These contracts define the wire format; each native application must also pass its platform-specific build and integration checks.
+Sing reports `model_ready` in its state object. It is `true` only when the verified Sing model is installed on the Host. A `sing.enable` command that needs an uninstalled model is rejected with `sing_model_not_installed`. The model-free stereo fallback in production needs no model, so it is not affected.
+
+Remote updates are served by the Host's HTTP listener, not by the command socket. `GET /api/v1/updates/manifest` returns `version`, `buildNumber`, `sha256`, `sizeBytes`, and `lanDownloadPath`. `GET /api/v1/updates/remote/android.apk` returns the cached APK with `Accept-Ranges: bytes`, `X-Cadenza-SHA256`, and `206 Partial Content` for at most 8 MiB per range. Both requests must carry the paired Remote's `X-Cadenza-Remote-Id` and `X-Cadenza-Remote-Token` headers. Otherwise the Host answers `401`.
+
+## Zero-account Cast stage contracts
+
+`v1/cast.schema.json` defines the messages for receivers that need no registered Cast app: a Tier-2 `/tv` browser stage and a Tier-3 Android TV receiver. They travel on the Host's stage channel, `ws://<host>:<port>/cast/live?role=tv_stage` or `?role=android_tv_receiver`. JSON messages are text frames. Binary audio frames are binary frames. Remote command sockets never carry stage traffic, and the stage channel is refused on the Remote socket path.
+
+### Pairing and receiver identity
+
+A receiver sends `RECEIVER_PROFILE` on connect. Its `transportType` is `cadenza_web_tv_stage` or `cadenza_android_tv_receiver`. A standard Google Cast device (`CC1AD845`) never sends a profile. The Host reads its display capability from the `ca` bitmask of its `_googlecast._tcp` record, where bit `0x0001` means video output.
+
+A profile without an approved `receiverToken` gets `STAGE_PAIRING` with a four-digit `pin` and `expiresInMs`. The Host shows the PIN and a `/tv` QR code, and a listener approves it on the Host or on a paired Remote. Approval returns `STAGE_ACCEPTED` with a `receiverToken` that the receiver stores and sends in its next profile. The Host stores only a hash of that token, so a receiver never reconnects without it. Until approval, the Host sends no audio, no lyrics, and no track data.
+
+After approval, a receiver may send two advisory messages. `STAGE_PLAYBACK` (`codec`, `channels`, `path`, `active`) says what its audio output is playing. `channels` is 0 when the receiver cannot tell its output layout: a browser's MediaSource path, an AC-3 passthrough that the receiver decodes itself, or an output that reports no layouts. An Android TV reports 5.1 as 0 when its routed output accepts 5.1, because the TV may still downmix after HDMI. When the output is narrower, Android mixes the stereo itself, and the report says 2. It is sent when playback starts, changes path, or stops, and the Host shows it beside the route it sends. `STAGE_LOG` (`level`, `message`) records one line on the Host, and the Host limits each receiver to 30 lines in 10 seconds. A report that arrives before approval is ignored, and the socket stays open. The Host's status line names what was sent and what was reported, and it flags a mismatch. Google Cast devices send no reports, so their line ends with "(Unknown)" in place of a receiver format. Unknown means the Host cannot tell whether the receiver plays the sent layout or downmixes it.
+
+An approved receiver sends `STAGE_COMMAND` with `action` set to `playback.pause`, `playback.resume`, `playback.skip`, or `playback.previous`, for example from a TV remote key. The Host runs it as an ordinary playback command, with the receiver as the actor, and a receiver that is not approved cannot send one.
+
+### Track, clock, and video messages
+
+- `TRACK_SUITE_PAYLOAD` carries track metadata, an optional quality badge that is omitted while the tier is unknown, the artwork and motion URLs, and timed lines with translations. `lines` use the same `line` shape as the state snapshot.
+- `PREFETCH_NEXT_SUITE` tells the receiver to warm the next track's suite. The Host sends it 10 seconds before the track ends or when the queue is reordered.
+- `OPTIMISTIC_STATE` follows a transport command at about +2 ms. `CLOCK_CALIBRATE` follows the Music command with the measured position, so the receiver corrects its drift.
+- `VIDEO_KARAOKE_PAYLOAD` plays a DRM-free local music video (`source: lan_mp4`). Its `subtitleUrl` is a WebVTT track on the same LAN, and `userOffsetMs` is the saved nudge. Catalog video is never sent to a stage receiver.
+
+### Binary stage frames
+
+Integers are big-endian. Audio payloads are at most 65,536 bytes.
+
+| Frame               | Layout                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `0x01` AUDIO_FRAME  | `[1B 0x01][1B codec][1B channels][1B sampleRateCode][8B presentationTimeUs][4B payloadLength][payload]` |
+| `0x02` FLUSH_STREAM | `[1B 0x02][4B generationSeq]`                                                                           |
+| `0x03` INIT_SEGMENT | `[1B 0x03][1B codec][1B channels][1B sampleRateCode][4B payloadLength][payload]`                        |
+
+`INIT_SEGMENT` carries the fragmented MP4 `ftyp` and `moov` boxes that a Media Source buffer needs before any fragment. It is sent once per codec and layout, and again after a flush that changes it. A receiver appends each `AUDIO_FRAME` payload that carries a fragment (`moof` + `mdat`) for codecs 1 and 4.
+
+| Codec | Name      | Payload                                                 | Produced by the Host                                  |
+| ----- | --------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| `1`   | AC3_FMP4  | AC-3 fragments in fragmented MP4                        | 5.1 when the AC-3 helper is configured                |
+| `2`   | FLAC_FMP4 | Reserved. Not produced: browser support is inconsistent | never                                                 |
+| `3`   | LPCM_RAW  | Interleaved little-endian float32 PCM, no container     | Bitstream mode and receivers without fragment support |
+| `4`   | AAC_FMP4  | AAC-LC fragments in fragmented MP4                      | stereo, and 5.1 folded down when AC-3 is unavailable  |
+
+`sampleRateCode` is `1` for 48 kHz and `2` for 44.1 kHz. Channels range from 1 to 8. `FLUSH_STREAM` resets the receiver's buffers within 2 ms. It increases `generationSeq`, and the receiver drops any frame whose generation is older.
+
+A receiver rejects any frame whose length or payload length does not match its header. It rejects an unknown type, codec, channel count, or sample-rate code. The contract has no Widevine, FairPlay, or license fields, and every stage URL is a plain HTTP LAN address.
+
+Presentation mode keeps the `full_suite` wire value that shipped Remotes already send. The `full_cadenza_suite` name is a label only.
+
+These contracts define the wire format. Each native application must also pass its platform-specific build and integration checks.

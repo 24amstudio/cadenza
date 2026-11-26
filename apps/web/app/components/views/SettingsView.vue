@@ -8,6 +8,8 @@ import {
   type NotificationAccess,
 } from '~/lib/browserNotifications';
 import { isValidRemoteName } from '~/lib/host/endpoint';
+import { browserLocalStorage } from '~/lib/library/keyValue';
+import { setTasteDigestOptIn, tasteDigestOptedIn } from '~/lib/tasteDigest';
 import { useHostStore } from '~/stores/host';
 import {
   usePreferencesStore,
@@ -118,6 +120,14 @@ onMounted(() => window.addEventListener('focus', refreshSongAlertAccess));
 
 onUnmounted(() => window.removeEventListener('focus', refreshSongAlertAccess));
 
+// Off until the listener turns it on. The digest is read at each connect, so a change applies from the next one.
+const tasteOptIn = ref(tasteDigestOptedIn(browserLocalStorage()));
+
+function toggleTasteOptIn(): void {
+  tasteOptIn.value = !tasteOptIn.value;
+  setTasteDigestOptIn(browserLocalStorage(), tasteOptIn.value);
+}
+
 const songAlertNote = computed(() => {
   switch (songAlertAccess.value) {
     case 'unsupported':
@@ -220,6 +230,27 @@ async function toggleSongAlerts(): Promise<void> {
         </button>
       </div>
       <p class="footnote" aria-live="polite">{{ songAlertNote }}</p>
+    </section>
+
+    <section class="group" aria-labelledby="taste-title">
+      <h2 id="taste-title">Taste</h2>
+      <div class="row">
+        <span id="taste-label">Share taste on connect</span>
+        <button
+          class="switch"
+          type="button"
+          role="switch"
+          aria-labelledby="taste-label"
+          :aria-checked="tasteOptIn"
+          @click="toggleTasteOptIn"
+        >
+          <span class="switch-thumb" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="footnote">
+        Sends your most played artists and favorite songs when this browser
+        connects. Your song list stays on this device.
+      </p>
     </section>
 
     <section class="group" aria-labelledby="browser-title">

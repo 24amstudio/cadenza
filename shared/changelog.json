@@ -2,6 +2,38 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.4.0",
+      "build": 13,
+      "changes": [
+        "Adds a home-screen widget for Cadenza Remote that shows the playing song, its transport controls, and synced lyrics.",
+        "Shows the motion artwork of the playing song over the lock screen while Cadenza Host plays, when the setting is on.",
+        "Adds a screen saver for Cadenza Remote that shows the playing song while the tablet charges and Cadenza Host plays.",
+        "Shows the current lyric line in the Android media notification, and stops updating it while the screen is off.",
+        "Keeps Cadenza Remote connected on HarmonyOS with a silent playback keep-alive, which you can turn off in Settings.",
+        "Ends the Android session notification after three minutes without Cadenza Host.",
+        "Downloads the Sing model only when you ask, verifies it, and updates it silently when a release needs a newer one.",
+        "Takes Cadenza Remote updates from a newer Cadenza Host over the local network, without the internet.",
+        "Checks for a Cadenza Host update every 45 minutes, and again when a newer Remote connects.",
+        "Stops retrying an update that has failed twice, until a newer release is published.",
+        "Finds Music's automation permission at launch and when Music starts, so a granted permission shows as granted.",
+        "Shows what changed since the previous release in Updates, with a link to compare the two releases.",
+        "Explains when a Host in a read-only location cannot update itself, and asks you to move it once.",
+        "Adds a TV stage: open its page in a TV browser, or run the Android TV receiver, and approve the TV with a PIN. It needs no Google Cast account.",
+        "Shows a QR code on the TV that opens Cadenza's web Remote with the PIN filled in, so a paired phone can approve the TV with one scan.",
+        "Sends Music's stereo audio to Cast devices and TV browsers, and folds 5.1 audio to stereo because the public build has no AC-3 encoder.",
+        "Plays local music videos with karaoke on a Cast device or the TV stage when the lyric timing matches the video.",
+        "Adds an experimental Cast web loader in Settings. It opens the TV stage through a Cast app ID you enter.",
+        "Shows radio streams as LIVE and skips their lyric lookup.",
+        "Ranks recommendations by Remote taste, with Room Blend and reason tags.",
+        "Lets each Remote choose the Mac's audio output, and favorite or add library songs.",
+        "Keeps the Mac awake during playback, and wakes a sleeping Mac with Wake-on-LAN.",
+        "Pauses new Sing sessions when the Mac runs hot, using a four-tier thermal budget.",
+        "Records a rotating diagnostics log, and enters safe recovery after three launches in thirty seconds.",
+        "Shows the codec and channels Cadenza sends to each Cast device and TV, and what a TV reports it plays.",
+        "Sends the log lines from a TV browser or Android TV to the Host's log, with a limit per TV."
+      ]
+    },
+    {
       "version": "0.3.3",
       "build": 11,
       "changes": [

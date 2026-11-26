@@ -5,6 +5,10 @@ actor Catalog {
     private var token: String?
     private var tokenExpiry: TimeInterval = 0
     private var songs: [SongIdentity: Song] = [:]
+    // Music video IDs found by search. Apple's song lookup must not be used for them, because they are not songs.
+    private var videos: [String: Song] = [:]
+    // Public AAC preview URLs for catalog songs, used by VideoEnvelopeAlignment without storing them in Song wire payloads.
+    private var previewURLs: [String: URL] = [:]
     private let http = AppleHTTP()
     private let credentials: CredentialFile
 
@@ -18,19 +22,26 @@ actor Catalog {
         }
     }
 
-    func search(_ query: String) async throws -> [Song] {
+    func search(_ query: String, videos: Bool = false) async throws -> [Song] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 200 else { return [] }
         let data = try await request(
             path: "search",
             query: [
-                URLQueryItem(name: "term", value: trimmed), URLQueryItem(name: "types", value: "songs"),
+                URLQueryItem(name: "term", value: trimmed),
+                URLQueryItem(name: "types", value: videos ? "songs,music-videos" : "songs"),
                 URLQueryItem(name: "limit", value: "40"),
             ])
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let results = root?["results"] as? [String: Any]
         let songResults = results?["songs"] as? [String: Any]
-        return remember(Self.parseSongs(songResults?["data"] as? [[String: Any]] ?? []))
+        let videoResults = results?["music-videos"] as? [String: Any]
+        var found = Self.parseSongs(songResults?["data"] as? [[String: Any]] ?? [])
+        rememberPreviews(songResults?["data"] as? [[String: Any]] ?? [])
+        if videos {
+            found += Self.parseSongs(videoResults?["data"] as? [[String: Any]] ?? [], mediaType: .musicVideo)
+        }
+        return remember(found)
     }
 
     // Apple's completions for the text being typed: terms to search next, and its top song matches.
@@ -50,6 +61,9 @@ actor Catalog {
 
     func resolve(_ identity: SongIdentity) async throws -> Song {
         if let known = songs[identity] { return known }
+        if identity.source == "catalog", videos[identity.id] != nil {
+            throw CadenzaError.failure("unsupported_media", "Music video playback is not available yet.")
+        }
         guard identity.source == "catalog", Wire.validate(identity) else {
             throw CadenzaError.failure("invalid_command", "The song is not a catalog item.")
         }
@@ -61,13 +75,61 @@ actor Catalog {
         return song
     }
 
+    // A music video the last search returned. Playback reads its Music link from here.
+    func video(id: String) -> Song? { videos[id] }
+
+    /// Public AAC preview URL for a catalog song, fetching the song record if not yet cached.
+    func previewURL(for songId: String) async -> URL? {
+        if let cached = previewURLs[songId] { return cached }
+        guard Wire.validate(SongIdentity(source: "catalog", id: songId)),
+            let data = try? await request(path: "songs/\(songId)", query: [])
+        else { return nil }
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        rememberPreviews(root?["data"] as? [[String: Any]] ?? [])
+        return previewURLs[songId]
+    }
+
+    /// Downloads a public AAC preview from Apple's preview CDN (<= 4 MB).
+    func previewAudioData(for songId: String) async throws -> Data? {
+        guard let url = await previewURL(for: songId) else { return nil }
+        let (data, _) = try await http.data(URLRequest(url: url), maximum: AudioEnvelopeDecoder.previewSizeLimit)
+        return data
+    }
+
+    private func rememberPreviews(_ items: [[String: Any]]) {
+        if previewURLs.count > 1_000 { previewURLs.removeAll(keepingCapacity: true) }
+        for item in items {
+            guard let id = item["id"] as? String,
+                let attributes = item["attributes"] as? [String: Any],
+                let previews = attributes["previews"] as? [[String: Any]],
+                let raw = previews.first?["url"] as? String,
+                let url = Self.safePreviewURL(raw)
+            else { continue }
+            previewURLs[id] = url
+        }
+    }
+
+    static func safePreviewURL(_ value: String?) -> URL? {
+        guard let value, let url = URL(string: value), url.scheme == "https",
+            let host = url.host, host == "audio-ssl.itunes.apple.com" || host.hasSuffix(".itunes.apple.com")
+        else { return nil }
+        return url
+    }
+
     func remember(_ found: [Song]) -> [Song] {
         if songs.count > 1_000 { songs.removeAll(keepingCapacity: true) }
-        for song in found { songs[song.identity] = song }
+        if videos.count > 1_000 { videos.removeAll(keepingCapacity: true) }
+        for song in found {
+            if song.mediaType == .musicVideo {
+                videos[song.id] = song
+            } else {
+                songs[song.identity] = song
+            }
+        }
         return found
     }
 
-    static func parseSongs(_ items: [[String: Any]]) -> [Song] {
+    static func parseSongs(_ items: [[String: Any]], mediaType: MediaType = .song) -> [Song] {
         items.compactMap { item in
             guard let id = item["id"] as? String,
                 let attributes = item["attributes"] as? [String: Any],
@@ -83,7 +145,7 @@ actor Catalog {
                 source: "catalog", id: id, title: String(title.prefix(500)), artist: String(artist.prefix(500)),
                 album: String((attributes["albumName"] as? String ?? "").prefix(500)),
                 durationMs: (attributes["durationInMillis"] as? NSNumber)?.int64Value,
-                artworkUrl: safeArtwork(image), url: attributes["url"] as? String
+                artworkUrl: safeArtwork(image), url: attributes["url"] as? String, mediaType: mediaType
             )
         }
     }
@@ -121,6 +183,10 @@ actor Catalog {
                 "catalog_unavailable", "Apple's catalog returned HTTP \(response.statusCode). Try again later.")
         }
         return data
+    }
+
+    func currentDeveloperToken() async throws -> String {
+        try await developerToken()
     }
 
     private func developerToken() async throws -> String {

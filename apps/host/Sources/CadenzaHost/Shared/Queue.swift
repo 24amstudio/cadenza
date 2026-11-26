@@ -20,6 +20,8 @@ struct CurrentPlayback: Codable, Equatable, Sendable {
     var sampledAtHostMs: Int64
     // The song's cover at most 32 by 32 pixels, base64 JPEG. It arrives with the song, so both appear together.
     var artworkPreview: String? = nil
+    // A radio stream. Clients show a LIVE badge and do not offer timeline scrubbing.
+    var isLiveRadio: Bool = false
 }
 
 struct HostSnapshot: Codable, Equatable, Sendable {
@@ -45,6 +47,16 @@ struct HostSnapshot: Codable, Equatable, Sendable {
     // Music's shuffle switch and its repeat mode ("off", "one", or "all").
     var shuffle: Bool = false
     var `repeat`: String = "off"
+    // The Host's thermal and power budget. Remotes back off optional prefetching and log uploads when it is constrained.
+    var hostBudget: String? = nil
+    // The Mac's audio outputs, with the default one marked. Remotes offer them as the place Music plays.
+    var audioOutputs: [AudioOutput] = []
+    // Google Cast devices on the LAN and the presentation mode chosen in Settings. Audio is not sent to them yet.
+    var cast: CastSnapshot? = nil
+    // Where a music video's karaoke line is shown: "host_display" or "cast_transmitter".
+    var videoOutput: String? = nil
+    // The AVR lip-sync offset in milliseconds. Karaoke lines are chosen this much later to match the delayed audio.
+    var lipSyncOffsetMs: Int? = nil
 }
 
 // Music's AutoPlay songs, which play after the queue. Only the first few travel, so a state frame stays small.

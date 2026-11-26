@@ -7,14 +7,8 @@ output_directory="${1:-}"
     exit 2
 }
 
-repository='mlx-community/mel-roformer-kim-vocal-2-mlx'
-revision='64cbfcb004e39430e5f584552c05949440ec39ce'
-model_bytes='456483463'
-model_sha256='312c38e5b698f8dfaa4d6064e8f79010744825828917871a9d22673a43eb7fe5'
-config_bytes='833'
-config_sha256='3300eacac960ab46933ef6df6b838eb35de1f0321db9242c1b06e6d2a6a62b58'
-license_bytes='1500'
-license_sha256='1aa245b55067df5c63c847894e7040f76fa79ddde83e9e5ed8a5c29ef1865c14'
+script_directory="$(cd -- "$(dirname -- "$0")" && pwd)"
+source "$script_directory/model.env"
 base_url="https://huggingface.co/$repository/resolve/$revision"
 download_query='?download=true'
 temporary_directory="${output_directory}.tmp.$$"

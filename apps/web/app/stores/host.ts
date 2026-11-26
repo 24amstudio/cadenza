@@ -10,6 +10,7 @@ import {
   silentReconnectSupported,
 } from '~/lib/host/bluetooth';
 import { reconnectWithRetries } from '~/lib/host/bluetoothReconnect';
+import { reloadForNewerHostBundle } from '~/lib/bundleReload';
 import { signalBars } from '~/lib/host/linkSignal';
 import {
   artworkDataUrl,
@@ -21,6 +22,8 @@ import { ArtworkCoordinator } from '~/lib/host/artworkCoordinator';
 import { TrafficPulses } from '~/lib/host/trafficPulses';
 import { unavailableResult } from '~/lib/host/commandTracker';
 import { ControlQueue, type ControlKey } from '~/lib/host/controlQueue';
+import { libraryHostCommands } from '~/lib/host/hostCommands';
+import { prefetchNextCover } from '~/lib/host/nextCover';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
 import {
   HostClient,
@@ -35,7 +38,9 @@ import {
   remoteVersion,
   socketUrlFor,
 } from '~/lib/host/endpoint';
+import { browserStorage } from '~/lib/host/browserStorage';
 import { randomUuid } from '~/lib/host/ids';
+import { currentTasteDigest } from '~/lib/tasteDigestSource';
 import { describeCommandResult } from '~/lib/host/messages';
 import { readInvitationSecret } from '~/lib/host/pairing';
 import type { Settle } from '~/lib/host/songRequests';
@@ -56,6 +61,7 @@ import type {
   Snapshot,
   Song,
   SongIdentity,
+  RecommendationShelfItem,
   SongSuggestions,
 } from '~/lib/protocol/types';
 import { useNoticesStore } from '~/stores/notices';
@@ -373,6 +379,7 @@ export const useHostStore = defineStore('host', () => {
       defaultName: defaultRemoteName(navigator.userAgent),
       openSocket: openBrowserSocket,
       progressiveArtwork: bluetoothSupported,
+      tasteDigest: currentTasteDigest,
       credentials: createCredentialStore(browserStorage()),
       monotonicNow: () => performance.now(),
       schedule: scheduleTask,
@@ -502,6 +509,7 @@ export const useHostStore = defineStore('host', () => {
         hostName.value = change.welcome.hostName;
         capabilities.value = change.welcome.capabilities;
         hostVersion.value = change.welcome.hostVersion;
+        reloadForNewerHostBundle(change.welcome.hostVersion);
 
         return;
       case 'hostUpdate':
@@ -638,7 +646,12 @@ export const useHostStore = defineStore('host', () => {
     );
     // The next request's cover starts now, so it is on screen when its song begins.
 
-    if (upNext?.artworkUrl) artwork.prefetch(albums.shown(upNext.artworkUrl));
+    prefetchNextCover(
+      artwork,
+      albums,
+      upNext?.artworkUrl,
+      snapshot.value?.hostBudget,
+    );
 
     if (song === null) return;
     const state = lyrics.value;
@@ -869,6 +882,8 @@ export const useHostStore = defineStore('host', () => {
     controls.press({ key: 'queue', kind, song, settled });
   }
 
+  const hostCommands = libraryHostCommands(controls.pressHost.bind(controls));
+
   function renameRemote(name: string): void {
     client?.renameRemote(name);
     remoteName.value = name;
@@ -934,15 +949,22 @@ export const useHostStore = defineStore('host', () => {
     skipPrevious,
     seekTo,
     setVolume,
+    ...hostCommands,
     toggleMute,
     toggleShuffle,
     cycleRepeat,
     searchSongs,
     suggestSongs,
+    shelf: (settle: Settle<RecommendationShelfItem[]>) =>
+      client?.songs.shelves(settle) ?? null,
+    artistMotion: (artistName: string) =>
+      client?.artistMotion.request(artistName) ?? Promise.resolve(null),
     cancelSongRequest,
     browse,
     abortBrowse,
     prepareSong,
+    playVideo: (song: SongIdentity, settle: Settle<null>) =>
+      client?.songs.playVideo(song, settle) ?? null,
     queueSong,
     renameRemote,
     forgetBrowser,
@@ -973,12 +995,4 @@ function scheduleTask(callback: () => void, delayMs: number): () => void {
   const handle = setTimeout(callback, delayMs);
 
   return () => clearTimeout(handle);
-}
-
-function browserStorage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
 }

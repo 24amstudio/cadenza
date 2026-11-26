@@ -43,6 +43,9 @@ function snapshot(positionMs: number, queueWait: number | null): Snapshot {
     autoPlay: [],
     synchronized: true,
     issue: null,
+    audioOutputs: [],
+    hostBudget: null,
+    cast: null,
   };
 }
 

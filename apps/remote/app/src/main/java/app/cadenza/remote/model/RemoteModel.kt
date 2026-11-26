@@ -1,11 +1,14 @@
 package app.cadenza.remote.model
 
 import android.app.Application
+import android.os.Build
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.cadenza.remote.BuildConfig
 import app.cadenza.remote.CadenzaApplication
+import app.cadenza.remote.background.BackgroundSettings
+import app.cadenza.remote.background.BackgroundSettingsStore
 import app.cadenza.remote.data.ARTWORK_DISK_BYTES
 import app.cadenza.remote.data.ArtworkDiskCache
 import app.cadenza.remote.data.ClockSync
@@ -28,11 +31,13 @@ import app.cadenza.remote.data.objects
 import app.cadenza.remote.energy.EnergyAssessor
 import app.cadenza.remote.energy.EnergyMonitor
 import app.cadenza.remote.energy.EnergySettingsStore
+import app.cadenza.remote.media.LyricBoundaryTicker
 import app.cadenza.remote.media.PlaybackKeepAlive
 import app.cadenza.remote.media.RemoteMediaActions
 import app.cadenza.remote.media.RemoteMediaSession
 import app.cadenza.remote.media.SessionNotification
 import app.cadenza.remote.media.SessionStatus
+import app.cadenza.remote.media.SilentPlaybackKeepAlive
 import app.cadenza.remote.media.SongChangeNotifier
 import app.cadenza.remote.media.isSongChange
 import app.cadenza.remote.motion.MotionAssembly
@@ -52,6 +57,8 @@ import app.cadenza.remote.network.PrioritizedFrameQueue
 import app.cadenza.remote.network.RemoteConnection
 import app.cadenza.remote.network.RemoteStatusPublisher
 import app.cadenza.remote.network.parsePairingInvitation
+import app.cadenza.remote.playback.NowPlayingHub
+import app.cadenza.remote.playback.NowPlayingSnapshot
 import app.cadenza.remote.recommendation.RecommendationEngine
 import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
@@ -60,6 +67,7 @@ import app.cadenza.remote.recommendation.RecommendationTrack
 import app.cadenza.remote.recommendation.newRecommendationId
 import app.cadenza.remote.search.SearchHistory
 import app.cadenza.remote.search.correctionFor
+import app.cadenza.remote.updates.HostLanUpdate
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -70,6 +78,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -108,6 +117,25 @@ class RemoteModel(
     private val mediaSession = RemoteMediaSession(app, mediaActions::handle)
 
     private val keepAlive = PlaybackKeepAlive(app)
+
+    private val silentKeepAlive = SilentPlaybackKeepAlive()
+
+    private val background by lazy { BackgroundSettingsStore.load(preferences, Build.MANUFACTURER) }
+
+    /** The active timed lyric line, used as the notification subtext. It changes only at line boundaries. */
+    private val lyricSubtext = MutableStateFlow<String?>(null)
+
+    private val lyricTicker =
+        LyricBoundaryTicker(viewModelScope, SystemClock::elapsedRealtime) { index ->
+            lyricSubtext.value =
+                index?.let {
+                    NowPlayingHub.snapshot.value
+                        ?.lyrics
+                        ?.lines
+                        ?.getOrNull(it)
+                        ?.text
+                }
+        }
 
     private val songChangeNotifier = SongChangeNotifier(app)
 
@@ -178,6 +206,17 @@ class RemoteModel(
     internal var motionAssembly: MotionAssembly? = null
 
     internal val motionStore by lazy { MotionStore(File(app.filesDir, "motion")) }
+
+    internal var artistMotionRequestId: String? = null
+
+    internal var artistMotionName: String? = null
+
+    internal var artistMotionAssembly: MotionAssembly? = null
+
+    internal var videoPlayId: String? = null
+
+    // Its own directory, because MotionStore keeps only the newest file it holds and the song's video must survive.
+    internal val artistMotionStore by lazy { MotionStore(File(app.filesDir, "artist-motion")) }
 
     internal var preparationId: String? = null
 
@@ -287,8 +326,29 @@ class RemoteModel(
     init {
         app.mediaAction = mediaActions::handle
         viewModelScope.launch {
-            state.map(SessionStatus::from).distinctUntilChanged().collect { SessionNotification(app).update(it, mediaToken) }
+            state.map { NowPlayingSnapshot.from(it, it.lockScreenMotionArtwork) }.distinctUntilChanged().collect {
+                NowPlayingHub.publish(it)
+            }
         }
+        viewModelScope.launch { NowPlayingHub.snapshot.collect { lyricTicker.follow(it) } }
+        viewModelScope.launch {
+            // A Host on a newer build hands its update to this Remote over the LAN, without the internet.
+            state.map { it.hostBuild to it.hostOffer }.distinctUntilChanged().collect { (hostBuild, offer) ->
+                val profile = mutable.value.profile ?: return@collect
+                if (hostBuild == null || hostBuild <= BuildConfig.VERSION_CODE) return@collect
+                viewModelScope.launch(ioDispatcher) {
+                    val token = app.vault.read("host." + profile.hostId) ?: return@launch
+                    runCatching { HostLanUpdate.update(app, profile, token, hostBuild, offer) }
+                        .onFailure { reportLog("warning", "update.lan", it.message.orEmpty()) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            combine(state.map(SessionStatus::from), lyricSubtext, app.device.screenInteractive) { status, line, interactive ->
+                status.copy(lyricLine = line.takeIf { interactive })
+            }.distinctUntilChanged().collect { SessionNotification(app).update(it, mediaToken) }
+        }
+        startSessionDismissal()
         viewModelScope.launch {
             state.map(mediaActions::sessionState).distinctUntilChanged().collect(mediaSession::update)
         }
@@ -324,10 +384,12 @@ class RemoteModel(
         }
         viewModelScope.launch {
             state
-                .map { it.connected && it.snapshot?.playing == true }
+                // A brief disconnect keeps the service, so the socket can come back. Only an interrupted session stops it.
+                .map { it.snapshot?.playing == true && !it.sessionInterrupted }
                 .distinctUntilChanged()
                 .collect { active ->
                     if (!keepAlive.update(active)) reportLog("warning", "keepalive.refused", "active=$active")
+                    silentKeepAlive.update(active && mutable.value.silentPlaybackKeepAlive)
                     refreshEnergyMonitoring()
                 }
         }
@@ -383,6 +445,10 @@ class RemoteModel(
                         recentSearches = SearchHistory.decode(preferences.getString("recent_searches", null)),
                         transportPreference = preferences.getString("transport_preference", "balanced") ?: "balanced",
                         songChangeNotifications = preferences.getString("song_change_notifications", "true") != "false",
+                        tasteDigestOptIn = preferences.getString(TASTE_DIGEST_OPT_IN, "false") == "true",
+                        volumeRockerControl = preferences.getString(VOLUME_ROCKER_CONTROL, "false") == "true",
+                        lockScreenMotionArtwork = background.lockScreenMotionArtwork,
+                        silentPlaybackKeepAlive = background.silentPlaybackKeepAlive,
                         theme = theme,
                         lyricsTextSize =
                             LyricsTextSize.entries.firstOrNull { it.name == preferences.getString("lyrics_text_size", null) }
@@ -522,9 +588,37 @@ class RemoteModel(
         if (mutable.value.connected) publishStatus()
     }
 
+    fun setVolumeRockerControl(enabled: Boolean) {
+        mutable.update { it.copy(volumeRockerControl = enabled) }
+        viewModelScope.launch(ioDispatcher) { preferences.write(VOLUME_ROCKER_CONTROL to enabled.toString()) }
+    }
+
+    fun setTasteDigestOptIn(enabled: Boolean) {
+        mutable.update { it.copy(tasteDigestOptIn = enabled) }
+        viewModelScope.launch(ioDispatcher) { preferences.write(TASTE_DIGEST_OPT_IN to enabled.toString()) }
+    }
+
     fun setSongChangeNotifications(enabled: Boolean) {
         mutable.update { it.copy(songChangeNotifications = enabled) }
         viewModelScope.launch(ioDispatcher) { preferences.write("song_change_notifications" to enabled.toString()) }
+    }
+
+    fun setLockScreenMotionArtwork(enabled: Boolean) {
+        mutable.update { it.copy(lockScreenMotionArtwork = enabled) }
+        saveBackgroundSettings()
+    }
+
+    fun setSilentPlaybackKeepAlive(enabled: Boolean) {
+        mutable.update { it.copy(silentPlaybackKeepAlive = enabled) }
+        saveBackgroundSettings()
+        val playing = mutable.value.connected && mutable.value.snapshot?.playing == true
+        silentKeepAlive.update(enabled && playing)
+    }
+
+    private fun saveBackgroundSettings() {
+        val value = mutable.value
+        val settings = BackgroundSettings(value.lockScreenMotionArtwork, value.silentPlaybackKeepAlive)
+        viewModelScope.launch(ioDispatcher) { BackgroundSettingsStore.save(preferences, settings) }
     }
 
     fun setLyricsTextSize(size: LyricsTextSize) {
@@ -782,6 +876,7 @@ class RemoteModel(
     override fun onCleared() {
         SessionNotification(app).clear()
         keepAlive.update(false)
+        silentKeepAlive.update(false)
         app.mediaAction = null
         mediaSession.release()
         networkMonitor.close()

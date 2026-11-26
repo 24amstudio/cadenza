@@ -2,11 +2,12 @@ import AVFAudio
 import Foundation
 import XCTest
 import os
+
 @testable import CadenzaHost
 
 final class SingAudioTests: XCTestCase {
     func testDefaultBackendIsMLXOutsideProduction() {
-        XCTAssertEqual(SingSeparatorFactory.defaultBackend().backend, "mlx-mel-roformer")
+        XCTAssertEqual(SingSeparatorFactory.defaultBackend(modelInstalled: false).backend, "mlx-mel-roformer")
     }
 
     func testCoordinatorRejectsASeparatorThatCannotPrimeForLivePlayback() async {

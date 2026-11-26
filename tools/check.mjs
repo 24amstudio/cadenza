@@ -96,6 +96,9 @@ const excluded = new Set([
   'vendor',
 ]);
 
+// apps/host/Scripts/build.sh copies the web build here. It is git-ignored generated output, not source.
+const generatedWebRemote = join(root, 'apps', 'host', 'Resources', 'WebRemote');
+
 const checkedExtensions =
   /\.(mjs|js|ts|json|md|sql|sh|ps1|applescript|swift|kt|kts|xml|plist|modulemap|h|toml|yml|properties|cmd|bat)$/;
 
@@ -122,6 +125,8 @@ function sourceFiles(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (excluded.has(entry.name)) continue;
     const path = join(directory, entry.name);
+
+    if (path === generatedWebRemote) continue;
 
     if (entry.isDirectory()) files.push(...sourceFiles(path));
     else if (

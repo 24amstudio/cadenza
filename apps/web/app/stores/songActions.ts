@@ -62,6 +62,13 @@ export const useSongActionsStore = defineStore('songActions', () => {
       return;
     }
 
+    if (song.mediaType === 'musicVideo') {
+      if (action === 'now') playVideo(identity, key);
+      else notices.show('A music video plays now. It cannot be queued.');
+
+      return;
+    }
+
     if (phases.value.has(key)) return;
 
     setPhase(key, 'preparing');
@@ -93,6 +100,25 @@ export const useSongActionsStore = defineStore('songActions', () => {
 
       if (message !== null) notices.show(message);
     });
+  }
+
+  // The video opens in Music's own window. Music's queue and the Host queue keep their places.
+  function playVideo(identity: SongIdentity, key: string): void {
+    if (phases.value.has(key)) return;
+
+    setPhase(key, 'sending');
+
+    const sent = host.playVideo(identity, (outcome) => {
+      setPhase(key, null);
+      notices.show(
+        outcome.ok ? 'Playing the music video in Music.' : outcome.message,
+      );
+    });
+
+    if (sent === null) {
+      setPhase(key, null);
+      notices.show('Cadenza Host is not connected.');
+    }
   }
 
   function prepare(

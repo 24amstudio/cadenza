@@ -31,11 +31,27 @@ final class Database {
                     try migrate("main/001-recommendations")
                     version = 2
                 }
+                if version == 2 {
+                    try migrate("main/002-taste")
+                    version = 3
+                }
+                if version == 3 {
+                    try migrate("main/003-taste-digest")
+                    version = 4
+                }
+                if version == 4 {
+                    try migrate("main/004-lyric-offsets")
+                    version = 5
+                }
+                if version == 5 {
+                    try migrate("main/005-video-alignment-segments")
+                    version = 6
+                }
             } else if role == .logs, version == 0 {
                 try migrate("system/000-initial")
                 version = 1
             }
-            let expectedVersion: Int64 = role == .main ? 2 : 1
+            let expectedVersion: Int64 = role == .main ? 6 : 1
             guard
                 version == expectedVersion,
                 try query("PRAGMA user_version").first?["user_version"]?.integer == expectedVersion

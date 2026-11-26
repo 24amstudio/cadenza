@@ -10,6 +10,10 @@ final class HostApplicationDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        HostPresentation.apply(menuBarOnly: UserDefaults.standard.bool(forKey: HostPresentation.menuBarOnlyKey))
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationWillTerminate(_ notification: Notification) { terminate?() }

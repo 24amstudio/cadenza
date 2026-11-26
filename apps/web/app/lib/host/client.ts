@@ -17,18 +17,19 @@ import {
   encodePair,
   encodeRemoteConfigure,
   encodeSessionStatus,
-  type PairingProof,
 } from '../protocol/encode';
 import { decodeHostMessage, type HostMessage } from '../protocol/decode';
 import { artworkDataUrl } from './artwork';
 import { ArtworkChunks } from './artworkTransfer';
 import { MotionTransfer } from './motionTransfer';
+import { ArtistMotion } from './artistMotion';
 import type { StoredCredential } from './credentials';
 import type {
-  ArtworkLane,
   ArtworkMode,
   HostClientOptions,
   HostPhase,
+  PendingPairing,
+  PendingRequest,
   Readiness,
   SocketLike,
 } from './clientTypes';
@@ -51,21 +52,6 @@ export type {
   Readiness,
   SocketLike,
 } from './clientTypes';
-
-interface PendingPairing {
-  proof: PairingProof;
-  name: string;
-}
-
-type PendingRequest =
-  | { kind: 'lyrics'; occurrenceId: string }
-  | {
-      kind: 'artwork';
-      artworkUrl: string;
-      lane: ArtworkLane;
-      occurrenceId: string | null;
-    }
-  | { kind: 'rename'; name: string };
 
 const handshakeTimeoutMs = 8_000;
 
@@ -95,6 +81,8 @@ export class HostClient {
   private readonly clock: ClockSync;
   private readonly commands: CommandTracker;
   private readonly waiters: Waiters;
+  // Artist Details headers ask for their motion video through here. Their chunks never share the song's lanes.
+  readonly artistMotion: ArtistMotion;
   readonly songs: SongRequests;
   private readonly artworkChunks = new ArtworkChunks({
     artworkRequest: (requestId) => {
@@ -139,6 +127,16 @@ export class HostClient {
       (commandId) => this.queryCommandStatus(commandId),
     );
     this.waiters = new Waiters(options.schedule);
+    this.artistMotion = new ArtistMotion(
+      (text) => {
+        if (!this.welcomed || this.socket === null) return false;
+
+        this.transmit(this.socket, text);
+
+        return true;
+      },
+      () => options.newId(),
+    );
     this.songs = new SongRequests({
       send: (text) => {
         if (!this.welcomed || this.socket === null) return false;
@@ -520,6 +518,7 @@ export class HostClient {
         lastCreditSequence: this.credential.lastCreditSequence,
         name: this.credential.name,
         remoteVersion: this.options.remoteVersion,
+        tasteDigest: this.options.tasteDigest?.() ?? null,
       }),
     );
   }
@@ -534,7 +533,7 @@ export class HostClient {
       this.dispatch(socket, message);
     }
 
-    flushLocalLog((text) => socket.send(text));
+    flushLocalLog((text) => socket.send(text), this.snapshot?.hostBudget);
   }
 
   private transport(): TraceTransport {
@@ -613,6 +612,11 @@ export class HostClient {
         return;
       case 'motion.unavailable':
         this.onMotionUnavailable(message.requestId);
+
+        return;
+      case 'artist.motion.chunk':
+      case 'artist.motion.unavailable':
+        this.artistMotion.receive(message);
 
         return;
       case 'clock':

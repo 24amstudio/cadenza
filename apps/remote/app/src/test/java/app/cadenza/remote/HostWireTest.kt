@@ -1,5 +1,6 @@
 package app.cadenza.remote
 
+import app.cadenza.remote.data.AudioOutput
 import app.cadenza.remote.data.BrowseItem
 import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.BrowseWire
@@ -55,6 +56,114 @@ class HostWireTest {
 
         assertFalse(value.shuffle)
         assertEquals("off", value.repeat)
+    }
+
+    private fun current(live: Boolean?) =
+        JSONObject()
+            .put("occurrence_id", UUID(0, 3).toString())
+            .put("requester_name", "Remote")
+            .put("song", song())
+            .put("position_ms", 0)
+            .put("sampled_at_host_ms", 1)
+            .apply { if (live != null) put("is_live_radio", live) }
+
+    @Test
+    fun aRadioStreamIsMarkedLiveAndAHostThatOmitsTheFlagIsNot() {
+        assertTrue(Wire.snapshot(snapshot().put("current", current(true))).current!!.isLiveRadio)
+        assertFalse(Wire.snapshot(snapshot().put("current", current(null))).current!!.isLiveRadio)
+    }
+
+    @Test
+    fun aSnapshotCarriesTheCastDevicesAndWhatIsBeingSent() {
+        val cast =
+            JSONObject()
+                .put("presentation", "full_suite")
+                .put("devices", JSONArray().put(JSONObject().put("name", "Living Room TV").put("display", "display")))
+                .put("transmit", JSONObject().put("state", "transmitting").put("device", "Living Room TV"))
+
+        val value = Wire.snapshot(snapshot().put("cast", cast))
+
+        assertEquals("full_suite", value.cast?.presentation)
+        assertEquals(
+            "Living Room TV",
+            value.cast
+                ?.devices
+                ?.single()
+                ?.name,
+        )
+        assertEquals("transmitting", value.cast?.transmit?.state)
+    }
+
+    @Test
+    fun aSnapshotListsApprovedCadenzaTvsAndTheTvsWaitingForAPin() {
+        val cast =
+            JSONObject()
+                .put("presentation", "auto")
+                .put("devices", JSONArray())
+                .put(
+                    "stages",
+                    JSONArray().put(
+                        JSONObject()
+                            .put("receiver_id", "tv-1")
+                            .put("name", "Living room")
+                            .put("transport", "cadenza_web_tv_stage")
+                            .put("transmitting", true),
+                    ),
+                ).put(
+                    "pending_stages",
+                    JSONArray()
+                        .put(
+                            JSONObject()
+                                .put("receiver_id", "tv-2")
+                                .put("name", "Den")
+                                .put("pin", "0427")
+                                .put("expires_in_ms", 300000),
+                        ).put(JSONObject().put("receiver_id", "tv-3").put("name", "Bad").put("pin", "12")),
+                )
+
+        val value = Wire.snapshot(snapshot().put("cast", cast))
+
+        assertEquals(listOf("tv-1"), value.cast?.stages?.map { it.receiverId })
+        assertTrue(
+            value.cast
+                ?.stages
+                ?.single()
+                ?.transmitting == true,
+        )
+        assertEquals(listOf("0427"), value.cast?.pendingStages?.map { it.pin })
+    }
+
+    @Test
+    fun aMalformedCastBlockIsDroppedWithoutHidingTheRestOfTheSnapshot() {
+        val value = Wire.snapshot(snapshot().put("cast", JSONObject().put("presentation", "bogus")))
+
+        assertTrue(value.cast == null)
+        assertEquals("off", value.repeat)
+    }
+
+    @Test
+    fun theSnapshotCarriesTheMacsAudioOutputsAndBudgetAndSkipsAMalformedOutput() {
+        val speakers =
+            JSONObject()
+                .put("id", "uid-1")
+                .put("name", "Mac speakers")
+                .put("transport", "built-in")
+                .put("is_default", true)
+        val kitchen =
+            JSONObject()
+                .put("id", "uid-2")
+                .put("name", "Kitchen")
+        val outputs = JSONArray().put(speakers).put(kitchen)
+        val value = Wire.snapshot(snapshot().put("audio_outputs", outputs).put("host_budget", "constrained"))
+
+        assertEquals(listOf(AudioOutput("uid-1", "Mac speakers", "built-in", true)), value.audioOutputs)
+        assertEquals("constrained", value.hostBudget)
+    }
+
+    @Test
+    fun aMusicVideoIsMarkedAndASongWithoutTheFieldIsASong() {
+        assertTrue(Wire.song(song().put("media_type", "musicVideo")).isMusicVideo)
+        assertFalse(Wire.song(song()).isMusicVideo)
     }
 
     @Test

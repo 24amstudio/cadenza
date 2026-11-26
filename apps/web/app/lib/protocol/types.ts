@@ -9,7 +9,11 @@ export interface Song {
   album: string;
   durationMs: number | null;
   artworkUrl: string | null;
+  // Absent on songs from Hosts that predate music-video search; those are songs.
+  mediaType?: 'song' | 'musicVideo' | undefined;
 }
+
+export type VideoOutputTarget = 'host_display' | 'cast_transmitter';
 
 export interface CurrentPlayback {
   occurrenceId: string;
@@ -20,6 +24,8 @@ export interface CurrentPlayback {
   sampledAtHostMs: number;
   // The song's cover at most 32 by 32 pixels, as base64 JPEG. It arrives with the song.
   artworkPreview?: string | null;
+  // A radio stream, which has no length to seek within.
+  isLiveRadio?: boolean;
 }
 
 export interface QueueEntry {
@@ -41,6 +47,89 @@ export interface AutoPlayItem {
   artist: string;
 }
 
+// A song in the Mac's Music library. Library write-back accepts only these.
+export interface LibrarySongIdentity {
+  source: 'library';
+  id: string;
+}
+
+// An audio output the Mac can play to. `id` is the device UID.
+export interface AudioOutput {
+  id: string;
+  name: string;
+  transport: string;
+  isDefault: boolean;
+}
+
+// One suggestion on a Remote's shelf. The Host ranks it, and `evidence` holds the reasons it was chosen.
+export interface RecommendationShelfItem {
+  source: 'catalog' | 'library';
+  id: string;
+  title: string;
+  artist: string;
+  evidence: string[];
+}
+
+export type CastPresentation = 'auto' | 'audio_only' | 'full_suite';
+
+// `none` is a screenless speaker, `display` a screen-capable device, and `unknown` one without a readable capability record.
+export type CastDisplay = 'none' | 'display' | 'unknown';
+
+export interface CastDevice {
+  name: string;
+  display: CastDisplay;
+}
+
+// What the Host is sending to a Cast device, if anything. `reason` is set when a transmission failed.
+export interface CastTransmitState {
+  state: 'idle' | 'starting' | 'transmitting' | 'failed';
+  device: string | null;
+  reason: string | null;
+  // The codec and channel count the Host sends, and the one status line to show. Absent when nothing is sent.
+  route?: CastRoute | null;
+  status?: CastRouteStatus | null;
+}
+
+// A codec and channel count, such as AC-3 with 6 channels.
+export interface CastRoute {
+  codec: string;
+  channels: number;
+}
+
+// The Host's status line for a transmission. `mismatch` marks a receiver that plays something other than what is sent.
+export interface CastRouteStatus {
+  text: string;
+  mismatch: boolean;
+}
+
+// A Cadenza TV browser or Android TV that the Host has approved. `transmitting` means it is receiving audio.
+export interface StageDevice {
+  receiverId: string;
+  name: string;
+  transport: string;
+  transmitting: boolean;
+  sent?: CastRoute | null;
+  playing?: CastRoute | null;
+  playingPath?: string | null;
+  status?: CastRouteStatus | null;
+}
+
+// A TV that shows a PIN and waits for approval. Any paired Remote may approve it with the PIN.
+export interface PendingStage {
+  receiverId: string;
+  name: string;
+  pin: string;
+  expiresInMs: number;
+}
+
+export interface CastState {
+  presentation: CastPresentation;
+  devices: CastDevice[];
+  transmit: CastTransmitState | null;
+  stages: StageDevice[];
+  pendingStages: PendingStage[];
+}
+
 export interface Snapshot {
   hostId: string;
   hostEpoch: string;
@@ -57,6 +146,13 @@ export interface Snapshot {
   autoPlay: AutoPlayItem[];
   synchronized: boolean;
   issue: string | null;
+  audioOutputs: AudioOutput[];
+  hostBudget: string | null;
+  cast: CastState | null;
+  // Where a music video's karaoke line is shown. Absent from Hosts that predate the setting.
+  videoOutput?: VideoOutputTarget | null;
+  // The AVR lip-sync offset, in milliseconds. Absent from Hosts that predate it.
+  lipSyncOffsetMs?: number | null;
 }
 
 export interface LyricWord {
@@ -83,6 +179,8 @@ export interface LyricDocument {
   source: string;
   lines: LyricLine[];
   issue: string | null;
+  // The karaoke nudge the person saved for this track, in milliseconds. Absent from Hosts that predate it.
+  userOffsetMs?: number | null;
 }
 
 export interface Welcome {
@@ -144,6 +242,19 @@ export type CommandAction =
   | { kind: 'playback.volume'; percent: number }
   | { kind: 'playback.shuffle'; enabled: boolean }
   | { kind: 'playback.repeat'; mode: RepeatMode }
+  | { kind: 'audio.selectOutput'; output: string }
+  | { kind: 'cast.transmit'; device: string; start: boolean }
+  | { kind: 'video.output'; target: VideoOutputTarget }
+  | { kind: 'cast.presentation'; presentation: CastPresentation }
+  | { kind: 'stage.approve'; pin: string }
+  | { kind: 'lip_sync.offset'; offsetMs: number }
+  | { kind: 'lyrics.offset'; song: SongIdentity; offsetMs: number }
+  | { kind: 'library.favorite'; song: LibrarySongIdentity; favorite: boolean }
+  | {
+      kind: 'library.addToPlaylist';
+      name: string;
+      songs: LibrarySongIdentity[];
+    }
   | { kind: Exclude<QueueActionKind, 'queue.play_now'>; song: SongIdentity }
   | {
       kind: 'queue.play_now';

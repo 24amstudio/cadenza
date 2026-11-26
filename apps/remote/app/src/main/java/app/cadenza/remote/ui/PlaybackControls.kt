@@ -67,11 +67,20 @@ internal fun PlaybackTimeline(
                     "playback.seek",
                 )
             },
-            enabled = mayInterruptPlayback(state) && current.song.durationMs != null,
+            enabled = mayInterruptPlayback(state) && current.song.durationMs != null && !current.isLiveRadio,
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(duration(if (dragging >= 0) dragging.toLong() else currentPosition))
-            Text(duration(current.song.durationMs))
+        if (current.isLiveRadio) {
+            // A radio stream has no length to seek within, so its timeline shows a live label instead of times.
+            Text(
+                "Live",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.semantics { contentDescription = "Live radio" },
+            )
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(duration(if (dragging >= 0) dragging.toLong() else currentPosition))
+                Text(duration(current.song.durationMs))
+            }
         }
     }
 }

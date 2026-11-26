@@ -85,6 +85,29 @@ struct RecommendationProfile: Codable, Sendable {
     var provenance: [String: RecommendationFeature<String>]
 }
 
+extension RecommendationProfile {
+    /// A profile for a paired Remote that has not sent a passport yet.
+    static func blank(remoteId: String) -> RecommendationProfile {
+        RecommendationProfile(
+            remoteId: remoteId, passportSequence: 0, expiresAtMs: 0, affinities: [:], transitions: [],
+            negativePreferences: [:], recent: [], noveltyBudget: 0, sessionIntent: nil, provenance: [:])
+    }
+
+    /// Applies the Host's taste scores over the passport. Remote passports do not carry affinities yet, so the Host's
+    /// ledger is the source. A negative score is a negative preference, so a skip counts only against the skipping Remote.
+    func applyingTaste(_ scores: [String: Double]) -> RecommendationProfile {
+        var applied = self
+        for (artist, score) in scores {
+            if score < 0 {
+                applied.negativePreferences[artist] = score
+            } else {
+                applied.affinities[artist] = score
+            }
+        }
+        return applied
+    }
+}
+
 struct RecommendationCandidate: Sendable, Identifiable {
     var id: String { track.source + ":" + track.id }
     var track: RecommendationTrack
@@ -121,6 +144,29 @@ struct RecommendationResult: Codable, Sendable {
     var expiresAtMs: Int64
     var provenance: String
     var mode: String = "planning"
+}
+
+/// A read-only list of ranked suggestions for a Remote's shelves. Nothing is queued or planned for these.
+struct RecommendationShelf: Codable, Sendable, Equatable {
+    static let itemLimit = 12
+
+    struct Item: Codable, Sendable, Equatable {
+        var track: RecommendationTrack
+        var title: String
+        var artist: String
+        var evidence: [String]
+    }
+
+    var items: [Item]
+
+    static func make(from ranked: [RecommendationCandidate]) -> RecommendationShelf {
+        RecommendationShelf(
+            items: ranked.prefix(itemLimit).map {
+                Item(
+                    track: $0.track, title: $0.song.title, artist: $0.song.artist,
+                    evidence: Array($0.evidence.prefix(8)))
+            })
+    }
 }
 
 enum RecommendationOutcome: String, Codable, Sendable {

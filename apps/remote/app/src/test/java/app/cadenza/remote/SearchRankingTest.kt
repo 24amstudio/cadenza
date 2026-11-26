@@ -133,6 +133,16 @@ class SearchRankingTest {
         assertEquals(listOf("pelukan", "akad"), ranked.map { it.song.id })
     }
 
+    @Test
+    fun aMusicVideoIsListedAfterSongsAndNeverHidesASongWithTheSameTitle() {
+        val video = akad.copy(id = "video", mediaType = "musicVideo")
+        val signals = SearchSignals(favorites = emptyList(), statistics = emptyList())
+
+        val ranked = rankSearch("akad", listOf(video, akad), null, emptyList(), signals)
+
+        assertEquals(listOf("akad", "video"), ranked.map { it.song.id })
+    }
+
     private fun song(
         id: String,
         title: String,

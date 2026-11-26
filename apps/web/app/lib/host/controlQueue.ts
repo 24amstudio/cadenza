@@ -18,7 +18,8 @@ export type ControlKey =
   | 'volume'
   | 'shuffle'
   | 'repeat'
-  | 'queue';
+  | 'queue'
+  | 'host';
 
 type Intent =
   | { key: 'toggle' | 'next' | 'previous' }
@@ -32,7 +33,29 @@ type Intent =
       kind: QueueActionKind;
       song: SongIdentity;
       settled: (result: CommandResult | null) => void;
+    }
+  // Output and library changes do not touch the queue, but they still go in order and each one is settled.
+  | {
+      key: 'host';
+      action: HostCommandAction;
+      settled: (result: CommandResult | null) => void;
     };
+
+export type HostCommandAction = Extract<
+  CommandAction,
+  {
+    kind:
+      | 'audio.selectOutput'
+      | 'cast.transmit'
+      | 'video.output'
+      | 'cast.presentation'
+      | 'stage.approve'
+      | 'lip_sync.offset'
+      | 'lyrics.offset'
+      | 'library.favorite'
+      | 'library.addToPlaylist';
+  }
+>;
 
 export interface ControlPort {
   awaitReadiness(timeoutMs: number): Promise<Readiness>;
@@ -93,8 +116,13 @@ export class ControlQueue {
     void this.drain();
   }
 
+  // Output and library changes are queued in order. The Host answers each with a receipt the queue keeps.
+  pressHost(action: HostCommandAction): void {
+    this.press({ key: 'host', action, settled: () => undefined });
+  }
+
   private add(intent: Intent): void {
-    if (intent.key === 'queue') {
+    if (intent.key === 'queue' || intent.key === 'host') {
       this.waiting.push(intent);
 
       return;
@@ -141,7 +169,7 @@ export class ControlQueue {
         this.publish();
         const result = await this.perform(next);
 
-        if (next.key === 'queue') next.settled(result);
+        if (next.key === 'queue' || next.key === 'host') next.settled(result);
         this.running = null;
         this.publish();
       }
@@ -240,6 +268,8 @@ export class ControlQueue {
     if (intent.key === 'repeat') {
       return actionOf({ kind: 'playback.repeat', mode: intent.mode });
     }
+
+    if (intent.key === 'host') return actionOf(intent.action);
 
     // A request names its song, and the Host decides where it goes. Play now replaces the current song, so it names
     // that song's occurrence, or null when nothing is playing.

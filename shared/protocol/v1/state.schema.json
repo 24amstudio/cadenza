@@ -23,7 +23,8 @@
           "type": "string",
           "maxLength": 4096,
           "pattern": "^https://music\\.apple\\.com/"
-        }
+        },
+        "media_type": { "enum": ["song", "musicVideo"] }
       },
       "additionalProperties": false
     },
@@ -88,7 +89,8 @@
         "artwork_preview": {
           "type": "string",
           "maxLength": 4096
-        }
+        },
+        "is_live_radio": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -179,7 +181,118 @@
         "synchronized": { "type": "boolean" },
         "issue": { "type": "string", "maxLength": 4000 },
         "observation_gap": { "type": "boolean" },
-        "sing": { "$ref": "#/$defs/sing" }
+        "sing": { "$ref": "#/$defs/sing" },
+        "host_budget": {
+          "enum": ["unrestricted", "balanced", "constrained", "survival"]
+        },
+        "audio_outputs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/audioOutput" }
+        },
+        "cast": { "$ref": "#/$defs/cast" },
+        "video_output": { "enum": ["host_display", "cast_transmitter"] },
+        "lip_sync_offset_ms": {
+          "type": "integer",
+          "minimum": -500,
+          "maximum": 500
+        }
+      },
+      "additionalProperties": false
+    },
+    "audioOutput": {
+      "type": "object",
+      "required": ["id", "name", "transport", "is_default"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "transport": {
+          "enum": [
+            "built-in",
+            "airplay",
+            "bluetooth",
+            "usb",
+            "display",
+            "virtual",
+            "other"
+          ]
+        },
+        "is_default": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "cast": {
+      "type": "object",
+      "required": ["presentation", "devices"],
+      "properties": {
+        "presentation": { "enum": ["auto", "audio_only", "full_suite"] },
+        "stages": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["receiver_id", "name", "transport", "transmitting"],
+            "properties": {
+              "receiver_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "transport": {
+                "enum": ["cadenza_web_tv_stage", "cadenza_android_tv_receiver"]
+              },
+              "transmitting": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pending_stages": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["receiver_id", "name", "pin", "expires_in_ms"],
+            "properties": {
+              "receiver_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "pin": { "type": "string", "pattern": "^[0-9]{4}$" },
+              "expires_in_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 300000
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "transmit": {
+          "type": "object",
+          "required": ["state"],
+          "properties": {
+            "state": { "enum": ["idle", "starting", "transmitting", "failed"] },
+            "device": { "type": "string", "maxLength": 200 },
+            "reason": { "type": "string", "maxLength": 500 }
+          },
+          "additionalProperties": false
+        },
+        "devices": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["name", "display"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "display": { "enum": ["none", "display", "unknown"] }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -236,6 +349,11 @@
         "source": {
           "enum": ["apple_music", "lrclib", "unknown"]
         },
+        "user_offset_ms": {
+          "type": "integer",
+          "minimum": -5000,
+          "maximum": 5000
+        },
         "lines": {
           "type": "array",
           "maxItems": 2000,
@@ -258,6 +376,7 @@
         },
         "backend": { "type": "string", "maxLength": 80 },
         "model_revision": { "type": "string", "maxLength": 128 },
+        "model_ready": { "type": "boolean" },
         "issue": { "type": "string", "maxLength": 4000 }
       },
       "additionalProperties": false

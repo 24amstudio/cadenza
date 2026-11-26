@@ -82,6 +82,7 @@ fun CadenzaApp(
     val state by model.state.collectAsStateWithLifecycle()
     val energyProfile by model.energyProfile.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    state.sharedTrack?.let { SharedTrackDialog(model, it, state) }
     var destination by rememberSaveable { mutableIntStateOf(0) }
     var lyricsMode by rememberSaveable { mutableStateOf(false) }
     var restoreLyricsFocus by remember { mutableStateOf(false) }

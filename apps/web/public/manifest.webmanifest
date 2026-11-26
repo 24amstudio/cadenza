@@ -1,0 +1,19 @@
+{
+  "name": "Cadenza Remote",
+  "short_name": "Cadenza",
+  "description": "Control the music playing on your Cadenza Host.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}

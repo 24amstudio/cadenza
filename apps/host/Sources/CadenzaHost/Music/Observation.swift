@@ -6,6 +6,7 @@ import Foundation
 final class MusicObservation {
     private var musicToken: NSObjectProtocol?
     private var wakeToken: NSObjectProtocol?
+    private var screenLockToken: NSObjectProtocol?
     private var coalesced: Task<Void, Never>?
     private var changedDuringRead = false
     private var latestHintAt: Int64 = 0
@@ -22,6 +23,21 @@ final class MusicObservation {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.schedule(refresh) }
+        }
+        screenLockToken = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
+        ) { [weak self] note in
+            let isLocked = note.name == NSNotification.Name("com.apple.screenIsLocked")
+            let isUnlocked = note.name == NSNotification.Name("com.apple.screenIsUnlocked")
+            Task { @MainActor in
+                guard let self else { return }
+                // A locked screen short-circuits pending Accessibility reads, and an unlocked one lets them proceed.
+                if isLocked {
+                    self.changedDuringRead = true
+                } else if isUnlocked {
+                    self.changedDuringRead = false
+                }
+            }
         }
     }
 

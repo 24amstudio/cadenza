@@ -2,6 +2,7 @@
 import { computed, onMounted, useTemplateRef } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
+import ArtistMotionHeader from '~/components/browse/ArtistMotionHeader.vue';
 import BrowseSection from '~/components/browse/BrowseSection.vue';
 import BrowseStatus from '~/components/browse/BrowseStatus.vue';
 import type { BrowseTarget } from '~/lib/browse';
@@ -41,6 +42,7 @@ onMounted(() => {
     </button>
 
     <header class="hero">
+      <ArtistMotionHeader v-if="kind === 'artist'" :artist-name="title" />
       <ArtworkImage
         class="cover"
         :class="{ round: kind === 'artist' }"
@@ -97,11 +99,19 @@ onMounted(() => {
 }
 
 .hero {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
   align-items: end;
   gap: clamp(18px, 4vw, 40px);
   padding: 0 12px;
+}
+
+/* Above the artist's motion backdrop, which is absolutely positioned behind them. */
+.cover,
+.titles {
+  position: relative;
+  z-index: 1;
 }
 
 .cover {

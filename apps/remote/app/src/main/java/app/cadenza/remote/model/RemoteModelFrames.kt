@@ -12,10 +12,12 @@ import app.cadenza.remote.data.objects
 import app.cadenza.remote.media.SessionStatus
 import app.cadenza.remote.network.HostLivenessPolicy
 import app.cadenza.remote.network.PathMeasurement
+import app.cadenza.remote.network.WakeOnLan
 import app.cadenza.remote.recommendation.RecommendationFeedback
 import app.cadenza.remote.recommendation.RecommendationOutcome
 import app.cadenza.remote.recommendation.RecommendationTrack
 import app.cadenza.remote.recommendation.newRecommendationId
+import app.cadenza.remote.updates.HostLanUpdate
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -109,6 +111,7 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                 mutable.update {
                     it.copy(
                         lyrics = document,
+                        lyricDelayMs = document.userOffsetMs,
                         lyricsLoading = false,
                         lyricsIssue = document.issue,
                         notice = if (notify) Notice("Music lyrics received") else it.notice,
@@ -119,6 +122,9 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
         "artwork" -> applyArtworkFrame(frame)
         "motion.chunk" -> applyMotionChunk(frame)
         "motion.unavailable" -> motionUnavailable(frame)
+        "artist.motion.chunk" -> applyArtistMotionChunk(frame)
+        "artist.motion.unavailable" -> artistMotionUnavailable(frame)
+        "video.started" -> videoStarted(frame)
         "artwork.unavailable" -> frame.nullableString("artwork_url")?.let(::releaseArtwork)
         "analytics.credit" -> applyCredit(frame)
         "lyrics.unavailable" ->
@@ -159,6 +165,9 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
     withContext(ioDispatcher) {
         if (token != null) app.vault.save("host." + profile.hostId, token)
         app.database.saveProfile(profile)
+        value.nullableString("mac_address")?.takeIf { WakeOnLan.isValidAddress(it) }?.let {
+            preferences.write("host_mac." + profile.hostId to it)
+        }
         preferences.write("active_host" to profile.hostId, "client_name" to remoteName)
     }
     invitation = null
@@ -186,6 +195,7 @@ internal suspend fun RemoteModel.welcome(value: JSONObject) {
             hostUpdate = null,
             hostVersion = value.nullableString("host_version"),
             hostBuild = if (value.has("host_build")) value.getLong("host_build") else null,
+            hostOffer = value.optJSONObject("update_manifest")?.let { runCatching { HostLanUpdate.offerFrom(it) }.getOrNull() },
             capabilities =
                 value
                     .optJSONArray("capabilities")
@@ -284,6 +294,7 @@ internal suspend fun RemoteModel.applyState(value: JSONObject) {
             snapshot = snapshot.withOptimisticIntents(optimisticIntents()),
             lastStateAt = SystemClock.elapsedRealtime(),
             lyrics = if (changedSong) null else it.lyrics,
+            lyricDelayMs = if (changedSong) 0 else it.lyricDelayMs,
             lyricsIssue = if (changedSong) null else it.lyricsIssue,
             lyricsLoading = if (changedSong) false else it.lyricsLoading,
             motion = if (changedSong) null else it.motion,

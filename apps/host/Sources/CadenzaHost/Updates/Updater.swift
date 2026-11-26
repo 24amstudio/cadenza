@@ -90,6 +90,16 @@ final class HostUpdater {
         else {
             throw CadenzaError.failure("update", "Install the bundled Cadenza Host.app before using self-updates.")
         }
+        // A disk image or App Translocation copy cannot be replaced in place, so the update waits for a real install.
+        let folder = Bundle.main.bundleURL.deletingLastPathComponent()
+        guard !Bundle.main.bundlePath.contains("/AppTranslocation/"),
+            FileManager.default.isWritableFile(atPath: folder.path)
+        else {
+            throw CadenzaError.failure(
+                "update_location",
+                "Move Cadenza Host to the Applications folder and open it again. Automatic updates need write access to replace it."
+            )
+        }
         guard try store.database.query("SELECT command_id FROM command_intents WHERE phase!='complete' LIMIT 1").isEmpty
         else {
             throw CadenzaError.failure("update", "Resolve unconfirmed Music actions before restarting Host.")
@@ -99,6 +109,15 @@ final class HostUpdater {
 
     func install(configuration: UpdateConfiguration, store: HostStore) throws {
         let (archive, executable) = try validateInstall(store: store)
+        let target = staged?.1.build ?? 0
+        let record = SelfUpdateLoopGuard.load()
+        guard SelfUpdateLoopGuard.allowsAttempt(for: target, record: record) else {
+            throw CadenzaError.failure(
+                "update",
+                "This update already failed \(SelfUpdateLoopGuard.attemptLimit) times. Cadenza Host waits for a newer release."
+            )
+        }
+        SelfUpdateLoopGuard.save(SelfUpdateLoopGuard.recordingAttempt(for: target, after: record))
         try store.database.backup(to: directory.appendingPathComponent("before-update.sqlite"))
         let request = InstallRequest(
             applicationPath: Bundle.main.bundleURL.path, archivePath: archive.path,

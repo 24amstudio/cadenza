@@ -22,8 +22,13 @@ data class Song(
     val album: String = "",
     val durationMs: Long? = null,
     val artworkUrl: String? = null,
+    // Null on songs from Hosts that predate music-video search; those are songs.
+    val mediaType: String? = null,
 ) {
     val identity: SongIdentity get() = SongIdentity(source, id)
+
+    // A music video is listed for discovery. Cadenza Host cannot queue it yet.
+    val isMusicVideo: Boolean get() = mediaType == "musicVideo"
 }
 
 data class QueueEntry(
@@ -44,6 +49,8 @@ data class CurrentPlayback(
     val song: Song,
     val positionMs: Long,
     val sampledAtHostMs: Long,
+    // A radio stream, which has no length to seek within. Older Hosts omit it.
+    val isLiveRadio: Boolean = false,
 )
 
 data class SingSession(
@@ -82,6 +89,64 @@ data class HostSnapshot(
     val autoPlay: List<AutoPlayItem> = emptyList(),
     val shuffle: Boolean = false,
     val repeat: String = "off",
+    val audioOutputs: List<AudioOutput> = emptyList(),
+    val hostBudget: String? = null,
+    val cast: CastState? = null,
+    // Where a music video's karaoke line is shown: "host_display" or "cast_transmitter".
+    val videoOutput: String? = null,
+    // The AVR lip-sync offset in milliseconds, from -500 to 500.
+    val lipSyncOffsetMs: Int? = null,
+)
+
+// A Google Cast device the Host can send audio to. `display` is none, display, or unknown.
+data class CastDevice(
+    val name: String,
+    val display: String,
+)
+
+// The Host's one status line for a transmission. `mismatch` marks a receiver that plays something other than what is sent.
+data class CastRouteStatus(
+    val text: String,
+    val mismatch: Boolean,
+)
+
+// What the Host is sending to a Cast device. `reason` is set when a transmission failed. `status` is set while sending.
+data class CastTransmitState(
+    val state: String,
+    val device: String?,
+    val reason: String?,
+    val status: CastRouteStatus? = null,
+)
+
+// A Cadenza TV that the Host approved. `transmitting` means it is receiving Music's audio.
+data class StageDevice(
+    val receiverId: String,
+    val name: String,
+    val transmitting: Boolean,
+    val status: CastRouteStatus? = null,
+)
+
+// A TV that shows a PIN and waits for approval. Any paired Remote can approve it with that PIN.
+data class PendingStage(
+    val receiverId: String,
+    val name: String,
+    val pin: String,
+)
+
+data class CastState(
+    val presentation: String,
+    val devices: List<CastDevice>,
+    val transmit: CastTransmitState?,
+    val stages: List<StageDevice> = emptyList(),
+    val pendingStages: List<PendingStage> = emptyList(),
+)
+
+// An audio output the Mac can play to. `id` is the device UID.
+data class AudioOutput(
+    val id: String,
+    val name: String,
+    val transport: String,
+    val isDefault: Boolean,
 )
 
 data class LyricLine(
@@ -109,6 +174,8 @@ data class LyricDocument(
     val lines: List<LyricLine>,
     val issue: String?,
     val source: String = "apple_music",
+    // The nudge the person saved for this track, in milliseconds. It starts the Remote's nudge.
+    val userOffsetMs: Int = 0,
 ) {
     /** 0: unavailable, 1: plain text, 2: timed lines, 3: timed words. */
     val level: Int
@@ -151,6 +218,14 @@ data class UpdateConfiguration(
 
 fun JSONObject.nullableString(key: String): String? = if (has(key) && !isNull(key)) getString(key) else null
 
+/** The `status` of a cast transmit or stage entry, when the Host sent one with text. */
+private fun routeStatus(item: JSONObject): CastRouteStatus? {
+    val status = item.optJSONObject("status") ?: return null
+    val text = status.optString("text")
+
+    return if (text.isEmpty()) null else CastRouteStatus(text, status.optBoolean("mismatch"))
+}
+
 fun JSONObject.counter(key: String): Long {
     val value = get(key)
     require(value is Number) { "Expected an integer for $key." }
@@ -187,8 +262,10 @@ object Wire {
             album = value.optString("album"),
             durationMs = value.nullableLong("duration_ms"),
             artworkUrl = value.nullableString("artwork_url"),
+            mediaType = value.nullableString("media_type"),
         ).also {
             require(it.title.length <= 500 && it.artist.length <= 500 && it.album.length <= 500) { "Song metadata is too long." }
+            require(it.mediaType == null || it.mediaType == "song" || it.mediaType == "musicVideo") { "Invalid media type." }
             require(
                 when (it.source) {
                     "catalog" -> it.id.matches(Regex("[0-9]{1,20}"))
@@ -210,6 +287,7 @@ object Wire {
                     song(item.getJSONObject("song")),
                     item.counter("position_ms"),
                     item.counter("sampled_at_host_ms"),
+                    item.optBoolean("is_live_radio", false),
                 )
             }
         val queue =
@@ -263,6 +341,11 @@ object Wire {
             value.optJSONArray("auto_play")?.let(::autoPlayItems).orEmpty(),
             value.optBoolean("shuffle", false),
             value.optString("repeat", "off"),
+            audioOutputs(value.optJSONArray("audio_outputs")),
+            value.optString("host_budget").takeIf { it.isNotEmpty() },
+            castState(value.optJSONObject("cast")),
+            value.nullableString("video_output"),
+            value.takeIf { it.has("lip_sync_offset_ms") }?.optInt("lip_sync_offset_ms"),
         ).also {
             require(it.repeat in listOf("off", "one", "all")) { "Unknown repeat mode." }
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos", "aac")) {
@@ -271,6 +354,72 @@ object Wire {
             require(queue.map { entry -> entry.id }.toSet().size == queue.size) { "Duplicate queue request identity." }
         }
     }
+
+    // A Cast block that does not parse is dropped, so the rest of the snapshot still shows.
+    private fun castState(value: JSONObject?): CastState? {
+        if (value == null) return null
+        val presentation = value.optString("presentation")
+        if (presentation !in listOf("auto", "audio_only", "full_suite")) return null
+        val devices =
+            value.optJSONArray("devices")?.objects().orEmpty().mapNotNull { item ->
+                val name = item.optString("name")
+                val display = item.optString("display")
+                if (name.isEmpty() || display !in listOf("none", "display", "unknown")) {
+                    null
+                } else {
+                    CastDevice(name, display)
+                }
+            }
+        val transmit =
+            value.optJSONObject("transmit")?.let { item ->
+                val state = item.optString("state")
+                if (state !in listOf("idle", "starting", "transmitting", "failed")) {
+                    null
+                } else {
+                    CastTransmitState(
+                        state,
+                        item.nullableString("device"),
+                        item.nullableString("reason"),
+                        routeStatus(item),
+                    )
+                }
+            }
+        val stages =
+            value.optJSONArray("stages")?.objects().orEmpty().mapNotNull { item ->
+                val receiverId = item.optString("receiver_id")
+                val name = item.optString("name")
+                if (receiverId.isEmpty() || name.isEmpty() || !item.has("transmitting")) {
+                    null
+                } else {
+                    StageDevice(receiverId, name, item.optBoolean("transmitting"), routeStatus(item))
+                }
+            }
+        val pending =
+            value.optJSONArray("pending_stages")?.objects().orEmpty().mapNotNull { item ->
+                val receiverId = item.optString("receiver_id")
+                val name = item.optString("name")
+                val pin = item.optString("pin")
+                if (receiverId.isEmpty() || name.isEmpty() || !Regex("^[0-9]{4}$").matches(pin)) {
+                    null
+                } else {
+                    PendingStage(receiverId, name, pin)
+                }
+            }
+        return CastState(presentation, devices, transmit, stages, pending)
+    }
+
+    // An output that does not parse is left out, so one unknown output never hides the rest.
+    private fun audioOutputs(array: JSONArray?): List<AudioOutput> =
+        array?.objects().orEmpty().mapNotNull { item ->
+            val id = item.optString("id")
+            val name = item.optString("name")
+            val transport = item.optString("transport")
+            if (id.isEmpty() || name.isEmpty() || transport.isEmpty() || !item.has("is_default")) {
+                null
+            } else {
+                AudioOutput(id, name, transport, item.optBoolean("is_default"))
+            }
+        }
 
     private fun autoPlayItems(array: JSONArray): List<AutoPlayItem> {
         require(array.length() <= 8) { "Too many AutoPlay songs." }
@@ -328,6 +477,7 @@ object Wire {
             lines,
             value.nullableString("issue"),
             source,
+            value.optInt("user_offset_ms", 0).coerceIn(-5000, 5000),
         )
     }
 

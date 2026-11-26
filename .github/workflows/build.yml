@@ -44,7 +44,7 @@ jobs:
         if: matrix.platform == 'host'
         with:
           path: apps/host/.build
-          key: host-build-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift', 'tools/sing/fetch_model.sh') }}
+          key: host-build-${{ runner.os }}-${{ hashFiles('apps/host/Package.swift', 'apps/host/Sources/**/*.swift', 'apps/host/Tests/**/*.swift', 'tools/sing/fetch_model.sh', 'tools/sing/model.env', 'tools/sing/package_model.sh') }}
           restore-keys: |
             host-build-${{ runner.os }}-
       - name: Resolve CI release identity
@@ -136,19 +136,24 @@ jobs:
         if: matrix.platform == 'host'
         with:
           name: Cadenza-host-production-${{ github.sha }}
-          path: dist/Cadenza-Host-*-arm64.zip
+          path: |
+            dist/Cadenza-Host-*-arm64.zip
+            dist/cadenza-sing-model-*.tar.gz
           if-no-files-found: error
           retention-days: 14
   release:
     needs: artifacts
     runs-on: macos-26
-    timeout-minutes: 6
+    # Uploads the 456 MB Sing model archive, which needs the Host's fifteen-minute budget rather than the six-minute one.
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -162,6 +167,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17.0.21+9'
+      - name: Resolve previous published release
+        run: |
+          previous="$(node tools/release-notes.mjs previous-tag --repository "$GITHUB_REPOSITORY" --current-tag "$CADENZA_RELEASE_TAG")"
+          echo "CADENZA_PREVIOUS_TAG=$previous" >> "$GITHUB_ENV"
+      - name: Write release notes and signed comparison
+        env:
+          CHECKED_SHA: ${{ github.sha }}
+        run: |
+          args=(--repository "$GITHUB_REPOSITORY" --sha "$CHECKED_SHA" --tag "$CADENZA_RELEASE_TAG" --run-number "$GITHUB_RUN_NUMBER" --out-dir dist)
+          if [[ -n "${CADENZA_PREVIOUS_TAG:-}" ]]; then args+=(--previous-tag "$CADENZA_PREVIOUS_TAG"); fi
+          node tools/release-notes.mjs write "${args[@]}"
       - name: Prepare Android manifest analyzer
         run: bash tools/ci/android-sdk.sh
       - name: Verify release configuration
@@ -187,6 +203,7 @@ jobs:
             --name "Cadenza-host-production-$CHECKED_SHA" --dir "$RUNNER_TEMP/cadenza-artifacts/host"
           cp "$RUNNER_TEMP"/cadenza-artifacts/remote/Cadenza-Remote-*.apk dist/
           cp "$RUNNER_TEMP"/cadenza-artifacts/host/Cadenza-Host-*-arm64.zip dist/
+          cp "$RUNNER_TEMP"/cadenza-artifacts/host/cadenza-sing-model-*.tar.gz dist/
       - name: Restore update signing key
         env:
           UPDATE_PRIVATE_PEM: ${{ secrets.CADENZA_UPDATE_PRIVATE_PEM }}
@@ -206,12 +223,13 @@ jobs:
           CHECKED_SHA: ${{ github.sha }}
         run: |
           if gh release view "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$CADENZA_RELEASE_TITLE" --notes "Automated Production build $CADENZA_BUILD_NUMBER from $CHECKED_SHA." --draft=false --prerelease=false
+            gh release edit "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$CADENZA_RELEASE_TITLE" --notes-file dist/release-notes.md --draft=false --prerelease=false
           else
             gh release create "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$CHECKED_SHA" \
-              --title "$CADENZA_RELEASE_TITLE" --notes "Automated Production build $CADENZA_BUILD_NUMBER from $CHECKED_SHA."
+              --title "$CADENZA_RELEASE_TITLE" --notes-file dist/release-notes.md
           fi
           gh release upload "$CADENZA_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
             "dist/Cadenza-Host-$CADENZA_RELEASE_VERSION-arm64.zip" \
             "dist/Cadenza-Remote-$CADENZA_RELEASE_VERSION.apk" \
+            dist/cadenza-sing-model-*.tar.gz \
             dist/cadenza-release.json dist/cadenza-release.sig

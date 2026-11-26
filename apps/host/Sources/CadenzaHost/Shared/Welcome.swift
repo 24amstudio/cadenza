@@ -14,6 +14,11 @@ struct Welcome: Codable, Sendable {
     // The Host's version and build, so a Remote can tell whether it or the Host is the older one.
     var hostVersion: String? = nil
     var hostBuild: Int64? = nil
+    var platform: String = "macos"
+    // The Mac's hardware address, so a Remote can send a Wake-on-LAN packet when the Host is asleep.
+    var macAddress: String? = nil
+    // The Remote build this Host can offer over the LAN, when a matching release is cached.
+    var updateManifest: RemoteUpdateCache.Offer? = nil
     var updates: UpdateConfiguration
     var capabilities: [String] = [
         "playback", "library", "catalog.public-web", "queue.native-accessibility",

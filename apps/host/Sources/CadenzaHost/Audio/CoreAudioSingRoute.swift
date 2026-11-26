@@ -6,12 +6,19 @@ import Foundation
 /// Owns the macOS process-tap and private aggregate-device lifetime.
 /// The real-time IO callback is intentionally added only with a validated separator/output graph.
 final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
+    private let muteWhenTapped: Bool
     private var tapID: AudioObjectID = kAudioObjectUnknown
     private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
     private var ioProcID: AudioDeviceIOProcID?
     private var receive: (@Sendable (SingAudioBuffer) -> Void)?
     private var bufferPool: SingAudioBufferPool?
-    private let ioQueue = DispatchQueue(label: "app.cadence.host.sing.audio")
+    private var ring: RealtimeCaptureRing?
+    private let ioQueue = DispatchQueue(label: "app.cadence.host.sing.audio", qos: .userInteractive)
+    private let consumerQueue = DispatchQueue(label: "app.cadence.host.sing.capture", qos: .userInteractive)
+
+    init(muteWhenTapped: Bool = true) {
+        self.muteWhenTapped = muteWhenTapped
+    }
 
     var format: SingAudioFormat? {
         guard isAvailable else { return nil }
@@ -36,7 +43,12 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         else {
             throw SingAudioError.unavailable("The Music output format could not be prepared.")
         }
-        bufferPool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
+        let pool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
+        guard let ring = RealtimeCaptureRing(channelCount: singFormat.channelCount, frameCapacity: 4_096) else {
+            throw SingAudioError.unavailable("The capture ring could not be prepared.")
+        }
+        bufferPool = pool
+        self.ring = ring
         let tapUUID = UUID()
         let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processID])
         tapDescription.uuid = tapUUID
@@ -44,7 +56,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         tapDescription.isPrivate = true
         tapDescription.isMixdown = true
         tapDescription.isMono = false
-        tapDescription.muteBehavior = .mutedWhenTapped
+        tapDescription.muteBehavior = muteWhenTapped ? .mutedWhenTapped : .unmuted
         var createdTap = kAudioObjectUnknown
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &createdTap)
         guard tapStatus == noErr else { throw audioError("create process tap", status: tapStatus) }
@@ -73,12 +85,18 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             }
             aggregateDeviceID = createdAggregate
             try waitUntilAlive(aggregateDeviceID)
+            requestBufferFrames(aggregateDeviceID, frames: 512)
             self.receive = receive
+            // The consumer and the IOProc each keep their own strong references, so `stop` can clear this route's
+            // state on another thread without racing either of them.
+            consumerQueue.async {
+                Self.drain(ring: ring, format: singFormat, pool: pool, receive: receive)
+            }
             var createdIOProc: AudioDeviceIOProcID?
             let ioStatus = AudioDeviceCreateIOProcIDWithBlock(
                 &createdIOProc, aggregateDeviceID, ioQueue
-            ) { [weak self] _, inputData, _, _, _ in
-                self?.read(inputData)
+            ) { _, inputData, _, _, _ in
+                _ = ring.write(inputData)
             }
             guard ioStatus == noErr, let createdIOProc else {
                 throw audioError("create audio IO callback", status: ioStatus)
@@ -96,7 +114,7 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
 
     func stop() {
         receive = nil
-        bufferPool = nil
+        ring?.stop()
         if let ioProcID {
             if aggregateDeviceID != kAudioObjectUnknown { AudioDeviceStop(aggregateDeviceID, ioProcID) }
             if aggregateDeviceID != kAudioObjectUnknown { AudioDeviceDestroyIOProcID(aggregateDeviceID, ioProcID) }
@@ -110,6 +128,20 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             AudioHardwareDestroyProcessTap(tapID)
             tapID = kAudioObjectUnknown
         }
+        ring = nil
+        bufferPool = nil
+    }
+
+    /// Asks the aggregate device for 512-frame blocks, which is 10.67 ms at 48 kHz. A device that refuses keeps its
+    /// own size, so this is best effort and never blocks the capture.
+    private func requestBufferFrames(_ device: AudioObjectID, frames: UInt32) {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyBufferFrameSize,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var value = frames
+        _ = AudioObjectSetPropertyData(
+            device, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value)
     }
 
     private func waitUntilAlive(_ device: AudioObjectID) throws {
@@ -152,46 +184,44 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         return uid
     }
 
-    private func read(_ inputData: UnsafePointer<AudioBufferList>) {
-        guard let receive, let format, let bufferPool, inputData.pointee.mNumberBuffers > 0 else { return }
-        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
-        guard let first = buffers.first, let firstData = first.mData else { return }
-        let frameCount: Int
-        if buffers.count >= 2 {
-            frameCount = Int(first.mDataByteSize) / MemoryLayout<Float>.size
-        } else {
-            frameCount = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * format.channelCount)
-        }
-        guard frameCount > 0, let acquired = bufferPool.acquire(frameCount: frameCount) else { return }
-        let buffer = acquired.buffer
-        var handedOff = false
-        defer {
-            if !handedOff { acquired.lease.release() }
-        }
-        let channels = buffer.floatChannelData!
-        if buffers.count >= 2 {
-            for channel in 0..<format.channelCount {
-                guard channel < buffers.count else {
-                    memset(channels[channel], 0, frameCount * MemoryLayout<Float>.size)
-                    continue
-                }
-                guard let data = buffers[channel].mData else {
-                    memset(channels[channel], 0, frameCount * MemoryLayout<Float>.size)
-                    continue
-                }
-                memcpy(channels[channel], data, frameCount * MemoryLayout<Float>.size)
+    /// The realtime IOProc used to live here; it now writes straight into the ring, so nothing on this route is read
+    /// from the audio thread.
+    ///
+    /// Drains captured blocks on the user-interactive consumer queue, where pooled buffers and receivers may allocate.
+    /// It owns its ring, pool, format and receiver, so it keeps running until `ring.stop()` is called.
+    private static func drain(
+        ring: RealtimeCaptureRing,
+        format: SingAudioFormat,
+        pool: SingAudioBufferPool,
+        receive: @escaping @Sendable (SingAudioBuffer) -> Void
+    ) {
+        while !ring.isStopped {
+            _ = ring.waitForFrames(timeout: .now() + .milliseconds(100))
+            while let read = ring.read() {
+                deliver(read, from: ring, format: format, pool: pool, receive: receive)
+                ring.release(read)
             }
-        } else {
-            let interleaved = firstData.assumingMemoryBound(to: Float.self)
-            for frame in 0..<frameCount {
-                for channel in 0..<format.channelCount {
-                    channels[channel][frame] = interleaved[frame * format.channelCount + channel]
-                }
-            }
+        }
+    }
+
+    private static func deliver(
+        _ read: RealtimeCaptureRing.Read,
+        from ring: RealtimeCaptureRing,
+        format: SingAudioFormat,
+        pool: SingAudioBufferPool,
+        receive: (SingAudioBuffer) -> Void
+    ) {
+        guard let acquired = pool.acquire(frameCount: read.frameCount),
+            let channels = acquired.buffer.floatChannelData
+        else { return }
+        for channel in 0..<read.channelCount {
+            memcpy(
+                channels[channel], ring.samples(for: read, channel: channel),
+                read.frameCount * MemoryLayout<Float>.size)
         }
         receive(
-            SingAudioBuffer(format: format, frameCount: frameCount, samples: buffer, lease: acquired.lease))
-        handedOff = true
+            SingAudioBuffer(
+                format: format, frameCount: read.frameCount, samples: acquired.buffer, lease: acquired.lease))
     }
 
     private func musicProcessObjectID() -> AudioObjectID? {

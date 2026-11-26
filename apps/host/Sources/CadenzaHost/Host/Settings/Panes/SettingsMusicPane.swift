@@ -5,8 +5,11 @@ struct SettingsMusicPane: View {
     @Bindable var model: HostModel
     @State private var assignments: [String: String] = [:]
     @State private var discardMissing = false
-    @State private var automation = PermissionState.notChecked
     @State private var accessibilityGranted = false
+    @State private var mediaUserToken = ""
+    @State private var hasStoredMediaToken = false
+
+    private var automation: PermissionState { model.service?.music.automation.state ?? .notChecked }
 
     var body: some View {
         Form {
@@ -69,6 +72,8 @@ struct SettingsMusicPane: View {
 
             RecommendationSettingsSection(model: model)
 
+            SingModelSection(manager: model.singModel) { title, message in model.showError(title, message) }
+
             Section {
                 ValidatedSettingField(
                     title: "Storefront",
@@ -80,16 +85,35 @@ struct SettingsMusicPane: View {
                         model.configuration.storefront = code
                         model.persistConfiguration()
                     })
+                if let service = model.service {
+                    SecureField(
+                        hasStoredMediaToken ? "Apple Music web token (saved)" : "Apple Music web token (optional)",
+                        text: $mediaUserToken)
+                    HStack {
+                        Button("Save Web Token") { saveMediaUserToken(service) }
+                            .disabled(mediaUserToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if hasStoredMediaToken {
+                            Button("Clear Web Token", role: .destructive) { clearMediaUserToken(service) }
+                        }
+                    }
+                }
             } header: {
                 Text("Apple Music")
             } footer: {
-                Text("The two-letter country code used to search Apple Music, such as us or id.")
+                Text(
+                    "The two-letter country code used to search Apple Music, such as us or id. "
+                        + "An optional media-user-token enables AirPlay WebVTT karaoke and Widevine Cast video streams."
+                )
             }
         }
         .formStyle(.grouped)
         .onAppear {
             assignments = model.service?.queue.nativeAssignments ?? [:]
             refreshAccessibility()
+            refreshMediaUserTokenStatus()
+            if let checker = model.service?.music.automation {
+                Task { @MainActor in await checker.refresh(promptUser: false) }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshAccessibility()
@@ -105,18 +129,54 @@ struct SettingsMusicPane: View {
         accessibilityGranted = model.service?.music.accessibility.permitted ?? false
     }
 
-    // Automation has no passive status. Checking it can start Music and show macOS's prompt, so it runs only on request.
+    private func refreshMediaUserTokenStatus() {
+        guard let credentials = model.service?.store.credentials,
+            let data = try? credentials.read(AppleWebPlayback.tokenAccount)
+        else {
+            hasStoredMediaToken = false
+            return
+        }
+        hasStoredMediaToken = !data.isEmpty
+    }
+
+    private func saveMediaUserToken(_ service: HostService) {
+        let trimmed = mediaUserToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try service.store.credentials.write(AppleWebPlayback.tokenAccount, Data(trimmed.utf8))
+            mediaUserToken = ""
+            hasStoredMediaToken = true
+            model.notify("Apple Music web token saved.")
+        } catch {
+            model.showError("Could not save token", error.localizedDescription)
+        }
+    }
+
+    private func clearMediaUserToken(_ service: HostService) {
+        do {
+            try service.store.credentials.delete(AppleWebPlayback.tokenAccount)
+            mediaUserToken = ""
+            hasStoredMediaToken = false
+            model.notify("Apple Music web token cleared.")
+        } catch {
+            model.showError("Could not clear token", error.localizedDescription)
+        }
+    }
+
+    // Only this explicit action may show macOS's Automation prompt. Launch and focus refreshes stay passive.
     private func checkAutomation() {
-        guard model.service != nil else { return }
-        automation = .checking
+        guard let checker = model.service?.music.automation else { return }
         Task { @MainActor in
-            do {
-                _ = try await model.service?.music.status()
-                automation = .granted
+            switch await checker.refresh(promptUser: true) {
+            case .granted:
                 model.notify("Music Automation is available.")
-            } catch {
-                automation = .needed
-                model.showError("Allow Music Automation", error.localizedDescription)
+            case .needed:
+                model.showError(
+                    "Allow Music Automation",
+                    "Cadenza Host can't control Music. Turn on Music in System Settings → Privacy & Security → Automation, then check again."
+                )
+            case .notChecked, .checking:
+                break
             }
         }
     }

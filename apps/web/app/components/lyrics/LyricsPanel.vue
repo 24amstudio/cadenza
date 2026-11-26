@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import LyricLines from '~/components/lyrics/LyricLines.vue';
+import LyricNudge from '~/components/lyrics/LyricNudge.vue';
+import { identityOf } from '~/lib/library/identity';
 import { lyricsLevel } from '~/lib/lyrics';
+import { lyricClockMs, syncFirstLineDelay } from '~/lib/lyricNudge';
 import { useHostStore } from '~/stores/host';
 import { usePreferencesStore } from '~/stores/preferences';
 
@@ -17,6 +20,52 @@ const preferences = usePreferencesStore();
 
 const root = ref<HTMLElement | null>(null);
 const level = computed(() => lyricsLevel(host.lyricsDocument));
+
+// The timing nudge belongs to one track. A track starts from the nudge the person saved on the Host, or from none.
+const delayMs = ref(0);
+
+watch(
+  () => host.lyricsDocument?.occurrenceId,
+  () => {
+    delayMs.value = host.lyricsDocument?.userOffsetMs ?? 0;
+  },
+);
+
+// Each change is saved on the Host, so the nudge is kept for this track on later visits.
+watch(delayMs, (value) => {
+  const song = host.current?.song;
+  const identity = song === undefined ? null : identityOf(song);
+
+  if (identity === null || value === (host.lyricsDocument?.userOffsetMs ?? 0))
+    return;
+  host.setLyricOffset(identity, Math.max(-5000, Math.min(5000, value)));
+});
+
+const lyricPositionMs = computed(() =>
+  lyricClockMs(host.positionMs, delayMs.value),
+);
+
+// LyricLines reads this on every animation frame, so it stays a reader rather than a computed value.
+function lyricLivePositionMs(): number {
+  return lyricClockMs(host.livePositionMs(), delayMs.value);
+}
+
+const firstTimedLineStartMs = computed(
+  () => host.lyricsDocument?.lines[0]?.startMs ?? null,
+);
+
+function syncFirstLine(): void {
+  if (firstTimedLineStartMs.value === null) return;
+  delayMs.value = syncFirstLineDelay(
+    firstTimedLineStartMs.value,
+    host.positionMs,
+  );
+}
+
+// A tapped line carries lyric time, so the playback position it seeks to is that time plus the delay.
+function seekLyric(lyricMs: number): void {
+  host.seekTo(lyricMs + delayMs.value);
+}
 
 // Brings the panel to the top of the page. The lyrics inside then follow playback in their own scroll box.
 function reveal(): void {
@@ -51,6 +100,14 @@ defineExpose({ reveal });
       </button>
     </header>
 
+    <LyricNudge
+      v-if="level >= 2"
+      :delay-ms="delayMs"
+      :can-sync-first-line="firstTimedLineStartMs !== null"
+      @update:delay-ms="delayMs = $event"
+      @sync-first-line="syncFirstLine"
+    />
+
     <Transition name="fade" mode="out-in">
       <div v-if="host.lyricsLoading" key="loading" class="lyrics-loading">
         <p class="visually-hidden" role="status">
@@ -64,13 +121,13 @@ defineExpose({ reveal });
       <div v-else-if="host.lyricsDocument" key="lyrics" class="lyrics-scroll">
         <LyricLines
           :lines="host.lyricsDocument.lines"
-          :position-ms="host.positionMs"
-          :live-position-ms="host.livePositionMs"
+          :position-ms="lyricPositionMs"
+          :live-position-ms="lyricLivePositionMs"
           :playing="host.isPlaying"
           :timed="level >= 2"
           :word-timed="level === 3"
           :size="preferences.lyricsSize"
-          @seek="host.seekTo"
+          @seek="seekLyric"
         />
       </div>
     </Transition>

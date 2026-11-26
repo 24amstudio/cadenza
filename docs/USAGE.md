@@ -21,6 +21,8 @@ Select a result to prepare its exact song in Music on the Host. Once preparation
 
 Two requests for the same song remain separate queue occurrences. Retries use the original command identity; a timed-out request is not automatically sent again as a new enqueue.
 
+Catalog search also lists music videos after the songs, labelled "Music video". Play now opens a video in Music's own window, and the video never joins Music's queue. Add to queue and Play next stay disabled for videos.
+
 Catalog search needs internet access and uses an isolated, undocumented public web-token integration. If Apple changes it, library search and local controls remain independent. Cadenza does not replace failed catalog search with incomplete store results.
 
 Your search text and Apple Music/Host library selection remain when you visit another screen and return.
@@ -49,7 +51,7 @@ When paused, the queue remains visible with paused status. External changes in M
 
 Open **Playing**, then select **Lyrics** on A and B. Both receive the same lyric document, occurrence, translation revision, and Host timeline. Select **Lyrics** again or use Android Back to return to the player.
 
-On a supported Apple Silicon Host, open **Sing mode** from Playing to lower the lead vocal while Music continues playing. Production Host archives include the MIT Mel-RoFormer vocal-separation model (about 456 MB); development runs without the bundled resource download the pinned model into the Host cache on first use. Processing stays on Host and the Remote receives only Sing state and controls. Sing supports Music's stereo output sample rate and reports a clear failure when audio capture, model loading, or the output route is unavailable.
+On a supported Apple Silicon Host, open **Sing mode** from Playing to lower the lead vocal while Music continues playing. The Host downloads the pinned MIT Mel-RoFormer vocal-separation model (about 456 MB) into its cache the first time you open Sing mode. Processing stays on Host and the Remote receives only Sing state and controls. Sing supports Music's stereo output sample rate and reports a clear failure when audio capture, model loading, or the output route is unavailable.
 
 Each Remote renders highlighting locally. Pause, seek, replay, and song changes use the authoritative occurrence and position. Reconnecting midway requests the current document again. Stale synchronization is marked explicitly.
 
@@ -95,3 +97,33 @@ Match each native row to the saved request it represents. Leave genuine Host-ori
 If a saved request is no longer present, explicitly select the option to cancel missing saved requests. Cadenza does not silently invent ownership after an ambiguous native change or restart.
 
 After the Host applies verified assignments, choose **Check status** on an unconfirmed Remote request. A confirmed queue outcome is returned when available. If Host reviewed an action whose original outcome remains unknowable, Remote releases its pending control and keeps that uncertainty explicit; it does not replay the command.
+
+## Radio, outputs, and library actions
+
+Radio streams show LIVE in place of a time, and seeking is off. The playing screen lists the Mac's audio outputs. Choosing one changes the Mac's default output, which Music plays through. The output menu also lists the Google Cast devices found on your network and the presentation mode set in the Mac's Settings. Sending audio to a Cast device is described under Google Cast below.
+
+**Favorite in Music** sets Music's favorite flag for a library song. **Add to Host playlist** adds it to a Cadenza Host playlist and creates that playlist when it is missing. Both are receipted commands. They have not been run against a live Music session.
+
+Opening an Apple Music song link on Android, or sharing one to Cadenza Remote, offers Play now, Play next, and Add to queue. Album and playlist links are explained but not played.
+
+The web Remote adds OLED ambient mode, a black screen that drifts every 45 seconds, and operating-system media keys for playback.
+
+When the search is empty, the web Remote shows "For You" and "Room Blend" suggestions. The Host ranks them from this Remote's listening history, and Room Blend holds the songs every connected Remote shares. Each song has Play next and Add buttons. The list is read-only until you choose one.
+
+On an artist page, the web and Android Remotes can show a muted, looping motion video when Apple has one for that artist. On the web it sits behind the artist's name. On Android it fills a 16:9 band above the name. The Host fetches the video, so neither Remote contacts Apple's motion service. The Host sends a 256-pixel square rendition that is cropped to fill the space, so it has less detail than a wide header would. Over Bluetooth, under thermal pressure, or with reduced motion, the page shows its artwork instead. On Android, energy saver does the same.
+
+On Android, the volume buttons change Music's volume on Host in 5 percent steps when the Settings switch is on. The session notification clears itself after five minutes of pause or lost connection.
+
+Timed lyrics on the web Remote have a timing nudge. Each press of -0.5 s or +0.5 s moves the lyrics, and Sync First Line sets the timing from the first line you hear. The nudge applies to the current song only and is not saved to Host yet. Tapping a line seeks to that line's time with the nudge applied.
+
+The web and Android output menus list the Google Cast devices on your network. On the web, Send audio here plays Music's stereo output on that device through Google's default media receiver, and Stop sending audio ends it. The same menus list the Cadenza TVs: a TV that is waiting shows a PIN and an Approve button, and an approved TV gets a Send audio here button. See [docs/CAST.md](CAST.md) for the TV stage. On Android, choose a device chip to start sending, and choose the same chip again to stop. The status line under the Cast heading shows what is happening, including a failure reason. Neither client has been checked against a real Cast device. Six-channel output is sent as AC-3 through a bundled helper, which is verified to encode but not yet checked against a Cast device. Karaoke on a Cast device needs a registered custom receiver, and Full Cadenza Suite artwork is not built. An Android Remote can share its taste at connect when its Settings switch is on, and the Host uses that history when it ranks suggestions.
+
+## Android widget, lock screen, and screen saver
+
+The home-screen widget shows what the Host is playing. The Host's state is pushed to it, so the widget does not poll on its own.
+
+The motion lock screen shows full-screen motion artwork over the keyguard for a playing track that has motion artwork. It closes on unlock, on pause, or when the Host is lost.
+
+The charging screen saver runs only while the phone is charging and connected to the Host.
+
+None of the three has been checked on a device, including Huawei HarmonyOS 4.3. See [Troubleshooting](TROUBLESHOOTING.md).

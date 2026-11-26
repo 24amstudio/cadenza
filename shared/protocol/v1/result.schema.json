@@ -36,13 +36,16 @@
         "outcome_unknown",
         "busy",
         "song_not_ready",
+        "music_modal_blocked",
         "queue_full",
         "native_queue_unavailable",
         "music_permission",
         "storage",
         "secure_storage",
         "unavailable",
-        "catalog_unavailable"
+        "catalog_unavailable",
+        "sing_unavailable",
+        "sing_model_not_installed"
       ]
     }
   },

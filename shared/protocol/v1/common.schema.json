@@ -7,6 +7,24 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
     "counter": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "updateManifest": {
+      "type": "object",
+      "required": [
+        "version",
+        "build_number",
+        "sha256",
+        "size_bytes",
+        "lan_download_path"
+      ],
+      "properties": {
+        "version": { "type": "string", "maxLength": 80 },
+        "build_number": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 134217728 },
+        "lan_download_path": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
     "song": {
       "oneOf": [
         {
@@ -28,6 +46,28 @@
           "additionalProperties": false
         }
       ]
+    },
+    "taste_digest": {
+      "type": "object",
+      "required": ["top_artists", "top_genres", "favorited_track_ids"],
+      "properties": {
+        "top_artists": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "top_genres": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "favorited_track_ids": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

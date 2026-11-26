@@ -1,12 +1,21 @@
 // The narrow Music.app scripting surface used by the owned JXA resource.
 interface MusicTrack {
   persistentID(): string;
+  get favorited(): () => boolean;
+  set favorited(value: boolean);
+  duplicate(query: { to: MusicPlaylist }): void;
   class(): string;
-  duration(): number;
+  // Music answers "missing value" (null here) for a stream, which has no length.
+  duration(): number | null;
   name(): string;
   artist(): string;
   album(): string;
   kind(): string;
+  // Music names a music video's media kind "music video". Songs and streams have other media kinds.
+  mediaKind(): string;
+  // File tracks expose a POSIX path or file URL via location().
+  location?(): string | null;
+  play(): void;
 }
 
 // A set of tracks read one property at a time: each call is a single Apple event for the whole set.
@@ -17,9 +26,10 @@ interface MusicTrackSet {
   name(): string[];
   artist(): string[];
   album(): string[];
-  duration(): number[];
+  duration(): (number | null)[];
   discNumber(): number[];
   trackNumber(): number[];
+  mediaKind?(): string[];
 }
 
 interface MusicTrackCollection extends ArrayLike<MusicTrack> {
@@ -39,7 +49,7 @@ interface MusicPlaylist {
 }
 
 interface MusicPlaylistCollection extends ArrayLike<MusicPlaylist> {
-  whose(query: { persistentID: string }): MusicPlaylist[];
+  whose(query: { persistentID: string } | { name: string }): MusicPlaylist[];
   name(): string[];
   persistentID(): string[];
   class(): string[];
@@ -55,6 +65,10 @@ interface MusicApplication {
   launch(): void;
   playerState(): string;
   currentTrack(): MusicTrack;
+  make(spec: {
+    new: 'userPlaylist';
+    withProperties: { name: string };
+  }): MusicPlaylist;
   libraryPlaylists: ArrayLike<MusicLibrary>;
   userPlaylists: MusicPlaylistCollection;
   search(

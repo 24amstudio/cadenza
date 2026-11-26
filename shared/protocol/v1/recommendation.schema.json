@@ -211,6 +211,37 @@
         "model_version": {
           "type": "integer",
           "minimum": 1
+        },
+        "shelf": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "shelf": {
+      "type": "object",
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": ["track", "title", "artist", "evidence"],
+            "properties": {
+              "track": {
+                "$ref": "urn:cadence:protocol:v1:recommendation#/$defs/track"
+              },
+              "title": { "type": "string", "maxLength": 200 },
+              "artist": { "type": "string", "maxLength": 200 },
+              "evidence": {
+                "type": "array",
+                "maxItems": 8,
+                "items": { "type": "string", "maxLength": 200 }
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

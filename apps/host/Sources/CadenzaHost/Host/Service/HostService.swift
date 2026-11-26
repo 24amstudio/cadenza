@@ -5,6 +5,8 @@ import OSLog
 @MainActor
 final class HostService {
     let store: HostStore
+    /// The Host's Application Support directory, where the Remote update cache lives.
+    let supportDirectory: URL
     let music = MusicBridge()
     let catalog: Catalog
     let cache: HostCache
@@ -13,6 +15,12 @@ final class HostService {
     let logger: HostLogger
     let lyrics: Lyrics
     let sing: SingCoordinator
+    let sleepAssertion = SleepAssertion()
+    let publishedState: HostPublishedState
+    let airPlayKaraokeProxy = AirPlayHlsKaraokeProxy()
+    var activeAirPlaySessionId: String?
+    var alignmentTap: CoreAudioSingRoute?
+    var alignmentCollector: VideoAudioEnvelopeCollector?
     let network = NetworkService()
     let bluetooth = BluetoothPeripheral()
     let webRemote = WebRemoteListener()
@@ -36,7 +44,7 @@ final class HostService {
     var jobs: [String: Task<Void, Never>] = [:]
     private var lyricJob: Task<Void, Never>?
     private var lyricOccurrence: String?
-    private var lyricDocument: LyricDocument?
+    var lyricDocument: LyricDocument?
     var lastCreditSent: [String: Int64] = [:]
     var acknowledgedCredits: [String: Int64] = [:]
     private var lastMaintenance: Int64 = 0
@@ -62,11 +70,15 @@ final class HostService {
     var onDevicesChanged: (() -> Void)?
     var onIssue: ((String) -> Void)?
     var hostUpdate: ((String) async -> HostUpdateReply)?
+    /// Called when a paired Remote authenticates on a newer build than this Host, so the Host checks for its own update.
+    var onNewerRemote: (() -> Void)?
 
     init(directory: URL, configuration: HostConfiguration) throws {
         self.configuration = configuration
         let store = try HostStore(directory: directory)
         self.store = store
+        supportDirectory = directory
+        publishedState = HostPublishedState(stageReceiversFile: directory.appending(path: "stage-receivers.json"))
         catalog = Catalog(credentials: store.credentials)
         let logDatabase = try Database(
             url: directory.appendingPathComponent("database", isDirectory: true)
@@ -92,20 +104,27 @@ final class HostService {
         queue = QueueCoordinator(store: store, music: music, catalog: catalog)
         sing.onSessionChanged = { [weak self] in self?.queue.publish() }
         queue.playbackDelayMs = { [weak self] in self?.sing.playbackDelayMs ?? 0 }
-        queue.onPlaybackInterrupted = { [weak self] in self?.sing.interruptPlayback() }
+        queue.onTransportDispatched = { [weak self] action in
+            if Self.interruptingPlaybackKinds.contains(action.kind) { self?.sing.interruptPlayback() }
+            self?.stageTransportDispatched(kind: action.kind, positionMs: action.positionMs)
+        }
         queue.logger = logger
         queue.currentArtwork = { [weak self] occurrenceId in
             try await self?.currentMusicArtwork(occurrenceId)
         }
         network.logger = logger
         webRemote.onSocket = { [weak self] socket in self?.openWebSocket(socket) }
+        configureStage()
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             var published = snapshot
             if let occurrence = self.sing.currentOccurrence, occurrence != published.current?.occurrenceId {
                 self.sing.invalidate()
             }
-            published.sing = self.sing.session
+            published.sing = self.sing.publishedSession
+            self.publishedState.apply(to: &published)
+            self.publishedState.updateVideoLyrics(snapshot: published, lyrics: self.lyricDocument)
+            self.publishedState.stage.snapshotChanged(published, lyrics: self.lyricDocument)
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs
             if delay > 0, var current = published.current {
@@ -113,6 +132,7 @@ final class HostService {
                 published.current = current
             }
             self.onSnapshot?(published)
+            self.refreshSleepAssertion()
             self.deliverState(published)
             if published.current?.occurrenceId != self.lyricDocument?.occurrenceId {
                 self.lyricDocument = nil
@@ -136,6 +156,7 @@ final class HostService {
             self?.transportDecisions.removeValue(forKey: id)
             self?.transportDecisionAt.removeValue(forKey: id)
             self?.settleCredits()
+            self?.refreshSleepAssertion()
             self?.onDevicesChanged?()
         }
         bluetooth.onIssue = { [weak self] message in self?.onIssue?(message) }
@@ -165,6 +186,7 @@ final class HostService {
         serviceRunning = true
         logger.log(.info, category: "host.lifecycle", action: "service.start", "Host service starting")
         if let observing { observationEnabled = observing }
+        music.automation.startObserving()
         do {
             try store.beginEpoch()
             try await network.start(port: configuration.port, name: configuration.name, hostId: store.hostId)
@@ -183,6 +205,8 @@ final class HostService {
     }
 
     func startObservation() {
+        // Safe recovery keeps automatic Music polling off until the user resumes it, so the crash cannot repeat on each poll.
+        guard !CrashLoopGuard.safeRecoveryActive() else { return }
         observationEnabled = true
         observation.start { [weak self] hintedAt in
             guard let self, self.observationEnabled else { return }
@@ -195,6 +219,7 @@ final class HostService {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.queue.refresh()
+                self.refreshSleepAssertion()
                 if !self.queue.busy && monotonicMs() - self.lastMaintenance > 300_000 {
                     do { try self.store.database.maintain() } catch {
                         self.onIssue?("Database maintenance failed: " + error.localizedDescription)
@@ -204,6 +229,12 @@ final class HostService {
                 try? await Task.sleep(for: .milliseconds(self.fallbackPollMs))
             }
         }
+    }
+
+    /// Clears safe recovery and restarts automatic Music polling. Called from Logs when the user chooses to resume.
+    func resumeAutomaticMusicPolling() {
+        CrashLoopGuard.resumeAutomaticMusicPolling()
+        if serviceRunning && observationEnabled { startObservation() }
     }
 
     /// Music's own change notification starts a read at once, so this poll is only the bounded fallback. Each poll
@@ -225,6 +256,7 @@ final class HostService {
         logger.log(.info, category: "host.lifecycle", action: "service.stop", "Host service stopping")
         settleCredits()
         polling?.cancel()
+        sleepAssertion.releaseNow()
         livenessKeepalive?.cancel()
         livenessKeepalive = nil
         observation.stop()
@@ -234,6 +266,9 @@ final class HostService {
         lyricJob = nil
         lyricOccurrence = nil
         lyricDocument = nil
+        stopAlignmentCapture()
+        airPlayKaraokeProxy.stop()
+        activeAirPlaySessionId = nil
         sing.stop()
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
@@ -404,7 +439,7 @@ final class HostService {
                     receivedCommands.contains(actor + (frame.commandId ?? ""))
                     || queue.commandQueued(frame.commandId ?? "", actor: actor)
                 network.send(try queue.journal.status(frame, actor: actor, queued: queued), to: peer)
-            case "search", "search.suggest", "song.prepare": operation(frame, peer: peer)
+            case "search", "search.suggest", "song.prepare", "video.play": operation(frame, peer: peer)
             case "browse.get": startBrowse(frame, peer: peer)
             case "recommendation.passport": try receiveRecommendationPassport(frame, actor: actor, peer: peer)
             case "recommendation.query": startRecommendationQuery(frame, actor: actor, peer: peer)
@@ -414,7 +449,7 @@ final class HostService {
             case "operation.cancel":
                 if let id = frame.requestId { jobs.removeValue(forKey: peer.id + id)?.cancel() }
             case "lyrics.get": loadLyrics(peer: peer, requestId: frame.requestId)
-            case "motion.get": loadMotion(peer: peer, requestId: frame.requestId, occurrenceId: frame.occurrenceId)
+            case "motion.get", "artist.motion.get": loadMotion(frame, peer: peer)
             default: throw CadenzaError.failure("invalid_command", "Unsupported message.")
             }
         } catch { fail(error, request: frame, peer: peer) }
@@ -451,8 +486,10 @@ final class HostService {
             invitationPinAttempts = 3
         } else if frame.type == "hello", let auth = frame.auth, try store.authenticate(auth) {
             remoteId = auth.remoteId
+            try receiveTasteDigest(auth)
             peer.remoteVersion = auth.remoteVersion
             peer.supportsHeartbeat = auth.heartbeat == true
+            if let build = auth.remoteBuild, build > HostBuild.build { onNewerRemote?() }
             if let requestedName = auth.name {
                 let name = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard (1...80).contains(name.count),
@@ -492,6 +529,8 @@ final class HostService {
         if !HostBuild.updatesEnabled { welcome.capabilities.removeAll { $0 == "host.update" } }
         welcome.hostVersion = HostBuild.version
         welcome.hostBuild = HostBuild.build
+        welcome.macAddress = HardwareAddress.primary()
+        welcome.updateManifest = remoteUpdateOffer()
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)
@@ -705,16 +744,16 @@ final class HostService {
 
     private func snapshot() throws -> HostSnapshot {
         var value = try queue.snapshot()
-        value.sing = sing.session
+        value.sing = sing.publishedSession
         if let url = value.current?.song.artworkUrl {
             value.current?.artworkPreview = artwork.cachedPreview(for: url)
         }
         return value
     }
 
-    private func executeCommand(_ frame: Frame, actor: String) async throws -> Frame {
+    func executeCommand(_ frame: Frame, actor: String) async throws -> Frame {
         guard frame.action?.kind.hasPrefix("sing.") == true else {
-            return try await queue.execute(frame, actor: actor)
+            return try await executeOtherCommand(frame, actor: actor)
         }
         guard let action = frame.action, let occurrence = action.occurrenceId else {
             throw CadenzaError.failure("invalid_command", "Sing requires the current playback occurrence.")
@@ -729,6 +768,7 @@ final class HostService {
                 throw CadenzaError.failure(
                     "sing_unavailable", "Sing is unavailable on this Host configuration.")
             }
+            if action.kind == "sing.enable" { try sing.requireModelForSelectedBackend() }
             if action.kind == "sing.enable",
                 sing.currentOccurrence != occurrence || sing.session.status == "failed"
                     || sing.session.status == "unavailable"
@@ -756,64 +796,14 @@ final class HostService {
         }
     }
 
-    private func operation(_ frame: Frame, peer: NetworkService.Peer) {
-        guard let requestId = frame.requestId, jobs.count < 16 else {
-            fail(CadenzaError.failure("busy", "Too many searches are running."), request: frame, peer: peer)
-            return
-        }
-        let key = peer.id + requestId
-        jobs[key]?.cancel()
-        network.send(Frame(type: "operation.started", requestId: requestId), to: peer)
-        jobs[key] = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.jobs.removeValue(forKey: key) }
-            let startedAt = monotonicMs()
-            do {
-                if frame.type == "search.suggest" {
-                    // Suggestions are counted rather than logged one by one: they arrive as the user types.
-                    let suggestions = try await self.catalog.suggest(frame.query ?? "")
-                    try Task.checkCancellation()
-                    self.queue.remember(suggestions.songs)
-                    var reply = Frame(type: "search.suggestions", requestId: requestId, songs: suggestions.songs)
-                    reply.terms = suggestions.terms
-                    self.network.send(reply, to: peer)
-                    self.logger.count("search.suggest")
-                } else if frame.type == "search" {
-                    let songs: [Song]
-                    if frame.scope == "library" {
-                        songs = try await self.music.librarySearch(frame.query ?? "")
-                    } else {
-                        songs = try await self.catalog.search(frame.query ?? "")
-                    }
-                    try Task.checkCancellation()
-                    self.logger.log(
-                        .info, category: "catalog", action: "search.completed", "Search returned \(songs.count) songs",
-                        remoteVersion: peer.remoteVersion,
-                        metadata: [
-                            "scope": frame.scope ?? "catalog", "query": String((frame.query ?? "").prefix(80)),
-                            "count": String(songs.count), "ms": String(monotonicMs() - startedAt),
-                            "remote_id": peer.remoteId ?? "",
-                        ])
-                    self.queue.remember(songs)
-                    self.network.send(Frame(type: "search.result", requestId: requestId, songs: songs), to: peer)
-                } else {
-                    guard let song = frame.song, Wire.validate(song) else {
-                        throw CadenzaError.failure("invalid_command", "Invalid song identity.")
-                    }
-                    try await self.queue.prepare(song, metadata: frame.songMetadata)
-                    try Task.checkCancellation()
-                    self.network.send(Frame(type: "song.ready", requestId: requestId, song: song), to: peer)
-                }
-            } catch {
-                if !Task.isCancelled { self.fail(error, request: frame, peer: peer) }
-            }
-        }
-    }
-
     private func loadLyrics(peer: NetworkService.Peer, requestId: String?) {
         do {
             guard let current = try queue.snapshot().current else {
                 throw CadenzaError.failure("lyrics_unavailable", "Play a song first.")
+            }
+            // Radio has no fixed length to align timed lines against, so no lookup runs for it.
+            if current.isLiveRadio {
+                throw CadenzaError.failure("lyrics_unavailable", "Lyrics are not available for live radio.")
             }
             if let document = lyricDocument, document.occurrenceId == current.occurrenceId {
                 network.send(Frame(type: "lyrics", requestId: requestId, lyrics: document), to: peer)
@@ -826,49 +816,34 @@ final class HostService {
             lyricJob = Task { @MainActor [weak self] in
                 guard let self else { return }
                 defer { if self.lyricOccurrence == current.occurrenceId { self.lyricJob = nil } }
+                // A music video may use its studio track directly (<= 3s delta) or align via vDSP_conv.
+                let resolution = await self.resolveLyricSource(for: current.song)
                 do {
-                    var document: LyricDocument?
-                    var lastError: Error?
-                    for attempt in 0..<6 {
-                        do {
-                            // Disk and provider caches do not require Music's
-                            // Accessibility permission. Check them first so a Host
-                            // restart can restore lyrics immediately.
-                            document = try await self.lyrics.document(
-                                song: current.song, occurrence: current.occurrenceId)
-                            break
-                        } catch let error as CadenzaError where error.code == "lyrics_unavailable" {
-                            lastError = error
-                            guard attempt < 5, self.music.accessibility.permitted else { break }
-                            // Music may not have written its local TTML cache yet.
-                            // Prime it and retry with a bounded backoff instead of
-                            // turning a transient read into a permission warning.
-                            try? await self.queue.primeLyrics(occurrence: current.occurrenceId)
-                            try await Task.sleep(for: .milliseconds(1_000 << min(attempt, 3)))
-                        }
-                    }
-                    guard let document else {
-                        if let lastError { throw lastError }
-                        throw CadenzaError.failure(
-                            "lyrics_unavailable", "Lyrics are unavailable. Try again from the Lyrics pane.")
-                    }
+                    let document = try await self.loadDocument(
+                        for: resolution.lyricSong, occurrence: current.occurrenceId)
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == document.occurrenceId
                     else { return }
-                    self.lyricDocument = document
+                    let alignedDocument = await self.applyVideoAlignment(
+                        document, video: current.song, resolution: resolution)
+                    let stored = self.withUserOffset(alignedDocument, for: current.song)
+                    self.lyricDocument = stored
+                    self.publishAirPlayKaraokeVTT(for: current.song, document: stored)
                     self.logger.log(
                         .info, category: "lyrics", action: "lyrics.loaded",
-                        "Lyrics ready with \(document.lines.count) lines",
+                        "Lyrics ready with \(stored.lines.count) lines",
                         metadata: [
-                            "occurrence_id": current.occurrenceId, "source": document.source,
-                            "translation": document.translationSource,
+                            "occurrence_id": current.occurrenceId, "source": stored.source,
+                            "translation": stored.translationSource,
                         ])
-                    self.network.broadcast(Frame(type: "lyrics", lyrics: document))
-                    let translated = await self.lyrics.english(document, song: current.song)
+                    self.network.broadcast(Frame(type: "lyrics", lyrics: stored))
+                    let translated = await self.lyrics.english(stored, song: current.song)
                     guard !Task.isCancelled, try self.queue.snapshot().current?.occurrenceId == translated.occurrenceId
                     else { return }
-                    self.lyricDocument = translated
-                    if translated.revision != document.revision {
-                        self.network.broadcast(Frame(type: "lyrics", lyrics: translated))
+                    let shown = self.withUserOffset(translated, for: current.song)
+                    self.lyricDocument = shown
+                    self.publishAirPlayKaraokeVTT(for: current.song, document: shown)
+                    if translated.revision != stored.revision {
+                        self.network.broadcast(Frame(type: "lyrics", lyrics: shown))
                     }
                 } catch {
                     if !Task.isCancelled {

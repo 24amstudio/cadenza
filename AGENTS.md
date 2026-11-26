@@ -34,24 +34,27 @@ These are explicit product preferences and acceptance criteria for Cadenza UI wo
 
 ## Structure
 
-| Location                                           | Responsibility                                                                               |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `apps/host/Sources/CadenzaHost`                    | Native Host UI, onboarding, Music adapters, local service, SQLite and updates                |
-| `apps/host/Sources/CadenzaSecurity`                | Signed release/asset/archive validation shared with the updater and release tool             |
-| `apps/host/Sources/CadenzaUpdater`                 | Verified, rollback-capable app replacement helper                                            |
-| `apps/host/Sources/CadenzaRelease`                 | Local P-256 key generation and release manifest signing                                      |
-| `apps/host/Resources/music.js`                     | Fixed, strictly checked JXA Music boundary; no arbitrary script endpoint                     |
-| `apps/remote/app/src/main/java/app/cadenza/remote` | ViewModel, native UI, discovery/network, SQLite and updates                                  |
-| `apps/*/storage`                                   | Ordered, transactional, versioned SQL migrations and authorization/maintenance SQL           |
-| `shared/protocol`                                  | JSON schemas, examples and compatibility contract                                            |
-| `shared/version.properties`                        | Human version and strictly increasing release build number                                   |
-| `shared/changelog.json`                            | Maintained release history, bundled offline and included in signed release metadata          |
-| `shared/release-config.json`                       | Explicit public repository and public verification key; intentionally empty until configured |
-| `tests`, `tools`                                   | Portable behavioral checks, strict JS tooling and native build/CI scripts                    |
+| Location                                                  | Responsibility                                                                               |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `apps/host/Sources/CadenzaHost`                           | Native Host UI, onboarding, Music adapters, local service, SQLite and updates                |
+| `apps/host/Sources/CadenzaHost/Cast/Stage`                | Zero-account TV stage: receiver sessions, PIN approval, binary frames, fMP4, media routes    |
+| `apps/web/app/components/stage`, `apps/web/app/lib/stage` | Browser TV stage at `/tv`: socket, MSE and PCM audio, lyric clock, 10-foot view              |
+| `apps/remote/app/src/main/java/app/cadenza/remote/tv`     | Android TV receiver: stage socket, AudioTrack sink, fragment reader, TV state and screen     |
+| `apps/host/Sources/CadenzaSecurity`                       | Signed release/asset/archive validation shared with the updater and release tool             |
+| `apps/host/Sources/CadenzaUpdater`                        | Verified, rollback-capable app replacement helper                                            |
+| `apps/host/Sources/CadenzaRelease`                        | Local P-256 key generation and release manifest signing                                      |
+| `apps/host/Resources/music.js`                            | Fixed, strictly checked JXA Music boundary; no arbitrary script endpoint                     |
+| `apps/remote/app/src/main/java/app/cadenza/remote`        | ViewModel, native UI, discovery/network, SQLite and updates                                  |
+| `apps/*/storage`                                          | Ordered, transactional, versioned SQL migrations and authorization/maintenance SQL           |
+| `shared/protocol`                                         | JSON schemas, examples and compatibility contract                                            |
+| `shared/version.properties`                               | Human version and strictly increasing release build number                                   |
+| `shared/changelog.json`                                   | Maintained release history, bundled offline and included in signed release metadata          |
+| `shared/release-config.json`                              | Explicit public repository and public verification key; intentionally empty until configured |
+| `tests`, `tools`                                          | Portable behavioral checks, strict JS tooling and native build/CI scripts                    |
 
 ### Componentized source layout
 
-Keep maintained source componentized by feature and responsibility. Host code belongs in focused directories under `apps/host/Sources/CadenzaHost`, including `Host`, `Lyrics/Providers`, `Lyrics/Formats`, `Artwork`, `Catalog`, `Commands`, `Music`, `Network`, `Queue`, `Database`, `Security`, `Updates`, and `Shared`. Every provider gets its own directory under `Lyrics/Providers/<provider>/`; keep its adapter, transport, records, and provider-specific helpers inside that directory. Use one primary component per file: each lyric or media provider, parser, transport, cache, model group, service, and UI surface gets its own file. Do not add umbrella files such as `LyricProviders.swift`, use underscore-prefixed provider filenames to group a provider, or keep `Host*.swift` files at the source root. Adding or removing a provider or Host feature should touch its component directory and the smallest necessary integration surface. Apply the same boundaries to new Remote components where their platform permits it.
+Keep maintained source componentized by feature and responsibility. Host code belongs in focused directories under `apps/host/Sources/CadenzaHost`, including `Host`, `Lyrics/Providers`, `Lyrics/Formats`, `Artwork`, `Audio`, `Cast`, `Catalog`, `Commands`, `Diagnostics`, `Music`, `Network`, `Power`, `Queue`, `Recommendation`, `Database`, `Security`, `Updates`, and `Shared`. Every provider gets its own directory under `Lyrics/Providers/<provider>/`; keep its adapter, transport, records, and provider-specific helpers inside that directory. Use one primary component per file: each lyric or media provider, parser, transport, cache, model group, service, and UI surface gets its own file. Do not add umbrella files such as `LyricProviders.swift`, use underscore-prefixed provider filenames to group a provider, or keep `Host*.swift` files at the source root. Adding or removing a provider or Host feature should touch its component directory and the smallest necessary integration surface. Apply the same boundaries to new Remote components where their platform permits it.
 
 ## Compatibility and naming
 
@@ -100,7 +103,7 @@ Report every check you did not run as unverified. Deferred native checks stay ex
 
 ## Builds, changelogs and updates
 
-The checked-in product version is currently **0.3.3**. Do not bump it again unless the user explicitly requests a product-version change; ordinary CI builds derive a unique release version from the UTC commit date, Build run number and 12-character commit hash. CI supplies the Build run number plus 393 (the last published build) as the increasing build code, so `shared/version.properties` does not need an edit for every build. Android startup displays `Cadenza VERSION-PROFILE-SOURCE-YYYYMMDD.HHMMSS`; the timestamp is embedded at build time in UTC, and `source-` identifies an uncommitted source digest rather than a Git commit.
+The checked-in product version is currently **0.4.0**. Do not bump it again unless the user explicitly requests a product-version change; ordinary CI builds derive a unique release version from the UTC commit date, Build run number and 12-character commit hash. CI supplies the Build run number plus 393 (the last published build) as the increasing build code, so `shared/version.properties` does not need an edit for every build. Android startup displays `Cadenza VERSION-PROFILE-SOURCE-YYYYMMDD.HHMMSS`; the timestamp is embedded at build time in UTC, and `source-` identifies an uncommitted source digest rather than a Git commit.
 
 Profiles are `development`, `ci`, `production`. Defaults disable automatic update checks/downloads/installation. Android selects a release profile with `-Pcadenza.profile=...`; Host uses `CADENZA_BUILD_PROFILE`. Debug is always development. CI rejects Production profiles. Production Android needs the original private release keystore through environment variables; never commit signing material. Signing identity, manifest verification identity and installed data must survive upgrades.
 
@@ -154,3 +157,7 @@ Use only the skill that owns the problem. Read a performance skill's matching `r
 Host UI changes must use AppKit and SwiftUI platform conventions as the primary design system. Prefer native window chrome, toolbar items, sidebars, `Form` settings sections, menus, sheets, alerts, keyboard commands, and system materials over custom card stacks or web-like controls. Match macOS control sizing, spacing, focus behavior, vibrancy, dark/light appearance, Dynamic Type equivalents, and VoiceOver labels. Use SF Symbols with meaningful accessibility labels, preserve standard menu-bar behavior, and keep destructive or permission-sensitive actions in native confirmation alerts. Review each Host surface against Apple's Human Interface Guidelines before handoff and verify both light and dark appearances on representative window sizes.
 
 Read the current validation record before reporting completion. macOS compilation, real Music queue/cache/translation adapters, ad-hoc update installation, target-device notification behavior, independent multi-Remote latency/lyric sync, VoiceOver/TalkBack and hardware resource measurements need target evidence. Catalog/AX/cache adapters are conditional integrations, not documented Apple session-control APIs. No repository URL, release key, signing identity or published baseline may be invented. No subagents are requested for this implementation: continue solo unless the user changes that instruction.
+
+### Architectural invariants
+
+Cadenza must not use `Shortcuts.app` or `ScreenCaptureKit`. Cross-Remote permissions are one Host policy, not per-device access lists. The Host `.app` must stay under 40 MB. `apps/host/Scripts/build.sh` strips the shipped executable after writing its dSYM; a development build measured 23 MB on 24 November 2026 (see SPEC S04). Protocol changes must be optional or additive for older Remotes (SPEC C04).

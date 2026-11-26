@@ -13,6 +13,7 @@ final class HostWatchdog {
     private let markerURL: URL
     private var process: Process?
     private var heartbeat: Task<Void, Never>?
+    private var launchRecorded = false
 
     init() throws {
         let directory = try FileManager.default.url(
@@ -24,6 +25,10 @@ final class HostWatchdog {
 
     func start() {
         heartbeat?.cancel()
+        if !launchRecorded {
+            launchRecorded = true
+            CrashLoopGuard.recordLaunch(nowMs: wallMs())
+        }
         write(clean: false)
         launch()
         heartbeat = Task { [weak self] in
@@ -38,6 +43,7 @@ final class HostWatchdog {
     func markCleanShutdown() {
         heartbeat?.cancel()
         heartbeat = nil
+        CrashLoopGuard.recordCleanExit()
         write(clean: true)
     }
 

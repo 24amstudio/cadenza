@@ -14,6 +14,16 @@ The source root and application names are now Cadenza. Existing installation ide
 
 Do not uninstall or clear app data to upgrade. Reuse the original Android signer; a newly generated key cannot update an existing APK. The old development APK can upgrade only with its original debug keystore. Production and CI installs have separate identities and data.
 
+## Zero-account Cast stage
+
+- The stage channel (`/cast/live`) and its binary frames are new. Remotes that predate them never open that path, so they are unaffected.
+- `cast.transmit` names a stage receiver as `stage:<receiverId>`. A Cast device keeps its name as before.
+- `stage.approve` is a new command kind. An older Host refuses it as an unknown kind.
+- The `cast` state block gains `stages` and `pending_stages`, which older Remotes ignore.
+- Command `presentation` keeps the `full_suite` value that shipped Remotes send.
+- The Cast default receiver no longer receives a custom karaoke namespace, and `apps/cast-receiver` is removed. A Cast device gets its karaoke as a WebVTT track in the media load.
+- The stage approval token is stored as a SHA-256 hash in `stage-receivers.json` under Application Support. A corrupt file pairs the receivers again.
+
 ## Staggered upgrades
 
 The protocol remains major 1, minor 1. A new Remote first sends the legacy hello/pair shape. After receiving capabilities from Host it can opt into `remote.configure` (editable name plus heartbeat support), `state.heartbeat` and `queue.play-next`. An older Host can still accept the initial connection; unsupported Play next stays disabled. A local name change appears on a capable Host after reconnect. Older Remotes continue receiving full snapshots rather than heartbeat-only idle updates.

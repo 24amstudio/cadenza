@@ -31,11 +31,20 @@
         { "$ref": "#/$defs/transport" },
         { "$ref": "#/$defs/seek" },
         { "$ref": "#/$defs/volume" },
+        { "$ref": "#/$defs/castTransmit" },
+        { "$ref": "#/$defs/videoOutput" },
+        { "$ref": "#/$defs/castPresentation" },
+        { "$ref": "#/$defs/stageApprove" },
+        { "$ref": "#/$defs/lipSyncOffset" },
+        { "$ref": "#/$defs/lyricOffset" },
         { "$ref": "#/$defs/shuffle" },
         { "$ref": "#/$defs/repeat" },
         { "$ref": "#/$defs/singEnable" },
         { "$ref": "#/$defs/singDisable" },
-        { "$ref": "#/$defs/singMix" }
+        { "$ref": "#/$defs/singMix" },
+        { "$ref": "#/$defs/libraryFavorite" },
+        { "$ref": "#/$defs/libraryPlaylist" },
+        { "$ref": "#/$defs/audioSelectOutput" }
       ]
     }
   },
@@ -122,6 +131,78 @@
       },
       "additionalProperties": false
     },
+    "castTransmit": {
+      "type": "object",
+      "required": ["kind", "device", "start"],
+      "properties": {
+        "kind": { "const": "cast.transmit" },
+        "device": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "start": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "castPresentation": {
+      "type": "object",
+      "required": ["kind", "presentation"],
+      "properties": {
+        "kind": { "const": "cast.presentation" },
+        "presentation": { "enum": ["auto", "audio_only", "full_suite"] }
+      },
+      "additionalProperties": false
+    },
+    "stageApprove": {
+      "type": "object",
+      "required": ["kind", "pin"],
+      "properties": {
+        "kind": { "const": "stage.approve" },
+        "pin": { "type": "string", "pattern": "^[0-9]{4}$" }
+      },
+      "additionalProperties": false
+    },
+    "lyricOffset": {
+      "type": "object",
+      "required": ["kind", "song", "user_offset_ms"],
+      "properties": {
+        "kind": { "const": "lyrics.offset" },
+        "song": {
+          "type": "object",
+          "required": ["source", "id"],
+          "properties": {
+            "source": { "enum": ["catalog", "library"] },
+            "id": { "type": "string", "maxLength": 128 }
+          },
+          "additionalProperties": false
+        },
+        "user_offset_ms": {
+          "type": "integer",
+          "minimum": -5000,
+          "maximum": 5000
+        }
+      },
+      "additionalProperties": false
+    },
+    "lipSyncOffset": {
+      "type": "object",
+      "required": ["kind", "lip_sync_offset_ms"],
+      "properties": {
+        "kind": { "const": "lip_sync.offset" },
+        "lip_sync_offset_ms": {
+          "type": "integer",
+          "minimum": -500,
+          "maximum": 500
+        }
+      },
+      "additionalProperties": false
+    },
+    "videoOutput": {
+      "type": "object",
+      "required": ["kind", "video_output"],
+      "properties": {
+        "kind": { "const": "video.output" },
+        "video_output": { "enum": ["host_display", "cast_transmitter"] }
+      },
+      "additionalProperties": false
+    },
     "volume": {
       "type": "object",
       "required": ["kind", "percent"],
@@ -146,6 +227,49 @@
       "properties": {
         "kind": { "const": "playback.repeat" },
         "mode": { "enum": ["off", "one", "all"] }
+      },
+      "additionalProperties": false
+    },
+    "libraryIdentity": {
+      "type": "object",
+      "required": ["source", "id"],
+      "properties": {
+        "source": { "const": "library" },
+        "id": { "type": "string", "pattern": "^[0-9A-F]{16}$" }
+      },
+      "additionalProperties": false
+    },
+    "libraryFavorite": {
+      "type": "object",
+      "required": ["kind", "song", "enabled"],
+      "properties": {
+        "kind": { "const": "library.favorite" },
+        "song": { "$ref": "#/$defs/libraryIdentity" },
+        "enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "libraryPlaylist": {
+      "type": "object",
+      "required": ["kind", "name", "songs"],
+      "properties": {
+        "kind": { "const": "library.addToPlaylist" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "songs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/libraryIdentity" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "audioSelectOutput": {
+      "type": "object",
+      "required": ["kind", "output"],
+      "properties": {
+        "kind": { "const": "audio.selectOutput" },
+        "output": { "type": "string", "minLength": 1, "maxLength": 256 }
       },
       "additionalProperties": false
     },

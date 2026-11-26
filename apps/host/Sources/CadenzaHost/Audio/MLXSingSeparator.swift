@@ -1,13 +1,12 @@
 import AVFAudio
 import Foundation
-import Hub
 import MLX
 import SwiftRoFormer
 
 /// Apple Silicon Mel-RoFormer backend for live Sing processing.
 ///
-/// The MIT-licensed MLX checkpoint is bundled in production archives and may
-/// be downloaded into the local cache for development runs.
+/// The MIT-licensed MLX checkpoint is downloaded on request by the Sing model manager, verified, and loaded from
+/// Application Support. The model is never bundled in the app or fetched while Sing is preparing.
 /// A one-second rolling window bounds steady-state processing latency; model
 /// preparation and native real-time performance are measured separately.
 final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
@@ -43,7 +42,9 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         }
         if model == nil {
             do {
-                model = try await loadPinnedModel()
+                model = try loadInstalledModel()
+            } catch SingAudioError.modelNotInstalled {
+                throw SingAudioError.modelNotInstalled
             } catch {
                 throw SingAudioError.unavailable(
                     "The local Mel-RoFormer model could not be loaded: \(error.localizedDescription)")
@@ -56,15 +57,13 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         return measuredPrimeLatencyMs ?? 0
     }
 
-    private func loadPinnedModel() async throws -> MelRoFormer {
-        if let bundledDirectory = bundledModelDirectory() {
-            return try loadModel(from: bundledDirectory)
+    /// Loads only the model the Sing model manager installed and verified. Preparing Sing never downloads.
+    private func loadInstalledModel() throws -> MelRoFormer {
+        let location = SingModelLocation.standard()
+        guard location.installedReceipt() != nil else {
+            throw SingAudioError.modelNotInstalled
         }
-        let hub = HubApi()
-        let snapshot = try await hub.snapshot(
-            from: Hub.Repo(id: Self.modelRepository), revision: Self.modelCommit,
-            matching: ["model.safetensors", "config.json"])
-        return try loadModel(from: snapshot)
+        return try loadModel(from: location.installedDirectory)
     }
 
     private func loadModel(from directory: URL) throws -> MelRoFormer {
@@ -100,21 +99,6 @@ final class MLXSingSeparator: SingStreamingSeparator, @unchecked Sendable {
         let started = CFAbsoluteTimeGetCurrent()
         _ = try infer(left: channel, right: channel)
         return Int64(max(1, ((CFAbsoluteTimeGetCurrent() - started) * 1_000).rounded()))
-    }
-
-    private func bundledModelDirectory() -> URL? {
-        let roots = [HostResources.bundle.resourceURL, Bundle.main.resourceURL].compactMap { $0 }
-        let candidates = roots.flatMap { root in
-            [
-                root.appendingPathComponent("Resources/SingModel", isDirectory: true),
-                root.appendingPathComponent("SingModel", isDirectory: true),
-            ]
-        }
-        return candidates.first { directory in
-            FileManager.default.fileExists(atPath: directory.appendingPathComponent("config.json").path)
-                && FileManager.default.fileExists(
-                    atPath: directory.appendingPathComponent("model.safetensors").path)
-        }
     }
 
     private struct ModelManifest: Decodable {

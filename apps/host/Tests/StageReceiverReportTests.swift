@@ -52,7 +52,7 @@ struct StageReceiverReportTests {
         let status = CastRouteStatus.stage(
             source: "Darrell's MacBook Air", receiver: "TCL55203G", sent: sent, playback: .unreported)
 
-        #expect(status.text == "Darrell's MacBook Air (AC-3 5.1) → TCL55203G (not reported)")
+        #expect(status.text == "Darrell's MacBook Air (AC-3 5.1) → TCL55203G (Unknown)")
         #expect(!status.mismatch)
     }
 
@@ -94,7 +94,7 @@ struct StageReceiverReportTests {
         let status = CastRouteStatus.cast(
             source: "Mac", device: "Living Room", sent: CastSnapshot.Route(codec: "aac", channels: 2))
 
-        #expect(status.text == "Mac (AAC stereo) → Living Room (not reported)")
+        #expect(status.text == "Mac (AAC stereo) → Living Room (Unknown)")
         #expect(!status.mismatch)
     }
 }

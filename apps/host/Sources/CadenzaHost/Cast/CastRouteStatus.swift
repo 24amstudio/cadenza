@@ -32,9 +32,10 @@ struct CastRouteStatus: Codable, Equatable, Sendable {
         return "\(name) \(layout)"
     }
 
-    /// A Google Cast line. Cast devices do not report playback, so the receiver side says so.
+    /// A Google Cast line. Cast devices do not report playback, so the Host cannot tell whether the device plays the
+    /// sent layout or downmixes it. That is shown as Unknown, not as a match.
     static func cast(source: String, device: String, sent: CastSnapshot.Route) -> CastRouteStatus {
-        CastRouteStatus(text: "\(source) (\(format(sent))) → \(device) (not reported)", mismatch: false)
+        CastRouteStatus(text: "\(source) (\(format(sent))) → \(device) (Unknown)", mismatch: false)
     }
 
     /// A TV stage line: what the Host sends, then what the receiver reported it plays.
@@ -44,7 +45,7 @@ struct CastRouteStatus: Codable, Equatable, Sendable {
         let sentText = "\(source) (\(format(sent))) → \(receiver)"
         switch playback {
         case .unreported:
-            return CastRouteStatus(text: "\(sentText) (not reported)", mismatch: false)
+            return CastRouteStatus(text: "\(sentText) (Unknown)", mismatch: false)
         case .stopped:
             return CastRouteStatus(text: "\(sentText) (not playing)", mismatch: false)
         case .playing(let playing, _):

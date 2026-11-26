@@ -47,34 +47,41 @@ struct StageReceiverReportTests {
         #expect(afterWindow)
     }
 
-    @Test func theStatusNamesTheSentRouteAndSaysWhenPlaybackIsUnreported() {
+    @Test func theStatusShowsSentAndReceiverFormatsAndSaysWhenPlaybackIsUnreported() {
         let sent = CastSnapshot.Route(codec: "ac3", channels: 6)
         let status = CastRouteStatus.stage(
             source: "Darrell's MacBook Air", receiver: "TCL55203G", sent: sent, playback: .unreported)
 
-        #expect(
-            status.text == "Darrell's MacBook Air → TCL55203G: sends AC-3 5.1. TCL55203G has not reported playback.")
+        #expect(status.text == "Darrell's MacBook Air (AC-3 5.1) → TCL55203G (not reported)")
         #expect(!status.mismatch)
     }
 
-    @Test func aMatchingPlaybackReportConfirmsTheRoute() {
+    @Test func aMatchingPlaybackReportShowsTheSameFormatOnBothSides() {
         let sent = CastSnapshot.Route(codec: "ac3", channels: 6)
         let status = CastRouteStatus.stage(
-            source: "Mac", receiver: "TV", sent: sent,
+            source: "Darrell's MacBook Air", receiver: "TCL55203G", sent: sent,
             playback: .playing(CastSnapshot.Route(codec: "ac3", channels: 6), path: "mse"))
 
-        #expect(status.text == "Mac → TV: sends AC-3 5.1, and TV plays AC-3 5.1.")
+        #expect(status.text == "Darrell's MacBook Air (AC-3 5.1) → TCL55203G (AC-3 5.1)")
         #expect(!status.mismatch)
     }
 
     @Test func aDifferentPlaybackReportIsFlaggedAsAMismatch() {
         let sent = CastSnapshot.Route(codec: "ac3", channels: 6)
         let status = CastRouteStatus.stage(
-            source: "Mac", receiver: "TV", sent: sent,
+            source: "Darrell's MacBook Air", receiver: "TCL55203G", sent: sent,
             playback: .playing(CastSnapshot.Route(codec: "aac", channels: 2), path: "mse"))
 
-        #expect(status.text == "Mac → TV: sends AC-3 5.1, but TV plays AAC stereo.")
+        #expect(status.text == "Darrell's MacBook Air (AC-3 5.1) → TCL55203G (AAC stereo)")
         #expect(status.mismatch)
+    }
+
+    @Test func aStoppedReceiverIsShownAsNotPlaying() {
+        let sent = CastSnapshot.Route(codec: "aac", channels: 2)
+        let status = CastRouteStatus.stage(source: "Mac", receiver: "TV", sent: sent, playback: .stopped)
+
+        #expect(status.text == "Mac (AAC stereo) → TV (not playing)")
+        #expect(!status.mismatch)
     }
 
     @Test func aStageRouteIsReportedWithTheChannelsTheHostSends() {
@@ -83,10 +90,11 @@ struct StageReceiverReportTests {
         #expect(StageCodecPlan.Route.lpcm(channels: 2).sentRoute == CastSnapshot.Route(codec: "pcm", channels: 2))
     }
 
-    @Test func aGoogleCastLineSaysItCannotConfirmPlayback() {
+    @Test func aGoogleCastLineShowsTheSentFormatAndNoReceiverReport() {
         let status = CastRouteStatus.cast(
             source: "Mac", device: "Living Room", sent: CastSnapshot.Route(codec: "aac", channels: 2))
 
-        #expect(status.text == "Mac → Living Room: sends AAC stereo. Google Cast does not report playback.")
+        #expect(status.text == "Mac (AAC stereo) → Living Room (not reported)")
+        #expect(!status.mismatch)
     }
 }

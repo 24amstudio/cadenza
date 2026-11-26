@@ -32,27 +32,23 @@ struct CastRouteStatus: Codable, Equatable, Sendable {
         return "\(name) \(layout)"
     }
 
-    /// A Google Cast line. Cast devices do not report playback, so the line says that it cannot be confirmed.
+    /// A Google Cast line. Cast devices do not report playback, so the receiver side says so.
     static func cast(source: String, device: String, sent: CastSnapshot.Route) -> CastRouteStatus {
-        CastRouteStatus(
-            text: "\(source) → \(device): sends \(format(sent)). Google Cast does not report playback.",
-            mismatch: false)
+        CastRouteStatus(text: "\(source) (\(format(sent))) → \(device) (not reported)", mismatch: false)
     }
 
-    /// A TV stage line, from what the Host sends and what the receiver reported.
+    /// A TV stage line: what the Host sends, then what the receiver reported it plays.
     static func stage(
         source: String, receiver: String, sent: CastSnapshot.Route, playback: StagePlayback
     ) -> CastRouteStatus {
-        let sentText = "\(source) → \(receiver): sends \(format(sent))"
+        let sentText = "\(source) (\(format(sent))) → \(receiver)"
         switch playback {
         case .unreported:
-            return CastRouteStatus(text: "\(sentText). \(receiver) has not reported playback.", mismatch: false)
+            return CastRouteStatus(text: "\(sentText) (not reported)", mismatch: false)
         case .stopped:
-            return CastRouteStatus(text: "\(sentText). \(receiver) is not playing.", mismatch: false)
-        case .playing(let playing, _) where playing == sent:
-            return CastRouteStatus(text: "\(sentText), and \(receiver) plays \(format(playing)).", mismatch: false)
+            return CastRouteStatus(text: "\(sentText) (not playing)", mismatch: false)
         case .playing(let playing, _):
-            return CastRouteStatus(text: "\(sentText), but \(receiver) plays \(format(playing)).", mismatch: true)
+            return CastRouteStatus(text: "\(sentText) (\(format(playing)))", mismatch: playing != sent)
         }
     }
 }

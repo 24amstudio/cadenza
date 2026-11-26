@@ -24,9 +24,17 @@ struct BluetoothSendQueue {
     var nextChunk: Data? { frames.first.map { $0.chunks[$0.next] } }
 
     // Returns false when the queue is full. The caller keeps the frame and is told when to try again.
-    mutating func enqueue(_ chunks: [Data], completion: @escaping (Error?) -> Void) -> Bool {
+    //
+    // A bulk frame (artwork, motion) enters only an empty queue. Otherwise a run of chunks would fill the window, and a
+    // heartbeat or state frame behind them would wait for all of it to drain. The web Remote drops a link that goes
+    // quiet for longer than its stall limit, so that wait is what ends the connection.
+    mutating func enqueue(_ chunks: [Data], bulk: Bool, completion: @escaping (Error?) -> Void) -> Bool {
         let size = chunks.reduce(0) { $0 + $1.count }
-        guard pendingBytes <= Self.refillBytes || pendingBytes + size <= Self.windowBytes else {
+        let admitted =
+            bulk
+            ? pendingBytes == 0
+            : pendingBytes <= Self.refillBytes || pendingBytes + size <= Self.windowBytes
+        guard admitted else {
             refused = true
             return false
         }

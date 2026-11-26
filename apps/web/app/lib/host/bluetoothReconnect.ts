@@ -32,7 +32,10 @@ export async function reconnectWithRetries(
     } catch (error) {
       traceEvent('bluetooth: silent reconnect attempt failed', {
         attempt: index + 1,
-        error,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message }
+            : 'unknown error',
       });
     }
   }

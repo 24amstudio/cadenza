@@ -22,7 +22,8 @@ final class NetworkService {
         let id = identifier()
         let connection: NWConnection?
         let transport: String
-        let sendTransport: ((Data) -> TransportSendResult)?
+        // The flag is true for bulk frames, which the Bluetooth transport admits only into an empty queue.
+        let sendTransport: ((Data, Bool) -> TransportSendResult)?
         let cancelTransport: () -> Void
         var remoteId: String?
         var remoteVersion: String?
@@ -57,7 +58,7 @@ final class NetworkService {
 
         init(
             transport: String,
-            send: @escaping (Data) -> TransportSendResult,
+            send: @escaping (Data, Bool) -> TransportSendResult,
             cancel: @escaping () -> Void,
         ) {
             connection = nil
@@ -228,7 +229,7 @@ final class NetworkService {
 
     func acceptBluetooth(
         centralID: UUID,
-        send: @escaping (Data) -> TransportSendResult,
+        send: @escaping (Data, Bool) -> TransportSendResult,
         cancel: @escaping () -> Void,
     ) {
         guard peers.count < 32 else {
@@ -270,7 +271,7 @@ final class NetworkService {
             cancel()
             return nil
         }
-        let peer = Peer(transport: "lan", send: { send($0) ? .accepted : .failed }, cancel: cancel)
+        let peer = Peer(transport: "lan", send: { data, _ in send(data) ? .accepted : .failed }, cancel: cancel)
         peers[peer.id] = peer
         logger?.log(
             .info, category: "network", action: "peer.connected", "Remote connection opened",
@@ -459,7 +460,7 @@ final class NetworkService {
                     }
                 })
         } else if let sendTransport = peer.sendTransport {
-            switch sendTransport(item.data) {
+            switch sendTransport(item.data, lane == .bulk) {
             case .accepted:
                 peer.outboundBytes -= item.data.count
                 peer.sending = false

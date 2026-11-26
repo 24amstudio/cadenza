@@ -69,27 +69,43 @@ final class BluetoothSendQueueTests: XCTestCase {
 
     func testWindowRefusesFramesBeyondItsBoundAndReportsWhenToRetry() {
         var queue = BluetoothSendQueue()
-        XCTAssertTrue(queue.enqueue(chunks(3_000), completion: { _ in }))
+        XCTAssertTrue(queue.enqueue(chunks(3_000), bulk: false, completion: { _ in }))
         // 3 000 queued: a second 3 000-byte frame would pass the window, so it is refused.
-        XCTAssertFalse(queue.enqueue(chunks(3_000), completion: { _ in }))
+        XCTAssertFalse(queue.enqueue(chunks(3_000), bulk: false, completion: { _ in }))
         XCTAssertFalse(queue.takeDrainNotice())
         while queue.pendingBytes > BluetoothSendQueue.refillBytes { queue.didSendChunk() }
         XCTAssertTrue(queue.takeDrainNotice())
         XCTAssertFalse(queue.takeDrainNotice(), "The notice is delivered once per refusal.")
-        XCTAssertTrue(queue.enqueue(chunks(3_000), completion: { _ in }))
+        XCTAssertTrue(queue.enqueue(chunks(3_000), bulk: false, completion: { _ in }))
     }
 
     func testOversizedFrameGetsAnEmptyQueueButNeverQueuesBehindOthers() {
         var queue = BluetoothSendQueue()
-        XCTAssertTrue(queue.enqueue(chunks(200_000), completion: { _ in }))
-        XCTAssertFalse(queue.enqueue(chunks(100), completion: { _ in }))
+        XCTAssertTrue(queue.enqueue(chunks(200_000), bulk: false, completion: { _ in }))
+        XCTAssertFalse(queue.enqueue(chunks(100), bulk: false, completion: { _ in }))
+    }
+
+    func testBulkFrameIsAdmittedOnlyIntoAnEmptyWindow() {
+        var queue = BluetoothSendQueue()
+        XCTAssertTrue(queue.enqueue(chunks(300), bulk: true, completion: { _ in }))
+        // A bulk frame waits behind a frame that is still pending, so no artwork sits ahead of a heartbeat.
+        XCTAssertFalse(queue.enqueue(chunks(300), bulk: true, completion: { _ in }))
+        while !queue.isEmpty { queue.didSendChunk() }
+        XCTAssertTrue(queue.enqueue(chunks(300), bulk: true, completion: { _ in }))
+    }
+
+    func testStateFrameStillQueuesBehindAPendingBulkFrame() {
+        var queue = BluetoothSendQueue()
+        XCTAssertTrue(queue.enqueue(chunks(300), bulk: true, completion: { _ in }))
+        // The state frame is small and fits in the window, so the bulk policy does not hold it back.
+        XCTAssertTrue(queue.enqueue(chunks(40), bulk: false, completion: { _ in }))
     }
 
     func testCompletionRunsOnceAfterTheLastChunkAndRemovalFailsTheRest() {
         var queue = BluetoothSendQueue()
         var completed = 0
-        XCTAssertTrue(queue.enqueue(chunks(250), completion: { _ in completed += 1 }))
-        XCTAssertTrue(queue.enqueue(chunks(10), completion: { _ in completed += 10 }))
+        XCTAssertTrue(queue.enqueue(chunks(250), bulk: false, completion: { _ in completed += 1 }))
+        XCTAssertTrue(queue.enqueue(chunks(10), bulk: false, completion: { _ in completed += 10 }))
         XCTAssertEqual(queue.nextChunk?.count, 100)
         queue.didSendChunk()
         queue.didSendChunk()

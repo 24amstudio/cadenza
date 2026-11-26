@@ -53,6 +53,7 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
     func send(
         _ data: Data,
         to centralID: UUID,
+        bulk: Bool,
         completion: @escaping (Error?) -> Void,
     ) -> TransportSendResult {
         guard let central = subscribed.first(where: { $0.identifier == centralID }), notifyCharacteristic != nil else {
@@ -67,7 +68,7 @@ final class BluetoothPeripheral: NSObject, @preconcurrency CBPeripheralManagerDe
             completion(error)
             return .failed
         }
-        guard outbound[centralID]?.enqueue(chunks, completion: completion) == true else { return .full }
+        guard outbound[centralID]?.enqueue(chunks, bulk: bulk, completion: completion) == true else { return .full }
         pump()
         return .accepted
     }

@@ -167,9 +167,9 @@ final class HostService {
             guard let self else { return }
             self.network.acceptBluetooth(
                 centralID: centralID,
-                send: { [weak self] data in
+                send: { [weak self] data, bulk in
                     guard let self else { return .failed }
-                    return self.bluetooth.send(data, to: centralID, completion: { _ in })
+                    return self.bluetooth.send(data, to: centralID, bulk: bulk, completion: { _ in })
                 },
                 cancel: {})
         }

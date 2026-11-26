@@ -25,6 +25,19 @@ extension HostService {
         }
     }
 
+    /// A device change publishes at once, so a TV reaches the Remote's output list without waiting for the next poll. A
+    /// browse that waits or fails is logged, so a missing TV has a recorded reason.
+    func configureCastDiscovery() {
+        publishedState.castDiscovery.onChange = { [weak self] devices in
+            self?.logger.log(
+                .info, category: "cast", action: "discovery.devices", "Found \(devices.count) Google Cast device(s).")
+            self?.queue.publish()
+        }
+        publishedState.castDiscovery.onFailure = { [weak self] message in
+            self?.logger.log(.warning, category: "cast", action: "discovery.failed", message)
+        }
+    }
+
     static let settingKinds: Set<String> = [
         "cast.transmit", "cast.presentation", "video.output", "lip_sync.offset", "lyrics.offset", "stage.approve",
     ]
@@ -77,7 +90,7 @@ extension HostService {
         guard let device = publishedState.castDiscovery.devices.first(where: { $0.name == name }) else {
             throw CadenzaError.failure("cast_unavailable", "That Cast device is not on this network.")
         }
-        guard let lanHost = LANAddresses.all().first else {
+        guard let lanHost = LANAddresses.lanAddress() else {
             throw CadenzaError.failure("cast_unavailable", "This Host has no LAN address for Cast to reach.")
         }
         if let loader = webLoaderConfiguration(lanHost: lanHost) {

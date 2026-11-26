@@ -446,6 +446,16 @@ test('a track whose length is not a finite number is live, and a song with a len
   assert.equal(song.song.duration_ms, 183125);
 });
 
+test('a streamed catalog song with a length is a song with a timeline, not live radio', () => {
+  const streamed = nativeBoundary('958A4478EDBDEEF8', {
+    trackClass: 'urlTrack',
+    inLibrary: false,
+  }).invoke(['status']);
+
+  assert.equal(streamed.song.is_live_radio, false);
+  assert.equal(streamed.song.duration_ms, 183125);
+});
+
 test('a favorite is set on the library track only from a boolean value', () => {
   const boundary = nativeBoundary();
 

@@ -26,7 +26,7 @@ internal fun CastChooser(
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    if (cast == null || cast.devices.isEmpty()) return
+    if (cast == null || (cast.devices.isEmpty() && cast.stages.isEmpty() && cast.pendingStages.isEmpty())) return
 
     val transmit = cast.transmit
     val active = transmit?.takeIf { it.state == "starting" || it.state == "transmitting" }
@@ -57,6 +57,53 @@ internal fun CastChooser(
         }
         if (transmit?.state == "failed") {
             Text(transmit.reason ?: "Cast could not send audio.", style = MaterialTheme.typography.bodySmall)
+        }
+        if (cast.pendingStages.isNotEmpty() || cast.stages.isNotEmpty()) {
+            StageRows(model, cast, enabled)
+        }
+    }
+}
+
+// Cadenza TVs: a waiting TV is approved here with its PIN, and an approved TV is sent Music's audio on the same chip row.
+@Composable
+private fun StageRows(
+    model: RemoteModel,
+    cast: CastState,
+    enabled: Boolean,
+) {
+    Text("Cadenza TV", style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        cast.pendingStages.forEach { pending ->
+            FilterChip(
+                selected = false,
+                onClick = {
+                    model.command(
+                        JSONObject().put("kind", "stage.approve").put("pin", pending.pin),
+                        "stage.approve",
+                    )
+                },
+                label = { Text("Approve ${pending.name}, PIN ${pending.pin}") },
+                enabled = enabled,
+            )
+        }
+        cast.stages.forEach { stage ->
+            FilterChip(
+                selected = stage.transmitting,
+                onClick = {
+                    model.command(
+                        JSONObject()
+                            .put("kind", "cast.transmit")
+                            .put("device", "stage:${stage.receiverId}")
+                            .put("start", !stage.transmitting),
+                        "cast.transmit",
+                    )
+                },
+                label = { Text(stage.name) },
+                enabled = enabled,
+            )
         }
     }
 }

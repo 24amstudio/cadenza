@@ -17,7 +17,7 @@ struct HostMenu: View {
                 // Favorite the current song in Apple Music (library only)
                 if current.song.source == "library" {
                     Button("Favorite") {
-                        Task { await model.control("library.favorite") }
+                        Task { model.control("library.favorite") }
                     }
                 }
             }
@@ -25,19 +25,19 @@ struct HostMenu: View {
             // Add current song to a Host playlist
             if current.song.source == "library" {
                 Button("Add to Host Playlist") {
-                    Task { await model.control("library.addToPlaylist") }
+                    Task { model.control("library.addToPlaylist") }
                 }
             }
             // Share menu
             Menu("Share") {
                 Button("Play now") {
-                    Task { await model.control("queue.play_now") }
+                    Task { model.control("queue.play_now") }
                 }
                 Button("Play next") {
-                    Task { await model.control("queue.play_next") }
+                    Task { model.control("queue.play_next") }
                 }
                 Button("Add to queue") {
-                    Task { await model.control("queue.add") }
+                    Task { model.control("queue.add") }
                 }
             }
         }

@@ -18,6 +18,9 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <application
         android:name=".CadenzaApplication"
         android:allowBackup="false"
@@ -29,6 +32,17 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
         <meta-data android:name="app.cadenza.BUILD_PROFILE" android:value="${cadenzaBuildProfile}" />
+        <activity
+            android:name=".tv.TvStageActivity"
+            android:exported="true"
+            android:label="@string/tv_stage_label"
+            android:banner="@drawable/tv_banner"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

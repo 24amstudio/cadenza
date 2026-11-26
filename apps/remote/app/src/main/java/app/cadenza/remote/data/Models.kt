@@ -111,10 +111,26 @@ data class CastTransmitState(
     val reason: String?,
 )
 
+// A Cadenza TV that the Host approved. `transmitting` means it is receiving Music's audio.
+data class StageDevice(
+    val receiverId: String,
+    val name: String,
+    val transmitting: Boolean,
+)
+
+// A TV that shows a PIN and waits for approval. Any paired Remote can approve it with that PIN.
+data class PendingStage(
+    val receiverId: String,
+    val name: String,
+    val pin: String,
+)
+
 data class CastState(
     val presentation: String,
     val devices: List<CastDevice>,
     val transmit: CastTransmitState?,
+    val stages: List<StageDevice> = emptyList(),
+    val pendingStages: List<PendingStage> = emptyList(),
 )
 
 // An audio output the Mac can play to. `id` is the device UID.
@@ -347,7 +363,28 @@ object Wire {
                     CastTransmitState(state, item.nullableString("device"), item.nullableString("reason"))
                 }
             }
-        return CastState(presentation, devices, transmit)
+        val stages =
+            value.optJSONArray("stages")?.objects().orEmpty().mapNotNull { item ->
+                val receiverId = item.optString("receiver_id")
+                val name = item.optString("name")
+                if (receiverId.isEmpty() || name.isEmpty() || !item.has("transmitting")) {
+                    null
+                } else {
+                    StageDevice(receiverId, name, item.optBoolean("transmitting"))
+                }
+            }
+        val pending =
+            value.optJSONArray("pending_stages")?.objects().orEmpty().mapNotNull { item ->
+                val receiverId = item.optString("receiver_id")
+                val name = item.optString("name")
+                val pin = item.optString("pin")
+                if (receiverId.isEmpty() || name.isEmpty() || !Regex("^[0-9]{4}$").matches(pin)) {
+                    null
+                } else {
+                    PendingStage(receiverId, name, pin)
+                }
+            }
+        return CastState(presentation, devices, transmit, stages, pending)
     }
 
     // An output that does not parse is left out, so one unknown output never hides the rest.

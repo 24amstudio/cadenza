@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:cast",
+  "description": "Zero-account Cast stage messages. Tier-2 and Tier-3 receivers exchange these JSON text frames with the Host on its stage channel. Remote command sockets never carry them. Binary audio and flush frames are described in README.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/receiverProfile"
+    },
+    {
+      "$ref": "#/$defs/stagePairing"
+    },
+    {
+      "$ref": "#/$defs/stageAccepted"
+    },
+    {
+      "$ref": "#/$defs/trackSuite"
+    },
+    {
+      "$ref": "#/$defs/prefetchNextSuite"
+    },
+    {
+      "$ref": "#/$defs/optimisticState"
+    },
+    {
+      "$ref": "#/$defs/clockCalibrate"
+    },
+    {
+      "$ref": "#/$defs/videoKaraoke"
+    },
+    {
+      "$ref": "#/$defs/stageCommand"
+    }
+  ],
+  "$defs": {
+    "outputTransportType": {
+      "enum": [
+        "local_mac",
+        "airplay2",
+        "google_cast_default",
+        "cadenza_web_tv_stage",
+        "cadenza_android_tv_receiver"
+      ]
+    },
+    "transmitChannelFormat": {
+      "enum": ["transcode_auto", "bitstream"]
+    },
+    "lanUrl": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^http://[^/\\s]+/"
+    },
+    "receiverProfile": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "receiverId",
+        "transportType",
+        "displayName",
+        "hasDisplay",
+        "isStandby",
+        "isTouchSupported",
+        "maxAudioChannels",
+        "supportedCodecs"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "RECEIVER_PROFILE"
+        },
+        "receiverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "transportType": {
+          "enum": ["cadenza_web_tv_stage", "cadenza_android_tv_receiver"]
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "hasDisplay": {
+          "type": "boolean"
+        },
+        "isStandby": {
+          "type": "boolean"
+        },
+        "isTouchSupported": {
+          "type": "boolean"
+        },
+        "maxAudioChannels": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 8
+        },
+        "supportedCodecs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["aac", "ac-3", "ec-3", "flac", "pcm"]
+          }
+        },
+        "lipSyncOffsetMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250
+        },
+        "receiverToken": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "trackSuite": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "trackId",
+        "title",
+        "artist",
+        "album",
+        "durationMs",
+        "lines"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "TRACK_SUITE_PAYLOAD"
+        },
+        "trackId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "artist": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "album": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "durationMs": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "quality": {
+          "enum": ["Lossless", "Hi-Res Lossless", "Dolby Atmos", "AAC"]
+        },
+        "artworkUrl": {
+          "$ref": "#/$defs/lanUrl"
+        },
+        "motionUrl": {
+          "$ref": "#/$defs/lanUrl"
+        },
+        "lines": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": {
+            "$ref": "urn:cadence:protocol:v1:state#/$defs/line"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "prefetchNextSuite": {
+      "type": "object",
+      "required": ["version", "type", "trackId", "reason"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "PREFETCH_NEXT_SUITE"
+        },
+        "trackId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "reason": {
+          "enum": ["near_end", "queue_reorder"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "optimisticState": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "isPlaying",
+        "targetPositionMs",
+        "playbackRate",
+        "hostMonoTimeMs",
+        "audioLatencyMs"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "OPTIMISTIC_STATE"
+        },
+        "isPlaying": {
+          "type": "boolean"
+        },
+        "targetPositionMs": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "playbackRate": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 4
+        },
+        "hostMonoTimeMs": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "audioLatencyMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5000
+        }
+      },
+      "additionalProperties": false
+    },
+    "clockCalibrate": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "actualPositionMs",
+        "audioLatencyMs",
+        "hostMonoTimeMs"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "CLOCK_CALIBRATE"
+        },
+        "actualPositionMs": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        },
+        "audioLatencyMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5000
+        },
+        "hostMonoTimeMs": {
+          "$ref": "urn:cadence:protocol:v1:common#/$defs/counter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "videoKaraoke": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "source",
+        "mediaUrl",
+        "subtitleUrl",
+        "userOffsetMs"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "VIDEO_KARAOKE_PAYLOAD"
+        },
+        "source": {
+          "enum": ["lan_mp4"]
+        },
+        "mediaUrl": {
+          "$ref": "#/$defs/lanUrl"
+        },
+        "subtitleUrl": {
+          "$ref": "#/$defs/lanUrl"
+        },
+        "userOffsetMs": {
+          "type": "integer",
+          "minimum": -5000,
+          "maximum": 5000
+        }
+      },
+      "additionalProperties": false
+    },
+    "stagePairing": {
+      "type": "object",
+      "required": ["version", "type", "pin", "expiresInMs"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "STAGE_PAIRING"
+        },
+        "pin": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$"
+        },
+        "expiresInMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000
+        }
+      },
+      "additionalProperties": false
+    },
+    "stageAccepted": {
+      "type": "object",
+      "required": ["version", "type", "receiverToken"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "STAGE_ACCEPTED"
+        },
+        "receiverToken": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stageCommand": {
+      "type": "object",
+      "required": ["version", "type", "action"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "STAGE_COMMAND"
+        },
+        "action": {
+          "enum": [
+            "playback.pause",
+            "playback.resume",
+            "playback.skip",
+            "playback.previous"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -11,16 +11,12 @@ import {
   type JsonObject,
   type JsonValue,
 } from './json';
+import { decodeCast } from './decodeCast';
 import type {
   AudioOutput,
   AudioQuality,
   AutoPlayItem,
   VideoOutputTarget,
-  CastDevice,
-  CastDisplay,
-  CastPresentation,
-  CastState,
-  CastTransmitState,
   HostUpdateStatus,
   BrowseCollectionKind,
   BrowseItem,
@@ -682,68 +678,6 @@ function decodeVideoOutput(value: string | null): VideoOutputTarget | null {
 }
 
 // An output that does not decode is left out, so one unknown output never hides the rest.
-function decodeCast(object: JsonObject | null): CastState | null {
-  if (object === null) return null;
-
-  const presentation = stringField(object, 'presentation');
-
-  if (!isCastPresentation(presentation)) return null;
-
-  return {
-    presentation,
-    devices: decodeCastDevices(arrayField(object, 'devices') ?? []),
-    transmit: decodeCastTransmit(objectField(object, 'transmit')),
-  };
-}
-
-function decodeCastTransmit(
-  object: JsonObject | null,
-): CastTransmitState | null {
-  if (object === null) return null;
-
-  const state = stringField(object, 'state');
-
-  if (!isCastTransmitState(state)) return null;
-
-  return {
-    state,
-    device: stringField(object, 'device'),
-    reason: stringField(object, 'reason'),
-  };
-}
-
-function isCastTransmitState(
-  value: string | null,
-): value is CastTransmitState['state'] {
-  return (
-    value === 'idle' ||
-    value === 'starting' ||
-    value === 'transmitting' ||
-    value === 'failed'
-  );
-}
-
-function isCastPresentation(value: string | null): value is CastPresentation {
-  return value === 'auto' || value === 'audio_only' || value === 'full_suite';
-}
-
-function decodeCastDevices(values: JsonValue[]): CastDevice[] {
-  return values.flatMap((value) => {
-    if (!isJsonObject(value)) return [];
-
-    const name = stringField(value, 'name');
-    const display = stringField(value, 'display');
-
-    if (name === null || !isCastDisplay(display)) return [];
-
-    return [{ name, display }];
-  });
-}
-
-function isCastDisplay(value: string | null): value is CastDisplay {
-  return value === 'none' || value === 'display' || value === 'unknown';
-}
-
 function decodeAudioOutputs(values: JsonValue[]): AudioOutput[] {
   return values.flatMap((value) => {
     if (!isJsonObject(value)) return [];

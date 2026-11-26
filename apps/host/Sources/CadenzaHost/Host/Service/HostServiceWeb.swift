@@ -15,7 +15,7 @@ extension HostService {
         }
         let advertised = configuration.advertisedAddress
         webRemote.updateReply = { @MainActor [weak self] request in
-            self?.remoteUpdateReply(request) ?? RemoteUpdateReply(status: 503)
+            self?.remoteUpdateReply(request) ?? WebRemoteReply(status: 503)
         }
         do {
             try await webRemote.start(
@@ -36,7 +36,7 @@ extension HostService {
     }
 
     // Remote updates come from the cache for this Host's release. Each request must carry a paired Remote's credentials.
-    func remoteUpdateReply(_ request: WebRemoteRequest) -> RemoteUpdateReply {
+    func remoteUpdateReply(_ request: WebRemoteRequest) -> WebRemoteReply {
         let root = RemoteUpdateCache.root(hostVersion: HostBuild.version, supportDirectory: supportDirectory)
         return RemoteUpdateRelay(
             current: { RemoteUpdateCache.current(root: root) },

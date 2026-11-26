@@ -34,6 +34,7 @@
         { "$ref": "#/$defs/castTransmit" },
         { "$ref": "#/$defs/videoOutput" },
         { "$ref": "#/$defs/castPresentation" },
+        { "$ref": "#/$defs/stageApprove" },
         { "$ref": "#/$defs/lipSyncOffset" },
         { "$ref": "#/$defs/lyricOffset" },
         { "$ref": "#/$defs/shuffle" },
@@ -146,6 +147,15 @@
       "properties": {
         "kind": { "const": "cast.presentation" },
         "presentation": { "enum": ["auto", "audio_only", "full_suite"] }
+      },
+      "additionalProperties": false
+    },
+    "stageApprove": {
+      "type": "object",
+      "required": ["kind", "pin"],
+      "properties": {
+        "kind": { "const": "stage.approve" },
+        "pin": { "type": "string", "pattern": "^[0-9]{4}$" }
       },
       "additionalProperties": false
     },

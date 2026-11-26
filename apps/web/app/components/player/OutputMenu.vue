@@ -124,6 +124,55 @@ const presentations: { value: CastPresentation; label: string }[] = [
         Later 50 ms
       </button>
     </section>
+    <section
+      v-if="cast && (cast.pendingStages.length > 0 || cast.stages.length > 0)"
+      class="cast"
+      aria-label="Cadenza TV"
+    >
+      <p class="cast-title">Cadenza TV</p>
+      <ul class="cast-devices">
+        <li
+          v-for="pending in cast.pendingStages"
+          :key="pending.receiverId"
+          class="cast-device"
+        >
+          <span>{{ pending.name }}, PIN {{ pending.pin }}</span>
+          <button
+            class="cast-button"
+            type="button"
+            :disabled="!host.connected"
+            @click="host.approveStage(pending.pin)"
+          >
+            Approve
+          </button>
+        </li>
+        <li
+          v-for="stage in cast.stages"
+          :key="stage.receiverId"
+          class="cast-device"
+        >
+          <span
+            >{{ stage.name }},
+            {{
+              stage.transmitting ? 'Playing audio' : 'Full Cadenza Suite'
+            }}</span
+          >
+          <button
+            class="cast-button"
+            type="button"
+            :disabled="!host.connected"
+            @click="
+              host.setCastTransmit(
+                `stage:${stage.receiverId}`,
+                !stage.transmitting,
+              )
+            "
+          >
+            {{ stage.transmitting ? 'Stop sending audio' : 'Send audio here' }}
+          </button>
+        </li>
+      </ul>
+    </section>
     <section v-if="cast" class="cast" aria-label="Google Cast">
       <p class="cast-title">
         Google Cast, {{ castPresentationLabel(cast.presentation) }}

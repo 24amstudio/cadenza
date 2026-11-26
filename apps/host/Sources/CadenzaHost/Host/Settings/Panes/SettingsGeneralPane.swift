@@ -53,6 +53,7 @@ struct SettingsGeneralPane: View {
                         + "Devices are found while Cadenza Host runs."
                 )
             }
+            StageSettingsSection(model: model)
             Section("Setup") {
                 Button("Run Setup Again") { model.showingSetup = true }
             }

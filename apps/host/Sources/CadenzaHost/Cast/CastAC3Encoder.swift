@@ -20,6 +20,17 @@ final class CastAC3Encoder: @unchecked Sendable {
         return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
     }
 
+    /// The helper named by `CADENZA_AC3_HELPER` for a development build, else the one in the bundle. Nil when neither
+    /// is executable, and then 5.1 is folded to stereo.
+    static func configuredHelperURL() -> URL? {
+        if let path = ProcessInfo.processInfo.environment["CADENZA_AC3_HELPER"],
+            FileManager.default.isExecutableFile(atPath: path)
+        {
+            return URL(fileURLWithPath: path)
+        }
+        return helperURL()
+    }
+
     static func arguments(sampleRate: Double) -> [String] {
         [
             "-hide_banner", "-loglevel", "error",

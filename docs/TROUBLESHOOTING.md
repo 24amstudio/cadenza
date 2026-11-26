@@ -86,6 +86,18 @@ Open Logs on Host and choose Export Diagnostic Logs. The mirrored log rotates th
 
 The output menu lists the Google Cast devices on your network. If Send audio here fails, the reason appears under the Cast heading. Check that the device is on the same network and awake, and that Music is playing on the Mac. Transmission has not yet been checked against a real Cast device in this build.
 
+## A TV shows a PIN but never connects
+
+Approve the PIN in Settings → Cadenza TV on the Mac, or on a paired Remote's output menu, before it expires. The code expires after five minutes, and the TV then asks for a new one. If the TV shows "Reconnecting to Cadenza", check that the TV can reach the Mac's address and web port, and that both are on the same network. The web port is the control port plus two.
+
+## A TV is connected but has no sound
+
+Browsers and TV apps block audio until someone presses a key or touches the screen. Press OK once. Then check that Settings → Cadenza TV lists the TV as playing, and that Music is playing on the Mac. A 5.1 track sends stereo when no AC-3 encoder is available, which is expected.
+
+## Lyrics are early or late on a TV
+
+Adjust the lip-sync offset on the TV with the up and down arrows, in 10 ms steps. Then compare the lyric change with the sound. See the lip-sync section in [docs/CAST.md](CAST.md).
+
 ## Lock screen and screen saver on Android
 
 The lock-screen motion artwork and the charging screen saver have not been checked on a device, including Huawei HarmonyOS 4.3. Confirm both on your device before you rely on them.

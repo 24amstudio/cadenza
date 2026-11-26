@@ -23,6 +23,7 @@ enum ProtocolValidation {
         "cast.transmit": ["kind", "device", "start"],
         "video.output": ["kind", "video_output"],
         "cast.presentation": ["kind", "presentation"],
+        "stage.approve": ["kind", "pin"],
         "lip_sync.offset": ["kind", "lip_sync_offset_ms"],
         "lyrics.offset": ["kind", "song", "user_offset_ms"],
         "library.favorite": ["kind", "song", "enabled"],
@@ -320,6 +321,10 @@ enum ProtocolValidation {
             guard let flag = rawAction["start"] as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID(),
                 let device = action.device, !device.isEmpty, device.count <= 200
             else { throw invalid("Invalid Cast request.") }
+        case "stage.approve":
+            guard let pin = action.pin, pin.count == 4, pin.allSatisfy(\.isNumber) else {
+                throw invalid("Invalid TV PIN.")
+            }
         case "cast.presentation":
             guard let presentation = action.presentation, ["auto", "audio_only", "full_suite"].contains(presentation)
             else {

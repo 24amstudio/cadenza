@@ -56,6 +56,10 @@ enum WebSocketFraming {
         Data(encode(opcode: 0x1, payload: payload))
     }
 
+    static func binaryFrame(_ payload: [UInt8]) -> Data {
+        Data(encode(opcode: 0x2, payload: payload))
+    }
+
     static func pongFrame(_ payload: [UInt8]) -> Data {
         Data(encode(opcode: 0xA, payload: payload))
     }

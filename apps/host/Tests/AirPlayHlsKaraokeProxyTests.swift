@@ -39,11 +39,11 @@ struct AirPlayHlsKaraokeProxyTests {
 
         #expect(
             proxied.contains(
-                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"cadenza-subs\",NAME=\"Cadenza Karaoke\",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE=\"en\",URI=\"http://192.168.1.20:9100/airplay/karaoke/s1/subs.m3u8\""
+                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"cadenza-karaoke\",NAME=\"Cadenza Lyrics\",DEFAULT=YES,AUTOSELECT=YES,FORCED=YES,LANGUAGE=\"en\",URI=\"http://192.168.1.20:9100/airplay/karaoke/s1/subs.m3u8\""
             ))
         #expect(proxied.contains("URI=\"https://mvod.itunes.apple.com/itunes-assets/HLSVideo/v4/audio/eng.m3u8\""))
         #expect(proxied.contains("https://mvod.itunes.apple.com/itunes-assets/HLSVideo/v4/video/1080p.m3u8"))
-        #expect(proxied.contains("SUBTITLES=\"cadenza-subs\""))
+        #expect(proxied.contains("SUBTITLES=\"cadenza-karaoke\""))
     }
 
     @Test func parsesFairPlayAndWidevineAssetsFromWebPlaybackJSON() {

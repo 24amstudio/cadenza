@@ -10,10 +10,6 @@ enum CastProtocolMessages {
     static let receiverId = "receiver-0"
     /// Google's Default Media Receiver plays an audio stream without a registered receiver app.
     static let defaultMediaReceiverAppId = "CC1AD845"
-    // The Cadenza receiver's karaoke messages. Only the custom receiver app listens on this namespace.
-    static let karaokeNamespace = "urn:x-cast:app.cadenza.karaoke"
-    // Receiver profile capabilities reported by the Cast custom receiver app.
-    static let receiverProfileNamespace = "urn:x-cast:com.cadenza.profile"
 
     static func connect(to destination: String) -> CastMessage {
         message(connectionNamespace, to: destination, ["type": "CONNECT"])
@@ -34,7 +30,7 @@ enum CastProtocolMessages {
     static func loadAudio(
         url: String, transportId: String, sessionId: String, title: String, requestId: Int,
         contentType: String = "audio/aac", streamType: String = "LIVE",
-        customData: [String: Any]? = nil
+        subtitleURL: String? = nil
     ) -> CastMessage {
         var media: [String: Any] = [
             "contentId": url,
@@ -42,18 +38,24 @@ enum CastProtocolMessages {
             "streamType": streamType,
             "metadata": ["metadataType": 0, "title": title],
         ]
-        if let customData {
-            media["customData"] = customData
+        var body: [String: Any] = [
+            "type": "LOAD",
+            "requestId": requestId,
+            "sessionId": sessionId,
+            "autoplay": true,
+        ]
+        // The Default Media Receiver draws a WebVTT track on screen when it is active, which gives karaoke subtitles.
+        if let subtitleURL {
+            media["tracks"] = [
+                [
+                    "trackId": 1, "type": "TEXT", "subtype": "SUBTITLES", "trackContentId": subtitleURL,
+                    "trackContentType": "text/vtt", "name": "Cadenza Lyrics", "language": "en",
+                ]
+            ]
+            body["activeTrackIds"] = [1]
         }
-        return message(
-            mediaNamespace, to: transportId,
-            [
-                "type": "LOAD",
-                "requestId": requestId,
-                "sessionId": sessionId,
-                "autoplay": true,
-                "media": media,
-            ])
+        body["media"] = media
+        return message(mediaNamespace, to: transportId, body)
     }
 
     static func stop(sessionId: String, requestId: Int) -> CastMessage {
@@ -85,10 +87,6 @@ enum CastProtocolMessages {
         }
 
         return nil
-    }
-
-    static func karaoke(_ body: [String: Any], transportId: String) -> CastMessage {
-        message(karaokeNamespace, to: transportId, body)
     }
 
     private static func message(_ namespace: String, to destination: String, _ body: [String: Any]) -> CastMessage {

@@ -50,6 +50,11 @@ export function isOffsetMilliseconds(
   return Number.isSafeInteger(value) && Math.abs(Number(value)) <= limit;
 }
 
+// A finite number such as a playback rate. Number.isFinite never coerces, so a string or null is not a number here.
+export function isJsonNumber(value: JsonValue | undefined): value is number {
+  return Number.isFinite(value);
+}
+
 export function isCounter(value: JsonValue | undefined): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
@@ -64,6 +69,12 @@ export function booleanField(object: JsonObject, key: string): boolean | null {
   const value = object[key];
 
   return isJsonBoolean(value) ? value : null;
+}
+
+export function numberField(object: JsonObject, key: string): number | null {
+  const value = object[key];
+
+  return isJsonNumber(value) ? value : null;
 }
 
 export function counterField(object: JsonObject, key: string): number | null {

@@ -49,6 +49,7 @@ export type HostCommandAction = Extract<
       | 'cast.transmit'
       | 'video.output'
       | 'cast.presentation'
+      | 'stage.approve'
       | 'lip_sync.offset'
       | 'lyrics.offset'
       | 'library.favorite'

@@ -226,6 +226,50 @@
       "required": ["presentation", "devices"],
       "properties": {
         "presentation": { "enum": ["auto", "audio_only", "full_suite"] },
+        "stages": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["receiver_id", "name", "transport", "transmitting"],
+            "properties": {
+              "receiver_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "transport": {
+                "enum": ["cadenza_web_tv_stage", "cadenza_android_tv_receiver"]
+              },
+              "transmitting": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pending_stages": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["receiver_id", "name", "pin", "expires_in_ms"],
+            "properties": {
+              "receiver_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "pin": { "type": "string", "pattern": "^[0-9]{4}$" },
+              "expires_in_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 300000
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "transmit": {
           "type": "object",
           "required": ["state"],

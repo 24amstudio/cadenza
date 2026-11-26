@@ -41,13 +41,15 @@ struct CommandAction: Codable, Sendable {
     var videoOutput: String? = nil
     // Cast presentation ("auto", "audio_only", or "full_suite") and the AVR lip-sync offset in milliseconds.
     var presentation: String? = nil
+    // The four-digit PIN that a stage receiver shows and a listener approves.
+    var pin: String? = nil
     var lipSyncOffsetMs: Int64? = nil
     // The karaoke nudge for one track, in milliseconds, saved on the Host.
     var userOffsetMs: Int64? = nil
 
     enum CodingKeys: String, CodingKey {
         case kind, song, entryId, beforeEntryId, occurrenceId, positionMs, percent, vocalPercent, enabled, mode
-        case name, songs, output, device, start, videoOutput, presentation, lipSyncOffsetMs, userOffsetMs
+        case name, songs, output, device, start, videoOutput, presentation, pin, lipSyncOffsetMs, userOffsetMs
     }
 
     func encode(to encoder: Encoder) throws {

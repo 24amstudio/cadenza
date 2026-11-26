@@ -27,13 +27,16 @@ final class MusicObservation {
         screenLockToken = DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
         ) { [weak self] note in
-            guard let self else { return }
-            if note.name == NSNotification.Name("com.apple.screenIsLocked") {
-                // Screen is locked; short-circuit any pending Accessibility reads
-                self.changedDuringRead = true
-            } else if note.name == NSNotification.Name("com.apple.screenIsUnlocked") {
-                // Screen is unlocked; allow reads to proceed
-                self.changedDuringRead = false
+            let isLocked = note.name == NSNotification.Name("com.apple.screenIsLocked")
+            let isUnlocked = note.name == NSNotification.Name("com.apple.screenIsUnlocked")
+            Task { @MainActor in
+                guard let self else { return }
+                // A locked screen short-circuits pending Accessibility reads, and an unlocked one lets them proceed.
+                if isLocked {
+                    self.changedDuringRead = true
+                } else if isUnlocked {
+                    self.changedDuringRead = false
+                }
             }
         }
     }

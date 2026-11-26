@@ -87,10 +87,28 @@ export interface CastTransmitState {
   reason: string | null;
 }
 
+// A Cadenza TV browser or Android TV that the Host has approved. `transmitting` means it is receiving audio.
+export interface StageDevice {
+  receiverId: string;
+  name: string;
+  transport: string;
+  transmitting: boolean;
+}
+
+// A TV that shows a PIN and waits for approval. Any paired Remote may approve it with the PIN.
+export interface PendingStage {
+  receiverId: string;
+  name: string;
+  pin: string;
+  expiresInMs: number;
+}
+
 export interface CastState {
   presentation: CastPresentation;
   devices: CastDevice[];
   transmit: CastTransmitState | null;
+  stages: StageDevice[];
+  pendingStages: PendingStage[];
 }
 
 export interface Snapshot {
@@ -209,6 +227,7 @@ export type CommandAction =
   | { kind: 'cast.transmit'; device: string; start: boolean }
   | { kind: 'video.output'; target: VideoOutputTarget }
   | { kind: 'cast.presentation'; presentation: CastPresentation }
+  | { kind: 'stage.approve'; pin: string }
   | { kind: 'lip_sync.offset'; offsetMs: number }
   | { kind: 'lyrics.offset'; song: SongIdentity; offsetMs: number }
   | { kind: 'library.favorite'; song: LibrarySongIdentity; favorite: boolean }

@@ -27,7 +27,6 @@ cadenza/
     host/          Cadenza Host for macOS
     remote/        Cadenza Remote for Android
     web/           Browser Cadenza Remote, served by Cadenza Host
-    cast-receiver/ Custom Cast receiver page (source; not yet registered with Google Cast)
   shared/
     protocol/      Shared LAN protocol contracts and fixtures
   tests/           Protocol and SQLite behavior checks
@@ -36,7 +35,7 @@ cadenza/
   SPEC.md
 ```
 
-Each application retains its native build tooling. The root specification governs both applications and the shared protocol. The custom Cast receiver's source is here, but it cannot run on a Cast device until it is registered with Google.
+Each application retains its native build tooling. The root specification governs both applications and the shared protocol. The TV stage (`/tv` on a browser, and the Android TV receiver) runs from Cadenza Host and needs no Cast developer account. See [docs/CAST.md](docs/CAST.md).
 
 ## Development checks
 
@@ -78,14 +77,14 @@ Built and checked locally. Device, live Music, and screenshot checks are not yet
 - The web search screen shows "For You" and "Room Blend" suggestions when the search is empty. They are read-only until you queue one. On an artist page, the web and Android Remotes can show a muted motion video, when Apple has one.
 - Android can use the volume buttons to change Music's volume on Host when its Settings switch is on, and dismisses the session notification after five minutes of pause or lost connection.
 - A Remote can play a music video in Music's window. Its karaoke line appears over Music's window on the Mac, or on a Cast device, and the two never show at once.
-- The AVR lip-sync offset, the Cast mode, and each track's karaoke nudge are set on the Host and kept across launches. The Cast 5.1 path uses a bundled LGPL AC-3 helper, which is verified to encode but not yet checked against a six-channel device.
+- The AVR lip-sync offset, the Cast mode, and each track's karaoke nudge are set on the Host and kept across launches. The Cast 5.1 path uses an AC-3 helper only when one is present at build time or named by `CADENZA_AC3_HELPER`. Without one, 5.1 folds to stereo. The helper encodes in a test, but it has not been checked against a six-channel device.
 - Android has a home-screen now-playing widget, a motion lock screen for tracks with motion artwork, and a charging screen saver. None has been checked on a device.
 
 Built but not verified against a live Music session: the MediaRemote and HID media-key fallbacks, which apply only after Music refuses Cadenza's Apple events.
 
-Built, not yet tested against a Cast device: sending Music's stereo audio to a Cast device through Google's default media receiver, the web output menu's send and stop controls, and the web taste digest sent at connect when opted in.
+Built, not yet tested against a Cast device or a TV: sending Music's stereo audio to a Cast device through Google's default media receiver, the browser TV stage at `/tv`, the Android TV receiver, the Cadenza TV approval and send controls on the Remotes, and the web taste digest sent at connect when opted in. The TV stage is checked in headless Chromium with a simulated Host, and in JVM and Swift tests.
 
-Not built yet: a registered custom Cast receiver (its source is in `apps/cast-receiver`), Full Cadenza Suite artwork, and Bitstream output, which Music cannot provide because it decodes its audio. Karaoke for a music video uses its studio track's timed lyrics when the two have the same length within 3 seconds. Otherwise the video shows no karaoke, because Music does not expose lyrics for videos. The video segment alignment needs the video's audio, and DRM license forwarding is declined and not implemented.
+Not built: compressed Bitstream passthrough, which Music cannot provide because it decodes its audio. The experimental web loader for a Chromecast or Nest Hub is not built, because its app namespace is unverified. Raw PCM is the Bitstream mode that is built. Karaoke for a music video uses its studio track's timed lyrics when the two have the same length within 3 seconds. Otherwise the video shows no karaoke, because Music does not expose lyrics for videos. The video segment alignment needs the video's audio, and DRM license forwarding is declined and not implemented.
 
 ## License
 

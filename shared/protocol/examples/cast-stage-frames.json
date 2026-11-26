@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "description": "Cross-language fixtures for the zero-account stage binary frames. Every receiver decoder and the Host encoder must agree with these bytes. See README.md in shared/protocol.",
+  "frames": [
+    {
+      "name": "aac_stereo_fragment_48k",
+      "expect": {
+        "type": "AUDIO_FRAME",
+        "codec": 4,
+        "channels": 2,
+        "sampleRate": 48000,
+        "presentationTimeUs": 1000000,
+        "payloadHex": "deadbeef"
+      },
+      "hex": "0104020100000000000f424000000004deadbeef"
+    },
+    {
+      "name": "lpcm_stereo_441k",
+      "expect": {
+        "type": "AUDIO_FRAME",
+        "codec": 3,
+        "channels": 2,
+        "sampleRate": 44100,
+        "presentationTimeUs": 0,
+        "payloadHex": "0000000000000000"
+      },
+      "hex": "010302020000000000000000000000080000000000000000"
+    },
+    {
+      "name": "ac3_5_1_fragment",
+      "expect": {
+        "type": "AUDIO_FRAME",
+        "codec": 1,
+        "channels": 6,
+        "sampleRate": 48000,
+        "presentationTimeUs": 2500000,
+        "payloadHex": "0b77"
+      },
+      "hex": "0101060100000000002625a0000000020b77"
+    },
+    {
+      "name": "aac_init_segment",
+      "expect": {
+        "type": "INIT_SEGMENT",
+        "codec": 4,
+        "channels": 2,
+        "sampleRate": 48000,
+        "payloadHex": "0000000866747970"
+      },
+      "hex": "03040201000000080000000866747970"
+    },
+    {
+      "name": "flush_generation_7",
+      "expect": {
+        "type": "FLUSH_STREAM",
+        "generationSeq": 7
+      },
+      "hex": "0200000007"
+    }
+  ],
+  "rejects": [
+    {
+      "name": "truncated_header",
+      "hex": "010402010000000000000000000000",
+      "error": "truncated"
+    },
+    {
+      "name": "payload_length_mismatch",
+      "hex": "010402010000000000000000000000040000000000",
+      "error": "payload_length"
+    },
+    {
+      "name": "unknown_codec",
+      "hex": "0109020100000000000000000000000400000000",
+      "error": "unknown_codec"
+    },
+    {
+      "name": "channels_out_of_range",
+      "hex": "0104090100000000000000000000000400000000",
+      "error": "channel_count"
+    },
+    {
+      "name": "unknown_sample_rate",
+      "hex": "0104020700000000000000000000000400000000",
+      "error": "sample_rate"
+    },
+    {
+      "name": "flush_wrong_length",
+      "hex": "020000000100",
+      "error": "flush_length"
+    },
+    {
+      "name": "unknown_frame_type",
+      "hex": "09000000",
+      "error": "unknown_type"
+    }
+  ]
+}

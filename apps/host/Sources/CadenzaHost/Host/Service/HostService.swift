@@ -16,7 +16,7 @@ final class HostService {
     let lyrics: Lyrics
     let sing: SingCoordinator
     let sleepAssertion = SleepAssertion()
-    let publishedState = HostPublishedState()
+    let publishedState: HostPublishedState
     let airPlayKaraokeProxy = AirPlayHlsKaraokeProxy()
     var activeAirPlaySessionId: String?
     var alignmentTap: CoreAudioSingRoute?
@@ -78,6 +78,7 @@ final class HostService {
         let store = try HostStore(directory: directory)
         self.store = store
         supportDirectory = directory
+        publishedState = HostPublishedState(stageReceiversFile: directory.appending(path: "stage-receivers.json"))
         catalog = Catalog(credentials: store.credentials)
         let logDatabase = try Database(
             url: directory.appendingPathComponent("database", isDirectory: true)
@@ -103,13 +104,17 @@ final class HostService {
         queue = QueueCoordinator(store: store, music: music, catalog: catalog)
         sing.onSessionChanged = { [weak self] in self?.queue.publish() }
         queue.playbackDelayMs = { [weak self] in self?.sing.playbackDelayMs ?? 0 }
-        queue.onPlaybackInterrupted = { [weak self] in self?.sing.interruptPlayback() }
+        queue.onTransportDispatched = { [weak self] action in
+            if Self.interruptingPlaybackKinds.contains(action.kind) { self?.sing.interruptPlayback() }
+            self?.stageTransportDispatched(kind: action.kind, positionMs: action.positionMs)
+        }
         queue.logger = logger
         queue.currentArtwork = { [weak self] occurrenceId in
             try await self?.currentMusicArtwork(occurrenceId)
         }
         network.logger = logger
         webRemote.onSocket = { [weak self] socket in self?.openWebSocket(socket) }
+        configureStage()
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             var published = snapshot
@@ -119,6 +124,7 @@ final class HostService {
             published.sing = self.sing.publishedSession
             self.publishedState.apply(to: &published)
             self.publishedState.updateVideoLyrics(snapshot: published, lyrics: self.lyricDocument)
+            self.publishedState.stage.snapshotChanged(published, lyrics: self.lyricDocument)
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs
             if delay > 0, var current = published.current {
@@ -745,7 +751,7 @@ final class HostService {
         return value
     }
 
-    private func executeCommand(_ frame: Frame, actor: String) async throws -> Frame {
+    func executeCommand(_ frame: Frame, actor: String) async throws -> Frame {
         guard frame.action?.kind.hasPrefix("sing.") == true else {
             return try await executeOtherCommand(frame, actor: actor)
         }

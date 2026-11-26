@@ -23,6 +23,9 @@ export function libraryHostCommands(
     setCastPresentation(presentation: CastPresentation): void {
       press({ kind: 'cast.presentation', presentation });
     },
+    approveStage(pin: string): void {
+      press({ kind: 'stage.approve', pin });
+    },
     setLipSyncOffset(offsetMs: number): void {
       press({ kind: 'lip_sync.offset', offsetMs });
     },

@@ -27,6 +27,9 @@ import app.cadenza.remote.model.installing
 import app.cadenza.remote.model.receiveSharedTrack
 import app.cadenza.remote.model.showError
 import app.cadenza.remote.share.AppleMusicLink
+import app.cadenza.remote.tv.TvStageActivity
+import app.cadenza.remote.tv.TvStageConfig
+import app.cadenza.remote.tv.TvStagePrefs
 import app.cadenza.remote.ui.CadenzaApp
 import app.cadenza.remote.updates.RemoteUpdater
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +67,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A TV, or a device the person turned the stage on for, runs the Cadenza TV stage instead of the Remote.
+        val isTelevision = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        if (TvStageConfig.startsStage(isTelevision, TvStagePrefs(this).manualSetting)) {
+            startActivity(Intent(this, TvStageActivity::class.java))
+            finish()
+            return
+        }
         enableEdgeToEdge()
         model = ViewModelProvider(this)[RemoteModel::class.java]
         handleDebugIntent(intent, model)

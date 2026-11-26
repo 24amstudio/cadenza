@@ -5,7 +5,7 @@ import AppKit
 enum HostPresentation {
     static let menuBarOnlyKey = "menuBarOnly"
 
-    static func apply(menuBarOnly: Bool) {
+    @MainActor static func apply(menuBarOnly: Bool) {
         NSApp.setActivationPolicy(menuBarOnly ? .accessory : .regular)
     }
 }

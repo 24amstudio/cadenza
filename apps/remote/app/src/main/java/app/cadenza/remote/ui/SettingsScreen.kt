@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +56,9 @@ import app.cadenza.remote.model.installHostUpdate
 import app.cadenza.remote.model.installing
 import app.cadenza.remote.model.showChangelog
 import app.cadenza.remote.model.showError
+import app.cadenza.remote.tv.TvStageActivity
+import app.cadenza.remote.tv.TvStageConfig
+import app.cadenza.remote.tv.TvStagePrefs
 import app.cadenza.remote.ui.settings.BackgroundCard
 import app.cadenza.remote.ui.settings.EnergyCard
 import app.cadenza.remote.updates.Changelog
@@ -149,6 +153,7 @@ fun SettingsScreen(
                 NotificationsCard(model = model, state = state)
                 TasteCard(model = model, state = state)
                 VolumeRockerCard(model = model, state = state)
+                TvStageReceiverCard()
                 BackgroundCard(model = model, state = state)
                 SupportUpdatesCard(model, state, installUpdate, onOpenDebug = { debugOpen = true })
             }
@@ -309,6 +314,40 @@ private fun NotificationsCard(
                 checked = state.songChangeNotifications,
                 onCheckedChange = model::setSongChangeNotifications,
                 modifier = Modifier.semantics { contentDescription = "Song change notifications" },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvStageReceiverCard() {
+    val context = LocalContext.current
+    val prefs = remember { TvStagePrefs(context) }
+    var enabled by remember {
+        mutableStateOf(TvStageConfig.startsStage(isTelevision = false, manualSetting = prefs.manualSetting))
+    }
+    SettingsCard(
+        icon = CadenzaIcon.MUSIC,
+        title = "TV stage receiver",
+        supporting = "Turn this device into a full-screen Cadenza stage that plays Music from your Mac.",
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("TV Stage Receiver Mode", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Shows the stage on a TV, or on a tablet connected to a display. Audio goes to the device's output.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { turnedOn ->
+                    prefs.manualSetting = turnedOn
+                    enabled = turnedOn
+                    if (turnedOn) context.startActivity(Intent(context, TvStageActivity::class.java))
+                },
+                modifier = Modifier.semantics { contentDescription = "TV Stage Receiver Mode" },
             )
         }
     }

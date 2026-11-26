@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 
 /// Proxies only lightweight HLS `.m3u8` playlist text and injects a `#EXT-X-MEDIA:TYPE=SUBTITLES` WebVTT karaoke
 /// rendition (`lyrics.vtt`) so AirPlay 2 / Apple TV hardware decrypts FairPlay CDN video directly and renders synced
@@ -26,23 +27,22 @@ final class AirPlayHlsKaraokeProxy: @unchecked Sendable {
         self.listener = listener
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         let boundPort: UInt16 = try await withCheckedThrowingContinuation { continuation in
-            let lock = NSLock()
-            var done = false
+            let finished = Mutex(false)
             listener.stateUpdateHandler = { state in
-                lock.lock()
-                defer { lock.unlock() }
-                guard !done else { return }
-                switch state {
-                case .ready:
-                    if let assigned = listener.port?.rawValue {
+                finished.withLock { done in
+                    guard !done else { return }
+                    switch state {
+                    case .ready:
+                        if let assigned = listener.port?.rawValue {
+                            done = true
+                            continuation.resume(returning: assigned)
+                        }
+                    case .failed(let error):
                         done = true
-                        continuation.resume(returning: assigned)
+                        continuation.resume(throwing: error)
+                    default:
+                        break
                     }
-                case .failed(let error):
-                    done = true
-                    continuation.resume(throwing: error)
-                default:
-                    break
                 }
             }
             listener.start(queue: queue)
@@ -93,11 +93,11 @@ final class AirPlayHlsKaraokeProxy: @unchecked Sendable {
     }
 
     /// Rewrites relative media/variant URIs in an Apple CDN master playlist to absolute HTTPS URLs and injects the
-    /// Cadenza WebVTT subtitle rendition (`cadenza-subs`) across all `#EXT-X-STREAM-INF` entries.
+    /// Cadenza WebVTT subtitle rendition (`cadenza-karaoke`) across all `#EXT-X-STREAM-INF` entries.
     static func injectSubtitles(masterPlaylist: String, baseURL: URL, subtitlesPlaylistURL: String) -> String {
         let subtitleLine =
-            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"cadenza-subs\",NAME=\"Cadenza Karaoke\","
-            + "DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE=\"en\",URI=\"\(subtitlesPlaylistURL)\""
+            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"cadenza-karaoke\",NAME=\"Cadenza Lyrics\","
+            + "DEFAULT=YES,AUTOSELECT=YES,FORCED=YES,LANGUAGE=\"en\",URI=\"\(subtitlesPlaylistURL)\""
         let lines = masterPlaylist.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         var result: [String] = []
         var insertedSubtitle = false
@@ -113,7 +113,7 @@ final class AirPlayHlsKaraokeProxy: @unchecked Sendable {
                     result.append(subtitleLine)
                     insertedSubtitle = true
                 }
-                result.append(withSubtitleGroup(line, groupId: "cadenza-subs"))
+                result.append(withSubtitleGroup(line, groupId: "cadenza-karaoke"))
                 expectingStreamURI = true
                 continue
             }

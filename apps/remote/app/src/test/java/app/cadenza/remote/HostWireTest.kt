@@ -95,6 +95,45 @@ class HostWireTest {
     }
 
     @Test
+    fun aSnapshotListsApprovedCadenzaTvsAndTheTvsWaitingForAPin() {
+        val cast =
+            JSONObject()
+                .put("presentation", "auto")
+                .put("devices", JSONArray())
+                .put(
+                    "stages",
+                    JSONArray().put(
+                        JSONObject()
+                            .put("receiver_id", "tv-1")
+                            .put("name", "Living room")
+                            .put("transport", "cadenza_web_tv_stage")
+                            .put("transmitting", true),
+                    ),
+                ).put(
+                    "pending_stages",
+                    JSONArray()
+                        .put(
+                            JSONObject()
+                                .put("receiver_id", "tv-2")
+                                .put("name", "Den")
+                                .put("pin", "0427")
+                                .put("expires_in_ms", 300000),
+                        ).put(JSONObject().put("receiver_id", "tv-3").put("name", "Bad").put("pin", "12")),
+                )
+
+        val value = Wire.snapshot(snapshot().put("cast", cast))
+
+        assertEquals(listOf("tv-1"), value.cast?.stages?.map { it.receiverId })
+        assertTrue(
+            value.cast
+                ?.stages
+                ?.single()
+                ?.transmitting == true,
+        )
+        assertEquals(listOf("0427"), value.cast?.pendingStages?.map { it.pin })
+    }
+
+    @Test
     fun aMalformedCastBlockIsDroppedWithoutHidingTheRestOfTheSnapshot() {
         val value = Wire.snapshot(snapshot().put("cast", JSONObject().put("presentation", "bogus")))
 

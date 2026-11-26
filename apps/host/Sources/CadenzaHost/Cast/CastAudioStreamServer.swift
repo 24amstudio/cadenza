@@ -1,22 +1,29 @@
 import Foundation
 import Network
 
-/// The codec of one Cast audio stream. AAC is the stereo path; AC-3 carries six-channel output; FLAC is lossless.
-enum CastAudioCodec: Sendable {
-    case aac, ac3, flac
+/// The codec of one Cast audio stream. AAC is the stereo path, and AC-3 carries six-channel output.
+enum CastAudioCodec: Sendable, Equatable {
+    case aac, ac3
+
+    /// Stereo always takes AAC, and six channels take AC-3. Other channel counts have no Cast route.
+    static func forChannelCount(_ channels: Int) -> CastAudioCodec? {
+        switch channels {
+        case 2: .aac
+        case 6: .ac3
+        default: nil
+        }
+    }
 
     var path: String {
         switch self {
         case .aac: return "/cast/audio.aac"
         case .ac3: return "/cast/audio.ac3"
-        case .flac: return "/cast/audio.flac"
         }
     }
     var contentType: String {
         switch self {
         case .aac: return "audio/aac"
         case .ac3: return "audio/ac3"
-        case .flac: return "audio/flac"
         }
     }
 }
@@ -39,6 +46,7 @@ final class CastAudioStreamServer: @unchecked Sendable {
     private var receivers: [ObjectIdentifier: NWConnection] = [:]
     private(set) var port: UInt16 = 0
     private var localVideoFile: URL?
+    private var subtitles: String?
     private var artworkBytes: Data?
     private var motionBytes: Data?
 
@@ -74,6 +82,11 @@ final class CastAudioStreamServer: @unchecked Sendable {
             artworkBytes = artwork
             motionBytes = motion
         }
+    }
+
+    /// The karaoke WebVTT that the receiver shows as a native subtitle track. Nil removes the track.
+    func setSubtitles(_ vtt: String?) {
+        queue.async { [self] in subtitles = vtt }
     }
 
     /// Sends one encoded frame to every receiver. Receivers that have gone away are dropped.
@@ -125,9 +138,17 @@ final class CastAudioStreamServer: @unchecked Sendable {
                 return
             }
 
-            if path == "/cast/video.mp4", let videoURL = localVideoFile {
-                Self.sendFile(videoURL, rangeHeader: rangeHeader, contentType: "video/mp4", on: connection)
-                return
+            // The contract's paths: `/api/v1/cast/video/<suite>/video.mp4` and `/lyrics.vtt`. The suite ID is opaque.
+            if let media = StageMediaPath(path) {
+                if case .video = media, let videoURL = localVideoFile {
+                    Self.sendFile(videoURL, rangeHeader: rangeHeader, contentType: "video/mp4", on: connection)
+                    return
+                }
+                if case .lyrics = media, let subtitles {
+                    Self.sendBytes(
+                        Data(subtitles.utf8), rangeHeader: nil, contentType: "text/vtt; charset=utf-8", on: connection)
+                    return
+                }
             }
             if path == "/cast/motion.mp4", let motion = motionBytes {
                 Self.sendBytes(motion, rangeHeader: rangeHeader, contentType: "video/mp4", on: connection)

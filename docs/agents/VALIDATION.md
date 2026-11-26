@@ -2,6 +2,45 @@
 
 Cadenza's current working tree declares visible version 0.3.4 and internal build 12, following the user's explicit release-version request. The 0.3.3 record below is kept as history. macOS runtime behavior and target-device evidence remain unverified locally.
 
+## Zero-account Cast and TV stage (26 November 2026)
+
+Implemented against `GOALSET_ZERO_ACCOUNT_CAST-v2` in this worktree. Architecture and decisions are in [docs/CAST.md](../CAST.md) and `shared/protocol/README.md`. Read the limits below before you rely on any row.
+
+Decisions that differ from the contract, each for a stated reason:
+
+- The presentation wire value stays `full_suite`, which shipped Remotes send. The contract's `full_cadenza_suite` is a label only.
+- Stereo to browsers is AAC-LC in fragmented MP4, not FLAC. Browser support for FLAC in MP4 is inconsistent across TV browsers, and AAC uses the Host's existing encoder.
+- The contract had no fragment init segment, so the wire gained an additive `INIT_SEGMENT` frame (`0x03`). MSE needs the init before any fragment.
+- AudioToolbox cannot create an AC-3 encoder on this Mac: `AudioConverterNew` with `kAudioFormatAC3` returns `fmt?`. 5.1 uses the AC-3 helper when one is configured. Without one, 5.1 folds to stereo for browsers and Remotes.
+- Browsers receive PCM through a message-port AudioWorklet, not a SharedArrayBuffer ring. The Host serves no cross-origin-isolation headers, so SharedArrayBuffer is unavailable.
+- Remote and web approval uses a PIN, and the TV's QR code opens the Remote with that PIN. The Host never serves a PIN as an image, because a LAN client could then approve a waiting TV.
+- The experimental web loader for Chromecast and Nest Hub is not built. Its app namespace is not verified.
+- Thermal rules: no stage motion at `constrained` and above, and stereo-only receivers at `survival`. The Cast route drops to audio at `survival`. Motion for Cast is not fetched at `constrained`.
+
+Built and checked here (macOS 27, Swift 6.4.2, Node 26.13, Bun 1.4.4, Kotlin with the Android SDK, headless Chromium):
+
+- Protocol (ZC-01): `cast.schema.json` covers the profile, pairing, accepted, track suite, prefetch, optimistic and clock messages, video, and stage command. Fixture bytes in `shared/protocol/examples/cast-stage-frames.json` are read by the Node, Swift, web, and Kotlin tests. The portable gate passes with 78 tests, including the 18 stage contract tests in `tests/castStage.test.mjs`.
+- Host (ZC-02, ZC-03, ZC-04 host side): the stage socket with PIN approval and hashed tokens, the suite builder, fMP4 init and fragments for AAC-LC and AC-3, AC-3 syncframe splitting, LPCM frames, flush at transport commands, and the clock. Verified with ffprobe and ffmpeg: AAC-LC 2 ch and AC-3 5.1 both parse, and both decode with no errors. Swift tests: 331 pass with warnings as errors, including the stage, Cast, and fan-out tests. The fan-out test checks eight receivers against the 15 ms budget.
+- Tier 1 (ZC-02): the Default Media Receiver loads a local video with a native WebVTT track, and a karaoke namespace is no longer sent. `apps/cast-receiver` is removed.
+- Tier 2 (ZC-04): `/tv` route, pairing screen with PIN and QR, MSE and PCM engine, lyric clock, OLED drift, wake lock, and remote keys. Web tests: 268 pass. Lint and typecheck pass. `node tools/check.mjs` passes end to end with `ANDROID_HOME` set. Headless Chromium captured the pairing and playing states at 1920 by 1080 and 390 by 844, against a simulated Host.
+- Tier 3 (ZC-05): Android TV receiver with leanback launcher, TV detection, a manual TV-mode switch, the stage socket, AudioTrack PCM and AC-3 passthrough, Media3 video with a WebVTT track, and the lyric screen. Remote unit tests: 288 pass in debug and in release, including 19 TV tests and the wire tests. `apps/remote/check.sh` passes in full: compile, ktlint, unit tests, and lint for both variants.
+- Tier 4 (ZC-06): the AirPlay HLS sidecar uses the contract's rendition line (`cadenza-karaoke`, `FORCED=YES`). Its tests pass.
+- Controls (ZC-07): the Host has a Cadenza TV settings section with the address, a QR sheet, PIN approval, the approved list, and forget. The web output menu has Cadenza TV approve and send. The Android chooser has the same. Thermal rules are in place as listed above.
+- Docs (ZC-08): `docs/CAST.md` (tiers, setup, audio formats, lip sync, limits), README, SPEC C05, USAGE, TROUBLESHOOTING, COMPATIBILITY, BUILDING, credits, and AGENTS structure.
+
+Not verified here (these need target evidence, and no row here counts as passed on a device):
+
+- Any real Cast device, Chromecast with Google TV, Google TV Streamer, Fire TV, LG or Samsung TV browser, Apple TV, or HomePod. Playback, latency, lip sync, and HDMI AC-3 passthrough are unmeasured.
+- A six-channel Music output device. The Mac's capture here is stereo.
+- AC-3 passthrough to an AVR. The Android path is written, but its AudioTrack output is unproven.
+- The AirPlay `/play` integration with `Content-Location` and `Caption-Location`.
+- The sub-120 ms reaction budget on real devices. The Host fan-out budget is measured (under 15 ms with eight receivers). The end-to-end figure is not.
+- Zero heap allocations in the CoreAudio callback. Stage encoders allocate per buffer, so this is not met.
+- The Android TV QR code. The TV shows its PIN only.
+- A unified Host output drawer. The Host has a settings section, and the web and Android menus carry the controls.
+- Visual checks of the Android TV screen. Only compile and unit tests ran for it.
+- The web TV browser's `wakeLock` and MSE behavior on TV browsers, and the 45-second OLED drift on a real panel.
+
 ## Goalset implementation slice (24 November 2026, continued)
 
 Implemented against `cadenza_v0_3_4_goalset.md` in this worktree. The goalset is not complete. Items are listed as they stand, not as passed.

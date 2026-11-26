@@ -56,9 +56,9 @@ extension HostService {
                     let video: Song
                     if identity.source == "catalog" {
                         guard let found = await self.catalog.video(id: identity.id) else {
-                            throw CadenzaError.failure("invalid_command", "Search for this music video")
+                            throw CadenzaError.failure(
+                                "invalid_command", "Search for this music video before playing it.")
                         }
-                        throw CadenzaError.failure("invalid_command", "before playing it.")
                         video = found
                     } else if identity.source == "library" {
                         video = try await self.music.resolveVideo(identity)
@@ -182,13 +182,19 @@ extension HostService {
         alignmentCollector = nil
     }
 
+    /// Sends a changed karaoke rendition to the output that shows it: the AirPlay sidecar or the Cast video's subtitles.
     func publishAirPlayKaraokeVTT(for song: Song, document: LyricDocument) {
-        guard song.mediaType == .musicVideo, let sessionId = activeAirPlaySessionId else { return }
+        guard song.mediaType == .musicVideo else { return }
         let vtt = WebVTTKaraoke.render(
             document: document,
             userOffsetMs: document.userOffsetMs ?? 0,
             lipSyncOffsetMs: publishedState.lipSyncOffsetMs)
-        airPlayKaraokeProxy.updateVTT(vtt, for: sessionId)
+        if let sessionId = activeAirPlaySessionId {
+            airPlayKaraokeProxy.updateVTT(vtt, for: sessionId)
+        }
+        if publishedState.castTransmitter.state != .idle {
+            publishedState.castTransmitter.updateSubtitles(vtt)
+        }
     }
 
     private func prepareAirPlayKaraokeIfConfigured(for song: Song) async {

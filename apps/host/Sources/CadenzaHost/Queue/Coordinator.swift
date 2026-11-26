@@ -14,7 +14,8 @@ final class QueueCoordinator {
     var currentArtwork: ((String) async throws -> String?)?
     /// Sing's output delay. Remote positions are shifted by it; Music's own clock drives every decision.
     var playbackDelayMs: @MainActor () -> Int64 = { 0 }
-    var onPlaybackInterrupted: @MainActor () -> Void = {}
+    /// Called before a playback command reaches Music. Sing interrupts on some kinds, and the stage fans out on all.
+    var onTransportDispatched: @MainActor (CommandAction) -> Void = { _ in }
     private var loggedIssue: String?
     var connectedRemoteIds: () -> Set<String> = { [] }
     private(set) var nativeRows: [NativeQueueRow] = []
@@ -632,11 +633,7 @@ final class QueueCoordinator {
                 try flushCredits()
                 lastObservation = nil
                 try await beforeEffect()
-                if ["playback.pause", "playback.stop", "playback.seek", "playback.skip", "playback.previous"]
-                    .contains(action.kind)
-                {
-                    onPlaybackInterrupted()
-                }
+                onTransportDispatched(action)
                 let dispatchedAt = monotonicMs()
                 let immediate = try await music.control(action, deadline: deadline)
                 try await confirmTransport(

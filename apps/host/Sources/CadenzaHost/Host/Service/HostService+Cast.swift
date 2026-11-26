@@ -26,7 +26,7 @@ extension HostService {
     }
 
     static let settingKinds: Set<String> = [
-        "cast.transmit", "cast.presentation", "video.output", "lip_sync.offset", "lyrics.offset",
+        "cast.transmit", "cast.presentation", "video.output", "lip_sync.offset", "lyrics.offset", "stage.approve",
     ]
 
     private func applySetting(_ action: CommandAction) async throws {
@@ -35,13 +35,36 @@ extension HostService {
         case "cast.presentation": try setCastPresentation(action)
         case "video.output": try setVideoOutput(action)
         case "lyrics.offset": try setLyricOffset(action)
+        case "stage.approve": try approveStage(pin: action.pin ?? "")
         default: try setLipSyncOffset(action)
+        }
+    }
+
+    /// Stage receivers are named `stage:<receiverId>` in a `cast.transmit` command, so they never collide with Cast names.
+    static let stageDevicePrefix = "stage:"
+
+    private func transmitToStage(_ receiverId: String, start: Bool) async throws {
+        guard
+            let session = publishedState.stageHub.approvedSessions.first(where: { $0.profile?.receiverId == receiverId }
+            )
+        else {
+            throw CadenzaError.failure("cast_unavailable", "That TV is not connected to this Host.")
+        }
+        do {
+            try await publishedState.stage.setTransmitting(
+                sessionId: session.id, start, format: publishedState.castTransmitFormat)
+        } catch {
+            throw CadenzaError.failure("cast_unavailable", "Cadenza could not start audio for the TV: \(error).")
         }
     }
 
     private func transmitToCast(_ action: CommandAction) async throws {
         guard let start = action.start, let name = action.device else {
             throw CadenzaError.failure("invalid_command", "Cast transmission needs a device and a start flag.")
+        }
+        if name.hasPrefix(Self.stageDevicePrefix) {
+            try await transmitToStage(String(name.dropFirst(Self.stageDevicePrefix.count)), start: start)
+            return
         }
         guard start else {
             publishedState.castTransmitter.stop()
@@ -56,6 +79,15 @@ extension HostService {
         }
         let current = try? queue.snapshot().current
         let currentSong = current?.song
+        let lookedUpVideo: URL? =
+            if let song = currentSong, song.mediaType == .musicVideo {
+                await music.videoFileURL(for: song.identity)
+            } else { nil }
+        let route = CastRoutingCoordinator.route(
+            for: .googleCast(device.display),
+            content: Self.castContent(for: currentSong, localVideo: lookedUpVideo),
+            presentation: publishedState.hostBudget == .survival ? .audioOnly : publishedState.castPresentation)
+        let localVideo = route == .defaultReceiverVideo ? lookedUpVideo : nil
         let artworkData: Data? =
             if let artURL = currentSong?.artworkUrl, let cached = try? await artwork.data(for: artURL) {
                 cached
@@ -64,33 +96,36 @@ extension HostService {
             if publishedState.hostBudget < .constrained, let song = currentSong, !song.album.isEmpty {
                 try? await motion.video(album: song.album, artist: song.artist)
             } else { nil }
-        let localVideo =
-            currentSong?.mediaType == .musicVideo && currentSong?.source == "library"
-            ? await music.videoFileURL(for: currentSong!.identity) : nil
         await publishedState.castTransmitter.start(
             device: device, lanHost: lanHost, localVideoFile: localVideo, artwork: artworkData, motion: motionData)
         if case .failed(_, let reason) = publishedState.castTransmitter.state {
             throw CadenzaError.failure("cast_unavailable", reason)
         }
-        if let currentSong, publishedState.castTransmitter.streamPort != 0 {
-            let route = await CastVideoSource.resolve(
-                song: currentSong,
-                catalog: catalog,
-                music: music,
-                credentials: store.credentials,
-                lanHost: lanHost,
-                streamPort: publishedState.castTransmitter.streamPort,
-                hasArtwork: artworkData != nil,
-                hasMotion: motionData != nil)
-            publishedState.castTransmitter.updateVideoSession(
-                CastTransmitter.VideoSessionMetadata(
-                    title: currentSong.title,
-                    artist: currentSong.artist,
-                    route: route,
-                    lipSyncOffsetMs: publishedState.lipSyncOffsetMs))
+        if let currentSong, localVideo != nil, publishedState.castTransmitter.streamPort != 0 {
+            publishedState.castTransmitter.updateVideoSession(castVideoSession(for: currentSong))
         }
         // Cast audio takes the karaoke display, so the Mac stops drawing the line while the Cast device is the target.
         publishedState.setVideoOutputTarget(.castTransmitter)
+    }
+
+    /// The video session for a local music video: its suite ID, its karaoke WebVTT, and the saved offsets.
+    func castVideoSession(for song: Song) -> CastTransmitter.VideoSessionMetadata {
+        let document =
+            lyricDocument?.occurrenceId == (try? queue.snapshot().current?.occurrenceId) ? lyricDocument : nil
+        let subtitles = WebVTTKaraoke.render(
+            document: document
+                ?? LyricDocument(
+                    occurrenceId: "", revision: "", language: nil, translationSource: "", lines: []),
+            userOffsetMs: document?.userOffsetMs ?? 0, lipSyncOffsetMs: publishedState.lipSyncOffsetMs)
+        return CastTransmitter.VideoSessionMetadata(
+            title: song.title, artist: song.artist, suiteId: StageTrackSuite.suiteId(for: song.identity),
+            subtitles: subtitles, lipSyncOffsetMs: publishedState.lipSyncOffsetMs)
+    }
+
+    /// A library music video with a DRM-free file on disk is local. Any other music video is a FairPlay catalog video.
+    static func castContent(for song: Song?, localVideo: URL?) -> CastRoutingCoordinator.Content {
+        guard let song, song.mediaType == .musicVideo else { return .song }
+        return localVideo == nil ? .protectedMusicVideo : .localMusicVideo
     }
 
     private func setVideoOutput(_ action: CommandAction) throws {

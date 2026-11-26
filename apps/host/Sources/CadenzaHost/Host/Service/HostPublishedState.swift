@@ -9,13 +9,33 @@ final class HostPublishedState {
     let castDiscovery = CastDiscovery()
     let castTransmitter = CastTransmitter()
     let videoLyrics = VideoLyricsOverlay()
+    let stageHub: StageHub
+    let stageSuites: StageSuiteStore
+    let stage: StageCoordinator
     private var followedOccurrence: String?
     private(set) var videoOutputTarget = VideoOutputTarget.stored()
     private(set) var lipSyncOffsetMs = UserDefaults.standard.integer(forKey: "lipSyncOffsetMs")
+    private(set) var castPresentation = CastPresentationMode.stored()
+
+    init(stageReceiversFile: URL?) {
+        let hub = StageHub(receivers: StageReceivers(file: stageReceiversFile))
+        let suites = StageSuiteStore()
+        stageHub = hub
+        stageSuites = suites
+        stage = StageCoordinator(hub: hub, audio: StageAudioTransmitter(hub: hub), suites: suites)
+    }
 
     /// Chooses the Cast mode that the Cast device presents.
     func setCastPresentation(_ mode: CastPresentationMode) {
-        UserDefaults.standard.set(mode.rawValue, forKey: "castPresentationMode")
+        castPresentation = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: CastPresentationMode.defaultsKey)
+    }
+
+    /// How Music's channels are sent to stage receivers: `transcode_auto` by default, or `bitstream` for raw PCM.
+    var castTransmitFormat: CastTransmitChannelFormat {
+        UserDefaults.standard.string(forKey: "castTransmitChannelFormat").flatMap(
+            CastTransmitChannelFormat.init(rawValue:))
+            ?? .transcodeAuto
     }
 
     /// The AVR delay that karaoke lines wait for, so a line appears with the sound the listener hears.
@@ -50,12 +70,9 @@ final class HostPublishedState {
             }
             videoLyrics.show(line: window.current?.text)
         case .castTransmitter:
+            // A Cast device draws the karaoke as its own WebVTT track, so the Mac draws nothing.
             followedOccurrence = nil
             videoLyrics.show(line: nil)
-            castTransmitter.sendKaraoke(
-                line: window.current?.text ?? "",
-                next: window.next?.text ?? "",
-                translation: window.current?.translation ?? "")
         }
     }
 
@@ -69,9 +86,8 @@ final class HostPublishedState {
         snapshot.videoOutput = videoOutputTarget.rawValue
         snapshot.lipSyncOffsetMs = lipSyncOffsetMs
         castDiscovery.start()
-        let stored = UserDefaults.standard.string(forKey: "castPresentationMode")
-        let presentation = stored.flatMap(CastPresentationMode.init(rawValue:)) ?? .auto
         snapshot.cast = CastSnapshot.make(
-            devices: castDiscovery.devices, presentation: presentation, transmit: castTransmitter.state)
+            devices: castDiscovery.devices, presentation: castPresentation, transmit: castTransmitter.state,
+            stages: stageHub.snapshot(), pending: stageHub.receivers.pending)
     }
 }

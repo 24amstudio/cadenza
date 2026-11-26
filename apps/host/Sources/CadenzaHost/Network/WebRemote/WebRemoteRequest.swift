@@ -4,6 +4,9 @@ import Foundation
 struct WebRemoteRequest: Equatable {
     static let maximumHeadBytes = 8_192
     static let socketPath = "/v1/socket"
+    static let stageSocketPath = "/cast/live"
+    static let stageMediaPrefix = "/api/v1/cast/"
+    static let stageRoles: Set<String> = ["tv_stage", "android_tv_receiver"]
 
     let method: String
     let path: String
@@ -17,8 +20,12 @@ struct WebRemoteRequest: Equatable {
 
     enum Route: Equatable {
         case socket(key: String)
+        /// A stage receiver's socket on `/cast/live`, identified by its `role` query value.
+        case stageSocket(key: String, role: String)
         case file(path: String, headOnly: Bool)
         case update
+        /// Read-only media for stage receivers, under `/api/v1/cast/`.
+        case stageMedia
         case reject(status: Int)
     }
 
@@ -54,24 +61,63 @@ struct WebRemoteRequest: Equatable {
         if path == socketPath {
             return socketRoute(request, allowedHosts: allowedHosts)
         }
+        if path == stageSocketPath {
+            return stageSocketRoute(request, allowedHosts: allowedHosts)
+        }
         guard request.method == "GET" || request.method == "HEAD" else { return .reject(status: 405) }
         // Update routes are answered by the relay, which checks the Remote's credentials before it serves anything.
         if path.hasPrefix(RemoteUpdateCache.updatesPrefix) { return .update }
+        if path.hasPrefix(stageMediaPrefix) { return .stageMedia }
         return .file(path: request.path, headOnly: request.method == "HEAD")
     }
 
     private static func socketRoute(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Route {
-        guard request.method == "GET" else { return .reject(status: 405) }
-        guard let host = request.headers["host"]?.lowercased(), allowedHosts.contains(host) else {
-            return .reject(status: 403)
+        switch upgradeKey(request, allowedHosts: allowedHosts) {
+        case .success(let key): .socket(key: key)
+        case .failure(let failure): .reject(status: failure.status)
         }
-        guard request.headers["origin"]?.lowercased() == "http://\(host)" else { return .reject(status: 403) }
+    }
+
+    /// The stage channel takes its role from the query string, and only the two stage roles are accepted.
+    private static func stageSocketRoute(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Route {
+        guard let role = queryValue("role", in: request.path), stageRoles.contains(role) else {
+            return .reject(status: 400)
+        }
+        switch upgradeKey(request, allowedHosts: allowedHosts) {
+        case .success(let key): return .stageSocket(key: key, role: role)
+        case .failure(let failure): return .reject(status: failure.status)
+        }
+    }
+
+    private static func upgradeKey(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Result<
+        String, UpgradeFailure
+    > {
+        guard request.method == "GET" else { return .failure(UpgradeFailure(status: 405)) }
+        guard let host = request.headers["host"]?.lowercased(), allowedHosts.contains(host) else {
+            return .failure(UpgradeFailure(status: 403))
+        }
+        guard request.headers["origin"]?.lowercased() == "http://\(host)" else {
+            return .failure(UpgradeFailure(status: 403))
+        }
         let upgrades = request.headers["upgrade"]?.lowercased() == "websocket"
         let connectionUpgrades = request.headers["connection"]?.lowercased().contains("upgrade") == true
         guard upgrades, connectionUpgrades, request.headers["sec-websocket-version"] == "13",
             let key = request.headers["sec-websocket-key"], WebSocketFraming.isValidKey(key)
-        else { return .reject(status: 400) }
-        return .socket(key: key)
+        else { return .failure(UpgradeFailure(status: 400)) }
+        return .success(key)
+    }
+
+    private struct UpgradeFailure: Error {
+        let status: Int
+    }
+
+    private static func queryValue(_ name: String, in target: String) -> String? {
+        guard let query = target.split(separator: "?", maxSplits: 1).dropFirst().first else { return nil }
+        for pair in query.split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if parts.first == name, parts.count == 2 { return parts[1] }
+        }
+        return nil
     }
 
     private static func headerTerminator(in bytes: [UInt8]) -> Int? {

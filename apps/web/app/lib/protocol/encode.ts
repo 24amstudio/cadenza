@@ -336,6 +336,22 @@ export function encodeCommand(envelope: CommandEnvelope): string {
   });
 }
 
+// The Cast, video output, and Cadenza TV commands. Kept apart so the action switch stays within the complexity limit.
+function encodeCastAction(action: CommandAction) {
+  switch (action.kind) {
+    case 'cast.transmit':
+      return { kind: action.kind, device: action.device, start: action.start };
+    case 'video.output':
+      return { kind: action.kind, video_output: action.target };
+    case 'cast.presentation':
+      return { kind: action.kind, presentation: action.presentation };
+    case 'stage.approve':
+      return { kind: action.kind, pin: action.pin };
+    default:
+      return null;
+  }
+}
+
 function encodeAction(action: CommandAction) {
   switch (action.kind) {
     case 'playback.seek':
@@ -352,12 +368,6 @@ function encodeAction(action: CommandAction) {
       return { kind: action.kind, mode: action.mode };
     case 'audio.selectOutput':
       return { kind: action.kind, output: action.output };
-    case 'cast.transmit':
-      return { kind: action.kind, device: action.device, start: action.start };
-    case 'video.output':
-      return { kind: action.kind, video_output: action.target };
-    case 'cast.presentation':
-      return { kind: action.kind, presentation: action.presentation };
     case 'lip_sync.offset':
       return { kind: action.kind, lip_sync_offset_ms: action.offsetMs };
     case 'lyrics.offset':
@@ -392,6 +402,8 @@ function encodeAction(action: CommandAction) {
         song: encodeIdentity(action.song),
         occurrence_id: action.occurrenceId,
       };
+    default:
+      return encodeCastAction(action);
   }
 }
 

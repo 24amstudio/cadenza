@@ -61,13 +61,26 @@ struct CastAudioCodecTests {
     }
 }
 
-struct CastKaraokeMessageTests {
-    @Test func aKaraokeLineGoesToTheReceiverOnTheCadenzaNamespace() {
-        let message = CastProtocolMessages.karaoke(
-            ["type": "line", "text": "Pedida", "next": "perfeita"], transportId: "transport-1")
+struct CastSubtitleLoadTests {
+    @Test func aLocalVideoLoadNamesItsWebVTTTrackAndActivatesIt() {
+        let load = CastProtocolMessages.loadAudio(
+            url: "http://192.168.1.2:8080/api/v1/cast/video/abc/video.mp4", transportId: "t", sessionId: "s",
+            title: "Pedida", requestId: 3, contentType: "video/mp4", streamType: "BUFFERED",
+            subtitleURL: "http://192.168.1.2:8080/api/v1/cast/video/abc/lyrics.vtt")
 
-        #expect(message.namespace == CastProtocolMessages.karaokeNamespace)
-        #expect(message.destinationId == "transport-1")
-        #expect(message.payload.contains("\"text\":\"Pedida\""))
+        #expect(load.namespace == CastProtocolMessages.mediaNamespace)
+        #expect(load.payload.contains("\"activeTrackIds\":[1]"))
+        #expect(load.payload.contains("\"trackContentType\":\"text/vtt\""))
+        #expect(
+            load.payload.contains("\"trackContentId\":\"http://192.168.1.2:8080/api/v1/cast/video/abc/lyrics.vtt\""))
+    }
+
+    @Test func anAudioLoadCarriesNoTrack() {
+        let load = CastProtocolMessages.loadAudio(
+            url: "http://192.168.1.2:8080/cast/audio.aac", transportId: "t", sessionId: "s", title: "Cadenza",
+            requestId: 4)
+
+        #expect(!load.payload.contains("activeTrackIds"))
+        #expect(!load.payload.contains("\"tracks\""))
     }
 }

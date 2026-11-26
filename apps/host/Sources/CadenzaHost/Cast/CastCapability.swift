@@ -34,18 +34,11 @@ enum CastDisplay: Sendable, Equatable {
     }
 }
 
-enum CastOutput: Sendable, Equatable {
-    case audio
-    case fullSuite
-}
+extension CastPresentationMode {
+    static let defaultsKey = "castPresentationMode"
 
-enum CastRouting {
-    /// Full Cadenza Suite needs a screen. Auto uses the suite only once a screen is known, and audio otherwise.
-    static func output(for mode: CastPresentationMode, display: CastDisplay) -> CastOutput {
-        switch mode {
-        case .audioOnly: .audio
-        case .fullSuite: display == .display ? .fullSuite : .audio
-        case .auto: display == .display ? .fullSuite : .audio
-        }
+    /// The mode the listener chose in Settings. Auto is the default when nothing is stored or the stored value is unknown.
+    static func stored() -> CastPresentationMode {
+        UserDefaults.standard.string(forKey: defaultsKey).flatMap(CastPresentationMode.init(rawValue:)) ?? .auto
     }
 }

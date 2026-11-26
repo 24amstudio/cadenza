@@ -58,6 +58,8 @@ bash apps/host/Scripts/check.sh
 bash apps/host/Scripts/build.sh
 ```
 
+The browser TV stage is part of the web build. `bun run generate` in `apps/web` writes the static files that the Host bundles, including `/tv`. The optional AC-3 helper for six-channel Cast and TV output is bundled only when `apps/host/.helpers/cadenza-ac3` exists at build time. A development run can name a helper with `CADENZA_AC3_HELPER` instead. See [CAST.md](CAST.md).
+
 The default build creates an optimized `Cadenza Host.app` signed with `Cadenza Host Local Signing` when that identity is in your Keychain, and ad-hoc otherwise under the Host staging directory and `dist/Cadenza-Host-VERSION-development-arm64.zip`. Set `CADENZA_MACOS_SIGNING_IDENTITY` to a stable installed macOS signing identity for production updates so macOS privacy approvals survive replacement; otherwise each ad-hoc replacement may need them granted again. Build CI restores the same identity from `CADENZA_MACOS_SIGNING_CERTIFICATE_BASE64` and `CADENZA_MACOS_SIGNING_CERTIFICATE_PASSWORD` before the production Host build. The updater helper is bundled separately. OS frameworks provide UI, networking, security, translation, XML, and SQLite. Development updates are disabled.
 
 To apply native formatting before checks:

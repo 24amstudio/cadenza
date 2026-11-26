@@ -34,20 +34,23 @@ These are explicit product preferences and acceptance criteria for Cadenza UI wo
 
 ## Structure
 
-| Location                                           | Responsibility                                                                               |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `apps/host/Sources/CadenzaHost`                    | Native Host UI, onboarding, Music adapters, local service, SQLite and updates                |
-| `apps/host/Sources/CadenzaSecurity`                | Signed release/asset/archive validation shared with the updater and release tool             |
-| `apps/host/Sources/CadenzaUpdater`                 | Verified, rollback-capable app replacement helper                                            |
-| `apps/host/Sources/CadenzaRelease`                 | Local P-256 key generation and release manifest signing                                      |
-| `apps/host/Resources/music.js`                     | Fixed, strictly checked JXA Music boundary; no arbitrary script endpoint                     |
-| `apps/remote/app/src/main/java/app/cadenza/remote` | ViewModel, native UI, discovery/network, SQLite and updates                                  |
-| `apps/*/storage`                                   | Ordered, transactional, versioned SQL migrations and authorization/maintenance SQL           |
-| `shared/protocol`                                  | JSON schemas, examples and compatibility contract                                            |
-| `shared/version.properties`                        | Human version and strictly increasing release build number                                   |
-| `shared/changelog.json`                            | Maintained release history, bundled offline and included in signed release metadata          |
-| `shared/release-config.json`                       | Explicit public repository and public verification key; intentionally empty until configured |
-| `tests`, `tools`                                   | Portable behavioral checks, strict JS tooling and native build/CI scripts                    |
+| Location                                                  | Responsibility                                                                               |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `apps/host/Sources/CadenzaHost`                           | Native Host UI, onboarding, Music adapters, local service, SQLite and updates                |
+| `apps/host/Sources/CadenzaHost/Cast/Stage`                | Zero-account TV stage: receiver sessions, PIN approval, binary frames, fMP4, media routes    |
+| `apps/web/app/components/stage`, `apps/web/app/lib/stage` | Browser TV stage at `/tv`: socket, MSE and PCM audio, lyric clock, 10-foot view              |
+| `apps/remote/app/src/main/java/app/cadenza/remote/tv`     | Android TV receiver: stage socket, AudioTrack sink, fragment reader, TV state and screen     |
+| `apps/host/Sources/CadenzaSecurity`                       | Signed release/asset/archive validation shared with the updater and release tool             |
+| `apps/host/Sources/CadenzaUpdater`                        | Verified, rollback-capable app replacement helper                                            |
+| `apps/host/Sources/CadenzaRelease`                        | Local P-256 key generation and release manifest signing                                      |
+| `apps/host/Resources/music.js`                            | Fixed, strictly checked JXA Music boundary; no arbitrary script endpoint                     |
+| `apps/remote/app/src/main/java/app/cadenza/remote`        | ViewModel, native UI, discovery/network, SQLite and updates                                  |
+| `apps/*/storage`                                          | Ordered, transactional, versioned SQL migrations and authorization/maintenance SQL           |
+| `shared/protocol`                                         | JSON schemas, examples and compatibility contract                                            |
+| `shared/version.properties`                               | Human version and strictly increasing release build number                                   |
+| `shared/changelog.json`                                   | Maintained release history, bundled offline and included in signed release metadata          |
+| `shared/release-config.json`                              | Explicit public repository and public verification key; intentionally empty until configured |
+| `tests`, `tools`                                          | Portable behavioral checks, strict JS tooling and native build/CI scripts                    |
 
 ### Componentized source layout
 

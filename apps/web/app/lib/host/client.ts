@@ -69,7 +69,7 @@ const motionCapability = 'motion.host-cache';
 export class HostClient {
   private readonly options: HostClientOptions;
   private socket: SocketLike | null = null;
-  private credential: StoredCredential | null;
+  protected credential: StoredCredential | null;
   private pendingPairing: PendingPairing | null = null;
   // A Bluetooth link is opened by a user gesture, so it is never reopened here. Losing one ends the session.
   private linkedOverBluetooth = false;
@@ -638,7 +638,7 @@ export class HostClient {
     }
   }
 
-  private onWelcome(welcome: Welcome): void {
+  protected onWelcome(welcome: Welcome): void {
     this.welcomed = true;
     this.attempt = 0;
     this.capabilities = welcome.capabilities;
@@ -930,7 +930,7 @@ export class HostClient {
     this.scheduleReconnect();
   }
 
-  private scheduleReconnect(): void {
+  protected scheduleReconnect(): void {
     this.attempt += 1;
     const index = Math.min(this.attempt - 1, reconnectDelaysMs.length - 1);
     const delayMs = reconnectDelaysMs[index] ?? 30_000;

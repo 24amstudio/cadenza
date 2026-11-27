@@ -195,6 +195,10 @@ export interface Welcome {
   // The Host's version name and build number, when it reports them.
   hostVersion: string | null;
   hostBuild: number | null;
+  // The Host's LAN address, and the Cadenza Web socket's port on it while the Host runs that listener.
+  hostAddress: string | null;
+  webHost: string | null;
+  webPort: number | null;
 }
 
 // Where a Host update stands, as the Host reports it: checking, ready, installing, current, or failed.

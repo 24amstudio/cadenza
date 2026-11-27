@@ -175,11 +175,9 @@
           "type": "string",
           "maxLength": 255
         },
-        "host_port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
+        "host_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "web_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "web_host": { "type": "string", "pattern": "^[a-z0-9-]{1,63}\\.local$" },
         "protocol_major": {
           "const": 1
         },

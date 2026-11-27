@@ -7,6 +7,9 @@ struct WebRemoteRequest: Equatable {
     static let stageSocketPath = "/cast/live"
     static let stageMediaPrefix = "/api/v1/cast/"
     static let stageRoles: Set<String> = ["tv_stage", "android_tv_receiver"]
+    /// Cadenza Web's GitHub Pages origin. Only the Remote socket accepts it, so a paired browser on that site can reach
+    /// the Host over the LAN. The Origin must match exactly, and the Remote's token still authenticates the session.
+    static let hostedPageOrigin = "https://24amstudio.github.io"
 
     let method: String
     let path: String
@@ -54,8 +57,8 @@ struct WebRemoteRequest: Equatable {
         return .complete(request, consumed: terminator + 4)
     }
 
-    // The browser must be the page served by this Host. `allowedHosts` holds lowercased host:port values for this Host's
-    // local addresses, so a page from another site or a DNS-rebinding name cannot open the socket.
+    // The browser must be the page served by this Host, or the hosted Cadenza Web page on the Remote socket. `allowedHosts`
+    // holds lowercased host:port values for this Host's local addresses, so a DNS-rebinding name cannot open the socket.
     static func route(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Route {
         let path = request.path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
         if path == socketPath {
@@ -72,7 +75,7 @@ struct WebRemoteRequest: Equatable {
     }
 
     private static func socketRoute(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Route {
-        switch upgradeKey(request, allowedHosts: allowedHosts) {
+        switch upgradeKey(request, allowedHosts: allowedHosts, acceptsHostedPage: true) {
         case .success(let key): .socket(key: key)
         case .failure(let failure): .reject(status: failure.status)
         }
@@ -83,20 +86,21 @@ struct WebRemoteRequest: Equatable {
         guard let role = queryValue("role", in: request.path), stageRoles.contains(role) else {
             return .reject(status: 400)
         }
-        switch upgradeKey(request, allowedHosts: allowedHosts) {
+        switch upgradeKey(request, allowedHosts: allowedHosts, acceptsHostedPage: false) {
         case .success(let key): return .stageSocket(key: key, role: role)
         case .failure(let failure): return .reject(status: failure.status)
         }
     }
 
-    private static func upgradeKey(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Result<
-        String, UpgradeFailure
-    > {
+    private static func upgradeKey(
+        _ request: WebRemoteRequest, allowedHosts: Set<String>, acceptsHostedPage: Bool
+    ) -> Result<String, UpgradeFailure> {
         guard request.method == "GET" else { return .failure(UpgradeFailure(status: 405)) }
         guard let host = request.headers["host"]?.lowercased(), allowedHosts.contains(host) else {
             return .failure(UpgradeFailure(status: 403))
         }
-        guard request.headers["origin"]?.lowercased() == "http://\(host)" else {
+        let origin = request.headers["origin"]?.lowercased()
+        guard origin == "http://\(host)" || (acceptsHostedPage && origin == hostedPageOrigin) else {
             return .failure(UpgradeFailure(status: 403))
         }
         let upgrades = request.headers["upgrade"]?.lowercased() == "websocket"

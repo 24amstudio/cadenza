@@ -262,6 +262,9 @@ function decodeWelcomeMessage(object: JsonObject): HostMessage | null {
       capabilities,
       hostVersion,
       hostBuild,
+      hostAddress: stringField(welcome, 'host_address'),
+      webHost: stringField(welcome, 'web_host'),
+      webPort: counterField(welcome, 'web_port'),
     },
   };
 }

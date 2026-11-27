@@ -7,7 +7,7 @@ struct HostConfiguration: Codable {
     var advertisedAddress = ""
     var automaticUpdates = true
     var lyricsProviderEnabled = true
-    var webEnabled = false
+    var webEnabled = true
     var cacheLimitBytes: Int64 = 256 * 1_048_576
     var updates = UpdateConfiguration()
 
@@ -27,7 +27,7 @@ struct HostConfiguration: Codable {
         advertisedAddress = try values.decodeIfPresent(String.self, forKey: .advertisedAddress) ?? ""
         automaticUpdates = try values.decodeIfPresent(Bool.self, forKey: .automaticUpdates) ?? true
         lyricsProviderEnabled = try values.decodeIfPresent(Bool.self, forKey: .lyricsProviderEnabled) ?? true
-        webEnabled = try values.decodeIfPresent(Bool.self, forKey: .webEnabled) ?? false
+        webEnabled = try values.decodeIfPresent(Bool.self, forKey: .webEnabled) ?? true
         cacheLimitBytes = try values.decodeIfPresent(Int64.self, forKey: .cacheLimitBytes) ?? 256 * 1_048_576
         updates = try values.decodeIfPresent(UpdateConfiguration.self, forKey: .updates) ?? UpdateConfiguration()
     }
@@ -59,6 +59,8 @@ struct HostConfiguration: Codable {
             && cacheLimitBytes <= 1_024 * 1_048_576
     }
 
+    private static let webDefaultAppliedKey = "cadenza.webDefaultApplied"
+
     static func load() -> HostConfiguration {
         if let data = UserDefaults.standard.data(forKey: "configuration"),
             var value = try? JSONDecoder().decode(HostConfiguration.self, from: data)
@@ -67,6 +69,12 @@ struct HostConfiguration: Codable {
                 let bundled = bundledUpdates()
                 if value.updates.repository.isEmpty || value.updates.publicKeySpkiBase64.isEmpty {
                     value.updates = bundled
+                }
+                // A configuration saved before Cadenza Web was on by default stored "off" without a choice, so it is
+                // turned on once. Every save after that records a deliberate choice.
+                if !UserDefaults.standard.bool(forKey: webDefaultAppliedKey) {
+                    value.webEnabled = true
+                    try? value.save()
                 }
                 return value
             }
@@ -86,6 +94,7 @@ struct HostConfiguration: Codable {
 
     func save() throws {
         UserDefaults.standard.set(try JSONEncoder().encode(self), forKey: "configuration")
+        UserDefaults.standard.set(true, forKey: Self.webDefaultAppliedKey)
     }
 }
 

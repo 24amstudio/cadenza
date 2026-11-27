@@ -1,17 +1,22 @@
 import {
   counterField,
   isJsonObject,
+  objectField,
   parseJson,
   stringField,
+  type JsonObject,
 } from '../protocol/json';
+import { lanEndpointFrom, type LanEndpoint } from './endpoint';
 
 // The Host credential proves this browser is a paired Remote. It is stored for this origin only and is never placed in
 // a URL or logged. Reads are validated, and storage failures fall back to memory so the page still works for the session.
+// The LAN endpoint is the Host socket from its last welcome. It is a hint only: the credential alone authenticates.
 export interface StoredCredential {
   remoteId: string;
   token: string;
   name: string;
   lastCreditSequence: number;
+  lan?: LanEndpoint | null;
 }
 
 export interface CredentialStore {
@@ -48,7 +53,30 @@ export function parseStoredCredential(text: string): StoredCredential | null {
     return null;
   }
 
-  return { remoteId, token, name, lastCreditSequence };
+  const credential: StoredCredential = {
+    remoteId,
+    token,
+    name,
+    lastCreditSequence,
+  };
+
+  const lan = parseLanEndpoint(value);
+
+  if (lan !== null) credential.lan = lan;
+
+  return credential;
+}
+
+function parseLanEndpoint(value: JsonObject): LanEndpoint | null {
+  const lan = objectField(value, 'lan');
+
+  if (lan === null) return null;
+
+  return lanEndpointFrom(
+    stringField(lan, 'address'),
+    stringField(lan, 'name'),
+    counterField(lan, 'port'),
+  );
 }
 
 export type CredentialStorage = Pick<

@@ -39,7 +39,12 @@ export class FakeSocket implements SocketLike {
   onMessage: ((text: string) => void) | null = null;
   onClose: (() => void) | null = null;
   readonly frames: JsonObject[] = [];
+  readonly url: string;
   closed = false;
+
+  constructor(url = '') {
+    this.url = url;
+  }
 
   send(text: string): void {
     const value = parseJson(text);
@@ -115,18 +120,19 @@ export class MemoryCredentials implements CredentialStore {
   }
 }
 
-export interface Harness {
-  client: HostClient;
+export interface Harness<Client extends HostClient = HostClient> {
+  client: Client;
   sockets: FakeSocket[];
   changes: HostChange[];
   clock: Clock;
   credentials: MemoryCredentials;
 }
 
-export function harness(
+export function harness<Client extends HostClient = HostClient>(
   credentials: MemoryCredentials = new MemoryCredentials(),
   progressiveArtwork = false,
-): Harness {
+  createClient?: (options: HostClientOptions) => Client,
+): Harness<Client> {
   const clock = new Clock();
   const sockets: FakeSocket[] = [];
   const changes: HostChange[] = [];
@@ -136,8 +142,8 @@ export function harness(
     url: 'wss://host.test/v1/socket',
     remoteVersion: 'cadenza-web test',
     defaultName: 'Web browser on Mac',
-    openSocket: () => {
-      const socket = new FakeSocket();
+    openSocket: (url) => {
+      const socket = new FakeSocket(url);
       sockets.push(socket);
 
       return socket;
@@ -154,8 +160,11 @@ export function harness(
     progressiveArtwork,
   };
 
+  // SAFETY: Client is HostClient unless the caller passes createClient, and only a caller that names a subclass passes it.
   return {
-    client: new HostClient(options),
+    client: createClient
+      ? createClient(options)
+      : (new HostClient(options) as Client),
     sockets,
     changes,
     clock,
@@ -166,19 +175,26 @@ export function harness(
 export function welcome(
   issuedToken: string | null,
   capabilities: string[] = ['artwork.host-cache'],
+  lan: { address: string; port: number; name?: string | null } | null = null,
 ): JsonObject {
-  return {
-    type: 'welcome',
-    welcome: {
-      host_id: remoteId,
-      host_name: 'Living room Mac',
-      host_epoch: epoch,
-      remote_id: remoteId,
-      token: issuedToken,
-      host_time_ms: hostOffsetMs,
-      capabilities,
-    },
+  const fields: JsonObject = {
+    host_id: remoteId,
+    host_name: 'Living room Mac',
+    host_epoch: epoch,
+    remote_id: remoteId,
+    token: issuedToken,
+    host_time_ms: hostOffsetMs,
+    capabilities,
   };
+
+  if (lan !== null) {
+    fields.host_address = lan.address;
+    fields.web_port = lan.port;
+  }
+
+  if (lan?.name) fields.web_host = lan.name;
+
+  return { type: 'welcome', welcome: fields };
 }
 
 // Answers each clock probe as the Host would: 10 ms round trip, Host clock 1000 ms ahead. A reply triggers the next

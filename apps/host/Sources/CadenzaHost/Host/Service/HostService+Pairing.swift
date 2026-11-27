@@ -12,7 +12,8 @@ extension HostService {
             host: address, port: Int(configuration.port),
             secret: try CredentialFile.randomToken(), hostName: configuration.name,
             pin: Self.newPin(),
-            webPort: configuration.webEnabled ? Int(configuration.webPort) : nil
+            // A QR code opens the browser Remote only when this build has its page to serve.
+            webPort: configuration.webEnabled && Self.bundledWebRoot != nil ? Int(configuration.webPort) : nil
         )
         self.invitation = invitation
         invitationDeadline = monotonicMs() + 300_000

@@ -31,6 +31,9 @@ struct StageSettingsSection: View {
                     }
                     Button("Show QR Code") { showingQRCode = true }
                 }
+            } else if HostService.bundledWebRoot == nil {
+                Text("Cadenza Web is not included in this build, so the TV address is unavailable.")
+                    .foregroundStyle(.secondary)
             } else if model.configuration.webEnabled {
                 Text("Connect this Mac to a network to show the TV address.")
                     .foregroundStyle(.secondary)

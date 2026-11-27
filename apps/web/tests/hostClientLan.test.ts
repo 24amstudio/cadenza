@@ -20,6 +20,7 @@ const lan: LanEndpoint = {
   name: 'my-mac.local',
   port: 43129,
 };
+
 const nameUrl = 'ws://my-mac.local:43129/v1/socket';
 const addressUrl = 'ws://192.168.1.20:43129/v1/socket';
 

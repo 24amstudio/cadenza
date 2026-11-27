@@ -160,6 +160,7 @@ export function harness<Client extends HostClient = HostClient>(
     progressiveArtwork,
   };
 
+  // SAFETY: Client is HostClient unless the caller passes createClient, and only a caller that names a subclass passes it.
   return {
     client: createClient
       ? createClient(options)
@@ -176,25 +177,24 @@ export function welcome(
   capabilities: string[] = ['artwork.host-cache'],
   lan: { address: string; port: number; name?: string | null } | null = null,
 ): JsonObject {
-  return {
-    type: 'welcome',
-    welcome: {
-      host_id: remoteId,
-      host_name: 'Living room Mac',
-      host_epoch: epoch,
-      remote_id: remoteId,
-      token: issuedToken,
-      host_time_ms: hostOffsetMs,
-      capabilities,
-      ...(lan === null
-        ? {}
-        : {
-            host_address: lan.address,
-            web_port: lan.port,
-            ...(lan.name ? { web_host: lan.name } : {}),
-          }),
-    },
+  const fields: JsonObject = {
+    host_id: remoteId,
+    host_name: 'Living room Mac',
+    host_epoch: epoch,
+    remote_id: remoteId,
+    token: issuedToken,
+    host_time_ms: hostOffsetMs,
+    capabilities,
   };
+
+  if (lan !== null) {
+    fields.host_address = lan.address;
+    fields.web_port = lan.port;
+  }
+
+  if (lan?.name) fields.web_host = lan.name;
+
+  return { type: 'welcome', welcome: fields };
 }
 
 // Answers each clock probe as the Host would: 10 ms round trip, Host clock 1000 ms ahead. A reply triggers the next

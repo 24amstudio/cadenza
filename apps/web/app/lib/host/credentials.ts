@@ -53,15 +53,18 @@ export function parseStoredCredential(text: string): StoredCredential | null {
     return null;
   }
 
-  const lan = parseLanEndpoint(value);
-
-  return {
+  const credential: StoredCredential = {
     remoteId,
     token,
     name,
     lastCreditSequence,
-    ...(lan === null ? {} : { lan }),
   };
+
+  const lan = parseLanEndpoint(value);
+
+  if (lan !== null) credential.lan = lan;
+
+  return credential;
 }
 
 function parseLanEndpoint(value: JsonObject): LanEndpoint | null {

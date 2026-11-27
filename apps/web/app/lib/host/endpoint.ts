@@ -15,6 +15,7 @@ export interface LanEndpoint {
 // Chrome exempts a ws:// URL from mixed-content blocking when its host is an IP literal, a .local name, or localhost.
 const ipv4Pattern =
   /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+
 const bonjourNamePattern = /^[a-z0-9-]{1,63}\.local$/;
 
 export function lanEndpointFrom(
@@ -23,7 +24,9 @@ export function lanEndpointFrom(
   port: number | null,
 ): LanEndpoint | null {
   if (address === null || port === null) return null;
+
   if (!ipv4Pattern.test(address) || port < 1 || port > 65_535) return null;
+
   const bonjour = name !== null && bonjourNamePattern.test(name) ? name : null;
 
   return { address, name: bonjour, port };

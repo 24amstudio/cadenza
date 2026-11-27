@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRuntimeConfig } from '#app';
 import { createCredentialStore } from '~/lib/host/credentials';
 import { browserStorage } from '~/lib/host/browserStorage';
-import { lanSocketUrls, socketUrlFor } from '~/lib/host/endpoint';
+import { lanAudioSocketUrl, socketUrlFor } from '~/lib/host/endpoint';
 import {
   clampToBounds,
   defaultRemoteAudioSettings,
@@ -93,9 +93,8 @@ export const useRemoteAudioStore = defineStore('remoteAudio', () => {
     }
 
     const lan = createCredentialStore(browserStorage()).read()?.lan;
-    const url = lan ? lanSocketUrls(lan)[0] : undefined;
 
-    return url ? remoteAudioSocketUrl(url) : null;
+    return lan ? remoteAudioSocketUrl(lanAudioSocketUrl(lan)) : null;
   });
 
   // Bluetooth is only started when no Wi-Fi socket welcomes, so a linked Bluetooth state means audio has no Wi-Fi path.
@@ -174,7 +173,13 @@ export const useRemoteAudioStore = defineStore('remoteAudio', () => {
       return;
     }
 
-    receiver.sendCommand('new_environment');
+    if (!receiver.sendCommand('new_environment')) {
+      status.value = {
+        ...status.value,
+        message:
+          'The Host is still connecting. Try again once the stream is live.',
+      };
+    }
   }
 
   /** The Host owns the setup, so its values replace the local ones. Only a change is written, which ends the echo. */

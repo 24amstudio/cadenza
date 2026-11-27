@@ -67,6 +67,8 @@ export class RemoteAudioReceiver {
   #fix: ClockFix | null = null;
   #expectedSequence: number | null = null;
   #frameCount = 512;
+  /** The latest stream settings. A change made before the socket opens is held here and sent after the handshake. */
+  #latestSettings: RemoteAudioSettings | null = null;
   #status: RemoteAudioStatus = {
     state: 'idle',
     linkHealthy: false,
@@ -116,7 +118,10 @@ export class RemoteAudioReceiver {
 
     socket.binaryType = 'arraybuffer';
     socket.onopen = () => {
-      if (isCurrent()) this.#handshake(context);
+      if (!isCurrent()) return;
+
+      this.#handshake(context);
+      this.#sendLatestConfig();
     };
 
     socket.onmessage = (event: MessageEvent<string | ArrayBuffer>) => {
@@ -136,16 +141,20 @@ export class RemoteAudioReceiver {
     this.#socket = socket;
   }
 
-  /** Asks the Host for a new output environment, which measures the room again. */
-  sendCommand(action: 'new_environment'): void {
-    this.#socket?.send(commandMessage(action));
+  /** Asks the Host for a new output environment, which measures the room again. Returns false until the socket is open. */
+  sendCommand(action: 'new_environment'): boolean {
+    if (this.#socket?.readyState !== WebSocket.OPEN) return false;
+
+    this.#socket.send(commandMessage(action));
+
+    return true;
   }
 
   /** Sends the stream settings for this Remote. The Host applies them to the next frames. */
   sendConfig(settings: RemoteAudioSettings): void {
-    this.#socket?.send(
-      streamConfigMessage(settings, this.credentials.clientId),
-    );
+    this.#latestSettings = settings;
+
+    if (this.#socket?.readyState === WebSocket.OPEN) this.#sendLatestConfig();
   }
 
   stop(): void {
@@ -158,6 +167,14 @@ export class RemoteAudioReceiver {
     this.#fix = null;
     this.#expectedSequence = null;
     this.#publish({ state: 'idle', message: '' });
+  }
+
+  #sendLatestConfig(): void {
+    if (this.#socket === null || this.#latestSettings === null) return;
+
+    this.#socket.send(
+      streamConfigMessage(this.#latestSettings, this.credentials.clientId),
+    );
   }
 
   #handshake(context: AudioContext): void {

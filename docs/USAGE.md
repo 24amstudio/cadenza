@@ -118,6 +118,16 @@ Timed lyrics on the web Remote have a timing setting in Settings → Lyric timin
 
 The web and Android output menus list the Google Cast devices on your network. On the web, Send audio here plays Music's stereo output on that device through Google's default media receiver, and Stop sending audio ends it. The same menus list the Cadenza TVs: a TV that is waiting shows a PIN and an Approve button, and an approved TV gets a Send audio here button. See [docs/CAST.md](CAST.md) for the TV stage. On Android, choose a device chip to start sending, and choose the same chip again to stop. The status line under the Cast heading shows what is happening, including a failure reason. Neither client has been checked against a real Cast device. Six-channel output is sent as AC-3 through a bundled helper, which is verified to encode but not yet checked against a Cast device. Karaoke on a Cast device needs a registered custom receiver, and Full Cadenza Suite artwork is not built. An Android Remote can share its taste at connect when its Settings switch is on, and the Host uses that history when it ranks suggestions.
 
+## Stream audio over Wi-Fi
+
+Open Cadenza Web on the same Wi-Fi network as Cadenza Host, then open the output menu and choose a mode under **Stream over Wi-Fi**.
+
+1. **Stream to this device** sends Music's full-range stereo to this browser. Choose **Mute Mac** to silence the Mac, or **Play on both** to keep the Mac playing in step with this device.
+2. **Subwoofer split** sends the low frequencies to the Mac and the high frequencies to this device. Wire the Mac to the subwoofer and this device to the main speakers.
+3. In the split, set the crossover (40 to 160 Hz, 80 Hz by default), the sub gain (-12 to +12 dB), the phase (invert for 180°), and the distance trim (-50 to +50 ms, in 0.5 ms steps) until the two bands sound as one.
+
+Wi-Fi streaming needs a 5 GHz network for steady audio, because a 2.4 GHz link adds jitter. Bluetooth cannot carry the stream. When the Remote falls back to Bluetooth, or the link stalls, streaming stops and Music returns to the Mac. The two outputs are aligned on connect from the devices' reported latency, and no test tone plays. To set up a new output environment, open **Settings → Output**, then choose **Set Up New LPF Output Environment**. Pick the Remote that plays the mains, set the crossover, gain, phase, and distance trim, and choose **Done**. Cadenza saves the setup, starts the split, and measures the room for two seconds of music if microphone access is allowed. A Remote can do the same from its own **Set up new LPF output environment** button. The Host keeps one setup, so the Host and every Remote show the same values.
+
 ## Android widget, lock screen, and screen saver
 
 The home-screen widget shows what the Host is playing. The Host's state is pushed to it, so the widget does not poll on its own.

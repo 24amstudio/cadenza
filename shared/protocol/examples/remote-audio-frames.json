@@ -1,0 +1,37 @@
+{
+  "description": "Wi-Fi Remote audio binary frames. Integers are big-endian; LPCM samples are little-endian. Node, Swift, and web tests decode and encode these bytes.",
+  "audioFrame": {
+    "hex": "010102100000002a000000e8d4a6f240000000e8d65231400002e80318fcd00730f8",
+    "fields": {
+      "streamModeFlag": 1,
+      "channels": 2,
+      "bitDepth": 16,
+      "sequenceNumber": 42,
+      "hostCaptureTimeUs": "1000000123456",
+      "targetPlayoutHostUs": "1000028123456",
+      "frameCount": 2,
+      "samples": [1000, -1000, 2000, -2000]
+    }
+  },
+  "flush": {
+    "hex": "0200000007",
+    "fields": {
+      "generationSeq": 7
+    }
+  },
+  "ping": {
+    "hex": "040000000000000003000000e8d4a6f240",
+    "fields": {
+      "pingSequence": "3",
+      "t1HostSendUs": "1000000123456"
+    }
+  },
+  "pong": {
+    "hex": "05000000e8d4a6f2400000048c273d20900000048c273d47a0",
+    "fields": {
+      "t1HostSendUs": "1000000123456",
+      "t2RemoteRecvUs": "5000000250000",
+      "t3RemoteSendUs": "5000000260000"
+    }
+  }
+}

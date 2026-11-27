@@ -61,6 +61,12 @@ final class AVAudioSingOutput: SingOutputSink, @unchecked Sendable {
         player.scheduleBuffer(buffer.samples)
     }
 
+    /// Schedules a block to start at a mach absolute time. The player holds it until then, so the start is sample-accurate.
+    func enqueue(_ buffer: SingAudioBuffer, hostTime: UInt64) {
+        guard started, engine.isRunning else { return }
+        player.scheduleBuffer(buffer.samples, at: AVAudioTime(hostTime: hostTime), options: [], completionHandler: nil)
+    }
+
     func flush() {
         guard started else { return }
         // AVAudioPlayerNode.stop drops every scheduled buffer; play() resumes the node for new audio.

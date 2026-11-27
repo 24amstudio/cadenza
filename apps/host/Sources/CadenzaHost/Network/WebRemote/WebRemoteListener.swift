@@ -19,6 +19,8 @@ final class WebRemoteListener {
     var onSocket: ((WebRemoteSession) -> Void)?
     /// Stage receivers connect here. The role says whether the socket is a Tier-2 browser or a Tier-3 Android TV.
     var onStageSocket: ((WebRemoteSession, String) -> Void)?
+    /// Wi-Fi Remote audio sockets on `/cast/live?role=remote_audio`.
+    var onRemoteAudioSocket: ((WebRemoteSession) -> Void)?
     /// Serves the read-only stage media. Nil means the path is not a stage media path.
     var stageMediaReply: (@MainActor (WebRemoteRequest) -> WebRemoteReply?)?
     /// Serves the Remote update endpoints on this listener. Set by the Host before sessions can be accepted.
@@ -88,6 +90,7 @@ final class WebRemoteListener {
         sessions[key] = session
         session.onSocketOpened = { [weak self] socket in self?.onSocket?(socket) }
         session.onStageSocketOpened = { [weak self] socket, role in self?.onStageSocket?(socket, role) }
+        session.onRemoteAudioSocketOpened = { [weak self] socket in self?.onRemoteAudioSocket?(socket) }
         session.stageMediaReply = stageMediaReply
         session.onFinished = { [weak self] in self?.sessions.removeValue(forKey: key) }
         session.start(queue: queue)

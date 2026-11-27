@@ -93,5 +93,6 @@ extension HostService {
         let isPlaying = kind != "playback.pause" && kind != "playback.stop"
         let target = kind == "playback.seek" ? (positionMs ?? 0) : 0
         publishedState.stage.transportDispatched(isPlaying: isPlaying, targetPositionMs: target)
+        publishedState.remoteAudio.flush()
     }
 }

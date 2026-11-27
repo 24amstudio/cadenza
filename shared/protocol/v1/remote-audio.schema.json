@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cadence:protocol:v1:remote-audio",
+  "description": "Wi-Fi Remote audio streaming. A Web Remote opens ws://<host>:<port>/cast/live?role=remote_audio and exchanges these JSON text frames with the Host. The Host owns the setup. REMOTE_AUDIO_SETUP carries it to each Remote, and REMOTE_AUDIO_COMMAND lets a Remote ask for a new output environment. Binary frames (0x01 audio, 0x02 flush, 0x04 ping, 0x05 pong) are described in shared/protocol/README.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/handshake"
+    },
+    {
+      "$ref": "#/$defs/streamConfig"
+    },
+    {
+      "$ref": "#/$defs/syncTelemetry"
+    },
+    {
+      "$ref": "#/$defs/command"
+    },
+    {
+      "$ref": "#/$defs/setup"
+    }
+  ],
+  "$defs": {
+    "streamMode": {
+      "enum": [
+        "pure_transfer_exclusive",
+        "pure_transfer_mirror",
+        "crossover_split"
+      ]
+    },
+    "handshake": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "clientId",
+        "token",
+        "transport",
+        "sampleRate",
+        "baseLatencyMs",
+        "outputLatencyMs",
+        "userAgent"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "REMOTE_AUDIO_HANDSHAKE"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "token": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256
+        },
+        "transport": {
+          "const": "wifi_lan"
+        },
+        "sampleRate": {
+          "const": 48000
+        },
+        "baseLatencyMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "outputLatencyMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "userAgent": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "additionalProperties": false
+    },
+    "streamConfig": {
+      "type": "object",
+      "required": ["version", "type", "enabled", "streamMode"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "REMOTE_AUDIO_STREAM_CONFIG"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "streamMode": {
+          "$ref": "#/$defs/streamMode"
+        },
+        "targetClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "crossoverHz": {
+          "type": "number",
+          "minimum": 40,
+          "maximum": 160
+        },
+        "subGainDb": {
+          "type": "number",
+          "minimum": -12,
+          "maximum": 12
+        },
+        "phaseInvert": {
+          "type": "boolean"
+        },
+        "manualDistanceOffsetMs": {
+          "type": "number",
+          "minimum": -50,
+          "maximum": 50
+        }
+      },
+      "additionalProperties": false
+    },
+    "syncTelemetry": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "streamMode",
+        "calibrationState",
+        "electronicOffsetMs",
+        "acousticOffsetMs",
+        "clockOffsetUs",
+        "clockDriftPpm",
+        "jitterBufferMs",
+        "droppedStaleFrames60s",
+        "linkHealthy"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "REMOTE_AUDIO_SYNC"
+        },
+        "streamMode": {
+          "$ref": "#/$defs/streamMode"
+        },
+        "calibrationState": {
+          "enum": [
+            "not_required",
+            "electronic_locked",
+            "acoustic_locked",
+            "degraded"
+          ]
+        },
+        "electronicOffsetMs": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "acousticOffsetMs": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "clockOffsetUs": {
+          "type": "integer"
+        },
+        "clockDriftPpm": {
+          "type": "number",
+          "minimum": -500,
+          "maximum": 500
+        },
+        "jitterBufferMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "droppedStaleFrames60s": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "linkHealthy": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "required": ["version", "type", "action"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "REMOTE_AUDIO_COMMAND"
+        },
+        "action": {
+          "enum": ["new_environment"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "setup": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "enabled",
+        "streamMode",
+        "crossoverHz",
+        "subGainDb",
+        "phaseInvert",
+        "manualDistanceOffsetMs",
+        "roomStatus",
+        "acousticOffsetMs"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "REMOTE_AUDIO_SETUP"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "streamMode": {
+          "$ref": "#/$defs/streamMode"
+        },
+        "targetClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "crossoverHz": {
+          "type": "number",
+          "minimum": 40,
+          "maximum": 160
+        },
+        "subGainDb": {
+          "type": "number",
+          "minimum": -12,
+          "maximum": 12
+        },
+        "phaseInvert": {
+          "type": "boolean"
+        },
+        "manualDistanceOffsetMs": {
+          "type": "number",
+          "minimum": -50,
+          "maximum": 50
+        },
+        "roomStatus": {
+          "enum": [
+            "not_measured",
+            "measuring",
+            "measured",
+            "needs_microphone",
+            "failed"
+          ]
+        },
+        "acousticOffsetMs": {
+          "type": "number",
+          "minimum": -50,
+          "maximum": 50
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

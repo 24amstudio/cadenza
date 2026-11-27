@@ -47,11 +47,15 @@ final class Database {
                     try migrate("main/005-video-alignment-segments")
                     version = 6
                 }
+                if version == 6 {
+                    try migrate("main/006-crossover-room-profiles")
+                    version = 7
+                }
             } else if role == .logs, version == 0 {
                 try migrate("system/000-initial")
                 version = 1
             }
-            let expectedVersion: Int64 = role == .main ? 6 : 1
+            let expectedVersion: Int64 = role == .main ? 7 : 1
             guard
                 version == expectedVersion,
                 try query("PRAGMA user_version").first?["user_version"]?.integer == expectedVersion

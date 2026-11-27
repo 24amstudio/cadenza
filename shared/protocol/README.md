@@ -125,3 +125,32 @@ A receiver rejects any frame whose length or payload length does not match its h
 Presentation mode keeps the `full_suite` wire value that shipped Remotes already send. The `full_cadenza_suite` name is a label only.
 
 These contracts define the wire format. Each native application must also pass its platform-specific build and integration checks.
+
+## Wi-Fi Remote audio contracts
+
+`v1/remote-audio.schema.json` defines the Wi-Fi audio stream between the Host and a Web Remote. The Web Remote opens `ws://<host>:<port>/cast/live?role=remote_audio` on the Host's Web listener. A BLE connection never opens this socket, and the handshake's `transport` must be `wifi_lan`. The socket never carries Remote commands or stage traffic. `examples/remote-audio-frames.json` holds the exact bytes for each binary frame.
+
+### JSON text frames
+
+- `REMOTE_AUDIO_HANDSHAKE` comes first, from the Remote. It carries `clientId`, the paired `token` that authenticates the Remote, `transport`, `sampleRate` (48000), `baseLatencyMs`, `outputLatencyMs`, and `userAgent`. The Host closes a socket whose first message is not a valid handshake, or whose token does not match a paired Remote.
+- `REMOTE_AUDIO_STREAM_CONFIG` comes from the Remote, with `enabled`, `streamMode` (`pure_transfer_exclusive`, `pure_transfer_mirror`, or `crossover_split`), and the optional `targetClientId`, `crossoverHz` (40 to 160, default 80), `subGainDb` (-12 to 12), `phaseInvert`, and `manualDistanceOffsetMs` (-50 to 50). Values outside these bounds are refused.
+- `REMOTE_AUDIO_SYNC` comes from the Host about every 2 seconds. It carries `streamMode`, `calibrationState` (`not_required`, `electronic_locked`, `acoustic_locked`, or `degraded`), `electronicOffsetMs`, `acousticOffsetMs`, `clockOffsetUs`, `clockDriftPpm`, `jitterBufferMs`, `droppedStaleFrames60s`, and `linkHealthy`. `clockOffsetUs` is the Remote clock minus the Host clock, in microseconds. The Remote maps `targetPlayoutHostUs` onto its audio clock with it.
+- `REMOTE_AUDIO_SETUP` is the Host's subwoofer setup, which the Host owns and saves. It goes to every authenticated Remote on connect and whenever the setup or the room status changes. It carries `enabled`, `streamMode`, the optional `targetClientId` (absent until a Remote is chosen), `crossoverHz`, `subGainDb`, `phaseInvert`, `manualDistanceOffsetMs`, `roomStatus` (`not_measured`, `measuring`, `measured`, `needs_microphone`, or `failed`), and `acousticOffsetMs`. A Remote's `REMOTE_AUDIO_STREAM_CONFIG` changes the same setup, so the Host and every Remote agree.
+- `REMOTE_AUDIO_COMMAND` comes from the Remote with `action`. The only action is `new_environment`, which drops the saved measurement for the current room and measures it again. The Host needs microphone access for the measurement, and it reports the result in `REMOTE_AUDIO_SETUP`. An unknown action is refused.
+
+### Binary frames
+
+Header integers are big-endian. LPCM samples are little-endian, so a sample's bytes are the same for Int16 and Float32 receivers.
+
+| Frame               | Layout                                                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0x01` AUDIO_FRAME  | `[1B 0x01][1B streamModeFlag][1B channels][1B bitDepth][4B sequenceNumber][8B hostCaptureTimeUs][8B targetPlayoutHostUs][2B frameCount][payload]` (26-byte header) |
+| `0x02` FLUSH_STREAM | `[1B 0x02][4B generationSeq]` (5 bytes)                                                                                                                            |
+| `0x04` CLOCK_PING   | `[1B 0x04][8B pingSequence][8B t1HostSendUs]` (17 bytes, Host to Remote)                                                                                           |
+| `0x05` CLOCK_PONG   | `[1B 0x05][8B t1HostSendUs][8B t2RemoteRecvUs][8B t3RemoteSendUs]` (25 bytes, Remote to Host)                                                                      |
+
+`streamModeFlag` is `0` for `PURE_FULL_RANGE` and `1` for `CROSSOVER_HPF_MAINS`. `bitDepth` is `16` (Int16) or `32` (Float32). `channels` is 1 or 2. The payload is exactly `frameCount × channels × bitDepth / 8` bytes. A receiver drops any frame whose length does not match its header.
+
+The Host sends `FLUSH_STREAM` on play, pause, skip, and seek, and the Remote resets its ring buffer and fractional phase within 2 ms. A flushed frame is never played after its generation has been replaced. The Host answers each `CLOCK_PING` with the Remote's `CLOCK_PONG`, and it matches the pong to its ping by `t1HostSendUs`. It computes the offset and round-trip time from the four timestamps, keeps the minimum-round-trip sample, and reports it in `REMOTE_AUDIO_SYNC`.
+
+Stale-frame drops on the Host do not change these layouts. The Remote sees a gap in `sequenceNumber`, and it aligns the ring buffer to the next frame's `targetPlayoutHostUs`.

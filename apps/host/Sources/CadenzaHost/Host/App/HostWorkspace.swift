@@ -56,6 +56,7 @@ struct HostWorkspace: View {
         case .logs: LogsScreen(model: model)
         case .general: SettingsGeneralPane(model: model)
         case .cast: SettingsCastPane(model: model)
+        case .output: SettingsOutputPane(model: model)
         case .network: SettingsNetworkPane(model: model)
         case .music: SettingsMusicPane(model: model)
         case .lyrics: SettingsLyricsPane(model: model)

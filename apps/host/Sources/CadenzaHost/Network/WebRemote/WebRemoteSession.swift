@@ -23,6 +23,10 @@ final class WebRemoteSession {
     var onSocketOpened: ((WebRemoteSession) -> Void)?
     /// Called for a stage receiver's socket, with its `role` query value.
     var onStageSocketOpened: ((WebRemoteSession, String) -> Void)?
+    /// Called for a Wi-Fi Remote audio socket. Its binary clock pongs reach `onBinary`.
+    var onRemoteAudioSocketOpened: ((WebRemoteSession) -> Void)?
+    var onBinary: (([UInt8]) -> Void)?
+    private var allowsBinary = false
     var stageMediaReply: (@MainActor (WebRemoteRequest) -> WebRemoteReply?)?
     /// Answers `/api/v1/updates/` requests. Nil means updates are not served, and those requests get a 404.
     var updateReply: (@MainActor (WebRemoteRequest) -> WebRemoteReply)?
@@ -43,9 +47,11 @@ final class WebRemoteSession {
         connection.start(queue: queue)
     }
 
-    // Queues one protocol message as a text frame. Returns false when the Remote is gone or too far behind.
-    /// Sends one message as a text frame, or as a binary frame for the stage's audio.
-    func send(_ payload: Data, binary: Bool = false) -> Bool {
+    /// Sends one message as a text frame, or as a binary frame for the stage's audio. `onWritten` runs once the frame
+    /// has left the send queue, which is how the Remote audio stream counts frames in flight.
+    func send(
+        _ payload: Data, binary: Bool = false, onWritten: (@MainActor @Sendable () -> Void)? = nil
+    ) -> Bool {
         guard phase == .socket else { return false }
         let bytes = [UInt8](payload)
         let frame = binary ? WebSocketFraming.binaryFrame(bytes) : WebSocketFraming.textFrame(bytes)
@@ -55,7 +61,10 @@ final class WebRemoteSession {
         connection.send(
             content: frame, contentContext: .defaultMessage, isComplete: true,
             completion: .contentProcessed { [weak self] error in
-                Task { @MainActor in self?.frameWritten(size: size, failed: error != nil) }
+                Task { @MainActor in
+                    self?.frameWritten(size: size, failed: error != nil)
+                    onWritten?()
+                }
             })
         return true
     }
@@ -121,6 +130,8 @@ final class WebRemoteSession {
             openSocket(key: key)
         case .stageSocket(let key, let role):
             openStageSocket(key: key, role: role)
+        case .remoteAudioSocket(let key):
+            openRemoteAudioSocket(key: key)
         case .stageMedia:
             let reply = stageMediaReply?(request) ?? WebRemoteReply(status: 404)
             finish(
@@ -176,13 +187,25 @@ final class WebRemoteSession {
         handleFrames()
     }
 
+    private func openRemoteAudioSocket(key: String) {
+        phase = .socket
+        allowsBinary = true
+        connection.send(
+            content: WebSocketFraming.handshakeResponse(forKey: key), contentContext: .defaultMessage, isComplete: true,
+            completion: .contentProcessed { _ in })
+        onRemoteAudioSocketOpened?(self)
+        handleFrames()
+    }
+
     private func handleFrames() {
         do {
-            for event in try WebSocketFraming.parseFrames(&buffer) {
+            for event in try WebSocketFraming.parseFrames(&buffer, allowsBinary: allowsBinary) {
                 guard phase == .socket else { return }
                 switch event {
                 case .text(let bytes):
                     onText?(bytes)
+                case .binary(let bytes):
+                    onBinary?(bytes)
                 case .ping(let payload):
                     writeControl(WebSocketFraming.pongFrame(payload))
                 case .pong:

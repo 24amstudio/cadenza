@@ -86,6 +86,18 @@ Open Logs on Host and choose Export Diagnostic Logs. The mirrored log rotates th
 
 The output menu lists the Google Cast devices on your network. If Send audio here fails, the reason appears under the Cast heading. Check that the device is on the same network and awake, and that Music is playing on the Mac. Transmission has not yet been checked against a real Cast device in this build.
 
+## Wi-Fi audio is unavailable
+
+Cadenza Web shows "Wi-Fi only" when it reaches the Host over Bluetooth, or when no Wi-Fi address is known. Open the web Remote on the same Wi-Fi network as Cadenza Host, not through Bluetooth, and check that the Mac and the device are on the same subnet. Access points in router mode can put them on different subnets, and then they cannot stream to each other.
+
+## Wi-Fi audio stops by itself
+
+The Host stops the stream when the link cannot keep up, and it restores Music on the Mac. The Host log records "stream.degraded". Move closer to the access point, switch to 5 GHz, or stop other large transfers on the network, and then choose the mode again.
+
+## The sub and the mains do not sound in step
+
+Invert the sub's phase first, then adjust the distance trim in 0.5 ms steps until the bass and the mains reinforce each other. Each 1 ms of distance is about 34 cm of path, so a large error usually means the trim is far off.
+
 ## A TV shows a PIN but never connects
 
 If the TV address shows "ERR_CONNECTION_REFUSED", Cadenza Web is off or has not started. Turn on Cadenza Web in Settings → Network, restart Cadenza Host, then open the address shown in Settings → Cast.

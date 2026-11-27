@@ -115,6 +115,7 @@ final class HostService {
         network.logger = logger
         webRemote.onSocket = { [weak self] socket in self?.openWebSocket(socket) }
         configureStage()
+        configureRemoteAudio()
         configureCastDiscovery()
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }

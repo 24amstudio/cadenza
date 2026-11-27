@@ -10,18 +10,22 @@ struct SingAudioBuffer: @unchecked Sendable {
     let format: SingAudioFormat
     let frameCount: Int
     let samples: AVAudioPCMBuffer
+    /// The device clock time of the first sample, in mach absolute time. Zero when the source supplies none.
+    let hostTime: UInt64
     private let lease: SingAudioBufferLease?
 
     init(
         format: SingAudioFormat,
         frameCount: Int,
         samples: AVAudioPCMBuffer,
-        lease: SingAudioBufferLease? = nil
+        lease: SingAudioBufferLease? = nil,
+        hostTime: UInt64 = 0
     ) {
         self.format = format
         self.frameCount = frameCount
         self.samples = samples
         self.lease = lease
+        self.hostTime = hostTime
     }
 
     func release() {

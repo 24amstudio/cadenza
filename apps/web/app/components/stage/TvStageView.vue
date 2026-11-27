@@ -384,7 +384,10 @@ onBeforeUnmount(() => {
           v-for="line in activeLines"
           :key="line.id"
           class="line"
-          :class="{ end: line.align === 'end' }"
+          :class="{
+            end: line.align === 'end',
+            center: line.align === 'center',
+          }"
         >
           {{ line.text }}
         </p>
@@ -570,6 +573,10 @@ onBeforeUnmount(() => {
 
 .line.end {
   text-align: right;
+}
+
+.line.center {
+  text-align: center;
 }
 
 .translation {

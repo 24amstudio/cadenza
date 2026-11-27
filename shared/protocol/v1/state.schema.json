@@ -307,7 +307,7 @@
         "start_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
         "end_ms": { "$ref": "urn:cadence:protocol:v1:common#/$defs/counter" },
         "translation": { "type": "string", "maxLength": 20000 },
-        "align": { "enum": ["start", "end"] },
+        "align": { "enum": ["start", "center", "end"] },
         "words": {
           "type": "array",
           "maxItems": 1000,

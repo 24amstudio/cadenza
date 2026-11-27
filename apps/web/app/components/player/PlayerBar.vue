@@ -258,6 +258,8 @@ const showLyricsToggle = computed(
   }
 
   .utilities .volume-full,
+  .utilities .volume-compact,
+  .utilities .ambient-toggle,
   .utilities .player-modes {
     display: none;
   }

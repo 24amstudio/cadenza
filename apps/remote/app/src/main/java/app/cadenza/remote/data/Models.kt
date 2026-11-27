@@ -455,7 +455,7 @@ object Wire {
                     it.optString("align", "start"),
                 )
             }
-        require(lines.all { it.align in listOf("start", "end") }) { "Unknown lyric alignment." }
+        require(lines.all { it.align in listOf("start", "center", "end") }) { "Unknown lyric alignment." }
         require(
             lines.size <= 2_000 &&
                 lines.all { it.endMs >= it.startMs && it.text.length <= 20_000 && (it.translation?.length ?: 0) <= 20_000 },

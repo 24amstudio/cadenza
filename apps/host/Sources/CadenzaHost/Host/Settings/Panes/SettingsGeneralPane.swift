@@ -5,9 +5,6 @@ struct SettingsGeneralPane: View {
     @Bindable var model: HostModel
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage(HostPresentation.menuBarOnlyKey) private var menuBarOnly = false
-    @AppStorage("castPresentationMode") private var castMode: CastPresentationMode = .auto
-
-    private var castDevices: [CastDiscovery.Device] { model.service?.publishedState.castDiscovery.devices ?? [] }
 
     var body: some View {
         Form {
@@ -36,28 +33,6 @@ struct SettingsGeneralPane: View {
                         + "Menu bar only keeps Cadenza Host out of the Dock."
                 )
             }
-            Section {
-                Picker("Presentation", selection: $castMode) {
-                    ForEach(CastPresentationMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                ForEach(castDevices, id: \.name) { device in
-                    LabeledContent(device.name, value: device.display.label)
-                }
-                if let status = model.snapshot?.cast?.transmit?.status {
-                    Text(status.text)
-                        .foregroundStyle(status.mismatch ? Color.orange : Color.secondary)
-                }
-            } header: {
-                Text("Google Cast")
-            } footer: {
-                Text(
-                    "Full Cadenza Suite needs a Cast device with a screen. Speakers always receive audio only. "
-                        + "Devices are found while Cadenza Host runs."
-                )
-            }
-            StageSettingsSection(model: model)
             Section("Setup") {
                 Button("Run Setup Again") { model.showingSetup = true }
             }

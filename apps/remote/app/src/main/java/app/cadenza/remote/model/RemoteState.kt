@@ -107,6 +107,7 @@ data class RemoteState(
     val preparedSong: String? = null,
     val lastCommandLatencyMs: Long? = null,
     val clockUncertaintyMs: Long? = null,
+    val linkRoundTripMs: Long? = null,
     val statistics: List<SongStatistic> = emptyList(),
     val prompt: Prompt? = null,
     val notice: Notice? = null,

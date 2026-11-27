@@ -96,9 +96,10 @@ class LyricsTimingTest {
     }
 
     @Test
-    fun secondSingerLinesAlignToTheEnd() {
+    fun secondSingerLinesAlignToTheEndAndGroupLinesToTheMiddle() {
         assertEquals(TextAlign.Start, lyricTextAlign(line("a", 0, 1_000)))
         assertEquals(TextAlign.End, lyricTextAlign(line("b", 0, 1_000).copy(align = "end")))
+        assertEquals(TextAlign.Center, lyricTextAlign(line("c", 0, 1_000).copy(align = "center")))
     }
 
     @Test

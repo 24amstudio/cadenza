@@ -1,17 +1,30 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import AppIcon from '~/components/common/AppIcon.vue';
 import { signalBarCount } from '~/lib/host/linkSignal';
 
-// Signal bars for the link to Cadenza Host, with a down arrow that flashes when frames arrive and an up arrow when
-// frames leave. Each flash replays because the arrow is re-keyed on every pulse, so no timer runs.
-defineProps<{ bars: number; rxPulse: number; txPulse: number }>();
+// Signal bars for the link to Cadenza Host, beside the path that carries it (Bluetooth or Wi-Fi). A down arrow flashes
+// when frames arrive and an up arrow when frames leave. Each flash replays because the arrow is re-keyed on every pulse,
+// so no timer runs.
+const props = defineProps<{
+  bars: number;
+  overBluetooth: boolean;
+  rxPulse: number;
+  txPulse: number;
+}>();
+
+const transportLabel = computed(() =>
+  props.overBluetooth ? 'Bluetooth' : 'Wi-Fi',
+);
 </script>
 
 <template>
   <div class="link">
+    <AppIcon class="transport" :name="overBluetooth ? 'bluetooth' : 'wifi'" />
     <span
       class="bars"
       role="img"
-      :aria-label="`Signal: ${bars} of ${signalBarCount} bars`"
+      :aria-label="`${transportLabel} signal: ${bars} of ${signalBarCount} bars`"
     >
       <i
         v-for="bar in signalBarCount"
@@ -47,6 +60,12 @@ defineProps<{ bars: number; rxPulse: number; txPulse: number }>();
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+}
+
+.transport {
+  flex: none;
+  font-size: 14px;
+  color: var(--color-text-secondary);
 }
 
 .bars {

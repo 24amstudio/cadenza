@@ -4,6 +4,7 @@ import {
   counterField,
   isJsonObject,
   isOffsetMilliseconds,
+  lyricAlignField,
   objectField,
   parseJson,
   stringArrayField,
@@ -855,7 +856,7 @@ function decodeLyricLine(object: JsonObject): LyricLine | null {
     translation: stringField(object, 'translation'),
     words,
     // Anything but an explicit end is the first voice.
-    align: stringField(object, 'align') === 'end' ? 'end' : 'start',
+    align: lyricAlignField(object),
   };
 }
 

@@ -32,6 +32,20 @@ struct LyricAlignmentTests {
         #expect(document.lines.map(\.align) == ["end", nil])
     }
 
+    @Test func aGroupIsCenteredWhileSingerOneStartsAndAnotherPersonEnds() throws {
+        let document = try parse(
+            """
+            <ttm:agent type="person" xml:id="v1"/>
+            <ttm:agent type="person" xml:id="v2"/>
+            <ttm:agent type="group" xml:id="v1000"/>
+            <p begin="1s" end="2s" itunes:key="L1" ttm:agent="v1">One</p>
+            <p begin="3s" end="4s" itunes:key="L2" ttm:agent="v2">Two</p>
+            <p begin="5s" end="6s" itunes:key="L3" ttm:agent="v1000">Together</p>
+            """)
+
+        #expect(document.lines.map(\.align) == [nil, "end", "center"])
+    }
+
     @Test func aDocumentWithoutAgentsOrWithOneAgentStaysAtTheStart() throws {
         let plain = try parse(#"<p begin="1s" end="2s" itunes:key="L1">One</p>"#)
         let solo = try parse(#"<p begin="1s" end="2s" itunes:key="L1" ttm:agent="v1">One</p>"#)

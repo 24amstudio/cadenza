@@ -73,7 +73,7 @@ Built and checked locally. Device, live Music, and screenshot checks are not yet
 - Recommendations rank with each Remote's taste history. With several Remotes connected, Room Blend drops an artist one of them dislikes and places shared artists first. Results carry reason tags. Taste is recorded for play now, play next, add to queue, promotion, completion, and early skip.
 - An Android Remote can share a taste digest at connect when its Settings switch is on.
 - Music's storefront and region dialogs are reported as `music_modal_blocked`.
-- The web Remote's timed lyrics have a timing nudge for the current song. It is not saved to Host yet.
+- The web Remote's timed lyrics have a timing setting in Settings → Lyric timing. It applies to the playing song and is saved on Host.
 - The web search screen shows "For You" and "Room Blend" suggestions when the search is empty. They are read-only until you queue one. On an artist page, the web and Android Remotes can show a muted motion video, when Apple has one.
 - Android can use the volume buttons to change Music's volume on Host when its Settings switch is on, and dismisses the session notification after five minutes of pause or lost connection.
 - A Remote can play a music video in Music's window. Its karaoke line appears over Music's window on the Mac, or on a Cast device, and the two never show at once.

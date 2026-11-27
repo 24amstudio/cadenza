@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import OledAmbient from '~/components/app/OledAmbient.vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
+import BrowseLink from '~/components/browse/BrowseLink.vue';
 import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
@@ -49,14 +50,19 @@ const showLyricsToggle = computed(
       </div>
       <div class="meta">
         <strong>{{ song?.title ?? 'Nothing playing' }}</strong>
-        <span>
+        <span v-if="song === null" class="meta-line">
           {{
-            song
-              ? song.artist
-              : host.connected
-                ? 'Start music on Cadenza Host'
-                : 'Waiting for Cadenza Host'
+            host.connected
+              ? 'Start music on Cadenza Host'
+              : 'Waiting for Cadenza Host'
           }}
+        </span>
+        <span v-else class="meta-line">
+          <BrowseLink kind="artist" :song="song" />
+          <template v-if="song.album.trim() !== ''">
+            <span class="meta-separator" aria-hidden="true">·</span>
+            <BrowseLink kind="album" :song="song" />
+          </template>
         </span>
       </div>
     </div>
@@ -180,7 +186,7 @@ const showLyricsToggle = computed(
 }
 
 .meta strong,
-.meta span {
+.meta-line {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -191,9 +197,18 @@ const showLyricsToggle = computed(
   font-weight: 600;
 }
 
-.meta span {
+.meta-line {
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+.meta-line :deep(.browse-link) {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.meta-separator {
+  margin: 0 4px;
 }
 
 .controls {
@@ -226,6 +241,14 @@ const showLyricsToggle = computed(
   color: var(--color-accent);
 }
 
+/* The Ambient label is text, so the button grows to fit it rather than keeping the 34 px icon size. */
+.utility-button.ambient-toggle {
+  width: auto;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 560;
+}
+
 @media (max-width: 719px) {
   .player {
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -235,6 +258,8 @@ const showLyricsToggle = computed(
   }
 
   .utilities .volume-full,
+  .utilities .volume-compact,
+  .utilities .ambient-toggle,
   .utilities .player-modes {
     display: none;
   }

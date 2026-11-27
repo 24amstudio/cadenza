@@ -32,9 +32,11 @@ extension HostService {
         }
     }
 
-    /// The Host address that stage receivers reach. Nil when no LAN address is available.
+    /// The address stage receivers reach. The `/tv` page and its media are served by the Cadenza Web listener, so the
+    /// address exists only while that listener runs. Opening it otherwise is refused. Nil when there is no such address.
     func stageMediaBase() -> String? {
-        let host = configuration.advertisedAddress.isEmpty ? LANAddresses.all().first : configuration.advertisedAddress
+        guard configuration.webEnabled, webRemote.ready else { return nil }
+        let host = configuration.advertisedAddress.isEmpty ? LANAddresses.lanAddress() : configuration.advertisedAddress
         guard let host, !host.isEmpty else { return nil }
         return "http://\(host):\(configuration.webPort)"
     }

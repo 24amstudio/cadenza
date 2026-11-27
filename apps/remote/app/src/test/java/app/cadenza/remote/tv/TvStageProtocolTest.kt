@@ -67,6 +67,8 @@ class TvStageProtocolTest {
         assertNull(message.suite.quality)
         assertEquals("Halo", message.suite.lines[0].translation)
         assertEquals("end", message.suite.lines[0].align)
+        val centered = text.replace("\"align\":\"end\"", "\"align\":\"center\"")
+        assertEquals("center", (TvStageMessages.parse(centered) as TvStageMessage.Suite).suite.lines[0].align)
         assertEquals(
             1,
             message.suite.lines[0]

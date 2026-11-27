@@ -31,8 +31,11 @@ struct StageSettingsSection: View {
                     }
                     Button("Show QR Code") { showingQRCode = true }
                 }
-            } else {
+            } else if model.configuration.webEnabled {
                 Text("Connect this Mac to a network to show the TV address.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Turn on Cadenza Web in Network settings, then restart Cadenza Host, to show the TV address.")
                     .foregroundStyle(.secondary)
             }
         } header: {

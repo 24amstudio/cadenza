@@ -310,24 +310,39 @@ async function connectDevice(device: BluetoothDevice): Promise<BluetoothLink> {
 
   traceEvent('bluetooth: connecting to GATT server');
 
+  // An attempt that misses its deadline is abandoned, but its connect may still finish later. That late connection must
+  // be released, or the Host keeps a server with nothing reading it.
+  let abandoned = false;
+
+  const releaseIfAbandoned = () => {
+    if (!abandoned) return;
+    gatt.disconnect();
+    throw new Error('Bluetooth did not answer in time.');
+  };
+
   try {
     // Notifications start last, and only after the value listener is attached, so the first Host frame is not missed.
     const setup = (async () => {
       const server = await gatt.connect();
+
+      releaseIfAbandoned();
+
       const service = await server.getPrimaryService(bluetoothServiceUuid);
       const write = await service.getCharacteristic(writeCharacteristicUuid);
       const notify = await service.getCharacteristic(notifyCharacteristicUuid);
       const socket = linkSocket(device, gatt, write, notify);
 
       await notify.startNotifications();
+      releaseIfAbandoned();
       traceEvent('bluetooth: notifications on');
 
       return { socket, deviceId: device.id };
     })();
 
-    return await withDeadline(setup, bluetoothSetupDeadlineMs, () =>
-      gatt.disconnect(),
-    );
+    return await withDeadline(setup, bluetoothSetupDeadlineMs, () => {
+      abandoned = true;
+      gatt.disconnect();
+    });
   } catch (error) {
     traceEvent('bluetooth: connection failed', error);
     gatt.disconnect();

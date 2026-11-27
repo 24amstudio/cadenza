@@ -20,6 +20,8 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
     // Singers by `ttm:agent` in order of first use, and each line's singer by id. Placement is resolved after parsing,
     // because a later line can introduce the singer that starts the layout.
     private(set) var agents: [String] = []
+    // Agents declared `type="group"`: a chorus that everyone sings together, which Apple draws on the start side.
+    private(set) var groupAgents: Set<String> = []
     private(set) var lineAgents: [String: String] = [:]
     private var paragraphAgent: String?
     // Background vocals (`ttm:role="x-bg"`) overlap the main line, so their words form a separate timed line.
@@ -62,10 +64,17 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
                 "lyrics_unavailable", handler.failure ?? "Music's lyric format could not be read.")
         }
         var lines = handler.lines.sorted { $0.startMs < $1.startMs }
-        // Apple draws singer v1 on the start side. Ties between unnumbered singers keep first-use order.
-        let startAgent = handler.agents.min { singerNumber($0) < singerNumber($1) }
+        // Singer v1 starts, any other person ends, and a group (everyone singing together) is centered. Ties between
+        // unnumbered singers keep first-use order.
+        let startAgent = handler.agents.filter { !handler.groupAgents.contains($0) }
+            .min { singerNumber($0) < singerNumber($1) }
         for index in lines.indices {
-            lines[index].align = handler.lineAgents[lines[index].id].flatMap { $0 == startAgent ? nil : "end" }
+            guard let agent = handler.lineAgents[lines[index].id] else { continue }
+            if handler.groupAgents.contains(agent) {
+                lines[index].align = "center"
+            } else if agent != startAgent {
+                lines[index].align = "end"
+            }
         }
         guard Set(lines.map(\.id)).count == lines.count,
             lines.allSatisfy({ !$0.id.isEmpty && $0.id.count <= 128 })
@@ -133,6 +142,9 @@ final class TTMLDocument: NSObject, XMLParserDelegate {
         }
         let name = elementName.split(separator: ":").last.map(String.init) ?? elementName
         if name == "tt" { language = attributes["xml:lang"] }
+        if name == "agent", attributes["type"] == "group", let id = attributes["xml:id"], groupAgents.count < 64 {
+            groupAgents.insert(id)
+        }
         if name == "metadata" { metadataDepth = depth }
         if name == "translation" {
             translationLanguage = attributes["type"] == "subtitle" ? attributes["xml:lang"] : nil

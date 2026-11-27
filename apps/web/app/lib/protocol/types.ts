@@ -169,8 +169,8 @@ export interface LyricLine {
   endMs: number;
   translation: string | null;
   words: LyricWord[];
-  // 'end' marks a second voice, which the lyrics show right-aligned.
-  align: 'start' | 'end';
+  // 'end' marks a second voice, which the lyrics show right-aligned. 'center' marks a group, shown in the middle.
+  align: 'start' | 'center' | 'end';
 }
 
 export interface LyricDocument {

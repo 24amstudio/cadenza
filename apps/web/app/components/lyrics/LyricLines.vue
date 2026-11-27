@@ -359,7 +359,13 @@ onUnmounted(() => {
       v-for="(line, index) in lines"
       :key="line.id"
       class="line"
-      :class="[tiers[index], { 'align-end': line.align === 'end' }]"
+      :class="[
+        tiers[index],
+        {
+          'align-end': line.align === 'end',
+          'align-center': line.align === 'center',
+        },
+      ]"
       :style="{ '--lyric-tier': tierNumbers[tiers[index] ?? 'far'] }"
       :data-newest="index === newestIndex ? 'true' : undefined"
       :role="timed ? 'button' : undefined"
@@ -428,6 +434,12 @@ onUnmounted(() => {
 .line.align-end {
   text-align: right;
   transform-origin: right center;
+}
+
+/* A group sings together, so its line sits in the middle and grows from the centre. */
+.line.align-center {
+  text-align: center;
+  transform-origin: center center;
 }
 
 .lyrics.timed .line {

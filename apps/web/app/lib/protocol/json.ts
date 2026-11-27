@@ -59,6 +59,15 @@ export function isCounter(value: JsonValue | undefined): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
+// Where a lyric line sits: 'end' is a second singer, 'center' a group. Anything else is the start.
+export function lyricAlignField(
+  object: JsonObject,
+): 'start' | 'center' | 'end' {
+  const value = stringField(object, 'align');
+
+  return value === 'end' || value === 'center' ? value : 'start';
+}
+
 export function stringField(object: JsonObject, key: string): string | null {
   const value = object[key];
 

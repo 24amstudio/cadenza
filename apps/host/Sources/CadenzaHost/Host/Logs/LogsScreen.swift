@@ -43,6 +43,8 @@ struct LogsScreen: View {
         .onDisappear { logs.stop() }
         .onChange(of: model.service.map(ObjectIdentifier.init)) { logs.start(logger: model.service?.logger) }
         .onChange(of: logs.loadState) { if logs.loadState == .loaded { loadedToken += 1 } }
+        // Choosing an entry is a request to read it, so the details open when they are hidden.
+        .onChange(of: selection) { if !selection.isEmpty { showsDetail = true } }
     }
 
     private var selectedRows: [LogRow] { logs.rows.filter { selection.contains($0.id) } }

@@ -26,7 +26,9 @@ export type IconName =
   | 'repeat'
   | 'repeat-one'
   | 'back'
-  | 'close';
+  | 'close'
+  | 'bluetooth'
+  | 'wifi';
 
 // Paths are drawn on a 24-unit grid. Transport glyphs are solid; everything else is a 1.8-unit outline.
 const iconPaths: Record<IconName, string[]> = {
@@ -116,6 +118,13 @@ const iconPaths: Record<IconName, string[]> = {
     'M11 10.8l1.4-.9v4.4',
   ],
   back: ['M14.5 5.5L8 12l6.5 6.5'],
+  bluetooth: ['M7 7.5l10 9-5 4.5V3l5 4.5-10 9'],
+  wifi: [
+    'M2.5 9.2a13.5 13.5 0 0 1 19 0',
+    'M5.6 12.6a8.8 8.8 0 0 1 12.8 0',
+    'M8.9 16a4 4 0 0 1 6.2 0',
+    'M12 19.6h.01',
+  ],
   close: ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11'],
 };
 

@@ -470,7 +470,7 @@ describe('decodeHostMessage', () => {
     });
   });
 
-  test('a lyric line placed at the end is right-aligned, and any other value is the start', () => {
+  test('a lyric line at the end is right-aligned, a group line is centered, and any other value is the start', () => {
     const line = (align: string | null) => ({
       id: 'line',
       text: 'Hello',
@@ -489,7 +489,13 @@ describe('decodeHostMessage', () => {
           revision: 'rev-1',
           translation_source: 'none',
           source: 'lrclib',
-          lines: [line('end'), line('start'), line(null), line('middle')],
+          lines: [
+            line('end'),
+            line('center'),
+            line('start'),
+            line(null),
+            line('middle'),
+          ],
         },
       }),
     );
@@ -499,6 +505,7 @@ describe('decodeHostMessage', () => {
       lyrics: {
         lines: [
           { align: 'end' },
+          { align: 'center' },
           { align: 'start' },
           { align: 'start' },
           { align: 'start' },

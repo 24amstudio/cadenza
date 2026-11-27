@@ -242,7 +242,7 @@ internal object TvStageMessages {
             endMs = end,
             translation = json.str("translation"),
             words = words,
-            align = if (json.str("align") == "end") "end" else "start",
+            align = json.str("align")?.takeIf { it == "center" || it == "end" } ?: "start",
         )
     }
 

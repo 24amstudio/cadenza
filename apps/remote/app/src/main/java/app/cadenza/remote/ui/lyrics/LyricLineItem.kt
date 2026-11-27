@@ -50,9 +50,11 @@ private const val UNSUNG_MIX = 0.5f
 // Room at the right edge so the scaled active line is not clipped by the list.
 private val scaleRoom = 14.dp
 
-// Lines scale about the edge they are aligned to, so an end-aligned line grows leftwards and stays flush right.
+// Lines scale about the edge they are aligned to, so an end-aligned line grows leftwards and stays flush right. A
+// centred group line grows from the middle.
 private val startOrigin = TransformOrigin(0f, 0.5f)
 private val endOrigin = TransformOrigin(1f, 0.5f)
+private val centerOrigin = TransformOrigin(0.5f, 0.5f)
 
 // The vertical rhythm of a lyric line is 1.2x the base 14 / 6 / 8 dp: the gap between lines, the padding around a
 // line, and the gap between its text and its romanization or translation. Font size is unaffected.
@@ -63,8 +65,18 @@ private val detailGap = (8f * SPACING_SCALE).dp
 
 internal fun isEndAligned(line: LyricLine): Boolean = line.align == "end"
 
-/** The second singer's lines sit on the opposite edge. TextAlign.End also flips for right-to-left paragraphs. */
-internal fun lyricTextAlign(line: LyricLine): TextAlign = if (isEndAligned(line)) TextAlign.End else TextAlign.Start
+internal fun isCentered(line: LyricLine): Boolean = line.align == "center"
+
+/**
+ * The second singer's lines sit on the opposite edge, and a group's lines in the middle. TextAlign.End also flips for
+ * right-to-left paragraphs.
+ */
+internal fun lyricTextAlign(line: LyricLine): TextAlign =
+    when {
+        isEndAligned(line) -> TextAlign.End
+        isCentered(line) -> TextAlign.Center
+        else -> TextAlign.Start
+    }
 
 /** How a line is drawn at the current position. Primitives only, so a line recomposes when its own state changes. */
 internal data class LyricLineState(
@@ -101,6 +113,7 @@ internal fun LyricLineItem(
             label = "lyric-tier",
         )
     val end = isEndAligned(line)
+    val center = isCentered(line)
     val align = lyricTextAlign(line)
     Column(
         modifier
@@ -109,7 +122,12 @@ internal fun LyricLineItem(
                 if (!state.receding) return@graphicsLayer
                 val value = tier.value
                 alpha = tierOpacity(value)
-                transformOrigin = if (end) endOrigin else startOrigin
+                transformOrigin =
+                    when {
+                        end -> endOrigin
+                        center -> centerOrigin
+                        else -> startOrigin
+                    }
                 if (reduced) return@graphicsLayer
                 val scale = tierScale(value)
                 scaleX = scale
@@ -123,7 +141,12 @@ internal fun LyricLineItem(
                 if (seekable) contentDescription = "Seek to ${line.text}"
             },
         verticalArrangement = Arrangement.spacedBy(detailGap),
-        horizontalAlignment = if (end) Alignment.End else Alignment.Start,
+        horizontalAlignment =
+            when {
+                end -> Alignment.End
+                center -> Alignment.CenterHorizontally
+                else -> Alignment.Start
+            },
     ) {
         LyricLineText(line, state, clock, reduced, textSize, align)
         line.romanized?.takeIf { it.isNotBlank() }?.let {

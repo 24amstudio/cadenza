@@ -39,11 +39,13 @@ struct LogRow: Identifiable, Hashable, Sendable {
         self.action = action
         self.level = level
         self.category = category
-        self.message = LogRedaction.redact(message)
+        let redacted = LogRedaction.redact(message)
+        self.message = redacted
         self.metadataJSON = metadataJSON.map(LogRedaction.redact)
         let date = Date(timeIntervalSince1970: Double(createdAtMs) / 1_000)
         time = date.formatted(Self.timeStyle)
         day = date.formatted(Self.dayStyle)
+        listMessage = LogMessageFormat.summary(redacted)
     }
 
     init?(_ row: SQLRow) {
@@ -64,6 +66,12 @@ struct LogRow: Identifiable, Hashable, Sendable {
             source: entry.source, action: entry.action, level: entry.level, category: entry.category,
             message: entry.message, metadataJSON: entry.metadataJSON)
     }
+
+    /// The message as one readable line for the list, computed once so redrawing the table does not parse JSON again.
+    let listMessage: String
+
+    /// The message indented as JSON for the details page, or nil when it is not JSON.
+    var prettyMessage: String? { LogMessageFormat.pretty(message) }
 
     /// Remote entries do not say which app sent them; the Remote version string does.
     var isWebRemote: Bool { source == "remote" && remoteVersion?.hasPrefix(Self.webRemotePrefix) == true }

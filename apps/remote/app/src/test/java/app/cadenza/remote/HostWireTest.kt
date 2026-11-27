@@ -193,6 +193,13 @@ class HostWireTest {
                         .put("start_ms", 1_000)
                         .put("end_ms", 2_000)
                         .put("align", "end"),
+                ).put(
+                    JSONObject()
+                        .put("id", "c")
+                        .put("text", "Together")
+                        .put("start_ms", 2_000)
+                        .put("end_ms", 3_000)
+                        .put("align", "center"),
                 )
         val document =
             Wire.lyrics(
@@ -203,7 +210,7 @@ class HostWireTest {
                     .put("lines", lines),
             )
 
-        assertEquals(listOf("start", "end"), document.lines.map { it.align })
+        assertEquals(listOf("start", "end", "center"), document.lines.map { it.align })
     }
 
     @Test

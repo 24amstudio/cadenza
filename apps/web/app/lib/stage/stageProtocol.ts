@@ -4,6 +4,7 @@ import {
   counterField,
   isJsonObject,
   isOffsetMilliseconds,
+  lyricAlignField,
   type JsonObject,
   numberField,
   parseJson,
@@ -138,7 +139,7 @@ export interface StageTrackLine {
   endMs: number;
   words: { text: string; startMs: number; endMs: number }[];
   translation: string | null;
-  align: 'start' | 'end';
+  align: 'start' | 'center' | 'end';
 }
 
 export interface StageTrackSuite {
@@ -216,7 +217,7 @@ function parseLine(object: JsonObject): StageTrackLine | null {
     endMs,
     words,
     translation: stringField(object, 'translation'),
-    align: stringField(object, 'align') === 'end' ? 'end' : 'start',
+    align: lyricAlignField(object),
   };
 }
 

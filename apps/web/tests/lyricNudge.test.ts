@@ -3,6 +3,7 @@ import {
   LYRIC_NUDGE_LIMIT_MS,
   LYRIC_NUDGE_STEP_MS,
   lyricClockMs,
+  lyricDelayLabel,
   nudgeDelay,
   syncFirstLineDelay,
 } from '../app/lib/lyricNudge';
@@ -31,5 +32,13 @@ describe('karaoke nudge', () => {
     const delay = syncFirstLineDelay(firstLineStartMs, pressedAtMs);
 
     expect(lyricClockMs(pressedAtMs, delay)).toBe(firstLineStartMs);
+  });
+});
+
+describe('lyric timing label', () => {
+  test('shows the sign and one decimal in seconds', () => {
+    expect(lyricDelayLabel(0)).toBe('0.0 s');
+    expect(lyricDelayLabel(500)).toBe('+0.5 s');
+    expect(lyricDelayLabel(-1500)).toBe('-1.5 s');
   });
 });

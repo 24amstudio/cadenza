@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,7 +31,10 @@ import kotlinx.coroutines.delay
 
 private const val FLASH_MS = 320
 
-/** Connection quality and traffic beside the now playing text: signal bars, then a down arrow for frames received and an up arrow for frames sent. */
+/**
+ * Connection quality and traffic beside the now playing text: the transport that carries the link, signal bars, then a
+ * down arrow for frames received and an up arrow for frames sent.
+ */
 @Composable
 fun LiveLinkIndicator(
     model: RemoteModel,
@@ -40,7 +44,8 @@ fun LiveLinkIndicator(
     val incoming by model.traffic.incoming.collectAsStateWithLifecycle()
     val outgoing by model.traffic.outgoing.collectAsStateWithLifecycle()
     LinkIndicator(
-        bars = linkSignalBars(state.connected, state.transportPaths),
+        bars = linkSignalBars(state.connected, state.linkRoundTripMs),
+        transport = linkTransportOf(state.transportMode, state.effectiveTransport?.selected).takeIf { state.connected },
         incoming = incoming,
         outgoing = outgoing,
         modifier = modifier,
@@ -48,22 +53,45 @@ fun LiveLinkIndicator(
 }
 
 @Composable
-fun LinkIndicator(
+internal fun LinkIndicator(
     bars: Int,
+    transport: LinkTransport?,
     incoming: Long,
     outgoing: Long,
     modifier: Modifier = Modifier,
 ) {
-    val description = if (bars == 0) "Not connected to Cadenza Host" else "Signal $bars of $SIGNAL_BAR_COUNT bars"
+    val carrier =
+        when (transport) {
+            LinkTransport.BLUETOOTH -> "Bluetooth"
+            LinkTransport.WIFI -> "Wi-Fi"
+            null -> null
+        }
+    val description =
+        when {
+            bars == 0 -> "Not connected to Cadenza Host"
+            carrier == null -> "Signal $bars of $SIGNAL_BAR_COUNT bars"
+            else -> "$carrier signal $bars of $SIGNAL_BAR_COUNT bars"
+        }
     Row(
         modifier.semantics(mergeDescendants = true) { contentDescription = description },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        if (transport != null) TransportGlyph(transport)
         SignalBars(bars)
         FlashArrow(down = true, pulse = incoming)
         FlashArrow(down = false, pulse = outgoing)
     }
+}
+
+@Composable
+private fun TransportGlyph(transport: LinkTransport) {
+    Icon(
+        cadenzaVector(if (transport == LinkTransport.BLUETOOTH) CadenzaIcon.BLUETOOTH else CadenzaIcon.WIFI),
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(14.dp),
+    )
 }
 
 @Composable

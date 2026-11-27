@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
+import RemoteAudioSection from '~/components/player/RemoteAudioSection.vue';
 import { castDisplayLabel, castPresentationLabel } from '~/lib/cast';
 import type { CastPresentation } from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
@@ -115,6 +116,7 @@ const presentations: { value: CastPresentation; label: string }[] = [
           {{ output.name }}
         </option>
       </select>
+      <RemoteAudioSection />
       <section class="cast" aria-label="Karaoke lyrics">
         <p class="cast-title">Karaoke lyrics on</p>
         <button

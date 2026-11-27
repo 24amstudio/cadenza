@@ -525,7 +525,7 @@ export class HostClient {
 
   private receive(socket: SocketLike, text: string): void {
     if (this.socket !== socket) return;
-    traceFrame('in', this.transport(), text);
+    traceFrame('in', this.transport, text);
     this.options.onChange({ kind: 'traffic', direction: 'in' });
     const message = decodeHostMessage(text);
 
@@ -540,12 +540,12 @@ export class HostClient {
     );
   }
 
-  private transport(): TraceTransport {
+  get transport(): TraceTransport {
     return this.linkedOverBluetooth ? 'bluetooth' : 'websocket';
   }
 
   private transmit(socket: SocketLike, text: string): void {
-    traceFrame('out', this.transport(), text);
+    traceFrame('out', this.transport, text);
     this.options.onChange({ kind: 'traffic', direction: 'out' });
     socket.send(text);
   }
@@ -886,7 +886,7 @@ export class HostClient {
 
   private handleClose(socket: SocketLike): void {
     if (this.socket !== socket) return;
-    traceEvent(`${this.transport()} socket closed`, { phase: this.phase });
+    traceEvent(`${this.transport} socket closed`, { phase: this.phase });
     this.socket = null;
     this.welcomed = false;
     this.cancelHandshake?.();

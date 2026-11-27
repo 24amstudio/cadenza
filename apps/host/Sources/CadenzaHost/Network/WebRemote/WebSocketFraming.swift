@@ -9,6 +9,8 @@ enum WebSocketFraming {
 
     enum Event: Equatable {
         case text([UInt8])
+        /// Only produced when the caller allows binary messages, which is the Wi-Fi Remote audio socket.
+        case binary([UInt8])
         case ping([UInt8])
         case pong
         case close
@@ -44,9 +46,9 @@ enum WebSocketFraming {
     }
 
     // Removes and returns every complete frame at the start of the buffer. An incomplete frame stays buffered.
-    static func parseFrames(_ buffer: inout [UInt8]) throws -> [Event] {
+    static func parseFrames(_ buffer: inout [UInt8], allowsBinary: Bool = false) throws -> [Event] {
         var events: [Event] = []
-        while let event = try parseFrame(&buffer) {
+        while let event = try parseFrame(&buffer, allowsBinary: allowsBinary) {
             events.append(event)
         }
         return events
@@ -68,7 +70,7 @@ enum WebSocketFraming {
         Data(encode(opcode: 0x8, payload: [UInt8(code >> 8), UInt8(code & 0xFF)]))
     }
 
-    private static func parseFrame(_ buffer: inout [UInt8]) throws -> Event? {
+    private static func parseFrame(_ buffer: inout [UInt8], allowsBinary: Bool) throws -> Event? {
         guard buffer.count >= 2 else { return nil }
         let first = buffer[0]
         let second = buffer[1]
@@ -92,18 +94,20 @@ enum WebSocketFraming {
             payload[index] = buffer[payloadStart + index] ^ mask[index % 4]
         }
         buffer.removeFirst(frameLength)
-        return try event(opcode: opcode, fin: fin, payload: payload)
+        return try event(opcode: opcode, fin: fin, payload: payload, allowsBinary: allowsBinary)
     }
 
-    private static func event(opcode: UInt8, fin: Bool, payload: [UInt8]) throws -> Event {
+    private static func event(opcode: UInt8, fin: Bool, payload: [UInt8], allowsBinary: Bool) throws -> Event {
         switch opcode {
         case 0x1:
             // Fragmentation is not negotiated, so every text message must arrive in one frame.
             guard fin else { throw ProtocolViolation(closeCode: 1002) }
             return .text(payload)
         case 0x2:
-            // Binary data is not part of the Remote protocol.
-            throw ProtocolViolation(closeCode: 1003)
+            // Binary data is not part of the Remote command protocol, so only the audio socket accepts it.
+            guard allowsBinary else { throw ProtocolViolation(closeCode: 1003) }
+            guard fin else { throw ProtocolViolation(closeCode: 1002) }
+            return .binary(payload)
         case 0x8: return .close
         case 0x9: return .ping(payload)
         case 0xA: return .pong

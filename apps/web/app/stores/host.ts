@@ -920,7 +920,7 @@ export const useHostStore = defineStore('host', () => {
     isPlaying,
     connected,
     linkBars,
-    linkOverBluetooth: bluetoothSupported,
+    linkOverBluetooth: () => client?.transport === 'bluetooth',
     rxPulse: traffic.incoming,
     txPulse: traffic.outgoing,
     canControl,

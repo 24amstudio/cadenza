@@ -2,6 +2,17 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.4.5",
+      "build": 14,
+      "changes": [
+        "Streams the Mac's audio over Wi-Fi to the web Remote, at full range, with the Mac muted or playing alongside it.",
+        "Adds a subwoofer split: the Mac plays the low frequencies, and the web Remote plays the high frequencies through its own speakers.",
+        "Crosses the two bands at 40 to 160 Hz with a fourth-order Linkwitz-Riley filter, and adds sub gain, phase, and distance trims on the Remote.",
+        "Aligns the two outputs on connect from the devices' reported latency, without a test tone.",
+        "Stops Wi-Fi streaming when the link stalls or falls back to Bluetooth, and returns Music to the Mac."
+      ]
+    },
+    {
       "version": "0.4.0",
       "build": 13,
       "changes": [

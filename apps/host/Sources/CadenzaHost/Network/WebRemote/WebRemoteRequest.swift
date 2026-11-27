@@ -7,8 +7,11 @@ struct WebRemoteRequest: Equatable {
     static let stageSocketPath = "/cast/live"
     static let stageMediaPrefix = "/api/v1/cast/"
     static let stageRoles: Set<String> = ["tv_stage", "android_tv_receiver"]
-    /// Cadenza Web's GitHub Pages origin. Only the Remote socket accepts it, so a paired browser on that site can reach
-    /// the Host over the LAN. The Origin must match exactly, and the Remote's token still authenticates the session.
+    /// The Wi-Fi Remote audio socket shares `/cast/live`. It takes the Remote's paired token, not a stage PIN.
+    static let remoteAudioRole = "remote_audio"
+    /// Cadenza Web's GitHub Pages origin. Only the Remote socket and the Remote audio socket accept it, so a paired browser
+    /// on that site can reach the Host over the LAN. The Origin must match exactly, and the Remote's token still
+    /// authenticates the session.
     static let hostedPageOrigin = "https://24amstudio.github.io"
 
     let method: String
@@ -25,6 +28,8 @@ struct WebRemoteRequest: Equatable {
         case socket(key: String)
         /// A stage receiver's socket on `/cast/live`, identified by its `role` query value.
         case stageSocket(key: String, role: String)
+        /// A paired Web Remote's Wi-Fi audio socket. The handshake authenticates it.
+        case remoteAudioSocket(key: String)
         case file(path: String, headOnly: Bool)
         case update
         /// Read-only media for stage receivers, under `/api/v1/cast/`.
@@ -81,10 +86,18 @@ struct WebRemoteRequest: Equatable {
         }
     }
 
-    /// The stage channel takes its role from the query string, and only the two stage roles are accepted.
+    /// The `/cast/live` channel takes its role from the query string. The stage roles and the Remote audio role are the
+    /// only ones accepted. The Remote audio socket also accepts the hosted Cadenza Web page, like the Remote socket.
     private static func stageSocketRoute(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Route {
-        guard let role = queryValue("role", in: request.path), stageRoles.contains(role) else {
+        guard let role = queryValue("role", in: request.path), stageRoles.contains(role) || role == remoteAudioRole
+        else {
             return .reject(status: 400)
+        }
+        if role == remoteAudioRole {
+            switch upgradeKey(request, allowedHosts: allowedHosts, acceptsHostedPage: true) {
+            case .success(let key): return .remoteAudioSocket(key: key)
+            case .failure(let failure): return .reject(status: failure.status)
+            }
         }
         switch upgradeKey(request, allowedHosts: allowedHosts, acceptsHostedPage: false) {
         case .success(let key): return .stageSocket(key: key, role: role)

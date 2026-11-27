@@ -1,6 +1,59 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.4.0 and internal build 13, following the user's explicit release-version request. Version 0.3.4 was drafted as build 12 but never published, so its work is part of 0.4.0. The 0.3.3 record below is kept as history. macOS runtime behavior and target-device evidence remain unverified locally.
+Cadenza's current working tree declares visible version 0.4.5 and internal build 14, following the `v0.4.5` PRD's explicit release-version request. Version 0.4.0 was built as build 13, and its record is kept as history below. macOS runtime behavior and target-device evidence remain unverified locally.
+
+## Wi-Fi Remote audio and crossover split (0.4.5)
+
+Implemented against the `v0.4.5` PRD. The contract is `shared/protocol/v1/remote-audio.schema.json` and the Wi-Fi Remote audio section of `shared/protocol/README.md`. The Host code is in `apps/host/Sources/CadenzaHost/RemoteAudio/`, and the Web Remote code is in `apps/web/app/lib/remoteAudio/`, `apps/web/public/remote-audio/`, and `apps/web/app/components/player/RemoteAudioSection.vue`.
+
+Decisions that differ from the PRD, each for a stated reason:
+
+- Paths: the PRD's `apps/host/Sources/Audio` and `apps/host/WebRemote` map to `CadenzaHost/RemoteAudio` and `apps/web`, the Nuxt Web Remote this repository already has.
+- Socket: `/cast/live?role=remote_audio` runs on the existing Web listener, not a new port. Binary frames are accepted only on this socket, so the Remote command socket still refuses them.
+- Authentication: the handshake carries the paired token, and `clientId` is the paired `remote_id`. The Host checks both with its existing store.
+- Clock: the Host has all four timestamps, so it runs the minimum-round-trip estimate over a 30-sample window. It sends the offset and drift in `REMOTE_AUDIO_SYNC`. One exchange cannot give the Remote an offset on its own.
+- Local sub and mains: the Host's block is scheduled at its playout instant with `AVAudioTime`, and the player holds it. Releasing blocks on each capture callback would land up to one 10.67 ms block late.
+- Jitter cushion: 28 ms, widened from the RTT spread and kept between 18 and 45 ms. The Remote's target fill is the cushion plus one frame. A fixed value would hold a constant pitch offset.
+- Gaps: a 1 or 2 frame gap is rounding in the Host timeline, so it is filled without a fade. Larger gaps get the 3 ms raised-cosine fades.
+- Degraded link: more than 25 dropped frames a second, sustained for 3 seconds, stops the stream.
+- Room measurement reference alignment: the microphone and the Host's references start on different clocks. The lag search covers ±100 ms, and the acoustic delta takes the difference of two peaks. That cancels a common offset, so a shared start delay does not bias the result.
+- Corrections apply to the Host's own output only. The Remote's frames play at the jitter cushion, which makes the Remote the reference. The electronic delta, the manual trim, and the acoustic offset each delay the Host's sub, and the glide moves over 500 ms.
+- Room profile key: the Host's output device and the Remote's browser. The Wi-Fi BSSID is left out, because reading it needs Location permission, which Cadenza Host does not request.
+- Calibration applies to subwoofer splits only. Mirror mode keeps the electronic alignment and is not measured acoustically.
+- Screenshots of the Host Settings → Output section and the setup sheet are in `docs/screenshots/wifi-remote-audio/`. Capture conditions: an offscreen window, the default setup, no paired Remote, no Music session, and the microphone not allowed in this sandbox. The Mac output list is empty in the capture, because it fills on appear in the running app. The toolbar of the sheet is not in the capture.
+- The Host's controls sit in a new Settings → Output section. Its setup sheet, Set Up New LPF Output Environment, saves the setup and measures the room. The Host owns the setup, and each Remote reads and changes the same one. A Remote's new-environment button sends `REMOTE_AUDIO_COMMAND`, and the Host answers with `REMOTE_AUDIO_SETUP`. The PRD's drawer is realized as this section and sheet, not as a separate drawer view.
+- Calibration: stage 1 (electronic) runs on connect. Stage 2 (acoustic) runs once per room when the Mac's microphone was already allowed in Settings. It listens for two seconds, correlates the microphone with the sub and mains references, and saves the result in `crossover_room_profiles` (migration 006). Re-calibrate Room clears it and measures again.
+
+Built and checked here (macOS 27 arm64, Swift 6.4.2, Node 26.13, Bun 1.4.4):
+
+- Shared contract: `tests/remoteAudio.test.mjs` passes 5 of 5. The handshake refuses BLE and short tokens, the config bounds and modes are enforced, telemetry states are checked, and the fixture bytes match their sizes and types. `tests/version-sync.test.mjs` passes 2 of 2.
+- Host Swift Testing: 35 new tests in 12 suites. The full `swift test` run reports 386 Swift Testing tests and 62 XCTest tests executed, with 1 XCTest skipped (the existing release-only allocation probe) and 0 failures. The new tests cover:
+  - Wire encoding matches the shared fixture byte for byte.
+  - The `LR4` crossover measures −6.02 dB at the crossover (±0.1 dB), −24.6 dB at 2× and ½× the crossover (±0.5 dB), and sums flat within ±0.1 dB from 20 Hz to 20 kHz.
+  - Sub phase inversion is exact, Pure Transfer is bit-exact in Float32, and Mirror keeps stereo on both outputs.
+  - A crossover block without an engine stays silent.
+  - The stale-frame gate caps in-flight frames at 2, drops frames that cannot make the 4 ms lead, degrades after sustained drops, and counts drops over 60 seconds.
+  - The clock estimator is exact on a symmetric exchange and picks the minimum-round-trip sample over a spike.
+  - Over a simulated hour with ±80 ppm skew, the worst offset error is under 200 µs after warm-up.
+  - An injected 15 ms acoustic delay is recovered within ±0.3 ms.
+  - Config bounds and unknown-field refusal hold.
+- Web (Bun): 302 of 302 tests pass across 47 files, including 19 new ones for the remote audio setup, the command, and the playout core. They cover the fixture decode and pong bytes, the PI controller holding a ±80 ppm skew within 0.2 ms over a simulated hour with its rate converging to 80 ppm, gap fades, flush silence, late-frame drops, sequence wrap, clock mapping, and config bounds.
+- Gates: web `lint`, `format:check`, and `typecheck` pass. Root `oxlint` and Prettier pass. `swift format lint --strict` passes on the changed Host sources and tests. The `CadenzaHost` target builds in Debug with exit 0, and the `CadenzaHost` sources produce no warnings.
+
+Not verified here. These need target evidence, and none of them counts as passed:
+
+- Music's audio through the CoreAudio process tap in a live Music session, including the Exclusive mute and the local sub and mirror playback.
+- Sub and mains phase and level on real speakers. The 0.2 ms alignment figure is from the software simulation only.
+- Electronic latency from CoreAudio on the active device. The query compiles, but its values are not checked against a device.
+- The 120 ms reaction for play, pause, skip, and seek on a real Mac and Remote.
+- The microphone path on hardware: the input tap's sample rate, the mic-to-reference timing, and a real room. The correlation is tested on synthetic signals only.
+- The room measurement is skipped at `constrained` or `survival`, and when microphone access is not allowed. Neither case is tested on a device.
+- A SwiftUI output drawer on the Host. The Wi-Fi controls exist only in the web output menu.
+- The zero-allocation claim for the DSP in a release build, which has not been probed.
+- Wi-Fi micro-spike behavior on a real network. The 5 GHz recommendation is documented guidance, not a measurement.
+- The Bluetooth fallback path in the web store, the hosted Pages origin with a LAN endpoint, and the AudioWorklet at 48 kHz on real browsers. No browser run has covered them.
+- Screenshots of the new output-menu section. UI verification is still owed.
+- Remote audio and the TV stage each start their own capture. Running both at once is not tested.
 
 ## Zero-account Cast and TV stage (26 November 2026)
 

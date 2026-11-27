@@ -2,9 +2,11 @@
 /// window, and menu-bar commands can choose a pane.
 enum HostSection: Hashable, Identifiable {
     case nowPlaying, remotes, logs
-    case general, cast, network, music, lyrics, storage, updates
+    case general, cast, output, network, music, lyrics, storage, updates
 
-    static let settings: [HostSection] = [.general, .cast, .network, .music, .lyrics, .storage, .updates]
+    static let settings: [HostSection] = [
+        .general, .cast, .output, .network, .music, .lyrics, .storage, .updates,
+    ]
 
     var id: Self { self }
 
@@ -15,6 +17,7 @@ enum HostSection: Hashable, Identifiable {
         case .logs: "Logs"
         case .general: "General"
         case .cast: "Cast"
+        case .output: "Output"
         case .network: "Network"
         case .music: "Music"
         case .lyrics: "Lyrics"
@@ -30,6 +33,7 @@ enum HostSection: Hashable, Identifiable {
         case .logs: "list.bullet.rectangle"
         case .general: "gearshape"
         case .cast: "tv"
+        case .output: "hifispeaker"
         case .network: "network"
         case .music: "music.note.list"
         case .lyrics: "text.quote"

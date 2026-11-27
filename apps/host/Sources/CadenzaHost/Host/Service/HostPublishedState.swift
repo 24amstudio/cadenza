@@ -12,6 +12,7 @@ final class HostPublishedState {
     let stageHub: StageHub
     let stageSuites: StageSuiteStore
     let stage: StageCoordinator
+    let remoteAudio = RemoteAudioHub()
     private var followedOccurrence: String?
     private(set) var videoOutputTarget = VideoOutputTarget.stored()
     private(set) var lipSyncOffsetMs = UserDefaults.standard.integer(forKey: "lipSyncOffsetMs")

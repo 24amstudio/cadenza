@@ -96,7 +96,7 @@ enum AudioOutputs {
         return devices
     }
 
-    private static func defaultDevice() -> AudioObjectID {
+    static func defaultDevice() -> AudioObjectID {
         var address = address(kAudioHardwarePropertyDefaultOutputDevice)
         var device: AudioObjectID = 0
         var size = UInt32(MemoryLayout<AudioObjectID>.size)

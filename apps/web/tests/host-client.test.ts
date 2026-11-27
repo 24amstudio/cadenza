@@ -505,6 +505,24 @@ describe('HostClient over Bluetooth', () => {
     expect(sockets).toHaveLength(0);
   });
 
+  test('reports Bluetooth only while a Bluetooth socket carries the link', () => {
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 0,
+    };
+    const { client } = harness(credentials);
+
+    expect(client.transport).toBe('websocket');
+
+    client.startBluetooth(false);
+    client.connectOverBluetooth(new FakeSocket());
+
+    expect(client.transport).toBe('bluetooth');
+  });
+
   test('reconnects with the stored credential over a new link', () => {
     const credentials = new MemoryCredentials();
     credentials.value = {

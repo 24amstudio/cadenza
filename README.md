@@ -60,6 +60,15 @@ Portable checks include strict development-script analysis, lint with warnings t
 
 The strict interpretation that every operation must successfully finish within one second remains a platform feasibility limit. Native queue control, lyric cache access, AutoMix state, live quality indicators, and updates all need proof on the target devices before their support can be claimed.
 
+## Version 0.4.5 status
+
+Built and checked locally. The stream has not run on a Mac with live Music or on a Remote with real speakers, and [docs/agents/VALIDATION.md](docs/agents/VALIDATION.md) records what each check covers.
+
+- The web Remote streams Music's audio over Wi-Fi in two modes: full-range stereo, with the Mac muted or playing on both, and a subwoofer split. The split sends the Mac's low frequencies and the Remote's high frequencies, joined by a fourth-order Linkwitz-Riley crossover.
+- Each stream frame is timed for playout, and the Host drops a frame rather than queue it behind a Wi-Fi stall. The Remote fills the gap with a short fade.
+- The Host aligns the two outputs from the devices' reported latency on connect. With microphone access allowed in Settings, it then measures the room for two seconds while music plays, and keeps the result for that output and browser. No test tone plays.
+- Streaming works only over Wi-Fi. It stops when the link stalls or falls back to Bluetooth.
+
 ## Version 0.4.0 status
 
 Built and checked locally. Device, live Music, and screenshot checks are not yet done, and [docs/agents/VALIDATION.md](docs/agents/VALIDATION.md) records what each check covers.

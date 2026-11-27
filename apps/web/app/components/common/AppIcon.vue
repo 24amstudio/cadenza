@@ -12,6 +12,7 @@ export type IconName =
   | 'settings'
   | 'speaker'
   | 'speaker-muted'
+  | 'output'
   | 'refresh'
   | 'qr'
   | 'host'
@@ -71,6 +72,11 @@ const iconPaths: Record<IconName, string[]> = {
     'M4 9.5h3.2L12 6v12l-4.8-3.5H4Z',
     'M16 9.8l4.4 4.4',
     'M20.4 9.8L16 14.2',
+  ],
+  // A screen with an arrow pointing into it, the usual symbol for choosing where audio plays.
+  output: [
+    'M7.5 15.5H5.5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2',
+    'M12 12.5l4.5 5.5h-9z',
   ],
   refresh: ['M19 12a7 7 0 1 1-2.1-5', 'M19 4.8V8.6h-3.8'],
   qr: [

@@ -62,20 +62,20 @@ function setNumber(
 </script>
 
 <template>
-  <section class="remote-audio" aria-label="Wi-Fi audio">
-    <div class="remote-audio-head">
-      <p class="remote-audio-title">Stream over Wi-Fi</p>
-      <span v-if="!audio.wifiAvailable" class="badge">Wi-Fi only</span>
+  <section class="om-section" aria-labelledby="remote-audio-title">
+    <div class="om-heading-row">
+      <h3 id="remote-audio-title" class="om-heading">Stream over Wi-Fi</h3>
+      <span v-if="!audio.wifiAvailable" class="om-badge">Wi-Fi only</span>
     </div>
-    <p v-if="!audio.wifiAvailable" class="remote-audio-note">
+    <p v-if="!audio.wifiAvailable" class="om-note">
       Bluetooth cannot carry audio. Open Cadenza Web on the same Wi-Fi network
       as Cadenza Host to stream.
     </p>
 
-    <div class="remote-audio-modes">
+    <div class="om-segmented" role="group" aria-label="Stream mode">
       <button
         type="button"
-        class="remote-audio-button"
+        class="om-segment"
         :aria-pressed="audio.running && pureMode"
         :disabled="!audio.wifiAvailable"
         @click="choose(pureStreamMode)"
@@ -84,7 +84,7 @@ function setNumber(
       </button>
       <button
         type="button"
-        class="remote-audio-button"
+        class="om-segment"
         :aria-pressed="audio.running && split"
         :disabled="!audio.wifiAvailable"
         @click="choose('crossover_split')"
@@ -95,13 +95,13 @@ function setNumber(
 
     <div
       v-if="pureMode && audio.wifiAvailable"
-      class="remote-audio-modes"
+      class="om-segmented"
       role="group"
       aria-label="Mac output"
     >
       <button
         type="button"
-        class="remote-audio-button"
+        class="om-segment"
         :aria-pressed="audio.settings.streamMode === 'pure_transfer_exclusive'"
         @click="choose('pure_transfer_exclusive')"
       >
@@ -109,7 +109,7 @@ function setNumber(
       </button>
       <button
         type="button"
-        class="remote-audio-button"
+        class="om-segment"
         :aria-pressed="audio.settings.streamMode === 'pure_transfer_mirror'"
         @click="choose('pure_transfer_mirror')"
       >
@@ -118,7 +118,7 @@ function setNumber(
     </div>
 
     <div v-if="split && audio.wifiAvailable" class="remote-audio-tune">
-      <p class="remote-audio-sync" :data-locked="syncLocked">
+      <p class="om-status" :class="{ 'remote-audio-locked': syncLocked }">
         {{
           roomMeasured
             ? 'Room acoustic locked'
@@ -129,7 +129,12 @@ function setNumber(
         <template v-if="audio.status.linkHealthy"> · Wi-Fi healthy</template>
       </p>
       <label class="remote-audio-slider">
-        <span>Crossover {{ audio.settings.crossoverHz }} Hz</span>
+        <span class="remote-audio-slider-head">
+          <span>Crossover</span>
+          <span class="remote-audio-value"
+            >{{ audio.settings.crossoverHz }} Hz</span
+          >
+        </span>
         <input
           type="range"
           :min="remoteAudioBounds.crossoverHz.min"
@@ -140,7 +145,12 @@ function setNumber(
         />
       </label>
       <label class="remote-audio-slider">
-        <span>Sub gain {{ audio.settings.subGainDb }} dB</span>
+        <span class="remote-audio-slider-head">
+          <span>Sub gain</span>
+          <span class="remote-audio-value"
+            >{{ audio.settings.subGainDb }} dB</span
+          >
+        </span>
         <input
           type="range"
           :min="remoteAudioBounds.subGainDb.min"
@@ -150,22 +160,13 @@ function setNumber(
           @input="setNumber('subGainDb', $event)"
         />
       </label>
-      <label class="remote-audio-check">
-        <input
-          type="checkbox"
-          :checked="audio.settings.phaseInvert"
-          @change="
-            audio.update({
-              phaseInvert: ($event.target as HTMLInputElement).checked,
-            })
-          "
-        />
-        Invert sub phase (180°)
-      </label>
       <label class="remote-audio-slider">
-        <span
-          >Distance trim {{ audio.settings.manualDistanceOffsetMs }} ms</span
-        >
+        <span class="remote-audio-slider-head">
+          <span>Distance trim</span>
+          <span class="remote-audio-value"
+            >{{ audio.settings.manualDistanceOffsetMs }} ms</span
+          >
+        </span>
         <input
           type="range"
           :min="remoteAudioBounds.manualDistanceOffsetMs.min"
@@ -175,14 +176,30 @@ function setNumber(
           @input="setNumber('manualDistanceOffsetMs', $event)"
         />
       </label>
+      <label class="remote-audio-check">
+        <span>Invert sub phase (180°)</span>
+        <input
+          type="checkbox"
+          :checked="audio.settings.phaseInvert"
+          @change="
+            audio.update({
+              phaseInvert: ($event.target as HTMLInputElement).checked,
+            })
+          "
+        />
+      </label>
     </div>
 
-    <div class="remote-audio-modes">
-      <p class="remote-audio-message">{{ roomText }}</p>
-
+    <div class="remote-audio-room">
+      <div class="om-row om-row-static">
+        <span class="om-row-text">
+          <span class="om-row-title">Room</span>
+          <span class="om-row-sub">{{ roomText }}</span>
+        </span>
+      </div>
       <button
         type="button"
-        class="remote-audio-button"
+        class="om-action remote-audio-wide"
         :disabled="!audio.running"
         @click="audio.newEnvironment()"
       >
@@ -194,88 +211,25 @@ function setNumber(
       <button
         v-if="audio.running"
         type="button"
-        class="remote-audio-button"
+        class="om-action remote-audio-wide"
         @click="audio.stop()"
       >
         Stop streaming
       </button>
-      <p class="remote-audio-message" role="status">
-        {{ audio.status.message }}
-      </p>
+      <p class="om-status" role="status">{{ audio.status.message }}</p>
     </div>
   </section>
 </template>
 
 <style scoped>
-.remote-audio {
+.remote-audio-tune,
+.remote-audio-room,
+.remote-audio-foot {
   display: grid;
-  gap: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--color-separator);
+  gap: 10px;
 }
 
-.remote-audio-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.remote-audio-title {
-  color: var(--color-text);
-  font-weight: 600;
-}
-
-.badge {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--color-fill);
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
-.remote-audio-note,
-.remote-audio-message {
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.remote-audio-modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.remote-audio-button {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--color-fill-strong);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 13px;
-}
-
-.remote-audio-button[aria-pressed='true'] {
-  background: var(--color-accent);
-  color: var(--color-surface);
-}
-
-.remote-audio-button:disabled {
-  color: var(--color-text-tertiary);
-}
-
-.remote-audio-tune {
-  display: grid;
-  gap: 8px;
-}
-
-.remote-audio-sync {
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.remote-audio-sync[data-locked='true'] {
+.remote-audio-locked {
   color: var(--color-text);
 }
 
@@ -286,16 +240,37 @@ function setNumber(
   font-size: 13px;
 }
 
+.remote-audio-slider-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.remote-audio-value {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.remote-audio-slider input {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
 .remote-audio-check {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  min-height: 36px;
   color: var(--color-text);
   font-size: 13px;
 }
 
-.remote-audio-foot {
-  display: grid;
-  gap: 6px;
+.remote-audio-check input {
+  accent-color: var(--color-accent);
+}
+
+.remote-audio-wide {
+  width: 100%;
 }
 </style>

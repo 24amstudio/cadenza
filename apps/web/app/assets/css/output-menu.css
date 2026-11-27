@@ -1,0 +1,166 @@
+/* Shared parts of the output popover and the Wi-Fi stream section. Every class carries the om- prefix, so the global
+   sheet adds no names that a component could reuse by accident. */
+
+.om-section {
+  display: grid;
+  gap: 8px;
+}
+
+.om-heading {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.om-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.om-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-fill);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.om-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.om-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-fill);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+
+.om-row:disabled {
+  opacity: 0.5;
+}
+
+.om-row[aria-pressed='true'] {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.om-row-text {
+  display: grid;
+  min-width: 0;
+}
+
+.om-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.om-row-sub {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.om-row-static {
+  cursor: default;
+}
+
+.om-check {
+  flex: none;
+  color: var(--color-accent);
+  font-size: 16px;
+}
+
+.om-segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--color-fill);
+}
+
+.om-segment {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.om-segment[aria-pressed='true'] {
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.om-segment:disabled {
+  opacity: 0.5;
+}
+
+.om-action {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fill-strong);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.om-action:disabled {
+  opacity: 0.5;
+}
+
+.om-action-primary {
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+
+.om-stepper {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.om-note {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.om-status {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.om-status.mismatch,
+.om-status.alert {
+  color: var(--color-danger);
+}

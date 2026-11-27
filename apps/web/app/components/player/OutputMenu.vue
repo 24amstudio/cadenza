@@ -2,12 +2,12 @@
 import { computed, ref } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import RemoteAudioSection from '~/components/player/RemoteAudioSection.vue';
-import { castDisplayLabel, castPresentationLabel } from '~/lib/cast';
+import { castDisplayLabel } from '~/lib/cast';
 import type { CastPresentation } from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
 
-// Chooses the Mac's audio output. Music plays to the default output, so the choice routes Music's audio there.
-// The controls open in a popover from the speaker button, so the player bar keeps a single icon.
+// The panel groups controls by destination: Mac output, Wi-Fi stream, karaoke, Cadenza TV and Google Cast.
+// The output glyph keeps the trigger distinct from the volume control beside it.
 const host = useHostStore();
 const panelOpen = ref(false);
 
@@ -30,14 +30,8 @@ const sending = computed(
     transmit.value?.state === 'transmitting',
 );
 
-const selected = computed(
-  () => outputs.value.find((output) => output.isDefault)?.id ?? '',
-);
-
-function choose(event: Event): void {
-  if (!(event.target instanceof HTMLSelectElement)) return;
-
-  host.setOutput(event.target.value);
+function pickOutput(id: string): void {
+  host.setOutput(id);
 }
 
 function isSendingTo(name: string): boolean {
@@ -81,8 +75,8 @@ function choosePresentation(value: CastPresentation): void {
 
 const presentations: { value: CastPresentation; label: string }[] = [
   { value: 'auto', label: 'Auto' },
-  { value: 'audio_only', label: 'Audio Only' },
-  { value: 'full_suite', label: 'Full Suite' },
+  { value: 'audio_only', label: 'Audio only' },
+  { value: 'full_suite', label: 'Full suite' },
 ];
 </script>
 
@@ -92,109 +86,149 @@ const presentations: { value: CastPresentation; label: string }[] = [
       type="button"
       class="output-trigger"
       popovertarget="output-panel"
-      aria-label="Audio output and karaoke"
+      aria-label="Output and streaming"
       :aria-expanded="panelOpen"
     >
-      <AppIcon name="speaker" />
+      <AppIcon name="output" />
     </button>
     <div
       id="output-panel"
       class="output-panel"
       popover="auto"
-      aria-label="Audio output and karaoke"
+      aria-label="Output and streaming"
       @toggle="onPanelToggle"
     >
-      <select
+      <h2 class="output-title">Output</h2>
+
+      <section
         v-if="outputs.length > 0"
-        class="output-select"
-        aria-label="Audio output"
-        :value="selected"
-        :disabled="!host.connected"
-        @change="choose"
+        class="om-section"
+        aria-labelledby="output-mac"
       >
-        <option v-for="output in outputs" :key="output.id" :value="output.id">
-          {{ output.name }}
-        </option>
-      </select>
-      <RemoteAudioSection />
-      <section class="cast" aria-label="Karaoke lyrics">
-        <p class="cast-title">Karaoke lyrics on</p>
-        <button
-          class="cast-button"
-          type="button"
-          :aria-pressed="videoOutput === 'host_display'"
-          :disabled="!host.connected"
-          @click="chooseLyricTarget('host_display')"
-        >
-          This Mac
-        </button>
-        <button
-          class="cast-button"
-          type="button"
-          :aria-pressed="videoOutput === 'cast_transmitter'"
-          :disabled="!host.connected"
-          @click="chooseLyricTarget('cast_transmitter')"
-        >
-          Cast device
-        </button>
-        <p v-if="videoOutput === 'cast_transmitter'" class="cast-note">
-          Karaoke lyrics display on the active Cast receiver rather than on this
-          Mac.
-        </p>
-        <p class="cast-title">AVR lip-sync offset, {{ lipSyncOffsetMs }} ms</p>
-        <button
-          class="cast-button"
-          type="button"
-          :disabled="!host.connected"
-          @click="nudgeLipSync(-50)"
-        >
-          Earlier 50 ms
-        </button>
-        <button
-          class="cast-button"
-          type="button"
-          :disabled="!host.connected"
-          @click="nudgeLipSync(50)"
-        >
-          Later 50 ms
-        </button>
+        <h3 id="output-mac" class="om-heading">Mac audio</h3>
+        <div class="om-list">
+          <button
+            v-for="output in outputs"
+            :key="output.id"
+            type="button"
+            class="om-row"
+            :aria-pressed="output.isDefault"
+            :disabled="!host.connected"
+            @click="pickOutput(output.id)"
+          >
+            <span class="om-row-text">
+              <span class="om-row-title">{{ output.name }}</span>
+              <span class="om-row-sub">{{ output.transport }}</span>
+            </span>
+            <AppIcon v-if="output.isDefault" name="check" class="om-check" />
+          </button>
+        </div>
       </section>
+
+      <RemoteAudioSection />
+
+      <section class="om-section" aria-labelledby="output-karaoke">
+        <h3 id="output-karaoke" class="om-heading">Karaoke lyrics</h3>
+        <div class="om-segmented" role="group" aria-labelledby="output-karaoke">
+          <button
+            type="button"
+            class="om-segment"
+            :aria-pressed="videoOutput === 'host_display'"
+            :disabled="!host.connected"
+            @click="chooseLyricTarget('host_display')"
+          >
+            This Mac
+          </button>
+          <button
+            type="button"
+            class="om-segment"
+            :aria-pressed="videoOutput === 'cast_transmitter'"
+            :disabled="!host.connected"
+            @click="chooseLyricTarget('cast_transmitter')"
+          >
+            Cast device
+          </button>
+        </div>
+        <p v-if="videoOutput === 'cast_transmitter'" class="om-note">
+          Lyrics show on the active Cast receiver, not on this Mac.
+        </p>
+        <div class="om-row om-row-static">
+          <span class="om-row-text">
+            <span class="om-row-title">AVR lip sync</span>
+            <span class="om-row-sub">{{ lipSyncOffsetMs }} ms</span>
+          </span>
+          <span class="om-stepper">
+            <button
+              type="button"
+              class="om-action"
+              aria-label="Earlier by 50 milliseconds"
+              :disabled="!host.connected"
+              @click="nudgeLipSync(-50)"
+            >
+              −50 ms
+            </button>
+            <button
+              type="button"
+              class="om-action"
+              aria-label="Later by 50 milliseconds"
+              :disabled="!host.connected"
+              @click="nudgeLipSync(50)"
+            >
+              +50 ms
+            </button>
+          </span>
+        </div>
+      </section>
+
       <section
         v-if="cast && (cast.pendingStages.length > 0 || cast.stages.length > 0)"
-        class="cast"
-        aria-label="Cadenza TV"
+        class="om-section"
+        aria-labelledby="output-tv"
       >
-        <p class="cast-title">Cadenza TV</p>
-        <ul class="cast-devices">
-          <li
+        <h3 id="output-tv" class="om-heading">Cadenza TV</h3>
+        <div class="om-list">
+          <div
             v-for="pending in cast.pendingStages"
             :key="pending.receiverId"
-            class="cast-device"
+            class="om-row om-row-static"
           >
-            <span>{{ pending.name }}, PIN {{ pending.pin }}</span>
+            <span class="om-row-text">
+              <span class="om-row-title">{{ pending.name }}</span>
+              <span class="om-row-sub">PIN {{ pending.pin }}</span>
+            </span>
             <button
-              class="cast-button"
               type="button"
+              class="om-action om-action-primary"
               :disabled="!host.connected"
               @click="host.approveStage(pending.pin)"
             >
               Approve
             </button>
-          </li>
-          <li
+          </div>
+          <div
             v-for="stage in cast.stages"
             :key="stage.receiverId"
-            class="cast-device"
+            class="om-row om-row-static"
           >
-            <span
-              >{{ stage.name }},
-              {{
-                stage.transmitting ? 'Playing audio' : 'Full Cadenza Suite'
-              }}</span
-            >
+            <span class="om-row-text">
+              <span class="om-row-title">{{ stage.name }}</span>
+              <span class="om-row-sub">
+                {{
+                  stage.transmitting ? 'Playing audio' : 'Full Cadenza Suite'
+                }}
+              </span>
+              <span
+                v-if="stage.status"
+                class="om-status"
+                :class="{ mismatch: stage.status.mismatch }"
+                role="status"
+              >
+                {{ stage.status.text }}
+              </span>
+            </span>
             <button
-              class="cast-button"
               type="button"
+              class="om-action"
               :disabled="!host.connected"
               @click="
                 host.setCastTransmit(
@@ -203,31 +237,20 @@ const presentations: { value: CastPresentation; label: string }[] = [
                 )
               "
             >
-              {{
-                stage.transmitting ? 'Stop sending audio' : 'Send audio here'
-              }}
+              {{ stage.transmitting ? 'Stop' : 'Send audio here' }}
             </button>
-            <p
-              v-if="stage.status"
-              class="cast-status"
-              :class="{ mismatch: stage.status.mismatch }"
-              role="status"
-            >
-              {{ stage.status.text }}
-            </p>
-          </li>
-        </ul>
+          </div>
+        </div>
       </section>
-      <section v-if="cast" class="cast" aria-label="Google Cast">
-        <p class="cast-title">
-          Google Cast, {{ castPresentationLabel(cast.presentation) }}
-        </p>
-        <div class="cast-presentation" role="group" aria-label="Cast mode">
+
+      <section v-if="cast" class="om-section" aria-labelledby="output-cast">
+        <h3 id="output-cast" class="om-heading">Google Cast</h3>
+        <div class="om-segmented" role="group" aria-label="Cast presentation">
           <button
             v-for="option in presentations"
             :key="option.value"
-            class="cast-button"
             type="button"
+            class="om-segment"
             :aria-pressed="cast.presentation === option.value"
             :disabled="!host.connected"
             @click="choosePresentation(option.value)"
@@ -235,20 +258,20 @@ const presentations: { value: CastPresentation; label: string }[] = [
             {{ option.label }}
           </button>
         </div>
-        <p v-if="cast.presentation === 'full_suite'" class="cast-note">
+        <p v-if="cast.presentation === 'full_suite'" class="om-note">
           Displays motion artwork and synced lyrics on screen-capable Cast
           receivers.
         </p>
         <p
           v-if="transmit?.state === 'starting'"
-          class="cast-note"
+          class="om-status"
           role="status"
         >
           Connecting to {{ labelOf(transmit.device) }}.
         </p>
         <p
           v-else-if="transmit?.state === 'transmitting'"
-          class="cast-status"
+          class="om-status"
           :class="{ mismatch: transmit.status?.mismatch }"
           role="status"
         >
@@ -256,42 +279,45 @@ const presentations: { value: CastPresentation; label: string }[] = [
         </p>
         <p
           v-else-if="transmit?.state === 'failed'"
-          class="cast-note"
+          class="om-status alert"
           role="alert"
         >
           {{ transmit.reason }}
         </p>
-        <ul v-if="cast.devices.length > 0" class="cast-devices">
-          <li
+        <div v-if="cast.devices.length > 0" class="om-list">
+          <div
             v-for="device in cast.devices"
             :key="device.name"
-            class="cast-device"
+            class="om-row om-row-static"
           >
-            <span
-              >{{ device.label }}, {{ castDisplayLabel(device.display) }}</span
-            >
+            <span class="om-row-text">
+              <span class="om-row-title">{{ device.label }}</span>
+              <span class="om-row-sub">{{
+                castDisplayLabel(device.display)
+              }}</span>
+            </span>
             <button
               v-if="isSendingTo(device.name)"
-              class="cast-button"
               type="button"
+              class="om-action"
               :disabled="!host.connected"
               @click="stopAudio"
             >
-              Stop sending audio
+              Stop
             </button>
             <button
               v-else
-              class="cast-button"
               type="button"
+              class="om-action"
               :disabled="!host.connected || sending"
               @click="sendAudio(device.name)"
             >
               Send audio here
             </button>
-          </li>
-        </ul>
-        <p v-else class="cast-note">No Cast devices found on this network.</p>
-        <p class="cast-note">
+          </div>
+        </div>
+        <p v-else class="om-note">No Cast devices found on this network.</p>
+        <p class="om-note">
           Stereo audio streams as AAC; 5.1 surround streams as AC-3 when the
           encoder helper is bundled.
         </p>
@@ -325,14 +351,14 @@ const presentations: { value: CastPresentation; label: string }[] = [
   position: fixed;
   inset: auto 16px 96px auto;
   display: grid;
-  gap: 10px;
+  gap: 18px;
   width: min(360px, calc(100vw - 32px));
-  max-height: min(70vh, 560px);
+  max-height: min(70vh, 600px);
   margin: 0;
-  padding: 14px;
+  padding: 16px;
   overflow-y: auto;
   border: 1px solid var(--color-separator);
-  border-radius: 16px;
+  border-radius: 20px;
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
@@ -350,78 +376,10 @@ const presentations: { value: CastPresentation; label: string }[] = [
   }
 }
 
-.output-select {
-  max-width: 180px;
-  min-height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--color-fill-strong);
-  border-radius: 8px;
-  background: transparent;
+.output-title {
+  margin: 0;
   color: var(--color-text);
-  font: inherit;
-  font-size: 13px;
-}
-
-.output-select:disabled {
-  opacity: 0.5;
-}
-
-.cast {
-  display: grid;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-
-.cast-title {
-  color: var(--color-text);
+  font-size: 17px;
   font-weight: 600;
-}
-
-.cast-devices {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cast-device {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.cast-button {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--color-fill-strong);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 13px;
-}
-
-.cast-button:disabled {
-  opacity: 0.5;
-}
-
-.cast-note {
-  margin: 0;
-  color: var(--color-text-tertiary);
-}
-
-/* A route line spans the whole row, so it wraps below its device name and button. */
-.cast-status {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--color-text-tertiary);
-}
-
-.cast-status.mismatch {
-  color: var(--color-danger);
 }
 </style>

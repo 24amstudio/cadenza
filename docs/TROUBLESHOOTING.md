@@ -88,11 +88,13 @@ The output menu lists the Google Cast devices on your network. If Send audio her
 
 ## A TV shows a PIN but never connects
 
-Approve the PIN in Settings → Cadenza TV on the Mac, or on a paired Remote's output menu, before it expires. The code expires after five minutes, and the TV then asks for a new one. If the TV shows "Reconnecting to Cadenza", check that the TV can reach the Mac's address and web port, and that both are on the same network. The web port is the control port plus two.
+If the TV address shows "ERR_CONNECTION_REFUSED", Cadenza Web is off or has not started. Turn on Cadenza Web in Settings → Network, restart Cadenza Host, then open the address shown in Settings → Cast.
+
+Approve the PIN in Settings → Cast on the Mac, or on a paired Remote's output menu, before it expires. The code expires after five minutes, and the TV then asks for a new one. If the TV shows "Reconnecting to Cadenza", check that the TV can reach the Mac's address and web port, and that both are on the same network. The web port is the control port plus two.
 
 ## A TV is connected but has no sound
 
-Browsers and TV apps block audio until someone presses a key or touches the screen. Press OK once. Then check that Settings → Cadenza TV lists the TV as playing, and that Music is playing on the Mac. A 5.1 track sends stereo when no AC-3 encoder is available, which is expected.
+Browsers and TV apps block audio until someone presses a key or touches the screen. Press OK once. Then check that Settings → Cast lists the TV as playing, and that Music is playing on the Mac. A 5.1 track sends stereo when no AC-3 encoder is available, which is expected.
 
 ## Lyrics are early or late on a TV
 

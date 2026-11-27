@@ -8,7 +8,15 @@ import {
   type NotificationAccess,
 } from '~/lib/browserNotifications';
 import { isValidRemoteName } from '~/lib/host/endpoint';
+import { identityOf } from '~/lib/library/identity';
 import { browserLocalStorage } from '~/lib/library/keyValue';
+import {
+  LYRIC_NUDGE_STEP_MS,
+  lyricDelayLabel,
+  nudgeDelay,
+  syncFirstLineDelay,
+} from '~/lib/lyricNudge';
+import { lyricsLevel } from '~/lib/lyrics';
 import { setTasteDigestOptIn, tasteDigestOptedIn } from '~/lib/tasteDigest';
 import { useHostStore } from '~/stores/host';
 import {
@@ -19,6 +27,46 @@ import {
 
 const host = useHostStore();
 const preferences = usePreferencesStore();
+
+// Lyric timing belongs to the playing song and is saved on the Host, so these controls act on the current track only.
+const lyricIdentity = computed(() => {
+  const song = host.current?.song;
+
+  return song === undefined ? null : identityOf(song);
+});
+
+const timedLyrics = computed(() => lyricsLevel(host.lyricsDocument) >= 2);
+const lyricDelayMs = computed(() => host.lyricsDocument?.userOffsetMs ?? 0);
+
+const firstTimedLineStartMs = computed(
+  () => host.lyricsDocument?.lines[0]?.startMs ?? null,
+);
+
+const lyricTimingReady = computed(
+  () => timedLyrics.value && lyricIdentity.value !== null && host.connected,
+);
+
+const lyricStepLabel = `${LYRIC_NUDGE_STEP_MS / 1000} s`;
+
+function saveLyricDelay(delayMs: number): void {
+  const identity = lyricIdentity.value;
+
+  if (identity === null) return;
+  host.setLyricOffset(identity, Math.max(-5000, Math.min(5000, delayMs)));
+}
+
+function nudgeLyrics(direction: 1 | -1): void {
+  saveLyricDelay(
+    nudgeDelay(lyricDelayMs.value, direction * LYRIC_NUDGE_STEP_MS),
+  );
+}
+
+function syncFirstLyricLine(): void {
+  const startMs = firstTimedLineStartMs.value;
+
+  if (startMs === null) return;
+  saveLyricDelay(syncFirstLineDelay(startMs, host.positionMs));
+}
 
 const themes: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -211,6 +259,63 @@ async function toggleSongAlerts(): Promise<void> {
           <span class="switch-thumb" aria-hidden="true"></span>
         </button>
       </div>
+    </section>
+
+    <section class="group" aria-labelledby="lyric-timing-title">
+      <h2 id="lyric-timing-title">Lyric timing</h2>
+      <div class="row">
+        <span id="lyric-timing-label">Shift lyrics</span>
+        <div
+          class="timing-controls"
+          role="group"
+          aria-labelledby="lyric-timing-label"
+        >
+          <button
+            class="quiet-button"
+            type="button"
+            :aria-label="`Show lyrics ${lyricStepLabel} earlier`"
+            :disabled="!lyricTimingReady"
+            @click="nudgeLyrics(-1)"
+          >
+            -{{ lyricStepLabel }}
+          </button>
+          <span class="timing-value" aria-live="polite">{{
+            lyricDelayLabel(lyricDelayMs)
+          }}</span>
+          <button
+            class="quiet-button"
+            type="button"
+            :aria-label="`Show lyrics ${lyricStepLabel} later`"
+            :disabled="!lyricTimingReady"
+            @click="nudgeLyrics(1)"
+          >
+            +{{ lyricStepLabel }}
+          </button>
+        </div>
+      </div>
+      <div class="row">
+        <span>First timed line</span>
+        <button
+          class="quiet-button"
+          type="button"
+          :disabled="!lyricTimingReady || firstTimedLineStartMs === null"
+          @click="syncFirstLyricLine"
+        >
+          Sync first line
+        </button>
+      </div>
+      <p class="footnote">
+        <template v-if="lyricTimingReady">
+          Timing applies to the song that is playing and is saved on Cadenza
+          Host, so every Remote shows it.
+        </template>
+        <template v-else-if="!host.connected">
+          Connect to Cadenza Host to shift lyrics.
+        </template>
+        <template v-else>
+          Timed lyrics for the playing song unlock these controls.
+        </template>
+      </p>
     </section>
 
     <section class="group" aria-labelledby="notifications-title">
@@ -444,6 +549,18 @@ input[aria-invalid='true'] {
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 2px 8px -4px var(--color-shadow);
+}
+
+.timing-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timing-value {
+  min-width: 4.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .save-button,

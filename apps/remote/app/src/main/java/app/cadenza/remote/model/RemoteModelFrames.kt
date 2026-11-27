@@ -62,7 +62,9 @@ internal suspend fun RemoteModel.receive(frame: JSONObject) {
                 sample.counter("sent_at_host_ms"),
                 SystemClock.elapsedRealtime(),
             )
-            mutable.update { it.copy(clockUncertaintyMs = clock.uncertaintyMs.takeIf { clock.ready }) }
+            mutable.update {
+                it.copy(clockUncertaintyMs = clock.uncertaintyMs.takeIf { clock.ready }, linkRoundTripMs = clock.roundTripMs)
+            }
         }
         "search.result" -> {
             val requestId = frame.nullableString("request_id")

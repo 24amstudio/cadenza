@@ -870,7 +870,7 @@ final class HostService {
     // Every command field a debugging session needs, without the song's full metadata.
     private func commandMetadata(_ frame: Frame, peer: NetworkService.Peer) -> [String: String] {
         var metadata = [
-            "command_id": frame.commandId ?? "", "remote_id": peer.remoteId ?? "",
+            "command_id": frame.commandId ?? "", "remote_id": peer.remoteId ?? "", "transport": peer.transport,
             "kind": frame.action?.kind ?? "", "expected_revision": frame.expectedRevision.map(String.init) ?? "",
         ]
         if let song = frame.action?.song { metadata["song"] = song.source + ":" + song.id }
@@ -911,7 +911,8 @@ final class HostService {
             guard let level = HostLogLevel(rawValue: entry.level) else { continue }
             logger.log(
                 level, category: "remote", action: entry.action, entry.message, source: "remote",
-                remoteVersion: peer.remoteVersion, metadata: ["remote_id": peer.remoteId ?? ""])
+                remoteVersion: peer.remoteVersion,
+                metadata: ["remote_id": peer.remoteId ?? "", "transport": peer.transport])
         }
     }
 
@@ -921,7 +922,7 @@ final class HostService {
             .warning, category: "protocol", action: "request.failed", error.localizedDescription,
             remoteVersion: peer.remoteVersion,
             metadata: [
-                "type": request.type, "code": code, "remote_id": peer.remoteId ?? "",
+                "type": request.type, "code": code, "remote_id": peer.remoteId ?? "", "transport": peer.transport,
                 "command_id": request.commandId ?? "", "request_id": request.requestId ?? "",
             ])
         if request.type == "command" {

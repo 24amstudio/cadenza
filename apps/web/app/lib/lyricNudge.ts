@@ -28,3 +28,12 @@ export function syncFirstLineDelay(
 export function lyricClockMs(positionMs: number, delayMs: number): number {
   return positionMs - delayMs;
 }
+
+/** The saved timing as Settings shows it: "+0.5 s", "-1.5 s" or "0.0 s". */
+export function lyricDelayLabel(delayMs: number): string {
+  const seconds = delayMs / 1000;
+
+  if (seconds === 0) return '0.0 s';
+
+  return `${seconds > 0 ? '+' : ''}${seconds.toFixed(1)} s`;
+}

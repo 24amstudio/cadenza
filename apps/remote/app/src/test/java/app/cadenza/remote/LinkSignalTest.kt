@@ -1,38 +1,36 @@
 package app.cadenza.remote
 
-import app.cadenza.remote.data.TransportPathStatus
+import app.cadenza.remote.data.ClockSync
 import app.cadenza.remote.model.TrafficPulses
+import app.cadenza.remote.ui.LinkTransport
 import app.cadenza.remote.ui.linkSignalBars
+import app.cadenza.remote.ui.linkTransportOf
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class LinkSignalTest {
-    private fun path(
-        state: String,
-        rttMs: Long?,
-    ) = TransportPathStatus(
-        transport = "ble",
-        state = state,
-        rssiDbm = null,
-        rttMs = rttMs,
-        lossPercent = null,
-        throughputKbps = null,
-        backlogBytes = null,
-    )
-
     @Test
     fun aDroppedLinkShowsNoBarsAndALiveLinkWithoutARoundTripShowsOne() {
-        assertEquals(0, linkSignalBars(connected = false, paths = listOf(path("connected", 40))))
-        assertEquals(1, linkSignalBars(connected = true, paths = emptyList()))
+        assertEquals(0, linkSignalBars(connected = false, roundTripMs = 40))
+        assertEquals(1, linkSignalBars(connected = true, roundTripMs = null))
     }
 
     @Test
-    fun barsFollowTheFastestLivePathsRoundTrip() {
-        val paths = listOf(path("connected", 150), path("disconnected", 10), path("degraded", 300))
+    fun aQuickLinkShowsAllBarsAndASlowOneShowsFewer() {
+        assertEquals(4, linkSignalBars(connected = true, roundTripMs = 40))
+        assertEquals(3, linkSignalBars(connected = true, roundTripMs = 150))
+        assertEquals(2, linkSignalBars(connected = true, roundTripMs = 300))
+        assertEquals(1, linkSignalBars(connected = true, roundTripMs = 900))
+    }
 
-        assertEquals(3, linkSignalBars(connected = true, paths = paths))
-        assertEquals(4, linkSignalBars(connected = true, paths = listOf(path("connected", 40))))
-        assertEquals(1, linkSignalBars(connected = true, paths = listOf(path("connected", 900))))
+    @Test
+    fun aFixedModeNamesItsTransportAndHybridFollowsTheHostDecision() {
+        assertEquals(LinkTransport.BLUETOOTH, linkTransportOf("ble", selected = "lan"))
+        assertEquals(LinkTransport.WIFI, linkTransportOf("lan", selected = null))
+        assertEquals(LinkTransport.BLUETOOTH, linkTransportOf("hybrid", selected = "ble"))
+        assertEquals(LinkTransport.WIFI, linkTransportOf("hybrid", selected = "ethernet"))
+        assertNull(linkTransportOf("hybrid", selected = null))
     }
 
     @Test

@@ -12,12 +12,17 @@ class ClockSync {
     private data class Sample(
         val offset: Long,
         val uncertainty: Long,
+        val roundTrip: Long,
     )
 
     private val samples = ArrayDeque<Sample>()
     var offsetMs: Long = 0
         private set
     var uncertaintyMs: Long = Long.MAX_VALUE
+        private set
+
+    /** The round trip of the sample the clock trusts most. Null until the first clock reply. */
+    var roundTripMs: Long? = null
         private set
 
     private val hasSample: Boolean get() = samples.isNotEmpty()
@@ -28,6 +33,7 @@ class ClockSync {
         samples.clear()
         offsetMs = 0
         uncertaintyMs = Long.MAX_VALUE
+        roundTripMs = null
     }
 
     fun observe(
@@ -41,11 +47,12 @@ class ClockSync {
         if (sentRemote < 0 || receivedRemote < sentRemote || sentHost < receivedHost || roundTrip !in 0..1_000) return
         val offset = ((receivedHost - sentRemote) + (sentHost - receivedRemote)) / 2
         if (samples.isNotEmpty() && abs(offset - offsetMs) > 2_000) reset()
-        samples.addLast(Sample(offset, (roundTrip + 1) / 2))
+        samples.addLast(Sample(offset, (roundTrip + 1) / 2, roundTrip))
         if (samples.size > 12) samples.removeFirst()
         val best = samples.minBy { it.uncertainty }
         offsetMs = best.offset
         uncertaintyMs = best.uncertainty
+        roundTripMs = best.roundTrip
     }
 
     fun hostTime(remoteNow: Long): Long = remoteNow + offsetMs

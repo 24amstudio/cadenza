@@ -28,7 +28,7 @@ struct LogTable: View {
                     .width(min: 40, ideal: 100, max: 160)
                 TableColumn("Action") { Text($0.action).lineLimit(1) }
                     .width(min: 50, ideal: 130, max: 260)
-                TableColumn("Message") { Text($0.message).lineLimit(1).help($0.message) }
+                TableColumn("Message") { Text($0.listMessage).lineLimit(1) }
                     .width(min: 80)
             }
             .onCopyCommand {

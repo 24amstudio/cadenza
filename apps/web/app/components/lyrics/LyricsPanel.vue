@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import LyricLines from '~/components/lyrics/LyricLines.vue';
-import LyricNudge from '~/components/lyrics/LyricNudge.vue';
-import { identityOf } from '~/lib/library/identity';
 import { lyricsLevel } from '~/lib/lyrics';
-import { lyricClockMs, syncFirstLineDelay } from '~/lib/lyricNudge';
+import { lyricClockMs } from '~/lib/lyricNudge';
 import { useHostStore } from '~/stores/host';
 import { usePreferencesStore } from '~/stores/preferences';
 
@@ -21,25 +19,8 @@ const preferences = usePreferencesStore();
 const root = ref<HTMLElement | null>(null);
 const level = computed(() => lyricsLevel(host.lyricsDocument));
 
-// The timing nudge belongs to one track. A track starts from the nudge the person saved on the Host, or from none.
-const delayMs = ref(0);
-
-watch(
-  () => host.lyricsDocument?.occurrenceId,
-  () => {
-    delayMs.value = host.lyricsDocument?.userOffsetMs ?? 0;
-  },
-);
-
-// Each change is saved on the Host, so the nudge is kept for this track on later visits.
-watch(delayMs, (value) => {
-  const song = host.current?.song;
-  const identity = song === undefined ? null : identityOf(song);
-
-  if (identity === null || value === (host.lyricsDocument?.userOffsetMs ?? 0))
-    return;
-  host.setLyricOffset(identity, Math.max(-5000, Math.min(5000, value)));
-});
+// The timing is set in Settings and saved on the Host for this track, so every Remote shows the same timing.
+const delayMs = computed(() => host.lyricsDocument?.userOffsetMs ?? 0);
 
 const lyricPositionMs = computed(() =>
   lyricClockMs(host.positionMs, delayMs.value),
@@ -48,18 +29,6 @@ const lyricPositionMs = computed(() =>
 // LyricLines reads this on every animation frame, so it stays a reader rather than a computed value.
 function lyricLivePositionMs(): number {
   return lyricClockMs(host.livePositionMs(), delayMs.value);
-}
-
-const firstTimedLineStartMs = computed(
-  () => host.lyricsDocument?.lines[0]?.startMs ?? null,
-);
-
-function syncFirstLine(): void {
-  if (firstTimedLineStartMs.value === null) return;
-  delayMs.value = syncFirstLineDelay(
-    firstTimedLineStartMs.value,
-    host.positionMs,
-  );
 }
 
 // A tapped line carries lyric time, so the playback position it seeks to is that time plus the delay.
@@ -99,14 +68,6 @@ defineExpose({ reveal });
         <AppIcon name="fullscreen" />
       </button>
     </header>
-
-    <LyricNudge
-      v-if="level >= 2"
-      :delay-ms="delayMs"
-      :can-sync-first-line="firstTimedLineStartMs !== null"
-      @update:delay-ms="delayMs = $event"
-      @sync-first-line="syncFirstLine"
-    />
 
     <Transition name="fade" mode="out-in">
       <div v-if="host.lyricsLoading" key="loading" class="lyrics-loading">

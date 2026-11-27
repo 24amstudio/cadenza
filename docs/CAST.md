@@ -15,9 +15,9 @@ Each Remote and the Host agree on one route per receiver. The Host chooses it fr
 
 ## Browser stage (`/tv`)
 
-1. Open `http://<mac>:<web port>/tv` on the TV browser. The web port is the Host's control port plus two, and Settings → Cadenza TV shows the full address.
-2. The TV shows a PIN and a QR code. Approve it in Cadenza Host (Settings → Cadenza TV → Approve), or scan the QR code with a Remote that is already paired. The approval link opens the Remote with the PIN, and the Remote approves it.
-3. The TV keeps a token for its next visit, so it only asks for approval once. Forget a TV in Settings → Cadenza TV to make it pair again.
+1. Open `http://<mac>:<web port>/tv` on the TV browser. The web port is the Host's control port plus two, and Settings → Cast shows the full address. The address appears only while Cadenza Web is on in Settings → Network. Turning it on takes a Host restart.
+2. The TV shows a PIN and a QR code. Approve it in Cadenza Host (Settings → Cast → Approve), or scan the QR code with a Remote that is already paired. The approval link opens the Remote with the PIN, and the Remote approves it.
+3. The TV keeps a token for its next visit, so it only asks for approval once. Forget a TV in Settings → Cast to make it pair again.
 4. Browsers block audio until someone presses a key or touches the screen. Press OK once after the TV starts.
 
 Keys: OK or Play/Pause toggles playback, the right and left arrows skip and go back, and the up and down arrows move the lip-sync offset by 10 ms, up to 250 ms.
@@ -25,7 +25,7 @@ Keys: OK or Play/Pause toggles playback, the right and left arrows skip and go b
 ## Android TV receiver
 
 1. Install the Remote APK. On an Android TV, Cadenza Remote starts as the stage. On a tablet, turn on **TV Stage Receiver Mode** in Settings.
-2. Type the Host address shown in Settings → Cadenza TV, for example `192.168.1.10:8766`. The stage uses plain HTTP on the local network only.
+2. Type the Host address shown in Settings → Cast, for example `192.168.1.10:8766`. The stage uses plain HTTP on the local network only.
 3. Approve the TV as above. The receiver then plays audio for each Remote command that names it.
 
 ## Audio formats
@@ -42,5 +42,5 @@ Play a track with a visible lyric change, then move the offset until the line ch
 
 - Catalog music videos never reach a Cast device or a stage receiver. Their pictures are FairPlay-protected, and only a local file can be played there.
 - Protected audio is not read for alignment, so video alignment uses the local file's audio only.
-- The experimental web loader is built but unverified. Settings → Cadenza TV → Experimental Web Loader takes a URL-loading Cast app ID that you supply. Cadenza then opens `/tv` through that app on the TV instead of streaming audio to the Default Media Receiver. No app ID is bundled, and no device has run it.
+- The experimental web loader is built but unverified. Settings → Cast → Experimental Web Loader takes a URL-loading Cast app ID that you supply. Cadenza then opens `/tv` through that app on the TV instead of streaming audio to the Default Media Receiver. No app ID is bundled, and no device has run it.
 - Nothing in this stage has been run on a real TV, Chromecast, Google TV, Fire TV, or Apple TV in this build. See `docs/agents/VALIDATION.md`.

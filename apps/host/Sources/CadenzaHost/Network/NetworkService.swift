@@ -182,7 +182,8 @@ final class NetworkService {
         let peerID = peer.id
         peers[peerID] = peer
         logger?.log(
-            .info, category: "network", action: "peer.connected", "Remote connection opened", metadata: ["peer": peerID]
+            .info, category: "network", action: "peer.connected", "Remote connection opened",
+            metadata: ["peer": peerID, "transport": peer.transport]
         )
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
@@ -275,7 +276,7 @@ final class NetworkService {
         peers[peer.id] = peer
         logger?.log(
             .info, category: "network", action: "peer.connected", "Remote connection opened",
-            metadata: ["peer": peer.id, "transport": "web"]
+            metadata: ["peer": peer.id, "transport": peer.transport, "client": "web"]
         )
         Task { @MainActor [weak self, weak peer] in
             try? await Task.sleep(for: .seconds(5))
@@ -362,7 +363,8 @@ final class NetworkService {
                 "Closed a Remote connection because an outbound message was too large.",
                 remoteVersion: peer.remoteVersion,
                 metadata: [
-                    "peer": peer.id, "remote_id": peer.remoteId ?? "", "message_bytes": String(data.count),
+                    "peer": peer.id, "remote_id": peer.remoteId ?? "", "transport": peer.transport,
+                    "message_bytes": String(data.count),
                     "lane": String(describing: lane),
                 ])
             disconnect(peer.id)
@@ -379,7 +381,8 @@ final class NetworkService {
                 "Closed a Remote connection because its outbound buffer exceeded the limit.",
                 remoteVersion: peer.remoteVersion,
                 metadata: [
-                    "peer": peer.id, "remote_id": peer.remoteId ?? "", "buffered_bytes": String(peer.outboundBytes),
+                    "peer": peer.id, "remote_id": peer.remoteId ?? "", "transport": peer.transport,
+                    "buffered_bytes": String(peer.outboundBytes),
                     "message_bytes": String(data.count), "lane": String(describing: lane),
                 ])
             disconnect(peer.id)
@@ -506,7 +509,10 @@ final class NetworkService {
         logger?.log(
             .info, category: "network", action: "peer.disconnected", "Remote connection closed",
             remoteVersion: peer.remoteVersion,
-            metadata: ["peer": peerId, "remote_id": peer.remoteId ?? "", "authenticated": String(peer.authenticated)])
+            metadata: [
+                "peer": peerId, "remote_id": peer.remoteId ?? "", "transport": peer.transport,
+                "authenticated": String(peer.authenticated),
+            ])
         onDisconnect?(peerId)
     }
 

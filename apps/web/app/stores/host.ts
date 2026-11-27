@@ -131,7 +131,8 @@ export const useHostStore = defineStore('host', () => {
   let lastVolumeResult: CommandResult | null = null;
   // URLs whose image is the full one rather than the 32 pixel preview. A preview never replaces them.
   const fullImages = new Set<string>();
-  // Web Bluetooth exists only in secure contexts and Chromium-based browsers. When it is absent, pairing uses the QR.
+  // Web Bluetooth exists only in secure contexts and Chromium-based browsers. Where it exists the link is Bluetooth.
+  // Where it is absent, pairing uses the QR and the link is the Host's WebSocket.
   const bluetoothSupported = bluetoothAvailable();
   // 'searching' while the browser's device chooser and GATT connection run. 'linked' once the Host's link waits for a PIN.
   const bluetoothState = ref<'idle' | 'searching' | 'linked'>('idle');
@@ -913,6 +914,7 @@ export const useHostStore = defineStore('host', () => {
     isPlaying,
     connected,
     linkBars,
+    linkOverBluetooth: bluetoothSupported,
     rxPulse: traffic.incoming,
     txPulse: traffic.outgoing,
     canControl,

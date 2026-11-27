@@ -37,7 +37,12 @@ struct LogDetailView: View {
                     if let remote = row.remoteVersion { LabeledContent("Remote version", value: remote) }
                 }
                 .formStyle(.columns)
-                section("Message", text: row.message)
+                if let pretty = row.prettyMessage {
+                    section("Message", text: pretty, monospaced: true)
+                    section("Raw message", text: row.message, monospaced: true)
+                } else {
+                    section("Message", text: row.message)
+                }
                 if let metadata = row.prettyMetadata { section("Metadata", text: metadata, monospaced: true) }
                 Button("Copy Entry") { copy([row]) }
             }

@@ -9,6 +9,7 @@ import app.cadenza.remote.data.counter
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -119,5 +120,20 @@ class ClockSyncTest {
         val legacy = "{\"version\":1,\"host\":\"192.168.1.20\",\"port\":43127,\"secret\":\"${"s".repeat(44)}\"}"
 
         assertThrows(IllegalArgumentException::class.java) { Wire.invitation(legacy.toByteArray()) }
+    }
+
+    @Test
+    fun roundTripFollowsTheSampleTheClockTrusts() {
+        val clock = ClockSync()
+        assertNull(clock.roundTripMs)
+
+        clock.observe(1_000, 1_100, 1_100, 1_200)
+        assertEquals(200L, clock.roundTripMs)
+
+        clock.observe(2_000, 2_060, 2_060, 2_080)
+        assertEquals(80L, clock.roundTripMs)
+
+        clock.reset()
+        assertNull(clock.roundTripMs)
     }
 }

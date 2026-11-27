@@ -3,6 +3,11 @@ import Foundation
 
 /// Some applications expose no Accessibility window until one is visible, so a backgrounded Music can look empty.
 extension MusicAccessibility {
+    /// Whether Music is the application in front. Work that reopens Music's panels waits for this, so it never takes focus.
+    var isFrontmost: Bool {
+        activation.applications.frontmost?.bundleId == ActivationFallback.musicBundleId
+    }
+
     /// Fails with `music_window_unavailable` when Music exposes no window, instead of waiting on an empty tree.
     func requireWindow() throws {
         beginRead(deadline: monotonicMs() + 800)

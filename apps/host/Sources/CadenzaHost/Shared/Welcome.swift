@@ -8,6 +8,10 @@ struct Welcome: Codable, Sendable {
     var token: String? = nil
     var hostAddress: String? = nil
     var hostPort: Int? = nil
+    // The Cadenza Web socket's port on hostAddress. It is present only while the Host runs that listener.
+    var webPort: Int? = nil
+    // The Mac's Bonjour name, which a browser resolves to the current address. Present only with the web listener.
+    var webHost: String? = nil
     var hostTimeMs: Int64
     var protocolMajor: Int = 1
     var protocolMinor: Int = 1

@@ -532,6 +532,8 @@ final class HostService {
         welcome.hostBuild = HostBuild.build
         welcome.macAddress = HardwareAddress.primary()
         welcome.updateManifest = remoteUpdateOffer()
+        welcome.webPort = configuration.webEnabled ? Int(configuration.webPort) : nil
+        welcome.webHost = configuration.webEnabled ? BonjourName.current() : nil
         network.send(Frame(type: "welcome", requestId: frame.requestId, welcome: welcome), to: peer)
         network.send(Frame(type: "session.status", status: hostStatus(for: peer)), to: peer)
         network.send(Frame(type: "state", snapshot: try snapshot()), to: peer)

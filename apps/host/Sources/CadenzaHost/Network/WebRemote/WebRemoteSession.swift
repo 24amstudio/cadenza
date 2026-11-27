@@ -14,7 +14,8 @@ final class WebRemoteSession {
     }
 
     private let connection: NWConnection
-    private let bundle: WebRemoteBundle
+    /// Nil when this build bundles no Cadenza Web page. The socket still serves, and every file request gets a 404.
+    private let bundle: WebRemoteBundle?
     private let allowedHosts: () -> Set<String>
     private var phase: Phase = .head
     private var buffer: [UInt8] = []
@@ -29,7 +30,7 @@ final class WebRemoteSession {
     var onSocketClosed: (() -> Void)?
     var onFinished: (() -> Void)?
 
-    init(connection: NWConnection, bundle: WebRemoteBundle, allowedHosts: @escaping () -> Set<String>) {
+    init(connection: NWConnection, bundle: WebRemoteBundle?, allowedHosts: @escaping () -> Set<String>) {
         self.connection = connection
         self.bundle = bundle
         self.allowedHosts = allowedHosts
@@ -144,7 +145,9 @@ final class WebRemoteSession {
     }
 
     private func serveFile(path: String, headOnly: Bool) {
-        guard let file = bundle.file(forRequestPath: path), let body = try? Data(contentsOf: file.url) else {
+        guard let bundle, let file = bundle.file(forRequestPath: path),
+            let body = try? Data(contentsOf: file.url)
+        else {
             finish(writing: response(status: 404, contentType: nil, body: []))
             return
         }
@@ -235,7 +238,8 @@ final class WebRemoteSession {
         if let contentType { lines.append("Content-Type: \(contentType)") }
         lines.append(contentsOf: extraHeaders)
         lines.append("Cache-Control: \(cacheControl)")
-        lines.append("Content-Security-Policy: \(bundle.contentSecurityPolicy)")
+        let contentSecurityPolicy = bundle?.contentSecurityPolicy ?? WebRemoteBundle.policy(scriptHashes: [])
+        lines.append("Content-Security-Policy: \(contentSecurityPolicy)")
         lines.append("Referrer-Policy: no-referrer")
         lines.append("X-Content-Type-Options: nosniff")
         lines.append("Connection: close")

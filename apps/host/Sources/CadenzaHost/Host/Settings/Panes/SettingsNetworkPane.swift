@@ -32,14 +32,17 @@ struct SettingsNetworkPane: View {
             }
             Section {
                 Toggle("Cadenza Web", isOn: model.committedBinding(\.webEnabled))
-                    .disabled(!webBundled && !model.configuration.webEnabled)
             } footer: {
                 Text(
                     "Cadenza Web is a browser remote. It lets a browser on this network control Cadenza Host through port "
-                        + "\(model.configuration.webPort), and pairing codes also open it."
+                        + "\(model.configuration.webPort)."
+                        + (webBundled ? " Pairing codes also open it." : "")
                 )
                 if !webBundled {
-                    Text("This build does not include Cadenza Web.")
+                    Text(
+                        "This build does not include the Cadenza Web page. The page hosted on GitHub Pages can still connect "
+                            + "through this port."
+                    )
                 }
             }
             ConnectionPreferenceSections(model: model)

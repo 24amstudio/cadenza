@@ -39,7 +39,12 @@ export class FakeSocket implements SocketLike {
   onMessage: ((text: string) => void) | null = null;
   onClose: (() => void) | null = null;
   readonly frames: JsonObject[] = [];
+  readonly url: string;
   closed = false;
+
+  constructor(url = '') {
+    this.url = url;
+  }
 
   send(text: string): void {
     const value = parseJson(text);
@@ -115,18 +120,19 @@ export class MemoryCredentials implements CredentialStore {
   }
 }
 
-export interface Harness {
-  client: HostClient;
+export interface Harness<Client extends HostClient = HostClient> {
+  client: Client;
   sockets: FakeSocket[];
   changes: HostChange[];
   clock: Clock;
   credentials: MemoryCredentials;
 }
 
-export function harness(
+export function harness<Client extends HostClient = HostClient>(
   credentials: MemoryCredentials = new MemoryCredentials(),
   progressiveArtwork = false,
-): Harness {
+  createClient?: (options: HostClientOptions) => Client,
+): Harness<Client> {
   const clock = new Clock();
   const sockets: FakeSocket[] = [];
   const changes: HostChange[] = [];
@@ -136,8 +142,8 @@ export function harness(
     url: 'wss://host.test/v1/socket',
     remoteVersion: 'cadenza-web test',
     defaultName: 'Web browser on Mac',
-    openSocket: () => {
-      const socket = new FakeSocket();
+    openSocket: (url) => {
+      const socket = new FakeSocket(url);
       sockets.push(socket);
 
       return socket;
@@ -155,7 +161,9 @@ export function harness(
   };
 
   return {
-    client: new HostClient(options),
+    client: createClient
+      ? createClient(options)
+      : (new HostClient(options) as Client),
     sockets,
     changes,
     clock,
@@ -166,6 +174,7 @@ export function harness(
 export function welcome(
   issuedToken: string | null,
   capabilities: string[] = ['artwork.host-cache'],
+  lan: { address: string; port: number; name?: string | null } | null = null,
 ): JsonObject {
   return {
     type: 'welcome',
@@ -177,6 +186,13 @@ export function welcome(
       token: issuedToken,
       host_time_ms: hostOffsetMs,
       capabilities,
+      ...(lan === null
+        ? {}
+        : {
+            host_address: lan.address,
+            web_port: lan.port,
+            ...(lan.name ? { web_host: lan.name } : {}),
+          }),
     },
   };
 }

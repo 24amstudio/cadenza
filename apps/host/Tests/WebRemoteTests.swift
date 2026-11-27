@@ -79,11 +79,11 @@ final class WebRemoteRequestTests: XCTestCase {
     }
 
     private func socketRequest(
-        host: String = "192.168.1.20:43129", origin: String? = "http://192.168.1.20:43129",
+        path: String = "/v1/socket", host: String = "192.168.1.20:43129", origin: String? = "http://192.168.1.20:43129",
         upgrade: String = "websocket", version: String = "13"
     ) -> [UInt8] {
         var lines = [
-            "GET /v1/socket HTTP/1.1", "Host: \(host)", "Upgrade: \(upgrade)", "Connection: Upgrade",
+            "GET \(path) HTTP/1.1", "Host: \(host)", "Upgrade: \(upgrade)", "Connection: Upgrade",
             "Sec-WebSocket-Version: \(version)", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
         ]
         if let origin { lines.append("Origin: \(origin)") }
@@ -125,12 +125,44 @@ final class WebRemoteRequestTests: XCTestCase {
             socketRequest(origin: "http://attacker.example"),
             socketRequest(origin: nil),
             socketRequest(host: "attacker.example:43129", origin: "http://attacker.example:43129"),
+            socketRequest(origin: "https://attacker.github.io"),
+            socketRequest(origin: "https://24amstudio.github.io.attacker.example"),
         ] {
             guard case .complete(let request, _) = WebRemoteRequest.parse(raw) else {
                 return XCTFail("The request should parse before routing.")
             }
             XCTAssertEqual(WebRemoteRequest.route(request, allowedHosts: allowed), .reject(status: 403))
         }
+    }
+
+    func testTheBonjourNameIsServedLikeAnyLocalHost() {
+        let name = "my-mac.local:43129"
+        guard
+            case .complete(let request, _) = WebRemoteRequest.parse(
+                socketRequest(host: name, origin: "http://\(name)")
+            )
+        else {
+            return XCTFail("The socket request should parse.")
+        }
+        XCTAssertEqual(
+            WebRemoteRequest.route(request, allowedHosts: [name]),
+            .socket(key: "dGhlIHNhbXBsZSBub25jZQ=="))
+    }
+
+    func testTheHostedPageMayOpenOnlyTheRemoteSocket() {
+        let hosted = socketRequest(origin: WebRemoteRequest.hostedPageOrigin)
+        guard case .complete(let remote, _) = WebRemoteRequest.parse(hosted) else {
+            return XCTFail("The hosted page's socket request should parse.")
+        }
+        XCTAssertEqual(
+            WebRemoteRequest.route(remote, allowedHosts: allowed),
+            .socket(key: "dGhlIHNhbXBsZSBub25jZQ=="))
+
+        let stage = socketRequest(path: "/cast/live?role=tv_stage", origin: WebRemoteRequest.hostedPageOrigin)
+        guard case .complete(let stageRequest, _) = WebRemoteRequest.parse(stage) else {
+            return XCTFail("The stage request should parse before routing.")
+        }
+        XCTAssertEqual(WebRemoteRequest.route(stageRequest, allowedHosts: allowed), .reject(status: 403))
     }
 
     func testMalformedUpgradesAreBadRequests() {

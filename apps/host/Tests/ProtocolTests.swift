@@ -20,6 +20,20 @@ struct ProtocolTests {
         #expect(fields["host_build"] as? Int == 12)
     }
 
+    @Test func welcomeNamesTheWebSocketPortAndBonjourHost() throws {
+        var welcome = Welcome(
+            hostId: id, hostName: "Studio", hostEpoch: id, remoteId: id, hostTimeMs: 1,
+            updates: UpdateConfiguration())
+        welcome.webPort = 43129
+        welcome.webHost = "my-mac.local"
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Wire.encode(Frame(type: "welcome", welcome: welcome))) as? [String: Any])
+        let fields = try #require(object["welcome"] as? [String: Any])
+
+        #expect(fields["web_port"] as? Int == 43129)
+        #expect(fields["web_host"] as? String == "my-mac.local")
+    }
+
     @Test func commandRoundTripPreservesExplicitNullGuards() throws {
         var command = Frame(type: "command")
         command.commandId = id

@@ -924,8 +924,10 @@ final class QueueCoordinator {
         onCredits?()
     }
 
+    /// Opens Music's Lyrics panel so Music can fetch the song's lyrics. It runs only while Music is already in front,
+    /// because reopening Playing Next would otherwise bring Music forward over the user's work.
     func primeLyrics(occurrence: String) async throws {
-        guard !busy, current?.occurrenceId == occurrence else { return }
+        guard !busy, current?.occurrenceId == occurrence, music.accessibility.isFrontmost else { return }
         primingLyrics = true
         do {
             try music.accessibility.showLyrics(deadline: monotonicMs() + 500)
@@ -936,6 +938,7 @@ final class QueueCoordinator {
         }
         if primingLyrics {
             defer { primingLyrics = false }
+            guard music.accessibility.isFrontmost else { return }
             _ = try? await readNativeQueue(deadline: monotonicMs() + 2_000)
         }
     }

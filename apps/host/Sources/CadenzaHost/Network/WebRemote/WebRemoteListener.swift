@@ -10,6 +10,7 @@ final class WebRemoteListener {
 
     private var listener: NWListener?
     private var sessions: [ObjectIdentifier: WebRemoteSession] = [:]
+    /// Nil when this build bundles no Cadenza Web page. The listener still accepts the Remote socket.
     private var bundle: WebRemoteBundle?
     private var allowedHosts: () -> Set<String> = { [] }
     private let queue = DispatchQueue(label: "app.cadenza.web-remote", qos: .userInitiated)
@@ -23,7 +24,7 @@ final class WebRemoteListener {
     /// Serves the Remote update endpoints on this listener. Set by the Host before sessions can be accepted.
     var updateReply: (@MainActor (WebRemoteRequest) -> WebRemoteReply)?
 
-    func start(port: UInt16, bundle: WebRemoteBundle, allowedHosts: @escaping () -> Set<String>) async throws {
+    func start(port: UInt16, bundle: WebRemoteBundle?, allowedHosts: @escaping () -> Set<String>) async throws {
         stop()
         guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
             throw CadenzaError.failure("network", "Invalid Cadenza Web port.")
@@ -77,7 +78,7 @@ final class WebRemoteListener {
     }
 
     private func accept(_ connection: NWConnection) {
-        guard let bundle, sessions.count < Self.maximumSessions, LocalAddress.isLocal(connection.endpoint) else {
+        guard sessions.count < Self.maximumSessions, LocalAddress.isLocal(connection.endpoint) else {
             connection.cancel()
             return
         }

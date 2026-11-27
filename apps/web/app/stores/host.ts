@@ -26,13 +26,14 @@ import { libraryHostCommands } from '~/lib/host/hostCommands';
 import { prefetchNextCover } from '~/lib/host/nextCover';
 import { openBrowserSocket } from '~/lib/host/browserSocket';
 import {
-  HostClient,
   type HostChange,
   type HostPhase,
   type Readiness,
   type SocketLike,
 } from '~/lib/host/client';
 import { createCredentialStore } from '~/lib/host/credentials';
+import { LanFirstHostClient } from '~/lib/host/lanFirstClient';
+import { scheduleTask } from '~/lib/host/scheduleTask';
 import {
   defaultRemoteName,
   remoteVersion,
@@ -141,7 +142,7 @@ export const useHostStore = defineStore('host', () => {
   let bluetoothLink: SocketLike | null = null;
   // Bumped by forgetting the browser, so a reconnect that is still retrying cannot link a forgotten Host.
   let reconnectGeneration = 0;
-  let client: HostClient | null = null;
+  let client: LanFirstHostClient | null = null;
   let snapshotReceivedMs = 0;
   let ticker: ReturnType<typeof setInterval> | null = null;
 
@@ -374,7 +375,7 @@ export const useHostStore = defineStore('host', () => {
       );
     }
 
-    client = new HostClient({
+    client = new LanFirstHostClient({
       url: socketUrlFor(window.location.href),
       remoteVersion,
       defaultName: defaultRemoteName(navigator.userAgent),
@@ -390,15 +391,20 @@ export const useHostStore = defineStore('host', () => {
     remoteName.value = client.remoteName();
 
     if (bluetoothSupported) {
-      const deviceId = rememberedBluetoothDevice();
-      // Without a device list the browser cannot reconnect silently, so the connect button shows at once.
-      const silent = deviceId !== null && silentReconnectSupported();
-
-      if (client.startBluetooth(silent) && deviceId !== null) {
-        reconnectRemembered(deviceId);
-      }
+      // A recorded LAN socket is tried first. Bluetooth starts only when there is none or that socket does not welcome.
+      if (!client.connectOverLan(startBluetoothLink)) startBluetoothLink();
     } else {
       client.start(secret);
+    }
+  }
+
+  function startBluetoothLink(): void {
+    const deviceId = rememberedBluetoothDevice();
+    // Without a device list the browser cannot reconnect silently, so the connect button shows at once.
+    const silent = deviceId !== null && silentReconnectSupported();
+
+    if (client?.startBluetooth(silent) && deviceId !== null) {
+      reconnectRemembered(deviceId);
     }
   }
 
@@ -991,10 +997,4 @@ function releaseTarget<Value>(
   setTimeout(() => {
     if (target.value === held) target.value = null;
   }, volumeSettleMs);
-}
-
-function scheduleTask(callback: () => void, delayMs: number): () => void {
-  const handle = setTimeout(callback, delayMs);
-
-  return () => clearTimeout(handle);
 }

@@ -121,7 +121,8 @@ extension HostService {
             } catch let error as CadenzaError where error.code == "lyrics_unavailable" {
                 lastError = error
                 guard attempt < 5, music.accessibility.permitted else { break }
-                try? await queue.primeLyrics(occurrence: occurrence)
+                // Priming opens Music's Lyrics panel, so it runs once per request. Later attempts only poll Music's cache.
+                if attempt == 0 { try? await queue.primeLyrics(occurrence: occurrence) }
                 try await Task.sleep(for: .milliseconds(1_000 << min(attempt, 3)))
             }
         }

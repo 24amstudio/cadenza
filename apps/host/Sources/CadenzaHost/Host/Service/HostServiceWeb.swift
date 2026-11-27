@@ -9,11 +9,13 @@ extension HostService {
         webRemote.stop()
         guard configuration.webEnabled else { return }
         let port = configuration.webPort
-        // Not an alert: Settings shows the unbundled state, and native Remotes keep working.
-        guard let root = Self.bundledWebRoot else {
+        // Without a bundled page the socket still serves the hosted Cadenza Web page, so a paired browser can reach the
+        // Host over the LAN. Settings shows the unbundled state.
+        let bundle = Self.bundledWebRoot.map { WebRemoteBundle(root: $0) }
+        if bundle == nil {
             logger.log(
-                .warning, category: "network", action: "web.unbundled", "Cadenza Web is not bundled in this build")
-            return
+                .info, category: "network", action: "web.unbundled",
+                "Cadenza Web is not bundled in this build; its socket serves the hosted page")
         }
         let advertised = configuration.advertisedAddress
         webRemote.updateReply = { @MainActor [weak self] request in
@@ -21,7 +23,7 @@ extension HostService {
         }
         do {
             try await webRemote.start(
-                port: port, bundle: WebRemoteBundle(root: root),
+                port: port, bundle: bundle,
                 allowedHosts: { Self.webAllowedHosts(port: port, advertised: advertised) })
         } catch {
             logger.log(
@@ -50,6 +52,7 @@ extension HostService {
     static func webAllowedHosts(port: UInt16, advertised: String) -> Set<String> {
         var hosts = Set(LANAddresses.all().map { "\($0):\(port)" })
         if !advertised.isEmpty { hosts.insert("\(advertised):\(port)") }
+        if let bonjour = BonjourName.current() { hosts.insert("\(bonjour):\(port)") }
         hosts.formUnion(["127.0.0.1:\(port)", "localhost:\(port)"])
         return hosts
     }

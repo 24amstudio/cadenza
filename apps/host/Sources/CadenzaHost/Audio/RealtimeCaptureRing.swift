@@ -9,11 +9,13 @@ import Synchronization
 /// into pooled buffers, and calls the capture receiver. A full ring drops the newest block, which keeps the realtime
 /// path bounded without growing memory.
 final class RealtimeCaptureRing: @unchecked Sendable {
-    /// One published block. The slot stays reserved until `release` returns it to the producer.
+    /// One published block. The slot stays reserved until `release` returns it to the producer. `hostTime` is the device
+    /// clock time of its first sample, in mach absolute time.
     struct Read {
         let slot: Int
         let frameCount: Int
         let channelCount: Int
+        let hostTime: UInt64
     }
 
     let channelCount: Int
@@ -21,6 +23,7 @@ final class RealtimeCaptureRing: @unchecked Sendable {
     let slotCount: Int
     private let samples: UnsafeMutablePointer<Float>
     private let frameCounts: UnsafeMutablePointer<Int>
+    private let hostTimes: UnsafeMutablePointer<UInt64>
     private let writeIndex = Atomic<Int>(0)
     private let readIndex = Atomic<Int>(0)
     private let wake = DispatchSemaphore(value: 0)
@@ -34,8 +37,10 @@ final class RealtimeCaptureRing: @unchecked Sendable {
         self.slotCount = slotCount
         samples = UnsafeMutablePointer<Float>.allocate(capacity: channelCount * frameCapacity * slotCount)
         frameCounts = UnsafeMutablePointer<Int>.allocate(capacity: slotCount)
+        hostTimes = UnsafeMutablePointer<UInt64>.allocate(capacity: slotCount)
         samples.initialize(repeating: 0, count: channelCount * frameCapacity * slotCount)
         frameCounts.initialize(repeating: 0, count: slotCount)
+        hostTimes.initialize(repeating: 0, count: slotCount)
     }
 
     deinit {
@@ -43,6 +48,8 @@ final class RealtimeCaptureRing: @unchecked Sendable {
         samples.deallocate()
         frameCounts.deinitialize(count: slotCount)
         frameCounts.deallocate()
+        hostTimes.deinitialize(count: slotCount)
+        hostTimes.deallocate()
     }
 
     /// True after `stop`. The consumer exits on its next pass.
@@ -55,21 +62,21 @@ final class RealtimeCaptureRing: @unchecked Sendable {
 
     /// Copies one device block straight from the IOProc pointer, so the realtime path never reads outside state.
     @inline(__always)
-    func write(_ inputData: UnsafePointer<AudioBufferList>) -> Bool {
+    func write(_ inputData: UnsafePointer<AudioBufferList>, hostTime: UInt64 = 0) -> Bool {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
         guard let first = buffers.first, first.mData != nil else { return false }
         let frameCount =
             buffers.count >= 2
             ? Int(first.mDataByteSize) / MemoryLayout<Float>.size
             : Int(first.mDataByteSize) / (MemoryLayout<Float>.size * channelCount)
-        return write(buffers, frameCount: frameCount)
+        return write(buffers, frameCount: frameCount, hostTime: hostTime)
     }
 
     /// Copies one device block. Called only from the realtime IOProc, so it must stay allocation-free.
     ///
     /// `buffers` is planar when it holds one buffer per channel and interleaved when it holds a single buffer.
     @inline(__always)
-    func write(_ buffers: UnsafeMutableAudioBufferListPointer, frameCount: Int) -> Bool {
+    func write(_ buffers: UnsafeMutableAudioBufferListPointer, frameCount: Int, hostTime: UInt64 = 0) -> Bool {
         guard frameCount > 0, frameCount <= frameCapacity, buffers.count > 0 else { return false }
         let write = writeIndex.load(ordering: .relaxed)
         let read = readIndex.load(ordering: .acquiring)
@@ -99,6 +106,7 @@ final class RealtimeCaptureRing: @unchecked Sendable {
             }
         }
         frameCounts[slot] = frameCount
+        hostTimes[slot] = hostTime
         writeIndex.store(write + 1, ordering: .releasing)
         wake.signal()
         return true
@@ -109,7 +117,7 @@ final class RealtimeCaptureRing: @unchecked Sendable {
         let read = readIndex.load(ordering: .relaxed)
         guard read < writeIndex.load(ordering: .acquiring) else { return nil }
         let slot = read % slotCount
-        return Read(slot: slot, frameCount: frameCounts[slot], channelCount: channelCount)
+        return Read(slot: slot, frameCount: frameCounts[slot], channelCount: channelCount, hostTime: hostTimes[slot])
     }
 
     /// Returns a block to the producer. Only the consumer calls this.

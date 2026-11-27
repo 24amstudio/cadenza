@@ -49,6 +49,26 @@ final class RealtimeCaptureRingTests: XCTestCase {
         XCTAssertFalse(ring.write(list, frameCount: 4), "A full ring must drop instead of growing.")
     }
 
+    func testEachBlockKeepsTheDeviceTimeItWasCapturedAt() throws {
+        let ring = try XCTUnwrap(RealtimeCaptureRing(channelCount: 1, frameCapacity: 4, slotCount: 4))
+        let samples = UnsafeMutablePointer<Float>.allocate(capacity: 4)
+        defer { samples.deallocate() }
+        samples.initialize(repeating: 0.5, count: 4)
+        let list = AudioBufferList.allocate(maximumBuffers: 1)
+        list[0] = AudioBuffer(mNumberChannels: 1, mDataByteSize: 4 * 4, mData: samples)
+
+        XCTAssertTrue(ring.write(list, frameCount: 4, hostTime: 1_000))
+        XCTAssertTrue(ring.write(list, frameCount: 4, hostTime: 2_000))
+
+        // Both blocks are waiting when the consumer wakes, so each keeps its own device time rather than the wake time.
+        let first = try XCTUnwrap(ring.read())
+        ring.release(first)
+        let second = try XCTUnwrap(ring.read())
+        ring.release(second)
+        XCTAssertEqual(first.hostTime, 1_000)
+        XCTAssertEqual(second.hostTime, 2_000)
+    }
+
     func testTheRealtimeProducerDoesNotAllocate() throws {
         // The probe counts every malloc on this thread, including the ones a debug Swift build makes for its own
         // bookkeeping inside any loop. Only an optimized build measures the real producer path, so the default

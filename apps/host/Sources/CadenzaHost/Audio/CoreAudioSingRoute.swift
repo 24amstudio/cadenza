@@ -95,8 +95,8 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
             var createdIOProc: AudioDeviceIOProcID?
             let ioStatus = AudioDeviceCreateIOProcIDWithBlock(
                 &createdIOProc, aggregateDeviceID, ioQueue
-            ) { _, inputData, _, _, _ in
-                _ = ring.write(inputData)
+            ) { _, inputData, inputTime, _, _ in
+                _ = ring.write(inputData, hostTime: inputTime.pointee.mHostTime)
             }
             guard ioStatus == noErr, let createdIOProc else {
                 throw audioError("create audio IO callback", status: ioStatus)
@@ -221,7 +221,8 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         }
         receive(
             SingAudioBuffer(
-                format: format, frameCount: read.frameCount, samples: acquired.buffer, lease: acquired.lease))
+                format: format, frameCount: read.frameCount, samples: acquired.buffer, lease: acquired.lease,
+                hostTime: read.hostTime))
     }
 
     private func musicProcessObjectID() -> AudioObjectID? {

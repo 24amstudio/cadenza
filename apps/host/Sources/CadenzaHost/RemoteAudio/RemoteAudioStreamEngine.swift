@@ -114,9 +114,9 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
     }
 
     private func receive(_ buffer: SingAudioBuffer) {
-        let captureUs = RemoteAudioClock.nowUs()
         defer { buffer.release() }
         let count = Int(buffer.frameCount)
+        let captureUs = Self.blockEndUs(buffer, frames: count)
         guard count > 0, count <= Self.maximumBlockFrames, buffer.format.channelCount == 2,
             let channels = buffer.samples.floatChannelData
         else { return }
@@ -156,6 +156,15 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
         // The sequence advances for every produced frame, so a Remote sees a gap for each frame the gate drops.
         current.sequence &+= 1
         current.deliver(frame)
+    }
+
+    /// The instant a block's last sample exists, on the continuous clock. A block is stamped by its device time rather than
+    /// by when the consumer drains it, so consecutive blocks stay one block apart however late they are read.
+    private static func blockEndUs(_ buffer: SingAudioBuffer, frames: Int) -> UInt64 {
+        guard buffer.hostTime != 0 else { return RemoteAudioClock.nowUs() }
+        let durationUs = UInt64(Double(frames) / buffer.format.sampleRate * 1_000_000)
+
+        return RemoteAudioClock.continuousUs(forHostTime: buffer.hostTime) &+ durationUs
     }
 
     /// Builds the non-interleaved Float32 buffer that `AVAudioSingOutput` schedules. Stereo input is interleaved.

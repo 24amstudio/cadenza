@@ -55,7 +55,7 @@ const statusLabel = computed(() => {
         <LinkIndicator
           v-if="host.connected"
           :bars="host.linkBars"
-          :over-bluetooth="host.linkOverBluetooth"
+          :over-bluetooth="host.linkOverBluetooth()"
           :rx-pulse="host.rxPulse"
           :tx-pulse="host.txPulse"
         />

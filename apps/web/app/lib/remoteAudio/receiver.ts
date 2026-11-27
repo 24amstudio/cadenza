@@ -88,8 +88,9 @@ export class RemoteAudioReceiver {
     return this.#status;
   }
 
-  /** Opens the audio context, which needs a user gesture, and the socket. */
-  async start(): Promise<void> {
+  /** Opens the audio context, which needs a user gesture, and the socket. `baseURL` is the app's base path: a project
+   *  Pages site serves the app under /<repository>/, so the worklet cannot be requested from the origin root. */
+  async start(baseURL: string): Promise<void> {
     this.#publish({ state: 'connecting', message: 'Connecting to the Host' });
 
     const context = new AudioContext({
@@ -97,7 +98,7 @@ export class RemoteAudioReceiver {
       latencyHint: 'interactive',
     });
 
-    await context.audioWorklet.addModule('/remote-audio-worklet.js');
+    await context.audioWorklet.addModule(`${baseURL}remote-audio-worklet.js`);
     await context.resume();
 
     const node = new AudioWorkletNode(context, 'cadenza-remote-audio', {

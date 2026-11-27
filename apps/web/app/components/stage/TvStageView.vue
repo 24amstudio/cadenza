@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { renderSVG } from 'uqr';
+import { useRuntimeConfig } from '#app';
 import {
   computed,
   onBeforeUnmount,
@@ -223,9 +224,11 @@ function nudgeLipSync(direction: 1 | -1): void {
   flash(`Lip sync ${lipSyncMs.value} ms`);
 }
 
+const baseURL = useRuntimeConfig().app.baseURL;
+
 function onKey(event: KeyboardEvent): void {
   showChrome();
-  void controller?.unlock();
+  void controller?.unlock(baseURL);
 
   switch (event.key) {
     case 'Enter':
@@ -262,7 +265,7 @@ function onKey(event: KeyboardEvent): void {
 
 function onPointer(): void {
   showChrome();
-  void controller?.unlock();
+  void controller?.unlock(baseURL);
 }
 
 onMounted(() => {

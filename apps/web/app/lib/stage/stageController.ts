@@ -111,9 +111,9 @@ export class StageController {
   }
 
   /** Starts audio from a user gesture, which the browser requires before any sound plays. */
-  async unlock(): Promise<void> {
+  async unlock(baseURL: string): Promise<void> {
     try {
-      await this.engine.unlock();
+      await this.engine.unlock(baseURL);
       this.state.audioUnlocked = true;
     } catch {
       this.state.error = 'This TV did not start the audio output.';

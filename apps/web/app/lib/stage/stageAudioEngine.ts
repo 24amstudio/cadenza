@@ -98,14 +98,16 @@ export class StageAudioEngine {
   }
 
   /** Called from a user gesture, because browsers refuse to start audio otherwise. */
-  async unlock(): Promise<void> {
+  async unlock(baseURL: string): Promise<void> {
     if (!('AudioContext' in globalThis)) return;
     this.context ??= new AudioContext({ latencyHint: 'interactive' });
 
     if (this.context.state !== 'running') await this.context.resume();
 
     if (!this.worklet) {
-      await this.context.audioWorklet.addModule('/stage-lpcm-worklet.js');
+      await this.context.audioWorklet.addModule(
+        `${baseURL}stage-lpcm-worklet.js`,
+      );
       this.worklet = new AudioWorkletNode(this.context, 'cadenza-lpcm', {
         outputChannelCount: [2],
       });

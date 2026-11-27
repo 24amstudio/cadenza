@@ -32,6 +32,11 @@ export function lanEndpointFrom(
   return { address, name: bonjour, port };
 }
 
+// The audio socket dials the address the Host last welcomed on. Its Bonjour name was refused from the browser page in testing.
+export function lanAudioSocketUrl(endpoint: LanEndpoint): string {
+  return `ws://${endpoint.address}:${endpoint.port}${socketPath}`;
+}
+
 // The name comes first: it resolves to the Mac's current address, so a changed network address needs no Bluetooth.
 export function lanSocketUrls(endpoint: LanEndpoint): string[] {
   const hosts =

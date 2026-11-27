@@ -12,7 +12,11 @@ export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: false },
   modules: ['@pinia/nuxt'],
-  css: ['~/assets/css/tokens.css', '~/assets/css/base.css'],
+  css: [
+    '~/assets/css/tokens.css',
+    '~/assets/css/base.css',
+    '~/assets/css/output-menu.css',
+  ],
   typescript: {
     strict: true,
     typeCheck: true,

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
+import { useRuntimeConfig } from '#app';
 import { createCredentialStore } from '~/lib/host/credentials';
 import { browserStorage } from '~/lib/host/browserStorage';
 import { lanSocketUrls, socketUrlFor } from '~/lib/host/endpoint';
@@ -77,6 +78,7 @@ function saveSettings(settings: RemoteAudioSettings): void {
 
 export const useRemoteAudioStore = defineStore('remoteAudio', () => {
   const host = useHostStore();
+  const baseURL = useRuntimeConfig().app.baseURL;
   const settings = ref<RemoteAudioSettings>(loadSettings());
   const status = ref<RemoteAudioStatus>({ ...idleStatus });
   const running = ref(false);
@@ -146,7 +148,7 @@ export const useRemoteAudioStore = defineStore('remoteAudio', () => {
     running.value = true;
 
     try {
-      await receiver.start();
+      await receiver.start(baseURL);
       receiver.sendConfig(settings.value);
     } catch (error) {
       stop(

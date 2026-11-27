@@ -152,6 +152,17 @@ final class WebRemoteRequestTests: XCTestCase {
 }
 
 final class WebRemoteBundleTests: XCTestCase {
+    func testCadenzaWebIsBundledOnlyWithItsIndexPage() throws {
+        let resources = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString, isDirectory: true)
+        let root = resources.appendingPathComponent("Resources/WebRemote", isDirectory: true)
+        XCTAssertNil(WebRemoteBundle.bundledRoot(in: resources))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        XCTAssertNil(WebRemoteBundle.bundledRoot(in: resources))
+        try Data("<!doctype html>".utf8).write(to: root.appendingPathComponent("index.html"))
+        XCTAssertEqual(WebRemoteBundle.bundledRoot(in: resources)?.path, root.path)
+    }
+
     private func temporaryBundle() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(identifier(), isDirectory: true)
         try FileManager.default.createDirectory(

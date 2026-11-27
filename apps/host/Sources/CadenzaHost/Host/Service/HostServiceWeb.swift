@@ -2,15 +2,17 @@ import Foundation
 
 // Cadenza Web lifecycle: the browser Remote listener starts with the native listeners and its sockets become peers.
 extension HostService {
+    static let bundledWebRoot = WebRemoteBundle.bundledRoot(in: HostResources.bundle.resourceURL)
+
     // Cadenza Web is optional. Its failure leaves native Remotes working, so it reports an issue instead of failing start.
     func startWebRemote() async {
         webRemote.stop()
         guard configuration.webEnabled else { return }
         let port = configuration.webPort
-        let root = HostResources.bundle.resourceURL?.appendingPathComponent(
-            "Resources/WebRemote", isDirectory: true)
-        guard let root, FileManager.default.fileExists(atPath: root.appendingPathComponent("index.html").path) else {
-            onIssue?("Cadenza Web is not bundled in this build, so the browser Remote is unavailable.")
+        // Not an alert: Settings shows the unbundled state, and native Remotes keep working.
+        guard let root = Self.bundledWebRoot else {
+            logger.log(
+                .warning, category: "network", action: "web.unbundled", "Cadenza Web is not bundled in this build")
             return
         }
         let advertised = configuration.advertisedAddress

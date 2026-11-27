@@ -30,6 +30,15 @@ struct WebRemoteBundle {
         "txt": "text/plain; charset=utf-8",
     ]
 
+    // A build made without `apps/web` output has no index.html, so there is nothing to serve.
+    static func bundledRoot(in resources: URL?) -> URL? {
+        let root = resources?.appendingPathComponent("Resources/WebRemote", isDirectory: true)
+        guard let root, FileManager.default.fileExists(atPath: root.appendingPathComponent("index.html").path) else {
+            return nil
+        }
+        return root
+    }
+
     init(root: URL) {
         self.root = root.standardizedFileURL
         let index = try? Data(contentsOf: root.appendingPathComponent("index.html"))

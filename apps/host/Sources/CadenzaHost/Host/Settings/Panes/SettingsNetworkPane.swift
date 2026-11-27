@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsNetworkPane: View {
     @Bindable var model: HostModel
 
+    private var webBundled: Bool { HostService.bundledWebRoot != nil }
+
     var body: some View {
         Form {
             RestartHostSection(model: model, settings: [.port, .advertisedAddress, .web])
@@ -30,11 +32,15 @@ struct SettingsNetworkPane: View {
             }
             Section {
                 Toggle("Cadenza Web", isOn: model.committedBinding(\.webEnabled))
+                    .disabled(!webBundled && !model.configuration.webEnabled)
             } footer: {
                 Text(
                     "Cadenza Web is a browser remote. It lets a browser on this network control Cadenza Host through port "
                         + "\(model.configuration.webPort), and pairing codes also open it."
                 )
+                if !webBundled {
+                    Text("This build does not include Cadenza Web.")
+                }
             }
             ConnectionPreferenceSections(model: model)
         }

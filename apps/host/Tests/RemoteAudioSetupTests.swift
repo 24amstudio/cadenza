@@ -20,3 +20,24 @@ struct RemoteAudioSetupStorageTests {
         #expect(RemoteAudioSetupStorage.load(defaults) == setup)
     }
 }
+
+@MainActor
+struct WifiSplitRemotesTests {
+    @Test func onlyRemotesWithAConnectedWifiPathCanTakeTheMains() {
+        let model = HostModel()
+        let wifi = SessionStatus(
+            reportedAtMs: 0, device: "Desk",
+            paths: [TransportPathStatus(transport: "lan", state: "connected", rttMs: 8)])
+        let bluetoothOnly = SessionStatus(
+            reportedAtMs: 0, device: "Phone", paths: [TransportPathStatus(transport: "ble", state: "connected")])
+        let wifiDown = SessionStatus(
+            reportedAtMs: 0, device: "Tab", paths: [TransportPathStatus(transport: "lan", state: "disconnected")])
+        model.connectedRemotes = [
+            PairedRemote(id: "desk", name: "Desk", revoked: false, status: wifi),
+            PairedRemote(id: "phone", name: "Phone", revoked: false, status: bluetoothOnly),
+            PairedRemote(id: "tab", name: "Tab", revoked: false, status: wifiDown),
+        ]
+
+        #expect(model.wifiSplitRemotes.map(\.id) == ["desk"])
+    }
+}

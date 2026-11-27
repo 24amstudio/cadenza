@@ -19,18 +19,20 @@ struct LPFSetupSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    if let remotes = hub?.connectedRemotes, !remotes.isEmpty {
+                    if model.wifiSplitRemotes.isEmpty {
+                        Text("Connect a Remote on Wi-Fi to choose the mains.")
+                            .foregroundStyle(.secondary)
+                    } else {
                         Picker("Mains Remote", selection: $draft.targetClientId) {
-                            ForEach(remotes) { remote in
+                            ForEach(model.wifiSplitRemotes) { remote in
                                 Text(remote.name).tag(Optional(remote.id))
                             }
                         }
-                    } else {
-                        Text("Connect a Remote on Wi-Fi to choose the mains.")
-                            .foregroundStyle(.secondary)
                     }
                 } header: {
                     Text("Mains")
+                } footer: {
+                    Text("The split starts when this Remote chooses Stream to this device.")
                 }
 
                 Section {
@@ -84,7 +86,7 @@ struct LPFSetupSheet: View {
         .onAppear {
             draft = hub?.setup ?? draft
             if draft.targetClientId == nil {
-                draft.targetClientId = hub?.connectedRemotes.first?.id
+                draft.targetClientId = model.wifiSplitRemotes.first?.id
             }
         }
         .alert("Allow the microphone?", isPresented: $askingMicrophone) {

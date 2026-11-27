@@ -13,8 +13,9 @@ struct SettingsOutputPane: View {
 
     private var remoteText: String {
         guard let target = setup?.targetClientId else { return "None chosen" }
-        return hub?.connectedRemotes.first { $0.id == target }?.name
-            ?? "\(hub?.remoteName(target) ?? "Remote"), offline"
+        let name = model.remotes.first { $0.id == target }?.name ?? hub?.remoteName(target) ?? "Remote"
+        let online = model.wifiSplitRemotes.contains { $0.id == target }
+        return online ? name : "\(name), offline"
     }
 
     private var roomText: String {

@@ -23,12 +23,6 @@ enum RemoteAudioCommand: String, Sendable, Equatable {
     case newEnvironment = "new_environment"
 }
 
-/// A paired Remote that is connected on Wi-Fi, as the Output settings list it.
-struct RemoteAudioPeer: Equatable, Identifiable, Sendable {
-    let id: String
-    let name: String
-}
-
 /// Owns the Wi-Fi Remote audio sockets and the one stream the Host sends. The Host owns the subwoofer setup. A Remote
 /// or the Output settings change it, and the Host stores it and pushes it to every connected Remote. The stream runs
 /// only while its setup is enabled and the target Remote is connected. A lost socket leaves the setup enabled, so the
@@ -96,14 +90,6 @@ final class RemoteAudioHub {
     /// Restores the saved setup. Called once while the Host is configured.
     func restoreSetup() {
         setup = loadSetup()
-    }
-
-    var connectedRemotes: [RemoteAudioPeer] {
-        sessions.values.compactMap { session in
-            guard let id = session.clientId else { return nil }
-            return RemoteAudioPeer(id: id, name: remoteName(id))
-        }
-        .sorted { $0.name < $1.name }
     }
 
     func attach(_ socket: WebRemoteSession) {

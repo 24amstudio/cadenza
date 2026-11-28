@@ -169,7 +169,7 @@
           "maximum": 1000
         },
         "clockOffsetUs": {
-          "type": "integer"
+          "type": ["integer", "null"]
         },
         "clockDriftPpm": {
           "type": "number",

@@ -602,18 +602,24 @@ describe('HostClient over Bluetooth', () => {
     expect(phases(changes)).toEqual(['unpaired']);
   });
 
-  test('a progressive artwork request shows the preview, then the verified full image', async () => {
-    const { client, sockets, changes } = harness(new MemoryCredentials(), true);
-    client.start('S'.repeat(43));
-    socketAt(sockets, 0).open();
-    socketAt(sockets, 0).receive(
-      welcome(token, ['artwork.host-cache', 'artwork.progressive']),
-    );
+  test('a progressive artwork request over Bluetooth shows the preview, then the verified full image', async () => {
+    const credentials = new MemoryCredentials();
+    credentials.value = {
+      remoteId,
+      token,
+      name: 'Desk',
+      lastCreditSequence: 0,
+    };
+    const { client, changes } = harness(credentials, true);
+    const link = new FakeSocket();
+    client.startBluetooth(false);
+    client.connectOverBluetooth(link);
+    link.receive(welcome(null, ['artwork.host-cache', 'artwork.progressive']));
     const artworkUrl = 'https://example.com/cover.jpg';
 
     client.requestArtwork(artworkUrl, { kind: 'still' });
 
-    const request = socketAt(sockets, 0).framesOfType('artwork.get').at(-1);
+    const request = link.framesOfType('artwork.get').at(-1);
     expect(request?.progressive).toBe(true);
     expect(request).not.toHaveProperty('motion');
     const requestId = String(request?.request_id);
@@ -630,7 +636,7 @@ describe('HostClient over Bluetooth', () => {
     const preview = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
     const previewUrl = `data:image/jpeg;base64,${preview}`;
 
-    socketAt(sockets, 0).receive({
+    link.receive({
       type: 'artwork',
       request_id: requestId,
       artwork_url: artworkUrl,
@@ -644,7 +650,7 @@ describe('HostClient over Bluetooth', () => {
     const count = Math.ceil(file.length / chunkSize);
 
     for (let index = count - 1; index >= 0; index -= 1) {
-      socketAt(sockets, 0).receive({
+      link.receive({
         type: 'artwork.chunk',
         request_id: requestId,
         artwork_url: artworkUrl,
@@ -672,6 +678,20 @@ describe('HostClient over Bluetooth', () => {
     expect(Buffer.from(String(full).split(',')[1] ?? '', 'base64')).toEqual(
       Buffer.from(file),
     );
+  });
+
+  test('an artwork request over Wi-Fi is not progressive, so small Bluetooth chunks are not used there', () => {
+    const { client, sockets } = harness(new MemoryCredentials(), true);
+    client.start('S'.repeat(43));
+    socketAt(sockets, 0).open();
+    socketAt(sockets, 0).receive(
+      welcome(token, ['artwork.host-cache', 'artwork.progressive']),
+    );
+
+    client.requestArtwork('https://example.com/cover.jpg', { kind: 'still' });
+
+    const request = socketAt(sockets, 0).framesOfType('artwork.get').at(-1);
+    expect(request).not.toHaveProperty('progressive');
   });
 });
 

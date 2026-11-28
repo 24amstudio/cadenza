@@ -27,8 +27,8 @@ class HybridConnection(
 
     @Volatile private var bleRetries = 0
 
-    // Set once Bluetooth has given up on its current attempt. Until then a lost Wi-Fi path does not end the session, since
-    // Bluetooth may still be finding the Host.
+    // Set once Bluetooth has given up on its current attempt. A lost Wi-Fi path then starts a new Bluetooth attempt,
+    // and the session ends only if that attempt fails too. While Bluetooth is still trying, the session carries on.
     @Volatile private var bleFinished = false
 
     @Volatile private var lanRetries = 0
@@ -40,7 +40,11 @@ class HybridConnection(
         HostConnection(host, port, ::lanOpened, received) {
             lanReady = false
             wakeHostOnce()
-            if (!bleReady && bleFinished) closed(it) else retryLanLater()
+            if (!bleReady && bleFinished) {
+                bleRetries = 0
+                connectBluetooth()
+            }
+            retryLanLater()
         }
     private val ble =
         BleConnection(context, ::bleOpened, received) {
@@ -57,12 +61,21 @@ class HybridConnection(
         timers.postDelayed({ if (!stopped && !lanReady) lan.connect() }, delay)
     }
 
+    private val bleRetry = Runnable { if (!stopped && lanReady && !bleReady) connectBluetooth() }
+
     // The LAN path carries the session while Bluetooth is down, so a lost link is retried quietly and only a few times.
     // Each retry scans for a few seconds, which is not worth repeating on a Host that has Bluetooth off.
     private fun retryBleLater() {
         if (stopped || bleRetries >= BleLinkPolicy.BACKGROUND_RETRIES) return
         val delay = BleLinkPolicy.backgroundRetryDelayMs(++bleRetries, Random.nextDouble())
-        timers.postDelayed({ if (!stopped && lanReady && !bleReady) ble.connect() }, delay)
+        timers.postDelayed(bleRetry, delay)
+    }
+
+    private fun connectBluetooth() {
+        if (stopped) return
+        timers.removeCallbacks(bleRetry)
+        bleFinished = false
+        ble.connect()
     }
 
     // Wake-on-LAN is sent once per LAN outage, and only while Bluetooth is not carrying the session. It runs off the

@@ -8,8 +8,8 @@ struct LateDropCushion: Equatable, Sendable {
     private(set) var boostUs: UInt64 = 0
     private var lastLateDrops = 0
 
-    mutating func observe(lateDrops: Int) {
-        if lateDrops > lastLateDrops {
+    mutating func observe(lateDrops: Int, remoteUnderrunFrames: Int) {
+        if lateDrops > lastLateDrops || remoteUnderrunFrames > 0 {
             boostUs = min(boostUs + Self.stepUs, Self.maximumBoostUs)
         } else {
             boostUs -= min(boostUs, Self.decayUs)

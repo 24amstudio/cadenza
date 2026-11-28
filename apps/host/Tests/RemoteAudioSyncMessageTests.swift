@@ -18,6 +18,24 @@ struct RemoteAudioSyncMessageTests {
         #expect(message["transmitting"] as? Bool == false)
     }
 
+    @Test func clockOffsetIsNullUntilTheFirstPong() {
+        let message = RemoteAudioSyncMessage.make(
+            telemetry: .idle, nowUs: 1_000, clock: RemoteClockEstimator(), jitterBufferMs: 28,
+            droppedStaleFrames60s: 0)
+
+        #expect(message["clockOffsetUs"] is NSNull)
+    }
+
+    @Test func clockOffsetCarriesTheMeasuredOffsetOnceAPongArrives() {
+        var clock = RemoteClockEstimator()
+        clock.add(t1: 0, t2: 10_000, t3: 13_000, t4: 16_000)
+
+        let message = RemoteAudioSyncMessage.make(
+            telemetry: .idle, nowUs: 20_000, clock: clock, jitterBufferMs: 28, droppedStaleFrames60s: 0)
+
+        #expect((message["clockOffsetUs"] as? NSNumber)?.int64Value == 3_500)
+    }
+
     @Test func roundTripFieldsCarryTheLatestExchangeInMilliseconds() {
         var clock = RemoteClockEstimator()
         clock.add(t1: 0, t2: 10_000, t3: 13_000, t4: 16_000)

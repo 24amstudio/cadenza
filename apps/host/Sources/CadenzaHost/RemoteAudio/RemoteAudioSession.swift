@@ -178,9 +178,9 @@ final class RemoteAudioSession {
     private func startTimer() {
         timer = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
                 guard let self, self.isAuthenticated else { return }
                 self.tick()
+                try? await Task.sleep(for: .seconds(2))
             }
         }
     }
@@ -196,7 +196,7 @@ final class RemoteAudioSession {
         _ = socket.send(RemoteAudioWire.ping(sequence: pingSequence, t1HostSendUs: now), binary: true)
         frames?.checkDegraded()
         let drops = frames?.statistics() ?? RemoteAudioFrameWriter.Statistics(droppedInFlight: 0, droppedLate: 0)
-        lateCushion.observe(lateDrops: drops.droppedLate)
+        lateCushion.observe(lateDrops: drops.droppedLate, remoteUnderrunFrames: playoutWindow.underrunFrames)
         let totalDropped = frames?.totalDroppedFrames() ?? 0
         let networkDrops = totalDropped >= lastTotalDropped ? totalDropped - lastTotalDropped : totalDropped
         lastTotalDropped = totalDropped

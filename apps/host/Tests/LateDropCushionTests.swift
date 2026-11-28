@@ -6,20 +6,30 @@ struct LateDropCushionTests {
     @Test func aGrowingLateDropCountRaisesTheBoost() {
         var cushion = LateDropCushion()
 
-        cushion.observe(lateDrops: 3)
+        cushion.observe(lateDrops: 3, remoteUnderrunFrames: 0)
         #expect(cushion.boostUs == LateDropCushion.stepUs)
 
-        cushion.observe(lateDrops: 5)
+        cushion.observe(lateDrops: 5, remoteUnderrunFrames: 0)
+        #expect(cushion.boostUs == 2 * LateDropCushion.stepUs)
+    }
+
+    @Test func remoteUnderrunsRaiseTheBoostEvenWithoutHostDrops() {
+        var cushion = LateDropCushion()
+
+        cushion.observe(lateDrops: 0, remoteUnderrunFrames: 184)
+        #expect(cushion.boostUs == LateDropCushion.stepUs)
+
+        cushion.observe(lateDrops: 0, remoteUnderrunFrames: 1)
         #expect(cushion.boostUs == 2 * LateDropCushion.stepUs)
     }
 
     @Test func aQuietLinkDecaysTheBoostBackToTheBaseCushion() {
         var cushion = LateDropCushion()
-        cushion.observe(lateDrops: 1)
+        cushion.observe(lateDrops: 1, remoteUnderrunFrames: 0)
         #expect(cushion.boostUs == LateDropCushion.stepUs)
 
         for _ in 0..<10 {
-            cushion.observe(lateDrops: 1)
+            cushion.observe(lateDrops: 1, remoteUnderrunFrames: 0)
         }
 
         #expect(cushion.boostUs == 0)
@@ -29,7 +39,7 @@ struct LateDropCushionTests {
         var cushion = LateDropCushion()
 
         for drops in 1...100 {
-            cushion.observe(lateDrops: drops)
+            cushion.observe(lateDrops: drops, remoteUnderrunFrames: 0)
         }
 
         #expect(cushion.boostUs == LateDropCushion.maximumBoostUs)
@@ -37,10 +47,10 @@ struct LateDropCushionTests {
 
     @Test func droppedCountsThatExpireDoNotRaiseTheBoost() {
         var cushion = LateDropCushion()
-        cushion.observe(lateDrops: 4)
+        cushion.observe(lateDrops: 4, remoteUnderrunFrames: 0)
         let raised = cushion.boostUs
 
-        cushion.observe(lateDrops: 1)
+        cushion.observe(lateDrops: 1, remoteUnderrunFrames: 0)
 
         #expect(cushion.boostUs == raised - LateDropCushion.decayUs)
     }

@@ -13,7 +13,7 @@ enum RemoteAudioSyncMessage {
             "calibrationState": telemetry.calibrationState,
             "electronicOffsetMs": telemetry.electronicOffsetMs,
             "acousticOffsetMs": 0,
-            "clockOffsetUs": NSNumber(value: clock.offsetUs(atHostUs: nowUs) ?? 0),
+            "clockOffsetUs": microseconds(clock.offsetUs(atHostUs: nowUs)),
             "clockDriftPpm": clock.driftPpm,
             "jitterBufferMs": jitterBufferMs,
             "droppedStaleFrames60s": droppedStaleFrames60s,
@@ -24,6 +24,11 @@ enum RemoteAudioSyncMessage {
             "networkRttMs": milliseconds(latest?.rttUs),
             "processingRttMs": milliseconds(latest?.processingUs),
         ]
+    }
+
+    private static func microseconds(_ value: Int64?) -> Any {
+        guard let value else { return NSNull() }
+        return NSNumber(value: value)
     }
 
     private static func milliseconds(_ microseconds: Int64?) -> Any {

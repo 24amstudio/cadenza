@@ -61,7 +61,6 @@ const commandSettleMs = 4_000;
 
 const reconnectDelaysMs = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const artworkCapability = 'artwork.host-cache';
-const progressiveArtworkCapability = 'artwork.progressive';
 const motionCapability = 'motion.host-cache';
 
 // Owns one browser Remote session. Mutations are sent once. If the socket closes before a result, the command is
@@ -364,7 +363,8 @@ export class HostClient {
         progressive:
           mode.kind === 'preview' ||
           (this.options.progressiveArtwork === true &&
-            this.capabilities.includes(progressiveArtworkCapability)),
+            this.linkedOverBluetooth &&
+            this.capabilities.includes('artwork.progressive')),
         previewOnly: mode.kind === 'preview',
       }),
     );

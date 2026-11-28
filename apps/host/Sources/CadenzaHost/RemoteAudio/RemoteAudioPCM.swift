@@ -14,7 +14,7 @@ enum RemoteAudioPCM {
 
     static func littleEndian24(_ samples: [Float]) -> Data {
         var data = Data(count: samples.count * 3)
-        data.withUnsafeMutableBytes { raw in
+        data.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
             for (index, sample) in samples.enumerated() {
                 let value = Int32((clamped(sample) * 8_388_607).rounded())
                 let bits = UInt32(bitPattern: value)

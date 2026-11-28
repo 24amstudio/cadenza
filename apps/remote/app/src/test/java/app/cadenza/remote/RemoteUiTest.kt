@@ -82,7 +82,6 @@ import app.cadenza.remote.ui.startupBuildLabel
 import app.cadenza.remote.updates.Changelog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -490,10 +489,10 @@ class RemoteUiTest {
         seedProfile()
         app.database.saveState(
             hostId,
-            snapshot(false)
+            syntheticHostSnapshot(hostId, remoteId, emptyQueue = false)
                 .put("quality", "lossless")
                 .put("mixing", true)
-                .put("incoming", song("Cached incoming song", 180_000)),
+                .put("incoming", syntheticSong("Cached incoming song", 180_000)),
         )
         openApp()
         compose.runOnUiThread {
@@ -965,85 +964,9 @@ class RemoteUiTest {
                 remoteId,
             )
         app.database.saveProfile(profile)
-        app.database.saveState(hostId, snapshot(emptyQueue, playing, sing))
+        app.database.saveState(hostId, syntheticHostSnapshot(hostId, remoteId, emptyQueue, playing, sing))
         app.settings.write("active_host" to hostId)
     }
-
-    private fun snapshot(
-        emptyQueue: Boolean,
-        playing: Boolean = false,
-        sing: Boolean = false,
-    ): JSONObject {
-        val queue = JSONArray()
-        if (!emptyQueue) {
-            queue.put(entry(4, remoteId, "Android Remote", "A long requested song title with several words", 210_000, 150_000))
-            queue.put(entry(5, UUID(0, 3).toString(), "Living room", "Second request", 90_000, 360_000))
-        }
-        return JSONObject()
-            .put("host_id", hostId)
-            .put("host_epoch", UUID(0, 10).toString())
-            .put("revision", 1)
-            .put("sequence", 1)
-            .put("host_time_ms", 1_000)
-            .put("allow_cross_remote_edits", false)
-            .put("playing", playing)
-            .put("volume", 40)
-            .put("quality", "unknown")
-            .put(
-                "current",
-                JSONObject()
-                    .put("occurrence_id", UUID(0, 11).toString())
-                    .put("entry_id", UUID(0, 12).toString())
-                    .put("requested_by", UUID(0, 3).toString())
-                    .put("requester_name", "Living room")
-                    .put("song", song("Current song", 180_000))
-                    .put("position_ms", 30_000)
-                    .put("sampled_at_host_ms", 1_000),
-            ).put("queue", queue)
-            .put("total_remaining_ms", if (emptyQueue) 150_000 else 450_000)
-            .put("synchronized", true)
-            .apply {
-                if (sing) {
-                    put(
-                        "sing",
-                        JSONObject()
-                            .put("status", "ready")
-                            .put("vocal_percent", 0)
-                            .put("latency_ms", 20)
-                            .put("backend", "stereo-center")
-                            .put("model_revision", "dsp-1"),
-                    )
-                }
-            }.put("observation_gap", false)
-    }
-
-    private fun entry(
-        id: Long,
-        owner: String,
-        name: String,
-        title: String,
-        duration: Long,
-        wait: Long,
-    ): JSONObject =
-        JSONObject()
-            .put("id", UUID(0, id).toString())
-            .put("requested_by", owner)
-            .put("requester_name", name)
-            .put("song", song(title, duration))
-            .put("estimated_wait_ms", wait)
-
-    private fun song(
-        title: String,
-        duration: Long,
-    ): JSONObject =
-        JSONObject()
-            .put(
-                "source",
-                "catalog",
-            ).put("id", "123")
-            .put("title", title)
-            .put("artist", "Synthetic artist")
-            .put("duration_ms", duration)
 
     private fun capture(
         name: String,

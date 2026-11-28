@@ -4,9 +4,10 @@ import {
   nextSingLine,
   singPageClockMs,
 } from '../app/lib/sing/singPage';
+import type { JsonObject } from '../app/lib/protocol/json';
 import type { LyricLine } from '../app/lib/protocol/types';
 
-function wire(overrides: Record<string, unknown> = {}): string {
+function wire(overrides: JsonObject = {}): string {
   return JSON.stringify({
     type: 'sing_state',
     occurrence_id: 'occurrence-1',
@@ -50,7 +51,7 @@ describe('the Sing window state', () => {
   test('refuses another message type, a missing field, or a wrong type', () => {
     expect(decodeSingPageState(wire({ type: 'lyrics' }))).toBeNull();
     expect(decodeSingPageState(wire({ playing: 'yes' }))).toBeNull();
-    expect(decodeSingPageState(wire({ occurrence_id: undefined }))).toBeNull();
+    expect(decodeSingPageState(wire({ occurrence_id: null }))).toBeNull();
     expect(decodeSingPageState('not json')).toBeNull();
   });
 });

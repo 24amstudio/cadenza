@@ -5,6 +5,7 @@ import {
   isJsonObject,
   isOffsetMilliseconds,
   lyricAlignField,
+  numberField,
   objectField,
   parseJson,
   stringArrayField,
@@ -676,11 +677,13 @@ const singStatuses: readonly SingStatus[] = [
 function decodeSingSession(object: JsonObject | null): SingSession | null {
   if (object === null) return null;
 
-  const status = stringField(object, 'status');
-  const vocalPercent = object['vocal_percent'];
+  const rawStatus = stringField(object, 'status');
+  const status = singStatuses.find((known) => known === rawStatus);
+  const vocalPercent = numberField(object, 'vocal_percent');
+
   if (
-    !singStatuses.some((known) => known === status) ||
-    typeof vocalPercent !== 'number' ||
+    status === undefined ||
+    vocalPercent === null ||
     !Number.isInteger(vocalPercent) ||
     vocalPercent < 0 ||
     vocalPercent > 100
@@ -689,7 +692,7 @@ function decodeSingSession(object: JsonObject | null): SingSession | null {
   }
 
   return {
-    status: status as SingStatus,
+    status,
     vocalPercent,
     latencyMs: counterField(object, 'latency_ms'),
     issue: stringField(object, 'issue'),

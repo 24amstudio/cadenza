@@ -82,21 +82,26 @@ const presentations: { value: CastPresentation; label: string }[] = [
 ];
 
 const sing = computed(() => host.snapshot?.sing ?? null);
+
 const singOccurrence = computed(
   () => host.snapshot?.current?.occurrenceId ?? null,
 );
+
 const singAvailable = computed(
   () => host.capabilities.includes('sing.mode') && sing.value !== null,
 );
+
 const singActive = computed(() => sing.value?.status === 'active');
 const singFailed = computed(() => sing.value?.status === 'failed');
 const singPreparing = computed(() => sing.value?.status === 'preparing');
 const singBusy = ref(false);
 const vocalDraft = ref<number | null>(null);
 const failureDialog = ref<HTMLDialogElement | null>(null);
+
 const singLevel = computed(
   () => vocalDraft.value ?? sing.value?.vocalPercent ?? 0,
 );
+
 const singDisabled = computed(
   () =>
     !host.connected ||
@@ -104,10 +109,14 @@ const singDisabled = computed(
     singPreparing.value ||
     singBusy.value,
 );
+
 const singSummary = computed(() => {
   if (singOccurrence.value === null) return 'Play a song to use Sing mode.';
+
   if (singFailed.value) return 'Sing could not start.';
+
   if (singPreparing.value) return 'Preparing the vocal separator.';
+
   if (singActive.value) return 'Vocals follow the level below.';
 
   return 'Lowers the vocals in the song playing on this Mac.';
@@ -115,9 +124,11 @@ const singSummary = computed(() => {
 
 function toggleSing(): void {
   const occurrence = singOccurrence.value;
+
   if (occurrence === null) return;
 
   singBusy.value = true;
+
   if (singActive.value) host.stopSing(occurrence);
   else host.startSing(occurrence);
 }
@@ -140,6 +151,7 @@ function previewVocal(event: Event): void {
 function commitVocal(event: Event): void {
   const occurrence = singOccurrence.value;
   const percent = sliderValue(event);
+
   if (occurrence === null || percent === null) return;
 
   host.setSingVocal(occurrence, percent);

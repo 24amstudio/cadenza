@@ -30,7 +30,9 @@ const matchingLyrics = computed<LyricDocument | null>(() => {
   const document = lyrics.value;
   const state = received.value?.state;
 
-  return document !== null && state !== undefined && document.occurrenceId === state.occurrenceId
+  return document !== null &&
+    state !== undefined &&
+    document.occurrenceId === state.occurrenceId
     ? document
     : null;
 });
@@ -75,12 +77,15 @@ const untimedLines = computed(() =>
 
 const status = computed(() => {
   if (token === '') return 'Open this page from Cadenza Host.';
+
   if (!connected.value) {
     return received.value === null
       ? 'Connecting to Cadenza Host…'
       : 'Reconnecting to Cadenza Host…';
   }
+
   if (received.value === null) return 'Waiting for a song.';
+
   if (matchingLyrics.value !== null && level.value === 0) {
     return 'No lyrics for this song.';
   }
@@ -95,6 +100,7 @@ function tick(): void {
 
 onMounted(() => {
   frameId = requestAnimationFrame(tick);
+
   if (token === '') return;
 
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';

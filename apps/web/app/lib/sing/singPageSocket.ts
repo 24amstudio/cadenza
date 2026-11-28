@@ -1,3 +1,4 @@
+import { isText } from '../host/browserSocket';
 import { decodeHostMessage } from '../protocol/decode';
 import type { LyricDocument } from '../protocol/types';
 import { decodeSingPageState, type SingPageState } from './singPage';
@@ -24,6 +25,7 @@ export function connectSingPage(
 
     if (state !== null) {
       handlers.onState(state, performance.now());
+
       return;
     }
 
@@ -40,12 +42,15 @@ export function connectSingPage(
       attempt = 0;
       handlers.onConnection(true);
     };
+
     next.onmessage = (event: MessageEvent<unknown>) => {
-      if (typeof event.data === 'string') receive(event.data);
+      if (isText(event.data)) receive(event.data);
     };
+
     next.onclose = () => {
       if (socket === next) socket = null;
       handlers.onConnection(false);
+
       if (stopped) return;
 
       const delay =
@@ -63,6 +68,7 @@ export function connectSingPage(
 
   return () => {
     stopped = true;
+
     if (retry !== null) clearTimeout(retry);
     socket?.close();
     socket = null;

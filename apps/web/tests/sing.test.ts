@@ -41,6 +41,7 @@ function stateWith(sing: JsonObject | undefined): string {
     synchronized: true,
     observation_gap: false,
   };
+
   if (sing !== undefined) snapshot.sing = sing;
 
   return JSON.stringify({ version: 1, type: 'state', snapshot });

@@ -11,6 +11,7 @@ import { useHostStore } from '~/stores/host';
 // `/tv` is the 10-foot stage for a TV browser. `/sing` is the Sing window on the Host's Mac. Every other path is the Remote.
 const isStage =
   typeof window !== 'undefined' && /^\/tv\/?$/.test(window.location.pathname);
+
 const isSingPage =
   typeof window !== 'undefined' && /^\/sing\/?$/.test(window.location.pathname);
 

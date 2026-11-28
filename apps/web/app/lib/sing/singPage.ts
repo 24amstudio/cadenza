@@ -19,6 +19,7 @@ export function decodeSingPageState(text: string): SingPageState | null {
   const value = parseJson(text);
 
   if (value === null || !isJsonObject(value)) return null;
+
   if (stringField(value, 'type') !== 'sing_state') return null;
 
   const occurrenceId = stringField(value, 'occurrence_id');

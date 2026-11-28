@@ -125,6 +125,7 @@ final class HostService {
             published.sing = self.sing.publishedSession
             self.publishedState.apply(to: &published)
             self.publishedState.updateSingPage(snapshot: published, lyrics: self.lyricDocument)
+            self.publishedState.updateVideoLyrics(snapshot: published, lyrics: self.lyricDocument)
             self.publishedState.stage.snapshotChanged(published, lyrics: self.lyricDocument)
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs

@@ -37,14 +37,23 @@ sets it to 100 percent, the unprocessed output volume. Every lower level is
 quieter, because the stem mixer removes part of the vocal. The level
 persists across songs until the person changes it.
 
-Starting Sing also selects Host for the karaoke lyrics. Host then shows the
-lyrics full screen in a Sing window on its Mac. The window loads `/sing` from
-the Host's own Cadenza Web listener on `127.0.0.1`, and enters full screen when
-it appears and leaves it when it hides. It hides when no song plays or the
-karaoke output moves to This device, which is the Cast receiver. Closing the
-window keeps it closed for the rest of that song. The page reads the lyrics and
-the lyric clock from `/sing/live`, which accepts only the window's per-launch
-access token. Another client gets 403 there.
+Starting Sing also selects This Mac for the karaoke lyrics, which the Remote
+calls Host. The Mac then shows the lyrics full screen in a Sing window for a
+song without video. The window loads `/sing` from the Host's own Cadenza Web
+listener on `127.0.0.1`, and enters full screen when it appears and leaves it
+when it hides. It hides when no song plays or the karaoke output moves to Cast
+device. Closing the window keeps it closed for the rest of that song.
+
+A music video shows its karaoke line in an overlay over Music's window instead,
+and the overlay needs Accessibility access to follow that window. A build
+without Cadenza Web has no Sing window, and Settings > Lyrics says so.
+
+The page reads the lyrics and the lyric clock from `/sing/live`, which accepts
+only the window's per-launch access token. Another client gets 403 there.
+
+The Host sets Sing and the karaoke output directly. Now Playing has Start Sing or
+Turn Off Sing with a vocal level, and Settings > Lyrics picks This Mac or Cast
+device. Both send the same commands as the Remote.
 
 ## MLX backend (quarantined)
 

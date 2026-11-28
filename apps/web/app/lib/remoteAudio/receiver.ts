@@ -131,9 +131,10 @@ export class RemoteAudioReceiver {
 
   /** Sends the stream settings for this Remote. The Host applies them to the next frames. */
   sendConfig(settings: RemoteAudioSettings): void {
-    this.#latestSettings = settings;
+    const plain: RemoteAudioSettings = { ...settings };
+    this.#latestSettings = plain;
 
-    if (this.#worker !== null) this.#post({ type: 'config', settings });
+    if (this.#worker !== null) this.#post({ type: 'config', settings: plain });
   }
 
   stop(): void {

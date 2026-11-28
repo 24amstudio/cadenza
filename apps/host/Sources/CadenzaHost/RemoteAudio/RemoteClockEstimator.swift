@@ -11,6 +11,9 @@ struct RemoteClockEstimator {
         /// Remote clock minus Host clock, in microseconds.
         let offsetUs: Int64
         let rttUs: Int64
+        let processingUs: Int64
+
+        var totalUs: Int64 { rttUs + processingUs }
     }
 
     /// Thirty pings at 2 seconds is one minute of history.
@@ -24,11 +27,12 @@ struct RemoteClockEstimator {
     /// Adds one exchange. Returns nil when the timestamps are impossible, such as a round trip that is negative.
     @discardableResult
     mutating func add(t1: UInt64, t2: UInt64, t3: UInt64, t4: UInt64) -> Sample? {
-        let rtt = (Int64(bitPattern: t4) &- Int64(bitPattern: t1)) &- (Int64(bitPattern: t3) &- Int64(bitPattern: t2))
-        guard rtt >= 0, t4 >= t1 else { return nil }
+        let processing = Int64(bitPattern: t3) &- Int64(bitPattern: t2)
+        let rtt = (Int64(bitPattern: t4) &- Int64(bitPattern: t1)) &- processing
+        guard rtt >= 0, processing >= 0, t4 >= t1 else { return nil }
         let offset =
             ((Int64(bitPattern: t2) &- Int64(bitPattern: t1)) &+ (Int64(bitPattern: t3) &- Int64(bitPattern: t4))) / 2
-        let sample = Sample(hostUs: t4, offsetUs: offset, rttUs: rtt)
+        let sample = Sample(hostUs: t4, offsetUs: offset, rttUs: rtt, processingUs: processing)
         samples.append(sample)
         if samples.count > Self.windowSize {
             samples.removeFirst()
@@ -40,6 +44,10 @@ struct RemoteClockEstimator {
     /// The sample with the smallest round trip in the window.
     var best: Sample? {
         samples.min { $0.rttUs < $1.rttUs }
+    }
+
+    var latest: Sample? {
+        samples.last
     }
 
     /// The spread between the largest and smallest round trip in the window. Wi-Fi jitter widens it, so the jitter

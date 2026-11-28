@@ -69,6 +69,15 @@ final class WebRemoteSession {
         return true
     }
 
+    func makeBinaryWriter() -> @Sendable (Data, @escaping @Sendable () -> Void) -> Void {
+        let connection = connection
+        return { payload, onWritten in
+            connection.send(
+                content: WebSocketFraming.binaryFrame(payload), contentContext: .defaultMessage, isComplete: true,
+                completion: .contentProcessed { _ in onWritten() })
+        }
+    }
+
     // Ends the connection and notifies the owner once.
     func close() {
         finish(writing: nil)

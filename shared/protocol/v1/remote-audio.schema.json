@@ -17,6 +17,9 @@
     },
     {
       "$ref": "#/$defs/setup"
+    },
+    {
+      "$ref": "#/$defs/playout"
     }
   ],
   "$defs": {
@@ -184,6 +187,66 @@
         },
         "linkHealthy": {
           "type": "boolean"
+        },
+        "transmitting": {
+          "type": "boolean"
+        },
+        "networkRttMs": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "processingRttMs": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "quality": {
+          "enum": ["lossless_24_48", "standard_16_48", "compact_16_48_mono"]
+        },
+        "qualityReason": {
+          "enum": [
+            "steady",
+            "network",
+            "remote_playout",
+            "host_load",
+            "host_power",
+            "recovered"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "playout": {
+      "type": "object",
+      "required": [
+        "version",
+        "type",
+        "underrunFrames",
+        "concealedFrames",
+        "longTaskMs"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "const": "REMOTE_AUDIO_PLAYOUT"
+        },
+        "underrunFrames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "concealedFrames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "longTaskMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
         }
       },
       "additionalProperties": false

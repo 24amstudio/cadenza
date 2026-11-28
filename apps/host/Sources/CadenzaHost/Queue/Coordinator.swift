@@ -451,7 +451,7 @@ final class QueueCoordinator {
                 "observation_gap"]?.integer == 1,
             autoPlay: autoPlay.prefix(AutoPlayItem.shownLimit).map { AutoPlayItem(title: $0.title, artist: $0.artist) },
             shuffle: lastStatus?.shuffle ?? false, repeat: lastStatus?.repeat ?? "off",
-            audioOutputs: AudioOutputs.current()
+            audioOutputs: AudioOutputs.remoteVisible(AudioOutputs.current())
         )
     }
 

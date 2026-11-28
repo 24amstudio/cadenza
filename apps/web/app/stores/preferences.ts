@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
+import { parseAmbientMode, type AmbientMode } from '~/lib/ambient';
+import { browserLocalStorage, keyValueStore } from '~/lib/library/keyValue';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -97,14 +99,30 @@ function writeReduceEffects(value: boolean): void {
   }
 }
 
+const ambientStore = keyValueStore(browserLocalStorage);
+const ambientModeKey = 'cadenza.web.ambientMode';
+const ambientAfterIdleKey = 'cadenza.web.ambientAfterIdle';
+
 export const usePreferencesStore = defineStore('preferences', () => {
   const theme = ref<ThemePreference>(readTheme());
   const lyricsSize = ref<LyricsSize>(readLyricsSize());
   const songNotifications = ref(readSongNotifications());
   const reduceEffects = ref(readReduceEffects());
 
+  const ambientMode = ref<AmbientMode>(
+    parseAmbientMode(ambientStore.read(ambientModeKey)),
+  );
+
+  const ambientAfterIdle = ref(
+    ambientStore.read(ambientAfterIdleKey) === 'true',
+  );
+
   watch(lyricsSize, writeLyricsSize);
   watch(songNotifications, writeSongNotifications);
+  watch(ambientMode, (value) => ambientStore.write(ambientModeKey, value));
+  watch(ambientAfterIdle, (value) =>
+    ambientStore.write(ambientAfterIdleKey, String(value)),
+  );
 
   watch(
     theme,
@@ -146,6 +164,14 @@ export const usePreferencesStore = defineStore('preferences', () => {
     reduceEffects.value = value;
   }
 
+  function setAmbientMode(value: AmbientMode): void {
+    ambientMode.value = value;
+  }
+
+  function setAmbientAfterIdle(value: boolean): void {
+    ambientAfterIdle.value = value;
+  }
+
   return {
     theme,
     setTheme,
@@ -155,5 +181,9 @@ export const usePreferencesStore = defineStore('preferences', () => {
     setSongNotifications,
     reduceEffects,
     setReduceEffects,
+    ambientMode,
+    setAmbientMode,
+    ambientAfterIdle,
+    setAmbientAfterIdle,
   };
 });

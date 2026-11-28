@@ -15,6 +15,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -158,6 +159,12 @@ class HostWireTest {
 
         assertEquals(listOf(AudioOutput("uid-1", "Mac speakers", "built-in", true)), value.audioOutputs)
         assertEquals("constrained", value.hostBudget)
+    }
+
+    @Test
+    fun aStreamToARemoteNamesItsTargetOnlyWhileTheHostSendsOne() {
+        assertEquals("Living Room iPad", Wire.snapshot(snapshot().put("remote_audio_target", "Living Room iPad")).remoteAudioTarget)
+        assertNull(Wire.snapshot(snapshot()).remoteAudioTarget)
     }
 
     @Test

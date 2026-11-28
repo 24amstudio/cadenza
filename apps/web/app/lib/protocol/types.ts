@@ -154,6 +154,7 @@ export interface Snapshot {
   videoOutput?: VideoOutputTarget | null;
   // The AVR lip-sync offset, in milliseconds. Absent from Hosts that predate it.
   lipSyncOffsetMs?: number | null;
+  remoteAudioTarget?: string | null;
 }
 
 export interface LyricWord {

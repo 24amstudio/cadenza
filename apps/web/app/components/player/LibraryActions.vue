@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import AppIcon from '~/components/common/AppIcon.vue';
 import { useHostStore } from '~/stores/host';
 
 // Library write-back for the playing song. It only applies to songs in the Mac's Music library, and Music changes
@@ -32,18 +33,22 @@ function addToPlaylist(): void {
     <button
       type="button"
       class="library-button"
+      aria-label="Favorite in Music"
+      title="Favorite in Music"
       :disabled="!host.connected"
       @click="favorite"
     >
-      Favorite in Music
+      <AppIcon name="heart" />
     </button>
     <button
       type="button"
       class="library-button"
+      aria-label="Add to Host playlist"
+      title="Add to Host playlist"
       :disabled="!host.connected"
       @click="addToPlaylist"
     >
-      Add to Host playlist
+      <AppIcon name="playlist-add" />
     </button>
   </div>
 </template>
@@ -51,19 +56,25 @@ function addToPlaylist(): void {
 <style scoped>
 .library-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .library-button {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--color-fill-strong);
-  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--color-text);
-  font: inherit;
-  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-size: 18px;
   cursor: pointer;
+}
+
+.library-button:hover:not(:disabled) {
+  background: var(--color-fill);
+  color: var(--color-accent);
 }
 
 .library-button:disabled {

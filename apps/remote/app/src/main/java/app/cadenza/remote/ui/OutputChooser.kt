@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,18 +22,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.AudioOutput
 import app.cadenza.remote.data.CastRouteStatus
 import app.cadenza.remote.data.CastState
+import app.cadenza.remote.data.castingTargets
 import app.cadenza.remote.model.RemoteModel
 import org.json.JSONObject
 
 /**
- * Where Music's audio plays. A button shows the current output and opens a sheet that lists this Mac, AirPlay, and the
- * Google Cast and Cadenza TV receivers. Choosing a receiver routes the audio there, and choosing the one that is playing
- * stops it. The Host's route line sits under the button.
+ * Where Music's audio plays. A cast icon opens a sheet that lists this Mac, AirPlay, and the Google Cast and Cadenza TV
+ * receivers, and it lights while anything is receiving the audio. Choosing a receiver routes the audio there, and
+ * choosing the one that is playing stops it. [OutputStatusLines] shows the Host's route line.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +41,7 @@ internal fun OutputChooser(
     model: RemoteModel,
     outputs: List<AudioOutput>,
     cast: CastState?,
+    remoteAudioTarget: String?,
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -47,31 +50,47 @@ internal fun OutputChooser(
     val playingStage = cast?.stages?.firstOrNull { it.transmitting }
     val sendingLabel =
         sending?.device?.let { device -> cast.devices.firstOrNull { it.name == device }?.label ?: device }
+    val casting = castingTargets(cast, remoteAudioTarget).isNotEmpty()
     val label =
         when {
             playingStage != null -> "Cadenza TV: ${playingStage.name}"
             sending != null -> "Google Cast: ${sendingLabel.orEmpty()}"
+            remoteAudioTarget != null -> "Remote: $remoteAudioTarget"
             else -> outputs.firstOrNull { it.isDefault }?.name ?: "No output"
         }
 
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedButton(
-            onClick = { sheetOpen = true },
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Output: $label", maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        (playingStage?.status ?: sending?.status)?.let { RouteStatusLine(it) }
-        cast?.transmit?.takeIf { it.state == "failed" }?.reason?.let { reason ->
-            Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
+    IconButton(
+        onClick = { sheetOpen = true },
+        enabled = enabled,
+        modifier = modifier,
+        colors =
+            if (casting) {
+                IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            } else {
+                IconButtonDefaults.iconButtonColors()
+            },
+    ) {
+        Icon(cadenzaVector(CadenzaIcon.CAST), contentDescription = "Output: $label")
     }
 
     if (sheetOpen) {
         ModalBottomSheet(onDismissRequest = { sheetOpen = false }) {
             OutputSheet(model, outputs, cast, enabled, onChosen = { sheetOpen = false })
         }
+    }
+}
+
+/** The Host's route line for the current transmission, and the reason a transmission failed. */
+@Composable
+internal fun OutputStatusLines(cast: CastState?) {
+    val sending = cast?.transmit?.takeIf { it.state == "starting" || it.state == "transmitting" }
+    val playingStage = cast?.stages?.firstOrNull { it.transmitting }
+    (playingStage?.status ?: sending?.status)?.let { RouteStatusLine(it) }
+    cast?.transmit?.takeIf { it.state == "failed" }?.reason?.let { reason ->
+        Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
 }
 

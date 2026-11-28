@@ -658,6 +658,7 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     cast: decodeCast(objectField(object, 'cast')),
     videoOutput: decodeVideoOutput(stringField(object, 'video_output')),
     lipSyncOffsetMs: lipSyncOffsetField(object),
+    remoteAudioTarget: stringField(object, 'remote_audio_target'),
   };
 }
 

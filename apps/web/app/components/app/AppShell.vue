@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue';
+import AmbientScreen from '~/components/app/AmbientScreen.vue';
 import AppSidebar from '~/components/app/AppSidebar.vue';
 import BrowseDetailView from '~/components/browse/BrowseDetailView.vue';
 import ConnectionBanner from '~/components/app/ConnectionBanner.vue';
@@ -13,8 +14,10 @@ import NowPlayingView from '~/components/views/NowPlayingView.vue';
 import SearchView from '~/components/views/SearchView.vue';
 import SettingsView from '~/components/views/SettingsView.vue';
 import UpNextView from '~/components/views/UpNextView.vue';
+import { ambientIdleMs } from '~/lib/ambient';
 import { browseKey } from '~/lib/browse';
 import { showNotification } from '~/lib/browserNotifications';
+import { IdleTimer } from '~/lib/idleTimer';
 import { createSongChangeDetector, documentTitle } from '~/lib/songAlerts';
 import { useHostStore } from '~/stores/host';
 import { useLibraryStore } from '~/stores/library';
@@ -81,6 +84,38 @@ const immersive = computed(
 // Sidebar, player, and tab bar are left out while the full-screen player is open.
 const showChrome = computed(() => !needsPairing.value && !immersive.value);
 
+const ambientIdle = new IdleTimer({
+  timeoutMs: ambientIdleMs,
+  schedule: (callback, delayMs) => {
+    const handle = setTimeout(callback, delayMs);
+
+    return () => clearTimeout(handle);
+  },
+  onChange: (idle) => {
+    if (idle) ui.openAmbient();
+  },
+});
+
+watch(
+  () =>
+    preferences.ambientAfterIdle && host.current !== null && !ui.ambientOpen,
+  (enabled) => {
+    ambientIdle.setEnabled(enabled);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => host.current === null,
+  (noSong) => {
+    if (noSong) ui.closeAmbient();
+  },
+);
+
+function onActivity(): void {
+  ambientIdle.activity();
+}
+
 // Escape leaves the full-screen player, as the exit control does.
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape' && ui.immersive) ui.setImmersive(false);
@@ -88,11 +123,20 @@ function onKeydown(event: KeyboardEvent): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener('keydown', onActivity);
+  window.addEventListener('pointermove', onActivity);
+  window.addEventListener('pointerdown', onActivity);
+  window.addEventListener('wheel', onActivity, { passive: true });
   host.start();
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('keydown', onActivity);
+  window.removeEventListener('pointermove', onActivity);
+  window.removeEventListener('pointerdown', onActivity);
+  window.removeEventListener('wheel', onActivity);
+  ambientIdle.setEnabled(false);
 });
 </script>
 
@@ -129,6 +173,7 @@ onUnmounted(() => {
     </div>
     <MobileTabBar v-if="showChrome" class="tabs" />
     <ToastRegion />
+    <AmbientScreen v-if="ui.ambientOpen" />
   </div>
 </template>
 

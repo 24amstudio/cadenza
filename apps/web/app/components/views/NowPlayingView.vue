@@ -6,6 +6,7 @@ import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import EmptyState from '~/components/common/EmptyState.vue';
 import FavoriteToggle from '~/components/library/FavoriteToggle.vue';
 import LyricsPanel from '~/components/lyrics/LyricsPanel.vue';
+import LibraryActions from '~/components/player/LibraryActions.vue';
 import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
@@ -146,6 +147,8 @@ const ambientStyle = computed(() => {
           </p>
           <p v-if="quality !== null" class="quality">{{ quality }}</p>
         </div>
+
+        <LibraryActions class="library-row" />
 
         <ProgressScrubber
           class="scrubber"
@@ -335,6 +338,11 @@ h1 {
   color: var(--color-text-tertiary);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+.library-row {
+  width: 100%;
+  justify-content: center;
 }
 
 .transport-row {

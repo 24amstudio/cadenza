@@ -1,31 +1,52 @@
 import Foundation
 
-/// Moves a playout offset to a new goal in equal steps, so a calibration change is a glide over 500 ms, not a jump. The
-/// offset is in microseconds, and each `advance` covers one capture block.
 struct OffsetSlew: Equatable, Sendable {
     static let glideMs = 500.0
+    static let maximumStepSamples = 4.0
+    static let peakSlope = 1.5
 
     private(set) var current: Double
     private(set) var goal: Double
-    private var stepsLeft = 0
+    private let sampleRate: Double
+    private let blockMs: Double
+    private var origin: Double
+    private var totalSteps = 0
+    private var step = 0
 
-    init(current: Double) {
+    init(current: Double, sampleRate: Double, blockMs: Double) {
         self.current = current
         goal = current
+        origin = current
+        self.sampleRate = sampleRate
+        self.blockMs = blockMs
     }
 
-    /// Starts gliding toward `goal`. The glide takes `glideMs`, rounded to whole blocks, and it starts from `current`.
-    mutating func setGoal(_ goal: Double, blockMs: Double) {
+    mutating func setGoal(_ goal: Double) {
         guard goal != self.goal else { return }
         self.goal = goal
-        stepsLeft = max(1, Int((Self.glideMs / blockMs).rounded()))
+        origin = current
+        let changeSamples = abs(goal - current) * sampleRate / 1_000_000
+        let stepsByTime = Int((Self.glideMs / blockMs).rounded())
+        let stepsByChange = Int((Self.peakSlope * changeSamples / Self.maximumStepSamples).rounded(.up))
+        totalSteps = max(1, stepsByTime, stepsByChange)
+        step = 0
     }
 
     /// Advances one block and returns the offset that block uses.
     mutating func advance() -> Double {
-        guard stepsLeft > 0 else { return current }
-        stepsLeft -= 1
-        current = stepsLeft == 0 ? goal : current + (goal - current) / Double(stepsLeft + 1)
+        guard step < totalSteps else { return current }
+        step += 1
+        if step == totalSteps {
+            current = goal
+        } else {
+            let t = Double(step) / Double(totalSteps)
+            current = origin + (goal - origin) * (t * t * (3 - 2 * t))
+        }
         return current
+    }
+
+    func peekNext() -> Double {
+        var copy = self
+        return copy.advance()
     }
 }

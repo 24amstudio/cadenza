@@ -16,7 +16,7 @@ interface Core {
     left: Float32Array,
     right: Float32Array,
     currentFrame: number,
-  ): void;
+  ): boolean;
   render(left: Float32Array, right: Float32Array): void;
   flush(): void;
   setTargetFill(frames: number): void;
@@ -30,6 +30,22 @@ function block(
   length = quantum,
 ): Float32Array {
   return Float32Array.from({ length }, (_, index) => value(start + index));
+}
+
+function maxStep(samples: Float32Array, from: number, to: number): number {
+  let largest = 0;
+
+  for (let index = Math.max(from, 1); index < to; index += 1) {
+    const step = (samples[index] ?? 0) - (samples[index - 1] ?? 0);
+
+    largest = Math.max(largest, Math.abs(step));
+  }
+
+  return largest;
+}
+
+function toneStepBound(amplitude: number): number {
+  return 2 * amplitude * ((2 * Math.PI * 440) / sampleRate);
 }
 
 describe('remote audio playout', () => {
@@ -69,7 +85,69 @@ describe('remote audio playout', () => {
     expect(core.rate).toBe(1);
   });
 
-  test('a gap fades out before it and fades in after it, with silence between', () => {
+  test('playout across the ring wrap keeps every sample, with no drift', () => {
+    const core: Core = new RemoteAudioCore(sampleRate, 512);
+    const value = (frame: number) => frame / 1_048_576;
+    core.setTargetFill(3 * quantum);
+
+    for (let block_ = 0; block_ < 3; block_ += 1) {
+      const start = block_ * quantum;
+      core.write(start, block(start, value), block(start, value), 0);
+    }
+
+    const left = new Float32Array(quantum);
+    const right = new Float32Array(quantum);
+
+    for (let index = 0; index < 40; index += 1) {
+      core.render(left, right);
+      const playedFrom = index * quantum;
+
+      for (let frame = 0; frame < quantum; frame += 1) {
+        expect(left[frame]).toBe(Math.fround(value(playedFrom + frame)));
+      }
+
+      const start = (index + 3) * quantum;
+      core.write(
+        start,
+        block(start, value),
+        block(start, value),
+        (index + 1) * quantum,
+      );
+    }
+
+    expect(core.rate).toBe(1);
+  });
+
+  test('a frame that has already played is reported as not placed', () => {
+    const core: Core = new RemoteAudioCore(sampleRate);
+    core.setTargetFill(1);
+    core.write(
+      0,
+      block(0, () => 0.25),
+      block(0, () => 0.25),
+      0,
+    );
+    core.render(new Float32Array(quantum), new Float32Array(quantum));
+
+    expect(
+      core.write(
+        10,
+        block(10, () => 0.9, 16),
+        block(10, () => 0.9, 16),
+        quantum,
+      ),
+    ).toBe(false);
+    expect(
+      core.write(
+        quantum * 2,
+        block(quantum * 2, () => 0.9),
+        block(quantum * 2, () => 0.9),
+        quantum,
+      ),
+    ).toBe(true);
+  });
+
+  test('a short gap is concealed with the audio before it, and the next frame fades in after it', () => {
     const core: Core = new RemoteAudioCore(sampleRate);
     core.setTargetFill(1);
     core.write(
@@ -91,32 +169,198 @@ describe('remote audio playout', () => {
 
     core.render(left, right);
 
-    // The unread tail before the gap ends near zero, so the cut is not a click.
-    expect(Math.abs(left[127] ?? 1)).toBeLessThan(0.01);
-    // The silence inside the gap is exact.
-    expect(left[400]).toBe(0);
+    expect(left[127]).toBeCloseTo(1, 5);
+    expect(left[200]).toBeCloseTo(1, 5);
     // The new segment rises from zero over the 3 ms fade.
     expect(left[768]).toBeLessThan(0.01);
     expect(left[768 + 143]).toBeGreaterThan(0.99);
   });
 
-  test('a flush empties the buffer, and nothing from before it plays after', () => {
+  test('a gap too long to conceal is faded to silence, not repeated', () => {
     const core: Core = new RemoteAudioCore(sampleRate);
     core.setTargetFill(1);
     core.write(
       0,
-      block(0, () => 0.5),
-      block(0, () => 0.5),
+      block(0, () => 1),
+      block(0, () => 1),
+      0,
+    );
+    core.write(
+      4_000,
+      block(4_000, () => 1, 256),
+      block(4_000, () => 1, 256),
+      0,
+    );
+
+    const left = new Float32Array(4_256);
+    const right = new Float32Array(4_256);
+
+    core.render(left, right);
+
+    expect(left[1_000]).toBe(0);
+    expect(left[3_900]).toBe(0);
+  });
+
+  test('a dropped block is concealed with the tone before it, not left as silence', () => {
+    const core: Core = new RemoteAudioCore(sampleRate);
+    core.setTargetFill(3 * quantum);
+    const amplitude = 0.4;
+
+    const tone = (frame: number) =>
+      amplitude * Math.sin((2 * Math.PI * 440 * frame) / sampleRate);
+
+    const dropped = 4;
+    const blocks = 12;
+    const out = new Float32Array(blocks * quantum);
+    const scratch = new Float32Array(quantum);
+
+    for (let block_ = 0; block_ < 3; block_ += 1) {
+      const start = block_ * quantum;
+      core.write(start, block(start, tone), block(start, tone), 0);
+    }
+
+    for (let index = 0; index < blocks; index += 1) {
+      core.render(scratch, new Float32Array(quantum));
+      out.set(scratch, index * quantum);
+
+      const start = (index + 3) * quantum;
+
+      if (index + 3 !== dropped) {
+        core.write(
+          start,
+          block(start, tone),
+          block(start, tone),
+          (index + 1) * quantum,
+        );
+      }
+    }
+
+    const from = dropped * quantum;
+    const to = from + quantum;
+    let energy = 0;
+    let ideal = 0;
+
+    for (let frame = from; frame < to; frame += 1) {
+      energy += (out[frame] ?? 0) ** 2;
+      ideal += tone(frame) ** 2;
+    }
+
+    expect(energy / ideal).toBeGreaterThan(0.4);
+    expect(maxStep(out, 0, out.length)).toBeLessThan(toneStepBound(amplitude));
+  });
+
+  test('a stream that runs dry continues its tone and goes quiet over 10 ms, not in a cut', () => {
+    const core: Core = new RemoteAudioCore(sampleRate);
+    core.setTargetFill(3 * quantum);
+    const amplitude = 0.4;
+
+    const tone = (frame: number) =>
+      amplitude * Math.sin((2 * Math.PI * 440 * frame) / sampleRate);
+
+    for (let block_ = 0; block_ < 3; block_ += 1) {
+      const start = block_ * quantum;
+      core.write(start, block(start, tone), block(start, tone), 0);
+    }
+
+    const out = new Float32Array(6 * quantum);
+    const scratch = new Float32Array(quantum);
+
+    for (let index = 0; index < 6; index += 1) {
+      core.render(scratch, new Float32Array(quantum));
+      out.set(scratch, index * quantum);
+    }
+
+    expect(maxStep(out, 0, out.length)).toBeLessThan(toneStepBound(amplitude));
+    let energy = 0;
+
+    for (let frame = 384; frame < 384 + 240; frame += 1) {
+      energy += (out[frame] ?? 0) ** 2;
+    }
+
+    expect(energy).toBeGreaterThan(0.01);
+  });
+
+  test('the core counts the frames it concealed, and the counts reset when read', () => {
+    const core: Core & {
+      takeStats(): { concealedFrames: number; underrunFrames: number };
+    } = new RemoteAudioCore(sampleRate);
+
+    core.setTargetFill(3 * quantum);
+
+    const tone = (frame: number) =>
+      0.4 * Math.sin((2 * Math.PI * 440 * frame) / sampleRate);
+
+    for (let block_ = 0; block_ < 3; block_ += 1) {
+      const start = block_ * quantum;
+      core.write(start, block(start, tone), block(start, tone), 0);
+    }
+
+    const later = 5 * quantum;
+    core.write(later, block(later, tone), block(later, tone), 0);
+
+    const scratch = new Float32Array(quantum);
+
+    for (let index = 0; index < 6; index += 1) {
+      core.render(scratch, new Float32Array(quantum));
+    }
+
+    expect(core.takeStats().concealedFrames).toBe(2 * quantum);
+    expect(core.takeStats()).toEqual({ concealedFrames: 0, underrunFrames: 0 });
+  });
+
+  test('a flush fades out what was about to play, and nothing from before it plays after', () => {
+    const core: Core = new RemoteAudioCore(sampleRate);
+    core.setTargetFill(1);
+    core.write(
+      0,
+      block(0, () => 0.5, 512),
+      block(0, () => 0.5, 512),
       0,
     );
     core.flush();
 
-    const left = new Float32Array(quantum);
-    const right = new Float32Array(quantum);
+    const left = new Float32Array(256);
+    const right = new Float32Array(256);
     core.render(left, right);
 
+    expect(left[0]).toBe(0.5);
+
+    for (let frame = 1; frame < 144; frame += 1) {
+      expect(left[frame]).toBeLessThanOrEqual(left[frame - 1] ?? 1);
+    }
+
+    expect(Math.abs(left[143] ?? 1)).toBeLessThan(0.001);
+    expect(Array.from(left.subarray(144)).every((sample) => sample === 0)).toBe(
+      true,
+    );
     expect(core.fillFrames).toBe(0);
-    expect(Array.from(left).every((sample) => sample === 0)).toBe(true);
+  });
+
+  test('the stream after a flush fades in from silence', () => {
+    const core: Core = new RemoteAudioCore(sampleRate);
+    core.setTargetFill(1);
+    core.write(
+      0,
+      block(0, () => 0.5, 512),
+      block(0, () => 0.5, 512),
+      0,
+    );
+    core.flush();
+    core.render(new Float32Array(256), new Float32Array(256));
+
+    core.write(
+      1_000,
+      block(1_000, () => 0.5, 512),
+      block(1_000, () => 0.5, 512),
+      1_000,
+    );
+
+    const left = new Float32Array(512);
+    const right = new Float32Array(512);
+    core.render(left, right);
+
+    expect(Math.abs(left[0] ?? 1)).toBeLessThan(0.01);
+    expect(left[300]).toBeCloseTo(0.5, 5);
   });
 
   test('a frame that arrives after its playout position is dropped, not played late', () => {

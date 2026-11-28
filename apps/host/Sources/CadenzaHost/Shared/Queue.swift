@@ -57,6 +57,7 @@ struct HostSnapshot: Codable, Equatable, Sendable {
     var videoOutput: String? = nil
     // The AVR lip-sync offset in milliseconds. Karaoke lines are chosen this much later to match the delayed audio.
     var lipSyncOffsetMs: Int? = nil
+    var remoteAudioTarget: String? = nil
 }
 
 // Music's AutoPlay songs, which play after the queue. Only the first few travel, so a state frame stays small.

@@ -42,6 +42,68 @@ final class RemoteAudioStreamEngineTests: XCTestCase {
         }
     }
 
+    func testBlocksCapturedBeforeAFlushAreNotDeliveredAfterIt() async throws {
+        let route = ScriptedCaptureRoute()
+        let engine = RemoteAudioStreamEngine(capture: route)
+        let events = EventLog()
+        let config = RemoteAudioStreamConfig(
+            enabled: true, streamMode: .pureTransferExclusive, targetClientId: "remote-a")
+        try await engine.start(config: config, remoteOffsetUs: 20_000, localOffsetUs: 0, calibration: nil) { frame in
+            events.record("frame \(frame.sequenceNumber)")
+        }
+        let fiveMsTicks = try Self.ticks(forFrames: 240)
+
+        route.emit(try Self.block(hostTime: mach_absolute_time()))
+        engine.flush { events.record("flushed") }
+        route.emit(try Self.block(hostTime: mach_absolute_time() - fiveMsTicks))
+        route.emit(try Self.block(hostTime: mach_absolute_time()))
+
+        events.waitForCount(3)
+        try await Task.sleep(for: .milliseconds(200))
+        engine.stop()
+        XCTAssertEqual(events.all, ["frame 0", "flushed", "frame 1"])
+    }
+
+    func testAGlideKeepsConsecutiveFramesWithinOneStepOfEachOther() async throws {
+        let route = ScriptedCaptureRoute()
+        let engine = RemoteAudioStreamEngine(capture: route)
+        let frames = FrameLog()
+        let delivered = DispatchSemaphore(value: 0)
+        let config = RemoteAudioStreamConfig(
+            enabled: true, streamMode: .pureTransferExclusive, targetClientId: "remote-a")
+        try await engine.start(config: config, remoteOffsetUs: 20_000, localOffsetUs: 0, calibration: nil) { frame in
+            frames.append(frame)
+            delivered.signal()
+        }
+
+        let start = mach_absolute_time()
+        let blockTicks = try Self.ticks(forFrames: 512)
+        let blockCount = 200
+        for index in 0..<blockCount {
+            if index == 3 {
+                engine.update(config: config, remoteOffsetUs: 30_000, localGoalUs: 0)
+            }
+            route.emit(try Self.block(hostTime: start + UInt64(index) * blockTicks))
+        }
+        for _ in 0..<blockCount {
+            XCTAssertEqual(delivered.wait(timeout: .now() + 2), .success)
+        }
+        engine.stop()
+
+        let received = frames.received
+        XCTAssertEqual(received.count, blockCount)
+        XCTAssertTrue(received.contains { $0.frameCount != 512 }, "the glide must stretch blocks")
+        let oneStepUs = OffsetSlew.maximumStepSamples * 1_000_000 / 48_000 + 1
+        for (earlier, later) in zip(received, received.dropFirst()) {
+            let earlierEnd = Double(earlier.targetPlayoutHostUs) + Double(earlier.frameCount) * 1_000_000 / 48_000
+            XCTAssertLessThanOrEqual(abs(Double(later.targetPlayoutHostUs) - earlierEnd), oneStepUs)
+        }
+        let first = try XCTUnwrap(received.first)
+        let last = try XCTUnwrap(received.last)
+        XCTAssertEqual(Int64(first.targetPlayoutHostUs) - Int64(first.hostCaptureTimeUs), 20_000)
+        XCTAssertEqual(Int64(last.targetPlayoutHostUs) - Int64(last.hostCaptureTimeUs), 30_000)
+    }
+
     private static func ticks(forFrames frames: Int) throws -> UInt64 {
         var timebase = mach_timebase_info_data_t()
         mach_timebase_info(&timebase)
@@ -94,5 +156,36 @@ private final class FrameLog: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return frames.map(\.targetPlayoutHostUs)
+    }
+
+    var received: [RemoteAudioWire.AudioFrame] {
+        lock.lock()
+        defer { lock.unlock() }
+        return frames
+    }
+}
+
+private final class EventLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private let arrivals = DispatchSemaphore(value: 0)
+    private var events: [String] = []
+
+    func record(_ event: String) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+        arrivals.signal()
+    }
+
+    var all: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+
+    func waitForCount(_ count: Int) {
+        for _ in 0..<count where arrivals.wait(timeout: .now() + 2) != .success {
+            return
+        }
     }
 }

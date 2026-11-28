@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import OledAmbient from '~/components/app/OledAmbient.vue';
+import { computed } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import ArtworkImage from '~/components/common/ArtworkImage.vue';
 import BrowseLink from '~/components/browse/BrowseLink.vue';
 import PlaybackModes from '~/components/player/PlaybackModes.vue';
 import ProgressScrubber from '~/components/player/ProgressScrubber.vue';
 import TransportControls from '~/components/player/TransportControls.vue';
-import LibraryActions from '~/components/player/LibraryActions.vue';
 import OutputMenu from '~/components/player/OutputMenu.vue';
 import VolumeSlider from '~/components/player/VolumeSlider.vue';
 import { useHostStore } from '~/stores/host';
@@ -18,8 +16,6 @@ const ui = useUiStore();
 
 const song = computed(() => host.current?.song ?? null);
 const duration = computed(() => song.value?.durationMs ?? null);
-
-const ambientOpen = ref(false);
 
 const showLyricsToggle = computed(
   () => host.current !== null && host.lyricsStatus > 0,
@@ -94,18 +90,13 @@ const showLyricsToggle = computed(
       <button
         type="button"
         class="utility-button ambient-toggle"
+        aria-label="Ambient mode"
+        title="Ambient mode"
         :disabled="host.current === null"
-        @click="ambientOpen = true"
+        @click="ui.openAmbient()"
       >
-        Ambient
+        <AppIcon name="ambient" />
       </button>
-      <OledAmbient
-        v-if="ambientOpen && host.current !== null"
-        :title="host.current.song.title"
-        :artist="host.current.song.artist"
-        @close="ambientOpen = false"
-      />
-      <LibraryActions class="player-library" />
       <OutputMenu class="player-output" />
       <VolumeSlider
         class="volume-full"
@@ -241,20 +232,16 @@ const showLyricsToggle = computed(
   color: var(--color-accent);
 }
 
-/* The Ambient label is text, so the button grows to fit it rather than keeping the 34 px icon size. */
-.utility-button.ambient-toggle {
-  width: auto;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 560;
-}
-
 @media (max-width: 719px) {
   .player {
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 10px;
     height: 64px;
     padding: 0 12px;
+  }
+
+  .utilities {
+    gap: 6px;
   }
 
   .utilities .volume-full,

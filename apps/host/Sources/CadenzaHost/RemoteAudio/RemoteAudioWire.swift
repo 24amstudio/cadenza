@@ -19,11 +19,13 @@ enum RemoteAudioWire {
 
     enum BitDepth: UInt8, Sendable, Equatable {
         case int16 = 16
+        case int24 = 24
         case float32 = 32
 
         var bytesPerSample: Int {
             switch self {
             case .int16: 2
+            case .int24: 3
             case .float32: 4
             }
         }

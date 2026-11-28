@@ -96,6 +96,7 @@ data class HostSnapshot(
     val videoOutput: String? = null,
     // The AVR lip-sync offset in milliseconds, from -500 to 500.
     val lipSyncOffsetMs: Int? = null,
+    val remoteAudioTarget: String? = null,
 )
 
 // A Google Cast device the Host can send audio to. `name` identifies it in commands. `label` is what to show, and
@@ -348,6 +349,7 @@ object Wire {
             castState(value.optJSONObject("cast")),
             value.nullableString("video_output"),
             value.takeIf { it.has("lip_sync_offset_ms") }?.optInt("lip_sync_offset_ms"),
+            value.nullableString("remote_audio_target"),
         ).also {
             require(it.repeat in listOf("off", "one", "all")) { "Unknown repeat mode." }
             require(it.volume in 0..100 && it.quality in listOf("unknown", "lossless", "hi_res_lossless", "dolby_atmos", "aac")) {

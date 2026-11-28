@@ -39,6 +39,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -858,6 +859,66 @@ class RemoteUiTest {
 
     private class PageLifecycle : LifecycleOwner {
         override val lifecycle = LifecycleRegistry(this)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1280dp-mdpi")
+    fun portraitTabletLyricsStackTheSongLyricsAndControlsTopToBottom() {
+        seedProfile(playing = true)
+        createModel()
+        val document =
+            LyricDocument(
+                UUID(0, 11).toString(),
+                UUID(0, 20).toString(),
+                "machine",
+                listOf(
+                    LyricLine("first", "La nuit s’éveille", 0, 25_000, "The night awakens"),
+                    LyricLine("second", "Je chante avec toi", 30_000, 35_000, "I sing with you"),
+                ),
+                null,
+            )
+        compose.setContent {
+            val state by model.state.collectAsStateWithLifecycle()
+            MaterialExpressiveTheme { LyricsScreen(model, state.copy(lyrics = document)) }
+        }
+        compose.waitUntil(5_000) { model.state.value.loaded }
+        compose.waitForIdle()
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val title = compose.onNodeWithText("Current song").fetchSemanticsNode().boundsInRoot
+        val lyric = compose.onNodeWithText("I sing with you").fetchSemanticsNode().boundsInRoot
+        val pause =
+            compose
+                .onAllNodesWithContentDescription("Pause in Cadenza Host", substring = true)
+                .fetchSemanticsNodes()
+                .first()
+                .boundsInRoot
+        assertTrue("the song data sits above the lyrics", title.bottom <= lyric.top)
+        assertTrue("the playback controls sit below the lyrics", lyric.bottom <= pause.top)
+        assertTrue("the lyrics stay full width, not beside the song", lyric.left < root.width * 0.5f)
+        capture("lyrics-portrait-tablet")
+    }
+
+    @Test
+    fun anArtistLinkOnTheLyricsScreenOpensTheArtistPageInsteadOfStayingUnderIt() {
+        seedProfile(playing = true)
+        openApp()
+        val document =
+            LyricDocument(
+                UUID(0, 11).toString(),
+                UUID(0, 20).toString(),
+                "machine",
+                listOf(LyricLine("first", "La nuit s’éveille", 0, 25_000, "The night awakens")),
+                null,
+            )
+        compose.runOnUiThread {
+            model.mutable.update { it.copy(connected = true, capabilities = setOf("library.browse"), lyrics = document) }
+        }
+        compose.waitForIdle()
+        compose.onAllNodes(hasClickAction() and hasText("Current song", substring = true)).onFirst().performClick()
+        compose.onNodeWithContentDescription("Back to player").assertIsDisplayed()
+        compose.onNodeWithText("Synthetic artist").performClick()
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription("Back to player").assertCountEquals(0)
     }
 
     private fun openApp(

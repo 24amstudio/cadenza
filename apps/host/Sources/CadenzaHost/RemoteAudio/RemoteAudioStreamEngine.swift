@@ -3,9 +3,6 @@ import Foundation
 
 /// Captures Music's output and turns each block into the Host's own output and one Remote audio frame. Music is always
 /// muted by the process tap while the stream runs, so the Host plays its part itself. A Remote frame plays at the
-/// jitter cushion after capture. The Host's own output plays at its alignment offset, which glides in over 500 ms. The
-/// Host block is scheduled at its playout instant, so the player holds it. The DSP and the frame sequence live on one
-/// serial queue. Frames leave through `deliver`.
 final class RemoteAudioStreamEngine: @unchecked Sendable {
     typealias Deliver = @Sendable (RemoteAudioWire.AudioFrame) -> Void
 
@@ -22,17 +19,21 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.cadenza.host.remote-audio.engine")
     private var state: State?
     private(set) var mode: RemoteAudioStreamMode?
+    private let loadLock = NSLock()
+    private var busyNanoseconds: UInt64 = 0
+    private var loadWindowStart = DispatchTime.now().uptimeNanoseconds
 
     private struct State {
         var config: RemoteAudioStreamConfig
         var sampleRate: Double
         var dsp: CrossoverDspEngine?
         var local: AVAudioSingOutput?
-        var remoteOffsetUs: UInt64
+        var remoteOffset: OffsetSlew
         var localOffset: OffsetSlew
-        var blockMs: Double
         var calibration: RoomCalibrationWindow?
         var sequence: UInt32 = 0
+        var flushedAtUs: UInt64 = 0
+        var quality: RemoteAudioQuality = .lossless
         let deliver: Deliver
     }
 
@@ -43,7 +44,7 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
     /// Starts the capture. A Remote frame plays at `capture time + remoteOffsetUs`. The Host's own output plays at
     /// `capture time + localOffsetUs`, and the glide reaches that value from the first block.
     func start(
-        config: RemoteAudioStreamConfig, remoteOffsetUs: UInt64, localOffsetUs: Double,
+        config: RemoteAudioStreamConfig, remoteOffsetUs: Double, localOffsetUs: Double,
         calibration: RoomCalibrationWindow?, deliver: @escaping Deliver
     ) async throws {
         guard let format = capture.format, format.channelCount == 2 else { throw Failure.unsupportedOutput }
@@ -62,7 +63,8 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
         let blockMs = Double(Self.nominalBlockFrames) / format.sampleRate * 1_000
         let next = State(
             config: config, sampleRate: format.sampleRate, dsp: dsp, local: local,
-            remoteOffsetUs: remoteOffsetUs, localOffset: OffsetSlew(current: localOffsetUs), blockMs: blockMs,
+            remoteOffset: OffsetSlew(current: remoteOffsetUs, sampleRate: format.sampleRate, blockMs: blockMs),
+            localOffset: OffsetSlew(current: localOffsetUs, sampleRate: format.sampleRate, blockMs: blockMs),
             calibration: calibration, deliver: deliver)
         queue.sync { state = next }
         self.mode = config.streamMode
@@ -84,25 +86,43 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
         }
     }
 
-    /// Drops the local player's scheduled blocks, so a transport change is heard at once.
-    func flush() {
+    func flush(onFlushed: @escaping @Sendable () -> Void) {
+        let requestedUs = RemoteAudioClock.nowUs()
         queue.async { [self] in
             state?.local?.flush()
+            state?.flushedAtUs = requestedUs
+            onFlushed()
         }
     }
 
-    /// Applies gain, polarity, crossover, and timing changes. The local output glides to a new goal over 500 ms. A
-    /// change of stream mode needs a new engine instead.
-    func update(config: RemoteAudioStreamConfig, remoteOffsetUs: UInt64, localGoalUs: Double) {
+    func update(config: RemoteAudioStreamConfig, remoteOffsetUs: Double, localGoalUs: Double) {
         queue.async { [self] in
             guard var current = state else { return }
             if config.crossoverHz != current.config.crossoverHz, let dsp = current.dsp {
                 try? dsp.setCrossover(hz: config.crossoverHz)
             }
             current.config = config
-            current.remoteOffsetUs = remoteOffsetUs
-            current.localOffset.setGoal(localGoalUs, blockMs: current.blockMs)
+            current.remoteOffset.setGoal(remoteOffsetUs)
+            current.localOffset.setGoal(localGoalUs)
             state = current
+        }
+    }
+
+    func setQuality(_ quality: RemoteAudioQuality) {
+        queue.async { [self] in
+            state?.quality = quality
+        }
+    }
+
+    func takeBusyFraction() -> Double {
+        let now = DispatchTime.now().uptimeNanoseconds
+        return loadLock.withLock {
+            let elapsed = now &- loadWindowStart
+            let busy = busyNanoseconds
+            busyNanoseconds = 0
+            loadWindowStart = now
+            guard elapsed > 0 else { return 0 }
+            return min(1, Double(busy) / Double(elapsed))
         }
     }
 
@@ -116,55 +136,85 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
     private func receive(_ buffer: SingAudioBuffer) {
         defer { buffer.release() }
         let count = Int(buffer.frameCount)
-        let captureUs = Self.blockEndUs(buffer, frames: count)
         guard count > 0, count <= Self.maximumBlockFrames, buffer.format.channelCount == 2,
             let channels = buffer.samples.floatChannelData
         else { return }
+        let span = Self.blockSpanUs(buffer, frames: count)
         // The pooled buffer is released as soon as its samples are copied, so the queue never reads it.
         let left = Array(UnsafeBufferPointer(start: channels[0], count: count))
         let right = Array(UnsafeBufferPointer(start: channels[1], count: count))
-        queue.async { [self] in process(left: left, right: right, captureUs: captureUs) }
+        queue.async { [self] in process(left: left, right: right, captureUs: span.end, startUs: span.start) }
     }
 
-    private func process(left: [Float], right: [Float], captureUs: UInt64) {
+    private func process(left: [Float], right: [Float], captureUs: UInt64, startUs: UInt64) {
+        let started = DispatchTime.now().uptimeNanoseconds
+        defer { recordBusy(since: started) }
         guard var current = state else { return }
         defer { state = current }
         guard
             let blocks = RemoteAudioRouter.route(
                 mode: current.config.streamMode, left: left, right: right, dsp: current.dsp,
-                subGainDb: current.config.subGainDb, phaseInvert: current.config.phaseInvert)
+                subGainDb: current.config.subGainDb, phaseInvert: current.config.phaseInvert),
+            startUs >= current.flushedAtUs
         else { return }
-        let remotePlayoutUs = captureUs &+ current.remoteOffsetUs
+        let count = left.count
+        let remoteUs = current.remoteOffset.advance()
+        let remoteFrames = Self.stretchedFrames(
+            count, fromUs: remoteUs, toUs: current.remoteOffset.peekNext(), sampleRate: current.sampleRate)
+        let localUs = current.localOffset.advance()
         if blocks.hostOutput != .silent, let local = current.local {
-            let localOffset = UInt64(max(0, current.localOffset.advance().rounded()))
             let channels = blocks.hostOutput == .mono ? 1 : 2
-            if let buffer = Self.pcmBuffer(blocks.host, channels: channels, sampleRate: current.sampleRate) {
-                let hostTime = RemoteAudioClock.machAbsoluteTime(forPlayoutUs: captureUs &+ localOffset)
+            let localFrames = Self.stretchedFrames(
+                count, fromUs: localUs, toUs: current.localOffset.peekNext(), sampleRate: current.sampleRate)
+            let host = BlockStretch.resample(blocks.host, channels: channels, toFrames: localFrames)
+            if let buffer = Self.pcmBuffer(host, channels: channels, sampleRate: current.sampleRate) {
+                let hostTime = RemoteAudioClock.machAbsoluteTime(forPlayoutUs: captureUs &+ Self.offsetUs(localUs))
                 local.enqueue(buffer, hostTime: hostTime)
             }
         }
         if blocks.hostOutput == .mono {
             current.calibration?.appendReferences(mains: blocks.remoteLeft, sub: blocks.host)
         }
-        let payload = RemoteAudioRouter.interleave(blocks.remoteLeft, blocks.remoteRight).withUnsafeBufferPointer {
-            RemoteAudioWire.littleEndianPayload(float: $0)
-        }
+        let tier = current.quality
+        let remoteSamples =
+            tier.channels == 1
+            ? zip(blocks.remoteLeft, blocks.remoteRight).map { ($0 + $1) * 0.5 }
+            : RemoteAudioRouter.interleave(blocks.remoteLeft, blocks.remoteRight)
+        let stretched = BlockStretch.resample(remoteSamples, channels: Int(tier.channels), toFrames: remoteFrames)
+        let payload =
+            tier.bitDepth == .int24
+            ? RemoteAudioPCM.littleEndian24(stretched) : RemoteAudioPCM.littleEndian16(stretched)
         let frame = RemoteAudioWire.AudioFrame(
-            flag: blocks.flag, channels: 2, bitDepth: .float32, sequenceNumber: current.sequence,
-            hostCaptureTimeUs: captureUs, targetPlayoutHostUs: remotePlayoutUs, frameCount: UInt16(left.count),
-            payload: payload)
+            flag: blocks.flag, channels: tier.channels, bitDepth: tier.bitDepth, sequenceNumber: current.sequence,
+            hostCaptureTimeUs: captureUs, targetPlayoutHostUs: captureUs &+ Self.offsetUs(remoteUs),
+            frameCount: UInt16(remoteFrames), payload: payload)
         // The sequence advances for every produced frame, so a Remote sees a gap for each frame the gate drops.
         current.sequence &+= 1
         current.deliver(frame)
     }
 
-    /// The instant a block's last sample exists, on the continuous clock. A block is stamped by its device time rather than
     /// by when the consumer drains it, so consecutive blocks stay one block apart however late they are read.
-    private static func blockEndUs(_ buffer: SingAudioBuffer, frames: Int) -> UInt64 {
-        guard buffer.hostTime != 0 else { return RemoteAudioClock.nowUs() }
+    private static func blockSpanUs(_ buffer: SingAudioBuffer, frames: Int) -> (start: UInt64, end: UInt64) {
         let durationUs = UInt64(Double(frames) / buffer.format.sampleRate * 1_000_000)
+        guard buffer.hostTime != 0 else {
+            let now = RemoteAudioClock.nowUs()
+            return (now &- durationUs, now)
+        }
+        let start = RemoteAudioClock.continuousUs(forHostTime: buffer.hostTime)
+        return (start, start &+ durationUs)
+    }
 
-        return RemoteAudioClock.continuousUs(forHostTime: buffer.hostTime) &+ durationUs
+    private func recordBusy(since started: UInt64) {
+        let elapsed = DispatchTime.now().uptimeNanoseconds &- started
+        loadLock.withLock { busyNanoseconds &+= elapsed }
+    }
+
+    private static func stretchedFrames(_ frames: Int, fromUs: Double, toUs: Double, sampleRate: Double) -> Int {
+        max(1, frames + Int(((toUs - fromUs) * sampleRate / 1_000_000).rounded()))
+    }
+
+    private static func offsetUs(_ offset: Double) -> UInt64 {
+        UInt64(max(0, offset.rounded()))
     }
 
     /// Builds the non-interleaved Float32 buffer that `AVAudioSingOutput` schedules. Stereo input is interleaved.

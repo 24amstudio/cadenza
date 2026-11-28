@@ -429,11 +429,14 @@ private fun PortraitPlayerPanel(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        OutputChooser(model, snapshot.audioOutputs, snapshot.cast, enabled = state.connected)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            LibraryActions(model, current.song, enabled = state.connected, modifier = Modifier.weight(1f))
+            OutputChooser(model, snapshot.audioOutputs, snapshot.cast, snapshot.remoteAudioTarget, enabled = state.connected)
+        }
+        OutputStatusLines(snapshot.cast)
         if (current.song.isMusicVideo) {
             LyricTargetChooser(model, snapshot.videoOutput, snapshot.lipSyncOffsetMs, enabled = state.connected)
         }
-        LibraryActions(model, current.song, enabled = state.connected)
         PlaybackTimeline(model, state, currentPosition)
         PlaybackTransport(
             model,
@@ -490,11 +493,14 @@ private fun PlayerPanel(
             )
         }
         HorizontalDivider()
-        OutputChooser(model, snapshot.audioOutputs, snapshot.cast, enabled = state.connected)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            LibraryActions(model, current.song, enabled = state.connected, modifier = Modifier.weight(1f))
+            OutputChooser(model, snapshot.audioOutputs, snapshot.cast, snapshot.remoteAudioTarget, enabled = state.connected)
+        }
+        OutputStatusLines(snapshot.cast)
         if (current.song.isMusicVideo) {
             LyricTargetChooser(model, snapshot.videoOutput, snapshot.lipSyncOffsetMs, enabled = state.connected)
         }
-        LibraryActions(model, current.song, enabled = state.connected)
         PlaybackTimeline(model, state, currentPosition)
         TabletTransport(model, state, lyricsButton)
         HorizontalDivider()

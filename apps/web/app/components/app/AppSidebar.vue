@@ -2,12 +2,41 @@
 import { computed } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import LinkIndicator from '~/components/app/LinkIndicator.vue';
+import {
+  receiverLinkBars,
+  type StreamHealth,
+} from '~/lib/remoteAudio/linkHealth';
+import { qualityView } from '~/lib/remoteAudio/quality';
+import { streamRoundTrip } from '~/lib/remoteAudio/roundTrip';
 import { navigationItems } from '~/lib/navigation';
 import { useHostStore } from '~/stores/host';
+import { useRemoteAudioStore } from '~/stores/remoteAudio';
 import { useUiStore } from '~/stores/ui';
 
 const host = useHostStore();
 const ui = useUiStore();
+const audio = useRemoteAudioStore();
+const roundTrip = computed(() => streamRoundTrip(audio.status));
+
+const streamQuality = computed(() =>
+  audio.status.transmitting
+    ? qualityView(audio.status.quality, audio.status.qualityReason)
+    : null,
+);
+
+const streamHealth = computed<StreamHealth | null>(() =>
+  audio.status.transmitting
+    ? {
+        jitterMs: audio.status.networkJitterMs,
+        dropoutMs60s: audio.status.dropoutMs60s,
+        hostDroppedFrames60s: audio.status.droppedStaleFrames60s,
+      }
+    : null,
+);
+
+const linkBars = computed(() =>
+  receiverLinkBars(host.linkBars, streamHealth.value),
+);
 
 const statusLabel = computed(() => {
   switch (host.phase) {
@@ -54,10 +83,12 @@ const statusLabel = computed(() => {
         <strong>{{ host.hostName ?? 'Cadenza Host' }}</strong>
         <LinkIndicator
           v-if="host.connected"
-          :bars="host.linkBars"
+          :bars="linkBars"
           :over-bluetooth="host.linkOverBluetooth()"
           :rx-pulse="host.rxPulse"
           :tx-pulse="host.txPulse"
+          :round-trip="roundTrip"
+          :quality="streamQuality"
         />
         <span v-else>{{ statusLabel }}</span>
       </div>

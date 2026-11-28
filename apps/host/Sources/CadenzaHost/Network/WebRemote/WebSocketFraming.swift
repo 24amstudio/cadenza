@@ -62,6 +62,14 @@ enum WebSocketFraming {
         Data(encode(opcode: 0x2, payload: payload))
     }
 
+    static func binaryFrame(_ payload: Data) -> Data {
+        let head = header(opcode: 0x2, count: payload.count)
+        var frame = Data(capacity: head.count + payload.count)
+        frame.append(contentsOf: head)
+        frame.append(payload)
+        return frame
+    }
+
     static func pongFrame(_ payload: [UInt8]) -> Data {
         Data(encode(opcode: 0xA, payload: payload))
     }
@@ -137,8 +145,13 @@ enum WebSocketFraming {
 
     // Server frames are not masked.
     private static func encode(opcode: UInt8, payload: [UInt8]) -> [UInt8] {
+        var frame = header(opcode: opcode, count: payload.count)
+        frame.append(contentsOf: payload)
+        return frame
+    }
+
+    private static func header(opcode: UInt8, count: Int) -> [UInt8] {
         var frame: [UInt8] = [0x80 | opcode]
-        let count = payload.count
         if count < 126 {
             frame.append(UInt8(count))
         } else if count <= 0xFFFF {
@@ -151,7 +164,6 @@ enum WebSocketFraming {
                 frame.append(UInt8((UInt64(count) >> UInt64(shift)) & 0xFF))
             }
         }
-        frame.append(contentsOf: payload)
         return frame
     }
 }

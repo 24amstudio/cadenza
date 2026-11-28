@@ -34,7 +34,7 @@ internal fun EnergyDebugSection(energy: EnergyState) {
                 StatRow("System current", draw.currentMilliAmp?.let { "${it.toInt()} mA" } ?: "Unknown")
             }
             StatRow("Lyric frame cap", "${profile.lyricFrameCapFps} fps")
-            StatRow("Lyric blur lines", if (profile.lyricBlurLines == 0) "Off" else "${profile.lyricBlurLines} each side")
+            StatRow("Lyric blur", if (profile.lyricBlur) "On" else "Off")
             StatRow("Animated artwork", yesNo(profile.motionArtwork))
             StatRow("Cover decode size", "${profile.artworkMaxEdgePx} px")
             StatRow("Position ticks", "${profile.lyricTickMs} ms lyrics, ${profile.progressTickMs} ms timeline")

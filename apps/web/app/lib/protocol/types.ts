@@ -131,6 +131,17 @@ export interface CastState {
   pendingStages: PendingStage[];
 }
 
+export type SingStatus =
+  'unavailable' | 'preparing' | 'ready' | 'active' | 'failed';
+
+export interface SingSession {
+  status: SingStatus;
+  vocalPercent: number;
+  latencyMs: number | null;
+  issue: string | null;
+  modelReady: boolean | null;
+}
+
 export interface Snapshot {
   hostId: string;
   hostEpoch: string;
@@ -155,6 +166,8 @@ export interface Snapshot {
   // The AVR lip-sync offset, in milliseconds. Absent from Hosts that predate it.
   lipSyncOffsetMs?: number | null;
   remoteAudioTarget?: string | null;
+  // The Sing mode session. Absent from Hosts that predate Sing.
+  sing?: SingSession | null;
 }
 
 export interface LyricWord {
@@ -254,6 +267,8 @@ export type CommandAction =
   | { kind: 'cast.presentation'; presentation: CastPresentation }
   | { kind: 'stage.approve'; pin: string }
   | { kind: 'lip_sync.offset'; offsetMs: number }
+  | { kind: 'sing.enable' | 'sing.disable'; occurrenceId: string }
+  | { kind: 'sing.mix'; occurrenceId: string; vocalPercent: number }
   | { kind: 'lyrics.offset'; song: SongIdentity; offsetMs: number }
   | { kind: 'library.favorite'; song: LibrarySongIdentity; favorite: boolean }
   | {

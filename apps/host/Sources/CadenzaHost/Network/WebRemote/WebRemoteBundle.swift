@@ -48,7 +48,7 @@ struct WebRemoteBundle {
 
     // Returns nil for any path that is not a listed file inside the bundle, including traversal and hidden names.
     func file(forRequestPath requestPath: String) -> WebRemoteFile? {
-        guard let relative = Self.relativePath(forRequestPath: Self.stageRoute(requestPath)) else { return nil }
+        guard let relative = Self.relativePath(forRequestPath: Self.pageRoute(requestPath)) else { return nil }
         let url = root.appendingPathComponent(relative).standardizedFileURL
         guard url.path.hasPrefix(root.path + "/") else { return nil }
         guard let contentType = Self.contentTypes[url.pathExtension.lowercased()] else { return nil }
@@ -58,10 +58,11 @@ struct WebRemoteBundle {
         return WebRemoteFile(url: url, contentType: contentType, isHashedAsset: relative.hasPrefix("_nuxt/"))
     }
 
-    /// `/tv` is the 10-foot stage. The same single-page app serves it, and the app shows the stage for that path.
-    static func stageRoute(_ requestPath: String) -> String {
+    /// `/tv` is the 10-foot stage and `/sing` the Sing window's page. The same single-page app serves both, and the app
+    /// shows the matching view for each path.
+    static func pageRoute(_ requestPath: String) -> String {
         let path = requestPath.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-        return path == "/tv" || path == "/tv/" ? "/" : requestPath
+        return ["/tv", "/tv/", "/sing", "/sing/"].contains(path) ? "/" : requestPath
     }
 
     static func relativePath(forRequestPath requestPath: String) -> String? {

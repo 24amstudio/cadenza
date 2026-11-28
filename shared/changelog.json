@@ -2,6 +2,19 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.4.6",
+      "build": 15,
+      "changes": [
+        "Adds Sing mode to the web Remote's Output panel, with a start button and a vocal level slider.",
+        "Shows a prompt with Retry when Sing cannot start, so a failed start does not go unnoticed.",
+        "Keeps Sing on when the song changes, and prepares the next song without a manual restart until you turn it off.",
+        "Starts Sing at the full output level when the vocals were at zero, so the first listen is not quiet.",
+        "Stops the vocal separator from dropping audio while it works through each second, which left gaps in the output.",
+        "Shows karaoke lyrics full screen in a Sing window on the Host's Mac, and selects Host for them when Sing starts.",
+        "Renames the karaoke outputs to Host and This device."
+      ]
+    },
+    {
       "version": "0.4.5",
       "build": 14,
       "changes": [

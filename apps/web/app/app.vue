@@ -3,19 +3,25 @@ import { onMounted, ref } from 'vue';
 import AppShell from '~/components/app/AppShell.vue';
 import MediaSessionBridge from '~/components/app/MediaSessionBridge.vue';
 import SharedLinkDialog from '~/components/app/SharedLinkDialog.vue';
+import SingPageView from '~/components/sing/SingPageView.vue';
 import TvStageView from '~/components/stage/TvStageView.vue';
 import { sharedSongId } from '~/lib/shareLink';
 import { useHostStore } from '~/stores/host';
 
-// `/tv` is the 10-foot stage for a TV browser. Every other path is the Remote.
+// `/tv` is the 10-foot stage for a TV browser. `/sing` is the Sing window on the Host's Mac. Every other path is the Remote.
 const isStage =
   typeof window !== 'undefined' && /^\/tv\/?$/.test(window.location.pathname);
+
+const isSingPage =
+  typeof window !== 'undefined' && /^\/sing\/?$/.test(window.location.pathname);
 
 // An Apple Music link shared into the installed Remote arrives as the share target's query. It is read once, then the
 // query is removed so a reload does not offer it again.
 const sharedSong = ref<string | null>(null);
 
 onMounted(() => {
+  if (isSingPage) return;
+
   const params = new URLSearchParams(window.location.search);
 
   const shared = [params.get('url'), params.get('text'), params.get('title')]
@@ -38,6 +44,7 @@ onMounted(() => {
 
 <template>
   <TvStageView v-if="isStage" />
+  <SingPageView v-else-if="isSingPage" />
   <template v-else>
     <AppShell />
     <MediaSessionBridge />

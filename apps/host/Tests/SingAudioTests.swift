@@ -34,6 +34,51 @@ final class SingAudioTests: XCTestCase {
         XCTAssertEqual(ready.status, "ready")
     }
 
+    func testSingStaysActiveAcrossSongChangesAndKeepsTheVocalLevel() async throws {
+        let coordinator = await SingCoordinator(
+            route: SingTestRoute(), separator: SingTestSeparator(latencyMs: 0), output: SingTestOutput())
+        await coordinator.prepare(for: "first")
+        try await coordinator.enable(for: "first")
+        try await coordinator.setVocalPercent(60, for: "first")
+
+        await coordinator.occurrenceChanged(to: "second")
+        let follow = await coordinator.followTask
+        await follow?.value
+
+        let occurrence = await coordinator.currentOccurrence
+        XCTAssertEqual(occurrence, "second")
+        let session = await coordinator.session
+        XCTAssertEqual(session.status, "active")
+        XCTAssertEqual(session.vocalPercent, 60)
+    }
+
+    func testTurningSingOffStopsFollowingTheNextSong() async throws {
+        let coordinator = await SingCoordinator(
+            route: SingTestRoute(), separator: SingTestSeparator(latencyMs: 0), output: SingTestOutput())
+        await coordinator.prepare(for: "first")
+        try await coordinator.enable(for: "first")
+        try await coordinator.disable(for: "first")
+
+        await coordinator.occurrenceChanged(to: "second")
+        let follow = await coordinator.followTask
+        XCTAssertNil(follow)
+        let session = await coordinator.session
+        XCTAssertEqual(session.status, "unavailable")
+        let occurrence = await coordinator.currentOccurrence
+        XCTAssertNil(occurrence)
+    }
+
+    func testStartingSingRaisesASilentVocalLevelToTheActualOutput() async throws {
+        let coordinator = await SingCoordinator(
+            route: SingTestRoute(), separator: SingTestSeparator(latencyMs: 0), output: SingTestOutput())
+        await coordinator.prepare(for: "occurrence")
+        try await coordinator.enable(for: "occurrence")
+
+        let session = await coordinator.session
+        XCTAssertEqual(session.status, "active")
+        XCTAssertEqual(session.vocalPercent, 100)
+    }
+
     func testStemMixerPreservesInstrumentalAtZeroAndClipsOutput() {
         XCTAssertEqual(SingStemMixer.render(mix: 0.4, vocal: 0.2, vocalPercent: 0), 0.2, accuracy: 0.0001)
         XCTAssertEqual(SingStemMixer.render(mix: 0.4, vocal: 0.2, vocalPercent: 100), 0.4, accuracy: 0.0001)

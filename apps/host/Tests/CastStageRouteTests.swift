@@ -47,9 +47,36 @@ struct CastStageRouteTests {
                 == .socket(key: "dGhlIHNhbXBsZSBub25jZQ=="))
     }
 
-    @Test func tvIsServedFromTheSameAppShell() {
-        #expect(WebRemoteBundle.stageRoute("/tv") == "/")
-        #expect(WebRemoteBundle.stageRoute("/tv/?x=1") == "/")
-        #expect(WebRemoteBundle.stageRoute("/app.js") == "/app.js")
+    @Test func tvAndSingAreServedFromTheSameAppShell() {
+        #expect(WebRemoteBundle.pageRoute("/tv") == "/")
+        #expect(WebRemoteBundle.pageRoute("/tv/?x=1") == "/")
+        #expect(WebRemoteBundle.pageRoute("/sing?token=abc") == "/")
+        #expect(WebRemoteBundle.pageRoute("/app.js") == "/app.js")
+    }
+
+    @Test func theSingSocketOpensOnlyWithTheWindowsAccessToken() {
+        let key = "dGhlIHNhbXBsZSBub25jZQ=="
+        #expect(
+            WebRemoteRequest.route(
+                upgrade("/sing/live?token=secret"), allowedHosts: [host], singPageToken: "secret")
+                == .singSocket(key: key))
+        #expect(
+            WebRemoteRequest.route(
+                upgrade("/sing/live?token=guess"), allowedHosts: [host], singPageToken: "secret")
+                == .reject(status: 403))
+        #expect(
+            WebRemoteRequest.route(upgrade("/sing/live"), allowedHosts: [host], singPageToken: "secret")
+                == .reject(status: 403))
+        #expect(
+            WebRemoteRequest.route(
+                upgrade("/sing/live?token=secret"), allowedHosts: [host], singPageToken: nil)
+                == .reject(status: 403))
+    }
+
+    @Test func theSingSocketIsRefusedFromAnotherOrigin() {
+        #expect(
+            WebRemoteRequest.route(
+                upgrade("/sing/live?token=secret", origin: "http://evil.example"), allowedHosts: [host],
+                singPageToken: "secret") == .reject(status: 403))
     }
 }

@@ -71,6 +71,30 @@ final class SingAudioPipelineTests: XCTestCase {
         XCTAssertEqual(output.count, 0)
     }
 
+    func testPipelineKeepsEveryBlockWhileStreamingSeparatorIsBusy() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+        let output = PipelineTestOutput()
+        let separator = PipelineGatedSeparator()
+        let pipeline = SingAudioPipeline(
+            separator: separator,
+            output: output,
+            mixState: SingMixState(),
+            onFailure: { _ in XCTFail("The gated separator should not fail.") })
+
+        pipeline.start()
+        for _ in 0..<8 {
+            let samples = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1))
+            samples.frameLength = 1
+            pipeline.submit(
+                SingAudioBuffer(
+                    format: SingAudioFormat(sampleRate: 48_000, channelCount: 2), frameCount: 1, samples: samples))
+        }
+        separator.release()
+        pipeline.stop()
+
+        XCTAssertEqual(output.count, 8)
+    }
+
     func testFlushDropsOutputOfBuffersSubmittedBeforeTheFlush() throws {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
         func sample() throws -> SingAudioBuffer {

@@ -191,6 +191,9 @@ final class SingCoordinator {
     private var modelRelease: Task<Void, Never>?
     /// How long an idle separator keeps its model before releasing it. The next Sing preparation then loads it again.
     static let modelIdleReleaseSeconds = 60
+    static let startingVocalPercent = 100
+    private var wantsActive = false
+    private(set) var followTask: Task<Void, Never>?
     var onSessionChanged: (() -> Void)?
     var onLifecycle: ((HostLogLevel, String, String, [String: String]) -> Void)?
 
@@ -246,7 +249,9 @@ final class SingCoordinator {
         preparationGeneration += 1
         let generation = preparationGeneration
         occurrenceId = occurrence
-        session = SingSession(status: "preparing", backend: separator.backend, modelRevision: separator.modelRevision)
+        session = SingSession(
+            status: "preparing", vocalPercent: session.vocalPercent, backend: separator.backend,
+            modelRevision: separator.modelRevision)
         mixState.set(session.vocalPercent)
         onLifecycle?(
             .info,
@@ -293,6 +298,7 @@ final class SingCoordinator {
         guard let format = route.format else {
             throw SingAudioError.unavailable("The Music output format is unavailable.")
         }
+        applyStartingVocalLevel()
         output.onFailure = { [weak self] message in
             Task { @MainActor [weak self] in
                 guard let self, self.occurrenceId == occurrence else {
@@ -301,6 +307,7 @@ final class SingCoordinator {
                 self.fail(message)
             }
         }
+        let generation = preparationGeneration
         var startedPipeline: SingAudioPipeline?
         do {
             try output.start(format: format)
@@ -322,7 +329,7 @@ final class SingCoordinator {
             try await route.start { buffer in
                 pipeline.submit(buffer)
             }
-            guard occurrenceId == occurrence else {
+            guard occurrenceId == occurrence, generation == preparationGeneration else {
                 route.stop()
                 throw SingAudioError.staleOccurrence
             }
@@ -339,18 +346,23 @@ final class SingCoordinator {
                 output.stop()
                 output.onFailure = nil
             }
-            session.status = "failed"
-            session.issue = error.localizedDescription
-            onSessionChanged?()
+            if generation == preparationGeneration {
+                session.status = "failed"
+                session.issue = error.localizedDescription
+                onSessionChanged?()
+            }
             throw error
         }
         session.status = "active"
+        wantsActive = true
         onLifecycle?(.info, "sing.enable.active", "Sing is active", ["occurrence_id": occurrence])
     }
 
     func disable(for occurrence: String) throws {
         try checkOccurrence(occurrence)
+        wantsActive = false
         stop()
+        if session.status == "preparing" { session.status = "unavailable" }
     }
 
     func setVocalPercent(_ value: Int, for occurrence: String) throws {
@@ -383,7 +395,43 @@ final class SingCoordinator {
         if session.status == "active" { session.status = "ready" }
     }
 
-    func invalidate() {
+    func shutDown() {
+        wantsActive = false
+        followTask?.cancel()
+        followTask = nil
+        stop()
+    }
+
+    func occurrenceChanged(to next: String?) {
+        guard occurrenceId != next else { return }
+        if occurrenceId != nil { invalidate() }
+        guard wantsActive, let next else { return }
+        occurrenceId = next
+        session = SingSession(
+            status: "preparing", vocalPercent: session.vocalPercent, backend: separator.backend,
+            modelRevision: separator.modelRevision)
+        followTask = Task { @MainActor [weak self] in await self?.follow(next) }
+    }
+
+    private func follow(_ occurrence: String) async {
+        await prepare(for: occurrence)
+        guard wantsActive, occurrenceId == occurrence, session.status == "ready" else { return }
+        do {
+            try await enable(for: occurrence)
+        } catch {
+            wantsActive = false
+        }
+    }
+
+    private func applyStartingVocalLevel() {
+        guard !wantsActive, session.vocalPercent == 0 else { return }
+        session.vocalPercent = Self.startingVocalPercent
+        mixState.set(session.vocalPercent)
+    }
+
+    private func invalidate() {
+        followTask?.cancel()
+        followTask = nil
         preparationGeneration += 1
         route.stop()
         pipeline?.stop()
@@ -391,7 +439,7 @@ final class SingCoordinator {
         output.stop()
         output.onFailure = nil
         occurrenceId = nil
-        session = SingSession()
+        session = SingSession(vocalPercent: session.vocalPercent)
         scheduleModelRelease()
     }
 
@@ -412,6 +460,7 @@ final class SingCoordinator {
 
     private func fail(_ message: String) {
         onLifecycle?(.error, "sing.failed", message, ["occurrence_id": occurrenceId ?? ""])
+        wantsActive = false
         route.stop()
         pipeline?.stop()
         pipeline = nil

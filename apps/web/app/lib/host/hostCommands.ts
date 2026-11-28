@@ -6,7 +6,7 @@ import type {
 } from '~/lib/protocol/types';
 import type { HostCommandAction } from '~/lib/host/controlQueue';
 
-/** The output, Cast, and library commands. Each one is handed to `press`, which queues it with the playback controls. */
+/** The output, Cast, Sing, and library commands. Each one is handed to `press`, which queues it with the playback controls. */
 export function libraryHostCommands(
   press: (action: HostCommandAction) => void,
 ) {
@@ -28,6 +28,15 @@ export function libraryHostCommands(
     },
     setLipSyncOffset(offsetMs: number): void {
       press({ kind: 'lip_sync.offset', offsetMs });
+    },
+    startSing(occurrenceId: string): void {
+      press({ kind: 'sing.enable', occurrenceId });
+    },
+    stopSing(occurrenceId: string): void {
+      press({ kind: 'sing.disable', occurrenceId });
+    },
+    setSingVocal(occurrenceId: string, vocalPercent: number): void {
+      press({ kind: 'sing.mix', occurrenceId, vocalPercent });
     },
     setLyricOffset(song: SongIdentity, offsetMs: number): void {
       press({ kind: 'lyrics.offset', song, offsetMs });

@@ -53,7 +53,10 @@ export type HostCommandAction = Extract<
       | 'lip_sync.offset'
       | 'lyrics.offset'
       | 'library.favorite'
-      | 'library.addToPlaylist';
+      | 'library.addToPlaylist'
+      | 'sing.enable'
+      | 'sing.disable'
+      | 'sing.mix';
   }
 >;
 

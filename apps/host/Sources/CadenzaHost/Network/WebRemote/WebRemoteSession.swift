@@ -25,6 +25,8 @@ final class WebRemoteSession {
     var onStageSocketOpened: ((WebRemoteSession, String) -> Void)?
     /// Called for a Wi-Fi Remote audio socket. Its binary clock pongs reach `onBinary`.
     var onRemoteAudioSocketOpened: ((WebRemoteSession) -> Void)?
+    var onSingSocketOpened: ((WebRemoteSession) -> Void)?
+    var singPageToken: (@MainActor () -> String?)?
     var onBinary: (([UInt8]) -> Void)?
     private var allowsBinary = false
     var stageMediaReply: (@MainActor (WebRemoteRequest) -> WebRemoteReply?)?
@@ -134,13 +136,15 @@ final class WebRemoteSession {
     }
 
     private func route(_ request: WebRemoteRequest) {
-        switch WebRemoteRequest.route(request, allowedHosts: allowedHosts()) {
+        switch WebRemoteRequest.route(request, allowedHosts: allowedHosts(), singPageToken: singPageToken?()) {
         case .socket(let key):
             openSocket(key: key)
         case .stageSocket(let key, let role):
             openStageSocket(key: key, role: role)
         case .remoteAudioSocket(let key):
             openRemoteAudioSocket(key: key)
+        case .singSocket(let key):
+            openSingSocket(key: key)
         case .stageMedia:
             let reply = stageMediaReply?(request) ?? WebRemoteReply(status: 404)
             finish(
@@ -193,6 +197,15 @@ final class WebRemoteSession {
             content: WebSocketFraming.handshakeResponse(forKey: key), contentContext: .defaultMessage, isComplete: true,
             completion: .contentProcessed { _ in })
         onStageSocketOpened?(self, role)
+        handleFrames()
+    }
+
+    private func openSingSocket(key: String) {
+        phase = .socket
+        connection.send(
+            content: WebSocketFraming.handshakeResponse(forKey: key), contentContext: .defaultMessage, isComplete: true,
+            completion: .contentProcessed { _ in })
+        onSingSocketOpened?(self)
         handleFrames()
     }
 

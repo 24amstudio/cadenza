@@ -8,7 +8,7 @@ final class SingAudioPipeline: @unchecked Sendable {
     private let mixState: SingMixState
     private let worker = DispatchQueue(label: "app.cadence.host.sing.dsp", qos: .userInitiated)
     private let lock = NSLock()
-    private let maximumPending = 3
+    private let maximumPending = SingAudioBufferPool.captureBlockCount
     private var accepting = false
     private var pending = 0
     // Bumped by flush(). Output from an older generation is dropped under `lock`, so

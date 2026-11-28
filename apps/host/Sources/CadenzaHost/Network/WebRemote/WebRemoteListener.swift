@@ -21,6 +21,8 @@ final class WebRemoteListener {
     var onStageSocket: ((WebRemoteSession, String) -> Void)?
     /// Wi-Fi Remote audio sockets on `/cast/live?role=remote_audio`.
     var onRemoteAudioSocket: ((WebRemoteSession) -> Void)?
+    var onSingSocket: ((WebRemoteSession) -> Void)?
+    var singPageToken: @MainActor () -> String? = { nil }
     /// Serves the read-only stage media. Nil means the path is not a stage media path.
     var stageMediaReply: (@MainActor (WebRemoteRequest) -> WebRemoteReply?)?
     /// Serves the Remote update endpoints on this listener. Set by the Host before sessions can be accepted.
@@ -91,6 +93,8 @@ final class WebRemoteListener {
         session.onSocketOpened = { [weak self] socket in self?.onSocket?(socket) }
         session.onStageSocketOpened = { [weak self] socket, role in self?.onStageSocket?(socket, role) }
         session.onRemoteAudioSocketOpened = { [weak self] socket in self?.onRemoteAudioSocket?(socket) }
+        session.onSingSocketOpened = { [weak self] socket in self?.onSingSocket?(socket) }
+        session.singPageToken = { [weak self] in self?.singPageToken() }
         session.stageMediaReply = stageMediaReply
         session.onFinished = { [weak self] in self?.sessions.removeValue(forKey: key) }
         session.start(queue: queue)

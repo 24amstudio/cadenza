@@ -115,17 +115,16 @@ final class HostService {
         network.logger = logger
         webRemote.onSocket = { [weak self] socket in self?.openWebSocket(socket) }
         configureStage()
+        configureSingPage()
         configureRemoteAudio()
         configureCastDiscovery()
         queue.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             var published = snapshot
-            if let occurrence = self.sing.currentOccurrence, occurrence != published.current?.occurrenceId {
-                self.sing.invalidate()
-            }
+            self.sing.occurrenceChanged(to: published.current?.occurrenceId)
             published.sing = self.sing.publishedSession
             self.publishedState.apply(to: &published)
-            self.publishedState.updateVideoLyrics(snapshot: published, lyrics: self.lyricDocument)
+            self.publishedState.updateSingPage(snapshot: published, lyrics: self.lyricDocument)
             self.publishedState.stage.snapshotChanged(published, lyrics: self.lyricDocument)
             // Remotes see progress on the delayed timeline, so lyrics match the audio the listener hears.
             let delay = self.sing.playbackDelayMs
@@ -271,7 +270,7 @@ final class HostService {
         stopAlignmentCapture()
         airPlayKaraokeProxy.stop()
         activeAirPlaySessionId = nil
-        sing.stop()
+        sing.shutDown()
         for job in jobs.values { job.cancel() }
         jobs.removeAll()
         network.stop()
@@ -780,7 +779,9 @@ final class HostService {
                 await sing.prepare(for: occurrence)
             }
             switch action.kind {
-            case "sing.enable": try await sing.enable(for: occurrence)
+            case "sing.enable":
+                try await sing.enable(for: occurrence)
+                publishedState.setVideoOutputTarget(.hostDisplay)
             case "sing.disable": try sing.disable(for: occurrence)
             case "sing.mix": try sing.setVocalPercent(action.vocalPercent ?? -1, for: occurrence)
             default: throw CadenzaError.failure("invalid_command", "Unknown Sing action.")

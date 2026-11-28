@@ -23,6 +23,6 @@ export function openBrowserSocket(url: string): SocketLike {
   return adapter;
 }
 
-function isText(value: unknown): value is string {
+export function isText(value: unknown): value is string {
   return String(value) === value;
 }

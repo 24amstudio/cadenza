@@ -336,7 +336,7 @@ export function encodeCommand(envelope: CommandEnvelope): string {
   });
 }
 
-// The Cast, video output, and Cadenza TV commands. Kept apart so the action switch stays within the complexity limit.
+// The Cast, video output, Cadenza TV, and Sing commands. Kept apart so the action switch stays within the complexity limit.
 function encodeCastAction(action: CommandAction) {
   switch (action.kind) {
     case 'cast.transmit':
@@ -347,6 +347,15 @@ function encodeCastAction(action: CommandAction) {
       return { kind: action.kind, presentation: action.presentation };
     case 'stage.approve':
       return { kind: action.kind, pin: action.pin };
+    case 'sing.enable':
+    case 'sing.disable':
+      return { kind: action.kind, occurrence_id: action.occurrenceId };
+    case 'sing.mix':
+      return {
+        kind: action.kind,
+        occurrence_id: action.occurrenceId,
+        vocal_percent: action.vocalPercent,
+      };
     default:
       return null;
   }

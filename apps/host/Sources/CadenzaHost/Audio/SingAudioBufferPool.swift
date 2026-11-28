@@ -4,6 +4,7 @@ import Foundation
 /// Reuses a small number of capture buffers so the Core Audio callback does
 /// not allocate for every device block. A full pool drops the block.
 final class SingAudioBufferPool: @unchecked Sendable {
+    static let captureBlockCount = 128
     private let format: AVAudioFormat
     private let capacity: Int
     private let lock = NSLock()

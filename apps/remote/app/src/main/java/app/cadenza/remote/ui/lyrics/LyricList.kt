@@ -72,7 +72,7 @@ internal fun LyricList(
                         tier = if (receding) lyricTier(index, playback.active) else TIER_ACTIVE,
                         active = index in playback.active,
                         receding = receding,
-                        blur = receding && inBlurWindow(index, playback.active, energy.lyricBlurLines),
+                        blur = receding && energy.lyricBlur,
                         instant = energy.reduceTransitions,
                         wordTimed = wordTimed,
                         sweep = playback.sweep[index] ?: IntRange.EMPTY,

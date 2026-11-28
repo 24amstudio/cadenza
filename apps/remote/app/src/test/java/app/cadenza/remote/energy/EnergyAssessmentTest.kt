@@ -79,10 +79,10 @@ class EnergyAssessmentTest {
     @Test
     fun saverTurnsOffBlurAndMotionUnlessAllowed() {
         val saver = EnergyProfile.of(EnergyTier.SAVER, settings)
-        assertEquals(0, saver.lyricBlurLines)
+        assertFalse(saver.lyricBlur)
         assertFalse(saver.motionArtwork)
         val allowed = EnergyProfile.of(EnergyTier.SAVER, settings.copy(lyricBlurInSaver = true, motionArtworkInSaver = true))
-        assertTrue(allowed.lyricBlurLines > 0)
+        assertTrue(allowed.lyricBlur)
         assertTrue(allowed.motionArtwork)
     }
 

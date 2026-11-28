@@ -5,7 +5,7 @@ import androidx.compose.runtime.Immutable
 /**
  * The concrete work limits for a tier. Each knob has one consumer:
  * - [lyricFrameCapFps]: per-word sweep frame loop (`rememberSweeps`).
- * - [lyricBlurLines]: lines on each side of the active line that get a blur effect; 0 recedes by opacity alone.
+ * - [lyricBlur]: receding lines get a blur effect; off recedes them by opacity alone.
  * - [reduceTransitions]: lyric tier fades, follow glide and surface/song swaps become instant.
  * - [motionArtwork]: animated cover video is requested and played.
  * - [artworkMaxEdgePx]: longest edge a full-size cover is decoded to.
@@ -17,7 +17,7 @@ import androidx.compose.runtime.Immutable
 data class EnergyProfile(
     val tier: EnergyTier,
     val lyricFrameCapFps: Int,
-    val lyricBlurLines: Int,
+    val lyricBlur: Boolean,
     val reduceTransitions: Boolean,
     val motionArtwork: Boolean,
     val artworkMaxEdgePx: Int,
@@ -40,14 +40,14 @@ data class EnergyProfile(
         ): EnergyProfile =
             when (tier) {
                 EnergyTier.FULL ->
-                    EnergyProfile(tier, 60, 6, false, true, 1_024, 100, 250, 5_000, 15_000, false)
+                    EnergyProfile(tier, 60, true, false, true, 1_024, 100, 250, 5_000, 15_000, false)
                 EnergyTier.BALANCED ->
-                    EnergyProfile(tier, 30, 4, false, true, 768, 150, 500, 10_000, 20_000, false)
+                    EnergyProfile(tier, 30, true, false, true, 768, 150, 500, 10_000, 20_000, false)
                 EnergyTier.SAVER ->
                     EnergyProfile(
                         tier = tier,
                         lyricFrameCapFps = 20,
-                        lyricBlurLines = if (settings.lyricBlurInSaver) 3 else 0,
+                        lyricBlur = settings.lyricBlurInSaver,
                         reduceTransitions = true,
                         motionArtwork = settings.motionArtworkInSaver,
                         artworkMaxEdgePx = 512,

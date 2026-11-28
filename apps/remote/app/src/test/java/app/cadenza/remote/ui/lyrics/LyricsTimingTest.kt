@@ -103,14 +103,6 @@ class LyricsTimingTest {
     }
 
     @Test
-    fun blurReachesOnlyTheLinesNearTheActiveOnes() {
-        assertEquals(listOf(false, true, true, true, true, true, false), (0..6).map { inBlurWindow(it, listOf(3), 2) })
-        assertEquals(false, inBlurWindow(3, listOf(3), 0))
-        assertEquals(true, inBlurWindow(1, emptyList(), 2))
-        assertEquals(false, inBlurWindow(2, emptyList(), 2))
-    }
-
-    @Test
     fun theFrameCapSleepsBetweenSamplesAndNeverUncaps() {
         assertEquals(42L, frameGapMs(20))
         assertEquals(8L, frameGapMs(60))

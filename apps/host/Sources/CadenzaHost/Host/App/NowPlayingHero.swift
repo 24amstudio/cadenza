@@ -21,6 +21,7 @@ struct NowPlayingHero: View {
                 }
                 .accessibilityElement(children: .combine)
                 PlaybackControls(model: model)
+                SingControls(model: model)
             } else {
                 ContentUnavailableView("Nothing is playing", systemImage: "music.note")
             }

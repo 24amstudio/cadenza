@@ -11,7 +11,9 @@
         "Starts Sing at the full output level when the vocals were at zero, so the first listen is not quiet.",
         "Stops the vocal separator from dropping audio while it works through each second, which left gaps in the output.",
         "Shows karaoke lyrics full screen in a Sing window on the Host's Mac, and selects Host for them when Sing starts.",
-        "Renames the karaoke outputs to Host and This device."
+        "Renames the karaoke outputs to Host and This device.",
+        "Adds Sing controls and a karaoke output choice to the Host, so Sing can start and be adjusted without a Remote.",
+        "Shows karaoke lyrics over a music video on the Host's Mac, and uses the Sing window for songs without video."
       ]
     },
     {

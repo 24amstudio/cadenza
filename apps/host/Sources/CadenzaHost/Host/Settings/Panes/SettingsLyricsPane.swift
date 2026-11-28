@@ -20,6 +20,17 @@ struct SettingsLyricsPane: View {
             }
 
             Section {
+                Picker("Show karaoke lyrics on", selection: karaokeOutput) {
+                    Text("This Mac").tag(VideoOutputTarget.hostDisplay)
+                    Text("Cast device").tag(VideoOutputTarget.castTransmitter)
+                }
+            } header: {
+                Text("Karaoke")
+            } footer: {
+                Text(karaokeFooter)
+            }
+
+            Section {
                 Picker("Translate from", selection: $translationSource) {
                     ForEach(translationLanguages) { language in
                         Text(language.name).tag(language.code)
@@ -51,6 +62,21 @@ struct SettingsLyricsPane: View {
                 }
             }
         }
+    }
+
+    private var karaokeOutput: Binding<VideoOutputTarget> {
+        Binding(
+            get: { VideoOutputTarget(rawValue: model.snapshot?.videoOutput ?? "") ?? .hostDisplay },
+            set: { model.setKaraokeOutput($0) })
+    }
+
+    private var karaokeFooter: String {
+        guard HostService.bundledWebRoot != nil else {
+            return "This build does not include Cadenza Web, so the Sing window cannot open. "
+                + "Lyrics still show on a Cast device."
+        }
+        return "This Mac shows lyrics in a full-screen Sing window, or over a music video. "
+            + "Starting Sing selects This Mac."
     }
 
     @ViewBuilder private var translationStatusLine: some View {

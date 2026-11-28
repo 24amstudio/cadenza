@@ -8,7 +8,7 @@ extension HostService {
     }
 
     func singPageURL() -> URL? {
-        guard configuration.webEnabled, webRemote.ready else { return nil }
+        guard configuration.webEnabled, webRemote.ready, Self.bundledWebRoot != nil else { return nil }
         let token = publishedState.singPage.accessToken
         return URL(string: "http://127.0.0.1:\(configuration.webPort)/sing?token=\(token)")
     }

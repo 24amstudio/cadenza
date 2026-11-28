@@ -10,6 +10,7 @@ final class HostPublishedState {
     let castTransmitter = CastTransmitter()
     let singPage = SingPageWindow()
     let singFeed = SingPageFeed()
+    let videoLyrics = VideoLyricsOverlay()
     var singPageURL: () -> URL? = { nil }
     let stageHub: StageHub
     let stageSuites: StageSuiteStore
@@ -17,6 +18,7 @@ final class HostPublishedState {
     let remoteAudio = RemoteAudioHub()
     private var shownOccurrence: String?
     private var dismissedOccurrence: String?
+    private var followedOccurrence: String?
     private(set) var videoOutputTarget = VideoOutputTarget.stored()
     private(set) var lipSyncOffsetMs = UserDefaults.standard.integer(forKey: "lipSyncOffsetMs")
     private(set) var castPresentation = CastPresentationMode.stored()
@@ -54,13 +56,17 @@ final class HostPublishedState {
         videoOutputTarget = target
         UserDefaults.standard.set(target.rawValue, forKey: VideoOutputTarget.defaultsKey)
         dismissedOccurrence = nil
-        if target != .hostDisplay { singPage.hide() }
+        if target != .hostDisplay {
+            singPage.hide()
+            videoLyrics.show(line: nil)
+        }
     }
 
     /// Shows the Sing window with the playing song while the Host output is chosen, and feeds it the lyric clock. A Cast
-    /// device draws the karaoke as its own WebVTT track, so the Mac shows nothing for it.
+    /// device draws the karaoke as its own WebVTT track, so the Mac shows nothing for it. A music video shows its line in
+    /// the overlay over Music's window instead.
     func updateSingPage(snapshot: HostSnapshot, lyrics: LyricDocument?) {
-        guard let current = snapshot.current, let url = singPageURL(),
+        guard let current = snapshot.current, let url = singPageURL(), current.song.mediaType != .musicVideo,
             SingPageVisibility.shouldShow(
                 target: videoOutputTarget, currentOccurrenceId: current.occurrenceId,
                 dismissedOccurrenceId: dismissedOccurrence)
@@ -76,6 +82,36 @@ final class HostPublishedState {
                 from: current, playing: snapshot.playing, lipSyncOffsetMs: lipSyncOffsetMs,
                 userOffsetMs: document?.userOffsetMs ?? 0),
             lyrics: document)
+    }
+
+    /// Sends the karaoke line of a music video that Music is playing to the chosen output. The Mac draws it in an overlay
+    /// over Music's window, and a Cast receiver draws it on the device. Other items send nothing.
+    func updateVideoLyrics(snapshot: HostSnapshot, lyrics: LyricDocument?) {
+        guard let current = snapshot.current, current.song.mediaType == .musicVideo else {
+            followedOccurrence = nil
+            videoLyrics.show(line: nil)
+            return
+        }
+        let lines = lyrics?.occurrenceId == current.occurrenceId ? (lyrics?.lines ?? []) : []
+        let position = current.positionMs - Int64(lipSyncOffsetMs) - Int64(lyrics?.userOffsetMs ?? 0)
+        let window = ActiveLyricLine.window(at: position, in: lines)
+        switch videoOutputTarget {
+        case .hostDisplay:
+            if followedOccurrence != current.occurrenceId || !videoLyrics.isAttached {
+                followedOccurrence = current.occurrenceId
+                videoLyrics.follow(musicProcess: Self.musicProcessIdentifier())
+            }
+            videoLyrics.show(line: window.current?.text)
+        case .castTransmitter:
+            // A Cast device draws the karaoke as its own WebVTT track, so the Mac draws nothing.
+            followedOccurrence = nil
+            videoLyrics.show(line: nil)
+        }
+    }
+
+    private static func musicProcessIdentifier() -> pid_t? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: VideoLyricsVisibility.musicBundleIdentifier)
+            .first?.processIdentifier
     }
 
     func apply(to snapshot: inout HostSnapshot) {

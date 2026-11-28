@@ -9,41 +9,72 @@ final class SingPageWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var requestedURL: URL?
-    private var leavingFullScreen = false
+    private var wantsVisible = false
+    private var transitioning = false
 
     func show(url: URL) {
         let window = window ?? makeWindow()
-        if requestedURL != url {
+        let appearing = !wantsVisible
+        wantsVisible = true
+        if appearing || requestedURL != url {
             requestedURL = url
             webView?.load(URLRequest(url: url))
         }
-        if leavingFullScreen {
-            leavingFullScreen = false
-            return
-        }
-        guard !window.isVisible else { return }
-        window.makeKeyAndOrderFront(nil)
-        window.toggleFullScreen(nil)
+        if appearing { present(window) }
     }
 
     func hide() {
-        guard let window, window.isVisible, !leavingFullScreen else { return }
-        guard window.styleMask.contains(.fullScreen) else {
+        guard let window, wantsVisible else { return }
+        wantsVisible = false
+        guard !transitioning else { return }
+        if window.styleMask.contains(.fullScreen) {
+            transitioning = true
+            window.toggleFullScreen(nil)
+        } else {
             window.orderOut(nil)
-            return
         }
-        leavingFullScreen = true
-        window.toggleFullScreen(nil)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        finishTransition()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
-        guard leavingFullScreen else { return }
-        leavingFullScreen = false
-        window?.orderOut(nil)
+        finishTransition()
+    }
+
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        transitioning = false
+    }
+
+    func windowDidFailToExitFullScreen(_ window: NSWindow) {
+        transitioning = false
     }
 
     func windowWillClose(_ notification: Notification) {
+        wantsVisible = false
         onUserClosed?()
+    }
+
+    private func present(_ window: NSWindow) {
+        guard !transitioning else { return }
+        window.makeKeyAndOrderFront(nil)
+        guard !window.styleMask.contains(.fullScreen) else { return }
+        transitioning = true
+        window.toggleFullScreen(nil)
+    }
+
+    private func finishTransition() {
+        guard transitioning, let window else { return }
+        transitioning = false
+        if wantsVisible {
+            present(window)
+        } else if window.styleMask.contains(.fullScreen) {
+            transitioning = true
+            window.toggleFullScreen(nil)
+        } else {
+            window.orderOut(nil)
+        }
     }
 
     private func makeWindow() -> NSWindow {

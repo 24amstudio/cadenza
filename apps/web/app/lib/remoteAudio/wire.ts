@@ -20,7 +20,7 @@ export type StreamFlag = 'pure_full_range' | 'crossover_hpf_mains';
 export interface RemoteAudioFrame {
   flag: StreamFlag;
   channels: number;
-  bitDepth: 16 | 32;
+  bitDepth: 16 | 24 | 32;
   sequenceNumber: number;
   hostCaptureTimeUs: number;
   targetPlayoutHostUs: number;
@@ -32,6 +32,64 @@ export interface RemoteAudioFrame {
 export interface RemoteAudioPing {
   pingSequence: number;
   t1HostSendUs: number;
+}
+
+const littleEndianHost = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+function readSamples(
+  bytes: ArrayBuffer,
+  offset: number,
+  bitDepth: 16 | 24 | 32,
+  count: number,
+): Float32Array {
+  const bytesPerSample = bitDepth / 8;
+
+  if (bitDepth === 24) {
+    const view = new Uint8Array(bytes, offset, count * 3);
+    const samples = new Float32Array(count);
+
+    for (let index = 0; index < count; index += 1) {
+      const at = index * 3;
+
+      let value =
+        (view[at] ?? 0) |
+        ((view[at + 1] ?? 0) << 8) |
+        ((view[at + 2] ?? 0) << 16);
+
+      if (value & 0x80_0000) value -= 0x100_0000;
+      samples[index] = value / 8_388_607;
+    }
+
+    return samples;
+  }
+
+  if (littleEndianHost) {
+    const aligned = bytes.slice(offset, offset + count * bytesPerSample);
+
+    if (bitDepth === 32) return new Float32Array(aligned);
+
+    const ints = new Int16Array(aligned);
+    const samples = new Float32Array(count);
+
+    for (let index = 0; index < count; index += 1) {
+      samples[index] = (ints[index] ?? 0) / 32768;
+    }
+
+    return samples;
+  }
+
+  const view = new DataView(bytes);
+  const samples = new Float32Array(count);
+
+  for (let index = 0; index < count; index += 1) {
+    const at = offset + index * bytesPerSample;
+    samples[index] =
+      bitDepth === 32
+        ? view.getFloat32(at, true)
+        : view.getInt16(at, true) / 32768;
+  }
+
+  return samples;
 }
 
 /** Decodes an AUDIO_FRAME. Returns null unless the header, the payload length, and each value match the contract. */
@@ -54,9 +112,9 @@ export function decodeAudioFrame(bytes: ArrayBuffer): RemoteAudioFrame | null {
         ? 'crossover_hpf_mains'
         : null;
 
-  if (flag === null || channels < 1 || channels > 2) return null;
+  if (flag === null || channels !== 2) return null;
 
-  if (bitDepth !== 16 && bitDepth !== 32) return null;
+  if (bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32) return null;
 
   const bytesPerSample = bitDepth / 8;
 
@@ -67,20 +125,20 @@ export function decodeAudioFrame(bytes: ArrayBuffer): RemoteAudioFrame | null {
     return null;
   }
 
-  // Samples are interleaved on the wire, so each channel is read with its stride.
+  const interleaved = readSamples(
+    bytes,
+    audioHeaderBytes,
+    bitDepth,
+    frameCount * channels,
+  );
+
   const channelSamples: Float32Array[] = [];
 
   for (let channel = 0; channel < channels; channel += 1) {
     const plane = new Float32Array(frameCount);
 
     for (let frame = 0; frame < frameCount; frame += 1) {
-      const offset =
-        audioHeaderBytes + (frame * channels + channel) * bytesPerSample;
-
-      plane[frame] =
-        bitDepth === 32
-          ? view.getFloat32(offset, true)
-          : view.getInt16(offset, true) / 32768;
+      plane[frame] = interleaved[frame * channels + channel] ?? 0;
     }
 
     channelSamples.push(plane);

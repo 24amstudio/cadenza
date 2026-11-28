@@ -1,11 +1,13 @@
 import CoreAudio
 import Foundation
 
-/// The electronic latency of the Host's default output, in frames: the device's latency, its safety offset, and the
-/// first output stream's latency. Stage 1 of the silent calibration reads it on connect. A device that reports none of
-/// these returns nil, and the calibration then stays degraded rather than guessing.
 enum HostOutputLatency {
-    static func defaultOutputFrames() -> Int? {
+    struct Measurement: Equatable, Sendable {
+        let frames: Int
+        let sampleRate: Double
+    }
+
+    static func defaultOutput() -> Measurement? {
         let device = AudioOutputs.defaultDevice()
         guard device != 0,
             let latency = uint32(device, kAudioDevicePropertyLatency, scope: kAudioObjectPropertyScopeOutput),
@@ -14,7 +16,10 @@ enum HostOutputLatency {
         let stream = firstOutputStream(of: device).flatMap {
             uint32($0, kAudioStreamPropertyLatency, scope: kAudioObjectPropertyScopeGlobal)
         }
-        return Int(latency) + Int(safety) + Int(stream ?? 0)
+        let rate = float64(device, kAudioDevicePropertyNominalSampleRate, scope: kAudioObjectPropertyScopeGlobal)
+        return Measurement(
+            frames: Int(latency) + Int(safety) + Int(stream ?? 0),
+            sampleRate: rate.flatMap { $0 > 0 ? $0 : nil } ?? 48_000)
     }
 
     private static func uint32(
@@ -24,6 +29,17 @@ enum HostOutputLatency {
             mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
         var value: UInt32 = 0
         var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value
+    }
+
+    private static func float64(
+        _ object: AudioObjectID, _ selector: AudioObjectPropertySelector, scope: AudioObjectPropertyScope
+    ) -> Float64? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+        var value: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else { return nil }
         return value
     }

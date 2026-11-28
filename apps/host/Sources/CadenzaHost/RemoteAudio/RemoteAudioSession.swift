@@ -1,8 +1,6 @@
 import Foundation
 
 /// One Web Remote's audio socket. The first message must be a valid handshake with the Remote's paired token. After
-/// that, the session takes stream configs, answers clock pings, reports sync telemetry every two seconds, and sends
-/// audio frames through the stale-frame gate.
 @MainActor
 final class RemoteAudioSession {
     struct Handshake: Equatable {
@@ -35,13 +33,17 @@ final class RemoteAudioSession {
     }
 
     static let maximumOutstandingPings = 8
+    static let dropLogEveryTicks = 30
 
     private let socket: WebRemoteSession
     weak var hub: RemoteAudioHub?
     private(set) var handshake: Handshake?
+    private(set) var frames: RemoteAudioFrameWriter?
+    private var streamGeneration: UInt64 = 0
+    private var lateCushion = LateDropCushion()
+    private var playoutWindow = RemoteAudioPlayoutReport.empty
+    private var lastTotalDropped = 0
     private var clock = RemoteClockEstimator()
-    private var gate = AudioFrameGate()
-    private var inFlight = 0
     private var pingSequence: UInt64 = 0
     private var outstandingPingsUs: [UInt64] = []
     private var timer: Task<Void, Never>?
@@ -54,10 +56,16 @@ final class RemoteAudioSession {
         handshake != nil
     }
 
-    /// The jitter cushion from the clock's round-trip spread, kept between 18 and 45 ms. It starts at 28 ms.
+    static let maximumCushionUs: UInt64 = 80_000
+
     var jitterCushionUs: UInt64 {
-        guard let spread = clock.rttSpreadUs else { return 28_000 }
-        return UInt64(min(max(28_000 + spread / 2, 18_000), 45_000))
+        let base: UInt64
+        if let spread = clock.rttSpreadUs {
+            base = UInt64(min(max(28_000 + spread / 2, 18_000), 45_000))
+        } else {
+            base = 28_000
+        }
+        return min(base + lateCushion.boostUs, Self.maximumCushionUs)
     }
 
     init(socket: WebRemoteSession) {
@@ -84,6 +92,12 @@ final class RemoteAudioSession {
                 return
             }
             hub?.command(command, from: self)
+        case "REMOTE_AUDIO_PLAYOUT":
+            guard let report = RemoteAudioPlayoutReport.decode(text) else {
+                hub?.reportInvalidMessage("playout report")
+                return
+            }
+            playoutWindow = playoutWindow.adding(report)
         default:
             return
         }
@@ -111,28 +125,10 @@ final class RemoteAudioSession {
             t1: pong.t1HostSendUs, t2: pong.t2RemoteRecvUs, t3: pong.t3RemoteSendUs, t4: RemoteAudioClock.nowUs())
     }
 
-    /// Sends one frame if the gate admits it. The gate counts each drop, and a stalled link tears the stream down.
-    func send(_ frame: RemoteAudioWire.AudioFrame) {
-        guard isAuthenticated, let data = RemoteAudioWire.encode(frame) else { return }
-        let now = RemoteAudioClock.nowUs()
-        if gate.admit(nowUs: now, targetPlayoutUs: frame.targetPlayoutHostUs, inFlight: inFlight) == .send {
-            inFlight += 1
-            let accepted = socket.send(data, binary: true, onWritten: { [weak self] in self?.inFlight -= 1 })
-            if !accepted { inFlight -= 1 }
-        }
-        if gate.isDegraded(nowUs: now) {
-            hub?.streamDegraded(from: self)
-        }
-    }
-
-    /// Control frames bypass the gate, so a flush reaches the Remote even while audio is being dropped.
-    func sendFlush(generation: UInt32) {
-        _ = socket.send(RemoteAudioWire.flush(generation: generation), binary: true)
-    }
-
     func close() {
         timer?.cancel()
         timer = nil
+        frames?.close()
     }
 
     private func authenticate(_ text: Data) {
@@ -158,6 +154,27 @@ final class RemoteAudioSession {
         hub?.sessionAuthenticated(self)
     }
 
+    func beginFrames() -> RemoteAudioFrameWriter {
+        frames?.close()
+        streamGeneration &+= 1
+        let generation = streamGeneration
+        let writer = RemoteAudioFrameWriter(
+            write: socket.makeBinaryWriter(),
+            onDegraded: { [weak self] in Task { @MainActor in self?.streamDegraded(generation: generation) } })
+        frames = writer
+        return writer
+    }
+
+    func endFrames() {
+        frames?.close()
+        frames = nil
+    }
+
+    private func streamDegraded(generation: UInt64) {
+        guard generation == streamGeneration else { return }
+        hub?.streamDegraded(from: self)
+    }
+
     private func startTimer() {
         timer = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -177,24 +194,26 @@ final class RemoteAudioSession {
             outstandingPingsUs.removeFirst()
         }
         _ = socket.send(RemoteAudioWire.ping(sequence: pingSequence, t1HostSendUs: now), binary: true)
-        if gate.isDegraded(nowUs: now) {
-            hub?.streamDegraded(from: self)
+        frames?.checkDegraded()
+        let drops = frames?.statistics() ?? RemoteAudioFrameWriter.Statistics(droppedInFlight: 0, droppedLate: 0)
+        lateCushion.observe(lateDrops: drops.droppedLate)
+        let totalDropped = frames?.totalDroppedFrames() ?? 0
+        let networkDrops = totalDropped >= lastTotalDropped ? totalDropped - lastTotalDropped : totalDropped
+        lastTotalDropped = totalDropped
+        hub?.observeQualityWindow(from: self, networkDrops: networkDrops, playout: playoutWindow)
+        playoutWindow = .empty
+        if drops.dropped > 0, pingSequence % UInt64(Self.dropLogEveryTicks) == 0 {
+            hub?.log?(
+                .warning, "stream.drops",
+                "The Remote audio socket dropped \(drops.droppedInFlight) frames for a full socket and "
+                    + "\(drops.droppedLate) frames that were late, in the last minute. "
+                    + "The jitter cushion is \(jitterCushionUs / 1_000) ms.")
         }
         hub?.sessionTimingChanged(self)
-        guard let telemetry = hub?.telemetry(for: self) else { return }
-        let message: [String: Any] = [
-            "version": 1,
-            "type": "REMOTE_AUDIO_SYNC",
-            "streamMode": telemetry.streamMode.rawValue,
-            "calibrationState": telemetry.calibrationState,
-            "electronicOffsetMs": telemetry.electronicOffsetMs,
-            "acousticOffsetMs": 0,
-            "clockOffsetUs": NSNumber(value: clock.offsetUs(atHostUs: now) ?? 0),
-            "clockDriftPpm": clock.driftPpm,
-            "jitterBufferMs": Double(jitterCushionUs) / 1_000,
-            "droppedStaleFrames60s": gate.droppedStaleFrames60s(nowUs: now),
-            "linkHealthy": telemetry.linkHealthy,
-        ]
+        let telemetry = hub?.telemetry(for: self) ?? .idle
+        let message = RemoteAudioSyncMessage.make(
+            telemetry: telemetry, nowUs: now, clock: clock, jitterBufferMs: Double(jitterCushionUs) / 1_000,
+            droppedStaleFrames60s: drops.dropped)
         if let data = try? JSONSerialization.data(withJSONObject: message) {
             _ = socket.send(data)
         }

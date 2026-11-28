@@ -47,6 +47,9 @@ enum class CadenzaIcon(
     CHEVRON("M8,4 L16,12 L8,20 L6,18 L12,12 L6,6 Z"),
     STAR("M12,2 L15,9 L22,9 L16.5,13.5 L18.5,21 L12,17 L5.5,21 L7.5,13.5 L2,9 L9,9 Z"),
     BATTERY("M7,4 H10 V2 H14 V4 H17 V22 H7 Z M9,7 V20 H15 V7 Z"),
+    CAST(
+        "M7.5,16.4 H3.6 V4.6 H20.4 V16.4 H16.5 V14.6 H18.6 V6.4 H5.4 V14.6 H7.5 Z M12,12.5 L16.5,18 H7.5 Z",
+    ),
 }
 
 @Composable

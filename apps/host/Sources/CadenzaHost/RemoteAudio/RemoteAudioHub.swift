@@ -1,12 +1,18 @@
 import Foundation
 import Observation
 
-/// What the Host reports to the target session each two seconds.
 struct RemoteAudioTelemetry: Equatable {
     let streamMode: RemoteAudioStreamMode
     let calibrationState: String
     let electronicOffsetMs: Double
     let linkHealthy: Bool
+    let transmitting: Bool
+    let quality: RemoteAudioQuality
+    let qualityReason: RemoteAudioQualityReason
+
+    static let idle = RemoteAudioTelemetry(
+        streamMode: .pureTransferExclusive, calibrationState: "not_required", electronicOffsetMs: 0,
+        linkHealthy: false, transmitting: false, quality: .lossless, qualityReason: .steady)
 }
 
 /// Where the room measurement stands. The raw values are the wire values in `REMOTE_AUDIO_SETUP`.
@@ -44,6 +50,7 @@ final class RemoteAudioHub {
     @ObservationIgnored var authenticate: (@MainActor (DeviceAuth) -> Bool)?
     /// Records stream events in the Host log.
     @ObservationIgnored var log: (@MainActor (HostLogLevel, String, String) -> Void)?
+    @ObservationIgnored var streamingChanged: (@MainActor () -> Void)?
     @ObservationIgnored var makeEngine: @MainActor () -> RemoteAudioStreamEngine = { RemoteAudioStreamEngine() }
     /// The Host's power budget. A measurement runs only at `unrestricted` or `balanced`.
     @ObservationIgnored var budget: @MainActor () -> HostOperatingBudget = { .unrestricted }
@@ -68,6 +75,12 @@ final class RemoteAudioHub {
     private(set) var measuring = false
     /// True while a stream is running for the Remote.
     private(set) var streamingNow = false
+
+    var streamTargetName: String? {
+        guard streamingNow, let target = setup?.targetClientId else { return nil }
+
+        return remoteName(target)
+    }
     private(set) var roomStatus: RemoteAudioRoomStatus = .notMeasured
 
     private var sessions: [ObjectIdentifier: RemoteAudioSession] = [:]
@@ -149,9 +162,25 @@ final class RemoteAudioHub {
         }
     }
 
-    /// The Remote's state for its next telemetry message. Nil while no stream runs for that session.
-    func telemetry(for session: RemoteAudioSession) -> RemoteAudioTelemetry? {
-        guard session === streaming, let setup, let streamingMode else { return nil }
+    private var qualityController = RemoteAudioQualityController()
+
+    func observeQualityWindow(from session: RemoteAudioSession, networkDrops: Int, playout: RemoteAudioPlayoutReport) {
+        guard session === streaming, let engine else { return }
+        let window = RemoteAudioQualityWindow(
+            networkDrops: networkDrops, hostLoad: engine.takeBusyFraction(), hostBudget: budget(),
+            remoteUnderrunFrames: playout.underrunFrames, remoteConcealedFrames: playout.concealedFrames,
+            remoteLongTaskMs: playout.longTaskMs)
+        let before = qualityController.quality
+        guard let next = qualityController.observe(window) else { return }
+        engine.setQuality(next)
+        log?(
+            next < before ? .warning : .info, "stream.quality",
+            "Cadenza moved the Remote audio from \(before.wireName) to \(next.wireName), because of "
+                + "\(qualityController.reason.rawValue).")
+    }
+
+    func telemetry(for session: RemoteAudioSession) -> RemoteAudioTelemetry {
+        guard session === streaming, let setup, let streamingMode else { return .idle }
         let calibration: String
         switch streamingMode {
         case .pureTransferExclusive:
@@ -165,9 +194,11 @@ final class RemoteAudioHub {
                 calibration = electronicLocked ? "electronic_locked" : "degraded"
             }
         }
+        let transmitting = engine != nil
         return RemoteAudioTelemetry(
             streamMode: setup.streamMode, calibrationState: calibration, electronicOffsetMs: electronicOffsetMs,
-            linkHealthy: engine != nil)
+            linkHealthy: transmitting, transmitting: transmitting, quality: qualityController.quality,
+            qualityReason: qualityController.reason)
     }
 
     /// Called when the jitter cushion moves, so the next frames use the new offsets.
@@ -177,12 +208,13 @@ final class RemoteAudioHub {
     }
 
     /// Play, pause, skip, and seek drop what the Host and the Remote have buffered. The next frames start a new
-    /// generation.
     func flush() {
-        guard let streaming, let engine else { return }
+        guard let streaming, let engine, let frames = streaming.frames else { return }
         generation &+= 1
-        engine.flush()
-        streaming.sendFlush(generation: generation)
+        let flushGeneration = generation
+        engine.flush {
+            frames.sendControl(RemoteAudioWire.flush(generation: flushGeneration))
+        }
     }
 
     /// Starts a new output environment. The saved measurement for the current room is dropped, and the room is measured
@@ -243,9 +275,11 @@ final class RemoteAudioHub {
     }
 
     private func startStream(_ config: RemoteAudioStreamConfig, session: RemoteAudioSession) async {
-        let hostFrames = HostOutputLatency.defaultOutputFrames()
-        electronicLocked = hostFrames != nil
-        electronicOffsetMs = Self.electronicDeltaMs(session: session, hostFrames: hostFrames)
+        qualityController = RemoteAudioQualityController()
+        let frames = session.beginFrames()
+        let hostOutput = HostOutputLatency.defaultOutput()
+        electronicLocked = hostOutput != nil
+        electronicOffsetMs = Self.electronicDeltaMs(session: session, hostOutput: hostOutput)
         roomKeyInUse = config.streamMode == .crossoverSplit ? roomKey(session) : nil
         if replaceRoomOnStart, let key = roomKeyInUse {
             clearRoomOffsetUs(key)
@@ -259,11 +293,7 @@ final class RemoteAudioHub {
             try await engine.start(
                 config: config, remoteOffsetUs: remoteOffsetUs(session),
                 localOffsetUs: localOffsetUs(config: config, session: session), calibration: window,
-                deliver: { [weak session] frame in
-                    DispatchQueue.main.async {
-                        MainActor.assumeIsolated { session?.send(frame) }
-                    }
-                })
+                deliver: { frame in frames.send(frame) })
         } catch {
             cancelRoomMeasurement()
             guard streaming === session else { return }
@@ -281,20 +311,24 @@ final class RemoteAudioHub {
         self.engine = engine
         streamingNow = true
         refreshRoomStatus()
+        streamingChanged?()
         log?(.info, "stream.started", "Cadenza started the Remote audio stream in \(config.streamMode.rawValue) mode.")
     }
 
     private func stopStream() {
+        let wasStreaming = streamingNow
         startTask?.cancel()
         startTask = nil
         engine?.stop()
         engine = nil
         cancelRoomMeasurement()
+        streaming?.endFrames()
         streaming = nil
         streamingMode = nil
         streamingNow = false
         electronicLocked = false
         refreshRoomStatus()
+        if wasStreaming { streamingChanged?() }
     }
 
     private func roomNeedsMeasurement() -> Bool {
@@ -445,23 +479,25 @@ final class RemoteAudioHub {
     }
 
     /// The Remote's frames play at the jitter cushion after capture.
-    private func remoteOffsetUs(_ session: RemoteAudioSession) -> UInt64 {
-        UInt64(session.jitterCushionUs)
+    private func remoteOffsetUs(_ session: RemoteAudioSession) -> Double {
+        Double(session.jitterCushionUs)
     }
 
     /// The Host's own output plays later by the electronic delta, the manual trim, and the room's acoustic offset.
     /// Those corrections are applied to the Host's output only, because the Remote is the reference.
     private func localOffsetUs(config: RemoteAudioStreamConfig, session: RemoteAudioSession) -> Double {
-        let electronicMs = Self.electronicDeltaMs(session: session, hostFrames: HostOutputLatency.defaultOutputFrames())
+        let electronicMs = Self.electronicDeltaMs(session: session, hostOutput: HostOutputLatency.defaultOutput())
         let netMs = electronicMs + config.manualDistanceOffsetMs
         let acousticUs = (acousticOffsetMs ?? 0) * 1_000
         return Double(session.jitterCushionUs) + netMs * 1_000 + acousticUs
     }
 
-    private static func electronicDeltaMs(session: RemoteAudioSession, hostFrames: Int?) -> Double {
-        guard let handshake = session.handshake, let hostFrames else { return 0 }
+    private static func electronicDeltaMs(
+        session: RemoteAudioSession, hostOutput: HostOutputLatency.Measurement?
+    ) -> Double {
+        guard let handshake = session.handshake, let hostOutput else { return 0 }
         return SilentCalibrationEngine.electronicDeltaMs(
             remoteBaseLatencyMs: handshake.baseLatencyMs, remoteOutputLatencyMs: handshake.outputLatencyMs,
-            hostLatencyFrames: hostFrames, sampleRate: 48_000)
+            hostLatencyFrames: hostOutput.frames, sampleRate: hostOutput.sampleRate)
     }
 }

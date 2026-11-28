@@ -5,7 +5,6 @@ import Foundation
 struct AudioFrameGate {
     enum Decision: Equatable, Sendable {
         case send
-        /// Two frames are already unacknowledged, which is the 21.33 ms cap.
         case dropInFlightFull
         /// The frame could not reach the Remote before its playout instant.
         case dropTooLate
@@ -17,11 +16,15 @@ struct AudioFrameGate {
     static let degradedAfterUs: UInt64 = 3_000_000
     static let statsWindowUs: UInt64 = 60_000_000
 
-    /// Drop times within the last 60 seconds. Used for `droppedStaleFrames60s` and the one-second rate.
-    private var dropTimesUs: [UInt64] = []
+    private struct Drop: Equatable {
+        let atUs: UInt64
+        let decision: Decision
+    }
+
+    private var drops: [Drop] = []
+    private var firstLive = 0
     private var overRateSinceUs: UInt64?
 
-    /// Applies both invariants. A frame that is dropped is recorded in the 60-second counter.
     mutating func admit(nowUs: UInt64, targetPlayoutUs: UInt64, inFlight: Int) -> Decision {
         let decision: Decision
         if inFlight >= Self.maximumInFlight {
@@ -32,7 +35,7 @@ struct AudioFrameGate {
             decision = .send
         }
         if decision != .send {
-            dropTimesUs.append(nowUs)
+            drops.append(Drop(atUs: nowUs, decision: decision))
         }
         pruneDrops(nowUs: nowUs)
         updateRate(nowUs: nowUs)
@@ -41,7 +44,12 @@ struct AudioFrameGate {
 
     mutating func droppedStaleFrames60s(nowUs: UInt64) -> Int {
         pruneDrops(nowUs: nowUs)
-        return dropTimesUs.count
+        return drops.count - firstLive
+    }
+
+    mutating func dropped(_ decision: Decision, nowUs: UInt64) -> Int {
+        pruneDrops(nowUs: nowUs)
+        return drops[firstLive...].count(where: { $0.decision == decision })
     }
 
     /// True once more than 25 frames a second have been dropped for more than 3 seconds in a row. The Host then tears
@@ -55,12 +63,18 @@ struct AudioFrameGate {
 
     private mutating func pruneDrops(nowUs: UInt64) {
         let cutoff = nowUs > Self.statsWindowUs ? nowUs - Self.statsWindowUs : 0
-        dropTimesUs.removeAll { $0 < cutoff }
+        while firstLive < drops.count, drops[firstLive].atUs < cutoff {
+            firstLive += 1
+        }
+        if firstLive > 0, firstLive * 2 >= drops.count {
+            drops.removeFirst(firstLive)
+            firstLive = 0
+        }
     }
 
     private mutating func updateRate(nowUs: UInt64) {
         let oneSecondAgo = nowUs > 1_000_000 ? nowUs - 1_000_000 : 0
-        let recent = dropTimesUs.count(where: { $0 >= oneSecondAgo })
+        let recent = drops[firstLive...].count(where: { $0.atUs >= oneSecondAgo })
         if recent > Self.degradedDropsPerSecond {
             overRateSinceUs = overRateSinceUs ?? nowUs
         } else {

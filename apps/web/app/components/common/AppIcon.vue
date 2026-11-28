@@ -29,7 +29,9 @@ export type IconName =
   | 'back'
   | 'close'
   | 'bluetooth'
-  | 'wifi';
+  | 'wifi'
+  | 'ambient'
+  | 'playlist-add';
 
 // Paths are drawn on a 24-unit grid. Transport glyphs are solid; everything else is a 1.8-unit outline.
 const iconPaths: Record<IconName, string[]> = {
@@ -132,6 +134,18 @@ const iconPaths: Record<IconName, string[]> = {
     'M12 19.6h.01',
   ],
   close: ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11'],
+  ambient: [
+    'M3.5 5.5h17v11h-17z',
+    'M12 8.3a3.2 3.2 0 1 0 0 6.4a3.2 3.2 0 1 0 0-6.4Z',
+    'M12 9.9v2.3l1.5 1',
+  ],
+  'playlist-add': [
+    'M4 6.5h10',
+    'M4 11.5h10',
+    'M4 16.5h6',
+    'M18 13.5v7',
+    'M14.5 17h7',
+  ],
 };
 
 const solid = new Set<IconName>([

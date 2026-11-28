@@ -10,6 +10,7 @@ extension HostService {
             self?.logger.log(level, category: "remote-audio", action: action, message)
         }
         hub.budget = { [weak self] in self?.publishedState.hostBudget ?? .unrestricted }
+        hub.streamingChanged = { [weak self] in self?.queue.publish() }
         hub.roomKey = { session in
             guard let output = AudioOutputs.defaultUID(), let agent = session.handshake?.userAgent else { return nil }
             return output + "|" + agent

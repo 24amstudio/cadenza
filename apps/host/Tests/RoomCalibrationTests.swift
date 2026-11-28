@@ -30,41 +30,68 @@ struct RoomCalibrationWindowTests {
 }
 
 struct OffsetSlewTests {
-    @Test func glidesToItsGoalInHalfASecondWithEqualSteps() {
-        var slew = OffsetSlew(current: 0)
-        let blockMs = 512.0 / 48_000 * 1_000
-        slew.setGoal(15_000, blockMs: blockMs)
+    private static let blockMs = 512.0 / 48_000 * 1_000
 
-        var previous = 0.0
-        var largestStep = 0.0
+    private static func largestBlockChangeSamples(
+        _ slew: inout OffsetSlew, goal: Double
+    ) -> (steps: Int, largest: Double) {
+        var previous = slew.current
+        var largest = 0.0
         var steps = 0
-        while slew.current != 15_000, steps < 200 {
+        while slew.current != goal, steps < 10_000 {
             let value = slew.advance()
-            largestStep = max(largestStep, value - previous)
+            largest = max(largest, abs(value - previous) * 48_000 / 1_000_000)
             previous = value
             steps += 1
         }
+        return (steps, largest)
+    }
 
-        // 500 ms of 10.67 ms blocks is 47 steps, and each step is a 47th of the change.
-        #expect(steps == 47)
-        #expect(slew.current == 15_000)
-        #expect(largestStep <= 15_000 / 47 + 1e-6)
+    @Test func aSmallChangeGlidesInHalfASecondAndStartsFromRest() {
+        var slew = OffsetSlew(current: 0, sampleRate: 48_000, blockMs: Self.blockMs)
+        slew.setGoal(1_000)
+        let firstStep = slew.peekNext()
+        #expect(abs(firstStep) * 48_000 / 1_000_000 < 0.1)
+
+        let result = Self.largestBlockChangeSamples(&slew, goal: 1_000)
+
+        #expect(result.steps == 47)
+        #expect(result.largest <= OffsetSlew.peakSlope * 48.0 / 47 + 1e-6)
+    }
+
+    @Test func aLargeChangeNeverMovesABlockByMoreThanTheStepLimit() {
+        var slew = OffsetSlew(current: 0, sampleRate: 48_000, blockMs: Self.blockMs)
+        slew.setGoal(50_000)
+
+        let result = Self.largestBlockChangeSamples(&slew, goal: 50_000)
+
+        #expect(result.steps == 900)
+        #expect(result.largest <= OffsetSlew.maximumStepSamples + 1e-6)
+    }
+
+    @Test func peekingPredictsTheNextBlockWithoutMovingTheGlide() {
+        var slew = OffsetSlew(current: 0, sampleRate: 48_000, blockMs: Self.blockMs)
+        slew.setGoal(1_000)
+
+        let predicted = slew.peekNext()
+
+        #expect(slew.peekNext() == predicted)
+        #expect(slew.advance() == predicted)
     }
 
     @Test func aRepeatedGoalDoesNotRestartTheGlide() {
-        var slew = OffsetSlew(current: 0)
-        slew.setGoal(4_700, blockMs: 10)
+        var slew = OffsetSlew(current: 0, sampleRate: 48_000, blockMs: 10)
+        slew.setGoal(470)
         for _ in 0..<10 {
             _ = slew.advance()
         }
         // The same goal arrives again, as it does on every two-second timing tick, and the glide keeps its place.
-        slew.setGoal(4_700, blockMs: 10)
+        slew.setGoal(470)
         var remaining = 0
-        while slew.current != 4_700, remaining < 100 {
+        while slew.current != 470, remaining < 100 {
             _ = slew.advance()
             remaining += 1
         }
-        // A 500 ms glide of 10 ms blocks is 50 steps. Ten have run, so 40 are left.
         #expect(remaining == 40)
     }
 }

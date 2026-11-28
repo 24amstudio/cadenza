@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
 import RemoteAudioSection from '~/components/player/RemoteAudioSection.vue';
 import { castDisplayLabel } from '~/lib/cast';
+import { isCasting } from '~/lib/casting';
 import type { CastPresentation } from '~/lib/protocol/types';
 import { useHostStore } from '~/stores/host';
 
@@ -18,6 +19,7 @@ function onPanelToggle(event: Event): void {
 
 const outputs = computed(() => host.snapshot?.audioOutputs ?? []);
 const cast = computed(() => host.snapshot?.cast ?? null);
+const casting = computed(() => isCasting(host.snapshot));
 const transmit = computed(() => cast.value?.transmit ?? null);
 
 const videoOutput = computed(
@@ -85,8 +87,11 @@ const presentations: { value: CastPresentation; label: string }[] = [
     <button
       type="button"
       class="output-trigger"
+      :class="{ casting }"
       popovertarget="output-panel"
-      aria-label="Output and streaming"
+      :aria-label="
+        casting ? 'Output and streaming, casting now' : 'Output and streaming'
+      "
       :aria-expanded="panelOpen"
     >
       <AppIcon name="output" />
@@ -341,7 +346,8 @@ const presentations: { value: CastPresentation; label: string }[] = [
 }
 
 .output-trigger:hover,
-.output-trigger[aria-expanded='true'] {
+.output-trigger[aria-expanded='true'],
+.output-trigger.casting {
   background: var(--color-fill);
   color: var(--color-accent);
 }

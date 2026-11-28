@@ -196,6 +196,11 @@
           "type": "integer",
           "minimum": -500,
           "maximum": 500
+        },
+        "remote_audio_target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       },
       "additionalProperties": false

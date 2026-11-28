@@ -22,6 +22,10 @@ enum AudioOutputs {
         cache.withLock { $0 }
     }
 
+    static func remoteVisible(_ outputs: [AudioOutput]) -> [AudioOutput] {
+        outputs.filter { $0.transport != transportName(kAudioDeviceTransportTypeVirtual) }
+    }
+
     /// Calls `onChange` on the main actor whenever the device list or the default output changes.
     static func startObserving(_ onChange: @escaping @MainActor () -> Void) {
         guard observers.isEmpty else { return }

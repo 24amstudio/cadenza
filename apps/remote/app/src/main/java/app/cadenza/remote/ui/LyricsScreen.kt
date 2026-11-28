@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.cadenza.remote.data.BrowseTarget
 import app.cadenza.remote.data.CurrentPlayback
@@ -97,9 +98,10 @@ fun LyricsScreen(
         Modifier.fillMaxSize().background(backdrop),
     ) {
         val expanded = maxWidth >= 720.dp
+        val sideBySide = expanded && maxWidth > maxHeight
         val compactHeader = maxWidth < 400.dp && LocalDensity.current.fontScale >= 1.5f
         // Portrait gives the lyrics the most height: the header and the cover row stay small, and the lyric pane takes the rest.
-        val gap = if (expanded) 12.dp else 8.dp
+        val gap = if (sideBySide) 12.dp else 8.dp
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onExit) { Icon(cadenzaVector(CadenzaIcon.BACK), contentDescription = "Back to player") }
@@ -116,7 +118,7 @@ fun LyricsScreen(
                 )
             }
             val song = shown
-            if (expanded && song != null && current != null) {
+            if (sideBySide && song != null && current != null) {
                 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     Column(Modifier.weight(0.42f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SongSwap(song, { it.current.occurrenceId }) { entry ->
@@ -147,7 +149,14 @@ fun LyricsScreen(
             } else {
                 song?.let { entry ->
                     SongSwap(entry, { it.current.occurrenceId }) {
-                        CompactTrackIdentity(state, it.current, state.profile?.remoteId, it.artwork, quality = state.snapshot?.quality)
+                        CompactTrackIdentity(
+                            state,
+                            it.current,
+                            state.profile?.remoteId,
+                            it.artwork,
+                            quality = state.snapshot?.quality,
+                            artworkSize = if (expanded) 96.dp else 48.dp,
+                        )
                     }
                 }
                 LyricsPane(model, state, document, shownOccurrence, currentPosition, stale, Modifier.weight(1f).fillMaxWidth())
@@ -215,9 +224,10 @@ private fun CompactTrackIdentity(
     remoteId: String?,
     artwork: ArtworkData?,
     quality: String? = null,
+    artworkSize: Dp = 48.dp,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Artwork(artwork, Modifier.sharedArtwork(current.occurrenceId).size(48.dp))
+        Artwork(artwork, Modifier.sharedArtwork(current.occurrenceId).size(artworkSize))
         TrackIdentity(state, current, remoteId, quality = quality, modifier = Modifier.weight(1f))
     }
 }

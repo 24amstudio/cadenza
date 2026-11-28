@@ -19,6 +19,8 @@ export const useUiStore = defineStore('ui', () => {
   // Full-screen Now Playing: the song data on the left and the lyrics filling the right.
   const immersive = ref(false);
 
+  const ambientOpen = ref(false);
+
   function showView(next: AppView): void {
     view.value = next;
     browseStack.value = [];
@@ -47,6 +49,14 @@ export const useUiStore = defineStore('ui', () => {
     immersive.value = next;
   }
 
+  function openAmbient(): void {
+    ambientOpen.value = true;
+  }
+
+  function closeAmbient(): void {
+    ambientOpen.value = false;
+  }
+
   return {
     view,
     showView,
@@ -58,5 +68,8 @@ export const useUiStore = defineStore('ui', () => {
     takeLyricsRequest,
     immersive,
     setImmersive,
+    ambientOpen,
+    openAmbient,
+    closeAmbient,
   };
 });

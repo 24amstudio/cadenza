@@ -86,6 +86,7 @@ final class HostPublishedState {
         snapshot.hostBudget = hostBudget.rawValue
         snapshot.videoOutput = videoOutputTarget.rawValue
         snapshot.lipSyncOffsetMs = lipSyncOffsetMs
+        snapshot.remoteAudioTarget = remoteAudio.streamTargetName
         castDiscovery.start()
         snapshot.cast = CastSnapshot.make(
             devices: castDiscovery.devices, presentation: castPresentation, transmit: castTransmitter.state,

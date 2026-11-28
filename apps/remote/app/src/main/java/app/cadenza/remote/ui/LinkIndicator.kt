@@ -134,8 +134,8 @@ private fun FlashArrow(
             fade.animateTo(1f, tween(FLASH_MS))
         }
     }
-    val color = lerp(lit, rest, fade.value)
     Canvas(Modifier.size(10.dp)) {
+        val color = lerp(lit, rest, fade.value)
         val stroke = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
         val w = size.width
         val h = size.height

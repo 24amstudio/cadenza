@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.cadenza.remote.data.ThemePreference
+import app.cadenza.remote.data.castingTargets
 import app.cadenza.remote.energy.LocalEnergyProfile
 import app.cadenza.remote.model.RemoteModel
 import app.cadenza.remote.model.dismissNotice
@@ -143,7 +144,12 @@ fun CadenzaApp(
                 }
             }
             // A browse page opens over the current tab. Opening one from Now Playing closes the player first.
-            LaunchedEffect(browseNavigator.stack.size) { if (browseNavigator.stack.isNotEmpty()) nowPlayingOpen = false }
+            LaunchedEffect(browseNavigator.stack.size) {
+                if (browseNavigator.stack.isNotEmpty()) {
+                    nowPlayingOpen = false
+                    lyricsMode = false
+                }
+            }
             BackHandler(enabled = browseNavigator.stack.isNotEmpty() && !lyricsMode && !nowPlayingOpen) { browseNavigator.back() }
             BackHandler(enabled = lyricsMode && state.profile != null) { closeLyrics() }
             BackHandler(enabled = nowPlayingOpen && !lyricsMode && state.profile != null) { nowPlayingOpen = false }
@@ -180,6 +186,8 @@ fun CadenzaApp(
                                     }
                                 }
                             }
+                            val castTargets = castingTargets(state.snapshot?.cast, state.snapshot?.remoteAudioTarget)
+                            if (state.profile != null && castTargets.isNotEmpty()) CastingStatusBar(castTargets)
                         }
                     },
                 ) { outerPadding ->

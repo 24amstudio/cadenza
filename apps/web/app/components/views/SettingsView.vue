@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppIcon from '~/components/common/AppIcon.vue';
+import { ambientIdleMs, ambientModeOptions } from '~/lib/ambient';
 import {
   notificationAccess,
   requestNotificationAccess,
@@ -79,6 +80,15 @@ const lyricsSizes: { value: LyricsSize; label: string }[] = [
   { value: 'large', label: 'Large' },
   { value: 'extra-large', label: 'Extra large' },
 ];
+
+const ambientIdleLabel = `${ambientIdleMs / 60_000} minutes`;
+
+const ambientDetail = computed(
+  () =>
+    ambientModeOptions.find(
+      (option) => option.value === preferences.ambientMode,
+    )?.detail ?? '',
+);
 
 const nameDraft = ref(host.remoteName);
 const confirmingForget = ref(false);
@@ -259,6 +269,45 @@ async function toggleSongAlerts(): Promise<void> {
           <span class="switch-thumb" aria-hidden="true"></span>
         </button>
       </div>
+    </section>
+
+    <section class="group" aria-labelledby="ambient-title">
+      <h2 id="ambient-title">Ambient</h2>
+      <div class="row">
+        <span>Style</span>
+        <div class="segmented" role="group" aria-label="Ambient style">
+          <button
+            v-for="option in ambientModeOptions"
+            :key="option.value"
+            type="button"
+            :class="{ active: preferences.ambientMode === option.value }"
+            :aria-pressed="preferences.ambientMode === option.value"
+            @click="preferences.setAmbientMode(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
+      <div class="row">
+        <span id="ambient-idle-label"
+          >Start after {{ ambientIdleLabel }} idle</span
+        >
+        <button
+          class="switch"
+          type="button"
+          role="switch"
+          aria-labelledby="ambient-idle-label"
+          :aria-checked="preferences.ambientAfterIdle"
+          @click="
+            preferences.setAmbientAfterIdle(!preferences.ambientAfterIdle)
+          "
+        >
+          <span class="switch-thumb" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="footnote">
+        {{ ambientDetail }} Move the mouse, tap or press a key to leave.
+      </p>
     </section>
 
     <section class="group" aria-labelledby="lyric-timing-title">

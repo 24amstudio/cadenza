@@ -33,7 +33,7 @@ test('the Host bundle, the web Remote, and the changelog head agree with shared/
   assert.equal(String(latest.build), build);
 });
 
-test('the checked-in release is 0.4.5, the release this change set ships', () => {
-  assert.equal(versionProperty('VERSION_NAME'), '0.4.5');
-  assert.ok(Number(versionProperty('VERSION_CODE')) > 13);
+test('the checked-in release is 0.4.6, the release this change set ships', () => {
+  assert.equal(versionProperty('VERSION_NAME'), '0.4.6');
+  assert.ok(Number(versionProperty('VERSION_CODE')) > 14);
 });

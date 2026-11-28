@@ -8,12 +8,15 @@ final class HostPublishedState {
     var hostBudget: HostOperatingBudget = .unrestricted
     let castDiscovery = CastDiscovery()
     let castTransmitter = CastTransmitter()
-    let videoLyrics = VideoLyricsOverlay()
+    let singPage = SingPageWindow()
+    let singFeed = SingPageFeed()
+    var singPageURL: () -> URL? = { nil }
     let stageHub: StageHub
     let stageSuites: StageSuiteStore
     let stage: StageCoordinator
     let remoteAudio = RemoteAudioHub()
-    private var followedOccurrence: String?
+    private var shownOccurrence: String?
+    private var dismissedOccurrence: String?
     private(set) var videoOutputTarget = VideoOutputTarget.stored()
     private(set) var lipSyncOffsetMs = UserDefaults.standard.integer(forKey: "lipSyncOffsetMs")
     private(set) var castPresentation = CastPresentationMode.stored()
@@ -24,6 +27,7 @@ final class HostPublishedState {
         stageHub = hub
         stageSuites = suites
         stage = StageCoordinator(hub: hub, audio: StageAudioTransmitter(hub: hub), suites: suites)
+        singPage.onUserClosed = { [weak self] in self?.dismissedOccurrence = self?.shownOccurrence }
     }
 
     /// Chooses the Cast mode that the Cast device presents.
@@ -45,41 +49,33 @@ final class HostPublishedState {
         UserDefaults.standard.set(milliseconds, forKey: "lipSyncOffsetMs")
     }
 
-    /// Chooses where the karaoke line is shown. The Mac and a Cast device never show it at the same time.
+    /// Chooses where the karaoke lyrics are shown. The Host's Mac and a Cast device never show them at the same time.
     func setVideoOutputTarget(_ target: VideoOutputTarget) {
         videoOutputTarget = target
         UserDefaults.standard.set(target.rawValue, forKey: VideoOutputTarget.defaultsKey)
-        if target == .castTransmitter { videoLyrics.show(line: nil) }
+        dismissedOccurrence = nil
+        if target != .hostDisplay { singPage.hide() }
     }
 
-    /// Sends the karaoke line of a music video that Music is playing to the chosen output. The Mac draws it in an overlay
-    /// over Music's window, and a Cast receiver draws it on the device. Other items send nothing.
-    func updateVideoLyrics(snapshot: HostSnapshot, lyrics: LyricDocument?) {
-        guard let current = snapshot.current, current.song.mediaType == .musicVideo else {
-            followedOccurrence = nil
-            videoLyrics.show(line: nil)
+    /// Shows the Sing window with the playing song while the Host output is chosen, and feeds it the lyric clock. A Cast
+    /// device draws the karaoke as its own WebVTT track, so the Mac shows nothing for it.
+    func updateSingPage(snapshot: HostSnapshot, lyrics: LyricDocument?) {
+        guard let current = snapshot.current, let url = singPageURL(),
+            SingPageVisibility.shouldShow(
+                target: videoOutputTarget, currentOccurrenceId: current.occurrenceId,
+                dismissedOccurrenceId: dismissedOccurrence)
+        else {
+            singPage.hide()
             return
         }
-        let lines = lyrics?.occurrenceId == current.occurrenceId ? (lyrics?.lines ?? []) : []
-        let position = current.positionMs - Int64(lipSyncOffsetMs) - Int64(lyrics?.userOffsetMs ?? 0)
-        let window = ActiveLyricLine.window(at: position, in: lines)
-        switch videoOutputTarget {
-        case .hostDisplay:
-            if followedOccurrence != current.occurrenceId || !videoLyrics.isAttached {
-                followedOccurrence = current.occurrenceId
-                videoLyrics.follow(musicProcess: Self.musicProcessIdentifier())
-            }
-            videoLyrics.show(line: window.current?.text)
-        case .castTransmitter:
-            // A Cast device draws the karaoke as its own WebVTT track, so the Mac draws nothing.
-            followedOccurrence = nil
-            videoLyrics.show(line: nil)
-        }
-    }
-
-    private static func musicProcessIdentifier() -> pid_t? {
-        NSRunningApplication.runningApplications(withBundleIdentifier: VideoLyricsVisibility.musicBundleIdentifier)
-            .first?.processIdentifier
+        singPage.show(url: url)
+        shownOccurrence = current.occurrenceId
+        let document = lyrics?.occurrenceId == current.occurrenceId ? lyrics : nil
+        singFeed.update(
+            state: SingPageState.make(
+                from: current, playing: snapshot.playing, lipSyncOffsetMs: lipSyncOffsetMs,
+                userOffsetMs: document?.userOffsetMs ?? 0),
+            lyrics: document)
     }
 
     func apply(to snapshot: inout HostSnapshot) {

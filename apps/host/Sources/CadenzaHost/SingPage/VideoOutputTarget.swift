@@ -1,7 +1,7 @@
 import Foundation
 
-/// Where a music video's karaoke line is shown: over Music's window on this Mac, or on a Cast device. The two are
-/// exclusive, so one line is never drawn in both places.
+/// Where the karaoke lyrics are shown: in the Sing window on this Mac, or on a Cast device. The two are exclusive, so
+/// the lyrics are never drawn in both places.
 enum VideoOutputTarget: String, Sendable, Codable {
     case hostDisplay = "host_display"
     case castTransmitter = "cast_transmitter"

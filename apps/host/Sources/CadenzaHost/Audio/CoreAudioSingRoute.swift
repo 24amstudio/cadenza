@@ -43,7 +43,8 @@ final class CoreAudioSingRoute: SingCaptureRoute, @unchecked Sendable {
         else {
             throw SingAudioError.unavailable("The Music output format could not be prepared.")
         }
-        let pool = SingAudioBufferPool(format: audioFormat, capacity: 4_096)
+        let pool = SingAudioBufferPool(
+            format: audioFormat, capacity: 4_096, count: SingAudioBufferPool.captureBlockCount)
         guard let ring = RealtimeCaptureRing(channelCount: singFormat.channelCount, frameCapacity: 4_096) else {
             throw SingAudioError.unavailable("The capture ring could not be prepared.")
         }

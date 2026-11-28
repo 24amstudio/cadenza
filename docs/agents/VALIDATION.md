@@ -1,6 +1,14 @@
 # Cadenza validation
 
-Cadenza's current working tree declares visible version 0.4.5 and internal build 14, following the `v0.4.5` PRD's explicit release-version request. Version 0.4.0 was built as build 13, and its record is kept as history below. macOS runtime behavior and target-device evidence remain unverified locally.
+Cadenza's current working tree declares visible version 0.4.6 and internal build 15, following the user's explicit request to bump the release. Version 0.4.5 was built as build 14, and its record is kept as history below. macOS runtime behavior and target-device evidence remain unverified locally.
+
+## Sing follow, starting level, and capture backlog (0.4.6)
+
+On 28 November 2026, `node tools/check.mjs --portable` passed 89 behavioral tests, including the version-sync test. `bun test tests` in `apps/web` passed 361 tests across 60 files, and `bun run typecheck` (`nuxt prepare` and `vue-tsc`) passed. `bash apps/host/Scripts/check.sh` passed: strict `swift format lint`, then `swift test -warnings-as-errors` with 73 XCTest tests passing and one skipped (the release-only allocation probe). The new Host tests cover Sing following a song change, a Turn off stopping that follow, the 100 percent starting level for a silent mix, and the pipeline keeping every block while a streaming separator is busy.
+
+Not verified: real Music.app sessions; audible vocal-separation quality, since the dropout fix was checked by code path and test, not by listening; the MLX real-time factor on Apple Silicon; the length of the gap at a song change; the web Sing control in a browser (no screenshots were taken).
+
+Sing window and karaoke outputs (0.4.6, same build). The Host option is now a full-screen Sing window on the Mac, and starting Sing selects it. On 28 November 2026, `bash apps/host/Scripts/check.sh` passed (strict format lint, then 73 tests with one release-only skip and no failures; the new `SingPageTests` and the `/sing/live` route tests are included). `node tools/check.mjs --portable` passed, `bun test tests` in `apps/web` passed 369 tests across 61 files, and `bun run typecheck` passed. The Sing page was rendered in headless Chromium from a generated static build, with a mock Host socket, at 1280 by 720 and at 390 by 844, with paused positions of 2000 ms and 7000 ms. The screenshots are in the session scratchpad and are not committed. Not verified: the Sing window on a real Mac display (its full-screen enter and exit, its load of `http://127.0.0.1` under App Transport Security, and its behavior across a real Music song change); the renamed Remote outputs on a device.
 
 ## Wi-Fi Remote audio and crossover split (0.4.5)
 

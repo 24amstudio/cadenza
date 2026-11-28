@@ -35,6 +35,8 @@ import type {
   QueueEntry,
   RepeatMode,
   Snapshot,
+  SingSession,
+  SingStatus,
   Song,
   SongSuggestions,
   Welcome,
@@ -659,6 +661,39 @@ export function decodeSnapshot(object: JsonObject): Snapshot | null {
     videoOutput: decodeVideoOutput(stringField(object, 'video_output')),
     lipSyncOffsetMs: lipSyncOffsetField(object),
     remoteAudioTarget: stringField(object, 'remote_audio_target'),
+    sing: decodeSingSession(objectField(object, 'sing')),
+  };
+}
+
+const singStatuses: readonly SingStatus[] = [
+  'unavailable',
+  'preparing',
+  'ready',
+  'active',
+  'failed',
+];
+
+function decodeSingSession(object: JsonObject | null): SingSession | null {
+  if (object === null) return null;
+
+  const status = stringField(object, 'status');
+  const vocalPercent = object['vocal_percent'];
+  if (
+    !singStatuses.some((known) => known === status) ||
+    typeof vocalPercent !== 'number' ||
+    !Number.isInteger(vocalPercent) ||
+    vocalPercent < 0 ||
+    vocalPercent > 100
+  ) {
+    return null;
+  }
+
+  return {
+    status: status as SingStatus,
+    vocalPercent,
+    latencyMs: counterField(object, 'latency_ms'),
+    issue: stringField(object, 'issue'),
+    modelReady: booleanField(object, 'model_ready'),
   };
 }
 

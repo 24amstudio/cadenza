@@ -23,9 +23,28 @@ silently leaving playback muted.
 AVAudioEngine configuration changes trigger one bounded output-graph rebuild;
 if the new route cannot start, Host reports the failure and tears down Sing.
 
-Capture uses a small reusable buffer pool. A full pool drops a device block and
-the bounded worker queue releases every accepted buffer after processing. It
-never allocates an unbounded backlog on the real-time callback.
+Capture uses a reusable pool of 128 blocks, about 1.4 seconds at 48 kHz with
+512-frame device blocks. The worker queue accepts up to the same number of
+blocks, so a window that takes a while to separate does not drop device audio.
+A full pool still drops a block, and the worker releases every accepted buffer
+after processing. It never allocates an unbounded backlog on the real-time
+callback.
+
+Sing stays on across songs. When the current song changes, Host ends the old
+occurrence, prepares the new one, and enables Sing again. A Turn off from a
+Remote, or a failed start, ends that. A fresh start with the vocal level at zero
+sets it to 100 percent, the unprocessed output volume. Every lower level is
+quieter, because the stem mixer removes part of the vocal. The level
+persists across songs until the person changes it.
+
+Starting Sing also selects Host for the karaoke lyrics. Host then shows the
+lyrics full screen in a Sing window on its Mac. The window loads `/sing` from
+the Host's own Cadenza Web listener on `127.0.0.1`, and enters full screen when
+it appears and leaves it when it hides. It hides when no song plays or the
+karaoke output moves to This device, which is the Cast receiver. Closing the
+window keeps it closed for the rest of that song. The page reads the lyrics and
+the lyric clock from `/sing/live`, which accepts only the window's per-launch
+access token. Another client gets 403 there.
 
 ## MLX backend (quarantined)
 

@@ -5,6 +5,7 @@ struct WebRemoteRequest: Equatable {
     static let maximumHeadBytes = 8_192
     static let socketPath = "/v1/socket"
     static let stageSocketPath = "/cast/live"
+    static let singSocketPath = "/sing/live"
     static let stageMediaPrefix = "/api/v1/cast/"
     static let stageRoles: Set<String> = ["tv_stage", "android_tv_receiver"]
     /// The Wi-Fi Remote audio socket shares `/cast/live`. It takes the Remote's paired token, not a stage PIN.
@@ -30,6 +31,7 @@ struct WebRemoteRequest: Equatable {
         case stageSocket(key: String, role: String)
         /// A paired Web Remote's Wi-Fi audio socket. The handshake authenticates it.
         case remoteAudioSocket(key: String)
+        case singSocket(key: String)
         case file(path: String, headOnly: Bool)
         case update
         /// Read-only media for stage receivers, under `/api/v1/cast/`.
@@ -64,13 +66,16 @@ struct WebRemoteRequest: Equatable {
 
     // The browser must be the page served by this Host, or the hosted Cadenza Web page on the Remote socket. `allowedHosts`
     // holds lowercased host:port values for this Host's local addresses, so a DNS-rebinding name cannot open the socket.
-    static func route(_ request: WebRemoteRequest, allowedHosts: Set<String>) -> Route {
+    static func route(_ request: WebRemoteRequest, allowedHosts: Set<String>, singPageToken: String? = nil) -> Route {
         let path = request.path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
         if path == socketPath {
             return socketRoute(request, allowedHosts: allowedHosts)
         }
         if path == stageSocketPath {
             return stageSocketRoute(request, allowedHosts: allowedHosts)
+        }
+        if path == singSocketPath {
+            return singSocketRoute(request, allowedHosts: allowedHosts, token: singPageToken)
         }
         guard request.method == "GET" || request.method == "HEAD" else { return .reject(status: 405) }
         // Update routes are answered by the relay, which checks the Remote's credentials before it serves anything.
@@ -101,6 +106,18 @@ struct WebRemoteRequest: Equatable {
         }
         switch upgradeKey(request, allowedHosts: allowedHosts, acceptsHostedPage: false) {
         case .success(let key): return .stageSocket(key: key, role: role)
+        case .failure(let failure): return .reject(status: failure.status)
+        }
+    }
+
+    private static func singSocketRoute(
+        _ request: WebRemoteRequest, allowedHosts: Set<String>, token: String?
+    ) -> Route {
+        guard let token, queryValue("token", in: request.path) == token else {
+            return .reject(status: 403)
+        }
+        switch upgradeKey(request, allowedHosts: allowedHosts, acceptsHostedPage: false) {
+        case .success(let key): return .singSocket(key: key)
         case .failure(let failure): return .reject(status: failure.status)
         }
     }

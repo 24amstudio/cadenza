@@ -1,5 +1,4 @@
-export type RemoteAudioQualityName =
-  'lossless_24_48' | 'standard_16_48' | 'compact_16_48_mono';
+export type RemoteAudioQualityName = 'lossless_24_48' | 'standard_16_48';
 
 export interface RemoteAudioQualityView {
   label: string;
@@ -19,11 +18,6 @@ const tiers: Record<
     label: '16/48',
     format: '16-bit/48 kHz stereo',
     kbps: 1_536,
-  },
-  compact_16_48_mono: {
-    label: '16/48 mono',
-    format: '16-bit/48 kHz mono',
-    kbps: 768,
   },
 };
 

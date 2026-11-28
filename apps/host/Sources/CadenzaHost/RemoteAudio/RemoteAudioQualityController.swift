@@ -73,7 +73,7 @@ struct RemoteAudioQualityController: Equatable, Sendable {
         switch verdict.severity {
         case .severe:
             calmWindows = 0
-            quality = RemoteAudioQuality(rawValue: quality.rawValue - 1) ?? .compact
+            quality = .standard
             reason = verdict.reason
         case .mild:
             calmWindows = 0
@@ -81,7 +81,7 @@ struct RemoteAudioQualityController: Equatable, Sendable {
         case .calm:
             calmWindows += 1
             if calmWindows >= Self.calmWindowsToUpgrade, quality < .lossless {
-                quality = RemoteAudioQuality(rawValue: quality.rawValue + 1) ?? .lossless
+                quality = .lossless
                 calmWindows = 0
                 reason = .recovered
             } else if quality == .lossless {

@@ -112,7 +112,7 @@ export function decodeAudioFrame(bytes: ArrayBuffer): RemoteAudioFrame | null {
         ? 'crossover_hpf_mains'
         : null;
 
-  if (flag === null || channels < 1 || channels > 2) return null;
+  if (flag === null || channels !== 2) return null;
 
   if (bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32) return null;
 
@@ -134,18 +134,14 @@ export function decodeAudioFrame(bytes: ArrayBuffer): RemoteAudioFrame | null {
 
   const channelSamples: Float32Array[] = [];
 
-  if (channels === 1) {
-    channelSamples.push(interleaved);
-  } else {
-    for (let channel = 0; channel < channels; channel += 1) {
-      const plane = new Float32Array(frameCount);
+  for (let channel = 0; channel < channels; channel += 1) {
+    const plane = new Float32Array(frameCount);
 
-      for (let frame = 0; frame < frameCount; frame += 1) {
-        plane[frame] = interleaved[frame * channels + channel] ?? 0;
-      }
-
-      channelSamples.push(plane);
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      plane[frame] = interleaved[frame * channels + channel] ?? 0;
     }
+
+    channelSamples.push(plane);
   }
 
   return {

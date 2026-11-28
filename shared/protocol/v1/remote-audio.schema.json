@@ -202,7 +202,7 @@
           "maximum": 10000
         },
         "quality": {
-          "enum": ["lossless_24_48", "standard_16_48", "compact_16_48_mono"]
+          "enum": ["lossless_24_48", "standard_16_48"]
         },
         "qualityReason": {
           "enum": [

@@ -52,7 +52,7 @@ enum RemoteAudioWire {
 
     /// Encodes one audio frame. Returns nil when the channel count or the payload length does not match the header.
     static func encode(_ frame: AudioFrame) -> Data? {
-        guard (1...2).contains(frame.channels) else { return nil }
+        guard frame.channels == 2 else { return nil }
         let expectedPayload = Int(frame.frameCount) * Int(frame.channels) * frame.bitDepth.bytesPerSample
         guard frame.payload.count == expectedPayload else { return nil }
         var data = Data(capacity: audioHeaderBytes + expectedPayload)

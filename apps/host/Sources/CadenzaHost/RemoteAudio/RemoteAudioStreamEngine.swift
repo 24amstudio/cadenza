@@ -176,10 +176,7 @@ final class RemoteAudioStreamEngine: @unchecked Sendable {
             current.calibration?.appendReferences(mains: blocks.remoteLeft, sub: blocks.host)
         }
         let tier = current.quality
-        let remoteSamples =
-            tier.channels == 1
-            ? zip(blocks.remoteLeft, blocks.remoteRight).map { ($0 + $1) * 0.5 }
-            : RemoteAudioRouter.interleave(blocks.remoteLeft, blocks.remoteRight)
+        let remoteSamples = RemoteAudioRouter.interleave(blocks.remoteLeft, blocks.remoteRight)
         let stretched = BlockStretch.resample(remoteSamples, channels: Int(tier.channels), toFrames: remoteFrames)
         let payload =
             tier.bitDepth == .int24

@@ -18,9 +18,6 @@ describe('stream quality view', () => {
     expect(qualityView('standard_16_48', 'network')?.detail).toBe(
       '16-bit/48 kHz stereo · 1.5 Mbps. Lowered for Wi-Fi pressure.',
     );
-    expect(qualityView('compact_16_48_mono', 'host_power')?.label).toBe(
-      '16/48 mono',
-    );
   });
 
   test('reads an unfamiliar reason as steady rather than inventing a cause', () => {

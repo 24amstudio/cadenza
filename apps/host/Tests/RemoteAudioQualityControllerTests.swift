@@ -11,8 +11,7 @@ struct RemoteAudioQualityControllerTests {
         #expect(RemoteAudioQuality.lossless.bitDepth == .int24)
         #expect(RemoteAudioQuality.lossless.payloadBitsPerSecond == 2_304_000)
         #expect(RemoteAudioQuality.standard.payloadBitsPerSecond == 1_536_000)
-        #expect(RemoteAudioQuality.compact.channels == 1)
-        #expect(RemoteAudioQuality.compact.payloadBitsPerSecond == 768_000)
+        #expect(RemoteAudioQuality.allCases.allSatisfy { $0.channels == 2 })
     }
 
     @Test func aSevereWindowStepsDownOneTierAtOnce() {
@@ -22,9 +21,8 @@ struct RemoteAudioQualityControllerTests {
 
         #expect(controller.observe(burst) == .standard)
         #expect(controller.quality == .standard)
-        #expect(controller.observe(burst) == .compact)
         #expect(controller.observe(burst) == nil)
-        #expect(controller.quality == .compact)
+        #expect(controller.quality == .standard)
     }
 
     @Test func aMildWindowHoldsTheTier() {
